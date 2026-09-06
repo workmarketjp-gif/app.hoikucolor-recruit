@@ -85,7 +85,6 @@ function LoginScreen() {
       card: 'clerk-card',
       headerTitle: 'clerk-hidden',
       headerSubtitle: 'clerk-hidden',
-      footer: 'clerk-hidden',
       footerAction: 'clerk-hidden',
       footerPages: 'clerk-hidden',
     },
