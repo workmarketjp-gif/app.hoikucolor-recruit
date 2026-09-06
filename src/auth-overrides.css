@@ -1,10 +1,3 @@
-.clerk-hidden,
-.cl-footer,
-.cl-footerAction,
-.cl-footerPages,
-.cl-poweredBy,
-[data-localization-key="footerPageLink__help"],
-[data-localization-key="footerPageLink__privacy"],
-[data-localization-key="footerPageLink__terms"] {
+.clerk-hidden {
   display: none !important;
 }
