@@ -4,6 +4,7 @@ import { App } from './App';
 import { Brand } from './components/Brand';
 import { loadHoikuColorClerkPublishableKey } from './lib/clerkConfig';
 import { setSupabaseAccessTokenGetter } from './lib/supabase';
+import './auth-overrides.css';
 
 const publicUrl = (import.meta.env.VITE_HOIKU_COLOR_PUBLIC_URL || 'https://hoikucolor.jp').replace(/\/$/, '');
 const poppyUrl = (import.meta.env.VITE_HOIKU_POPPY_URL || 'https://app.hoikupoppy.ai').replace(/\/$/, '');
@@ -40,6 +41,22 @@ function AuthGate() {
     return () => setSupabaseAccessTokenGetter(null);
   }, [session]);
 
+  useEffect(() => {
+    const confirmSignOut = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const signOutButton = target.closest('button[title="ログアウト"]');
+      if (!signOutButton) return;
+      if (window.confirm('Hoiku Colorからログアウトしますか？')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+
+    document.addEventListener('click', confirmSignOut, true);
+    return () => document.removeEventListener('click', confirmSignOut, true);
+  }, []);
+
   if (!isLoaded) return <CenteredState title="Hoiku Color" body="ログイン状態を確認しています" loading />;
   if (!isSignedIn) return <LoginScreen />;
 
@@ -50,7 +67,7 @@ function AuthGate() {
         body="園・法人の管理画面は Hoiku Poppy に統合されています。"
         action="Hoiku Poppyを開く"
         onAction={() => window.location.assign(poppyUrl)}
-        secondary={<SignOutButton><button className="link-button" type="button">別のアカウントでログイン</button></SignOutButton>}
+        secondary={<SignOutButton><button className="link-button" type="button" title="ログアウト">別のアカウントでログイン</button></SignOutButton>}
       />
     );
   }
@@ -63,8 +80,14 @@ function LoginScreen() {
   const appearance = {
     variables: { colorPrimary: '#fb2f52', borderRadius: '12px' },
     elements: {
-      rootBox: 'clerk-root', cardBox: 'clerk-box', card: 'clerk-card',
-      headerTitle: 'clerk-hidden', headerSubtitle: 'clerk-hidden', footer: 'clerk-footer',
+      rootBox: 'clerk-root',
+      cardBox: 'clerk-box',
+      card: 'clerk-card',
+      headerTitle: 'clerk-hidden',
+      headerSubtitle: 'clerk-hidden',
+      footer: 'clerk-hidden',
+      footerAction: 'clerk-hidden',
+      footerPages: 'clerk-hidden',
     },
   } as const;
 
