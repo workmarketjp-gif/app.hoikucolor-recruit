@@ -60,15 +60,7 @@ using (clerk_user_id = (auth.jwt() ->> 'sub'));
 drop policy if exists hc_saved_jobs_insert_own on public.hc_saved_jobs;
 create policy hc_saved_jobs_insert_own
 on public.hc_saved_jobs for insert to authenticated
-with check (
-  clerk_user_id = (auth.jwt() ->> 'sub')
-  and exists (
-    select 1 from public.hc_jobs j
-    where j.id = job_id
-      and j.status = 'published'
-      and (j.closing_at is null or j.closing_at >= now())
-  )
-);
+with check (clerk_user_id = (auth.jwt() ->> 'sub'));
 
 drop policy if exists hc_saved_jobs_delete_own on public.hc_saved_jobs;
 create policy hc_saved_jobs_delete_own
