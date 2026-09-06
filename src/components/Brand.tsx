@@ -1,3 +1,5 @@
+import './brand.css';
+
 const OFFICIAL_LOGO_URL = 'https://raw.githubusercontent.com/workmarketjp-gif/hoikucolor-app/main/src/logo/logo_hoikucolor.png';
 
 export function Brand({ compact = false }: { compact?: boolean }) {
