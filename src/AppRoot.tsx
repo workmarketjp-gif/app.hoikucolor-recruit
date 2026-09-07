@@ -2,6 +2,7 @@ import { ClerkProvider, SignOutButton, useAuth, useClerk, useSession, useSignIn,
 import { useEffect, useState, type FormEvent } from 'react';
 import { App } from './App';
 import { Brand } from './components/Brand';
+import googleMark from './logo/google-g.svg';
 import logoMark from './logo/logom_hoikucolor.png';
 import { loadHoikuColorClerkPublishableKey } from './lib/clerkConfig';
 import { setSupabaseAccessTokenGetter } from './lib/supabase';
@@ -11,18 +12,48 @@ import './auth-custom.css';
 const publicUrl = (import.meta.env.VITE_HOIKU_COLOR_PUBLIC_URL || 'https://hoikucolor.jp').replace(/\/$/, '');
 const poppyUrl = (import.meta.env.VITE_HOIKU_POPPY_URL || 'https://app.hoikupoppy.ai').replace(/\/$/, '');
 
+const nurseryAuthPaths = [
+  '/login/nursery',
+  '/signup/nursery',
+  '/sign-in/nursery',
+  '/sign-up/nursery',
+  '/nursery/login',
+  '/nursery/signup',
+  '/nursery/sign-in',
+  '/nursery/sign-up',
+  '/corporate/login',
+  '/corporate/signup',
+];
+
+function isNurseryAuthPath(pathname: string) {
+  const normalized = pathname.toLowerCase().replace(/\/$/, '') || '/';
+  return nurseryAuthPaths.includes(normalized);
+}
+
+function authModeFromPath(pathname: string): 'signin' | 'signup' {
+  const normalized = pathname.toLowerCase();
+  return /(^|\/)(signup|sign-up|register)(\/|$)/.test(normalized) ? 'signup' : 'signin';
+}
+
 export function AppRoot() {
   const [key, setKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const nurseryRedirect = isNurseryAuthPath(window.location.pathname);
 
   useEffect(() => {
+    if (nurseryRedirect) {
+      window.location.replace(poppyUrl);
+      return;
+    }
+
     let active = true;
     loadHoikuColorClerkPublishableKey()
       .then((value) => active && setKey(value))
       .catch((err) => active && setError(err instanceof Error ? err.message : 'ログイン設定を取得できませんでした。'));
     return () => { active = false; };
-  }, []);
+  }, [nurseryRedirect]);
 
+  if (nurseryRedirect) return <CenteredState title="Hoiku Poppyへ移動しています" body="園・法人のログイン・新規登録はHoiku Poppyをご利用ください。" loading />;
   if (error) return <CenteredState title="ログイン設定を読み込めませんでした" body={error} action="再読み込み" onAction={() => window.location.reload()} />;
   if (!key) return <CenteredState title="Hoiku Color" body="ログイン設定を読み込んでいます" loading />;
 
@@ -71,7 +102,7 @@ function AuthGate() {
     return (
       <CenteredState
         title="園・法人アカウントです"
-        body="園・法人の管理画面は Hoiku Poppy に統合されています。"
+        body="園・法人の管理画面はHoiku Poppyに統合されています。"
         action="Hoiku Poppyを開く"
         onAction={() => window.location.assign(poppyUrl)}
         secondary={<SignOutButton><button className="link-button" type="button" title="ログアウト">別のアカウントでログイン</button></SignOutButton>}
@@ -98,7 +129,7 @@ function OAuthCallback() {
 }
 
 function LoginScreen() {
-  const isSignup = window.location.pathname.startsWith('/signup');
+  const isSignup = authModeFromPath(window.location.pathname) === 'signup';
   const { signIn, fetchStatus: signInFetchStatus } = useSignIn();
   const { signUp, fetchStatus: signUpFetchStatus } = useSignUp();
   const [email, setEmail] = useState('');
@@ -249,7 +280,7 @@ function LoginScreen() {
             {step === 'email' ? (
               <>
                 <button className="hc-google-button" type="button" onClick={startGoogle} disabled={busy}>
-                  <span className="hc-google-mark" aria-hidden="true">G</span>
+                  <img className="hc-google-mark" src={googleMark} alt="" aria-hidden="true" />
                   <span>Googleで続ける</span>
                 </button>
                 <div className="hc-auth-divider"><span>または</span></div>
