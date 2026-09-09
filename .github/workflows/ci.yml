@@ -19,4 +19,5 @@ jobs:
           set -euo pipefail
           grep -Fq "'new', 'hoiku_color_jobseeker', v_user_id" supabase/migrations/20260906160000_hc_jobseeker_portal.sql
           grep -Fq "check (source_type in ('manual','market','hoiku_color_jobseeker'))" supabase/migrations/20260910080000_hc_jobseeker_application_source_type_contract.sql
+          grep -Fq "client().rpc('hc_jobseeker_submit_application'" src/lib/recruitRepository.ts
       - run: npm run build
