@@ -89,6 +89,26 @@ export async function listApplications(): Promise<Application[]> {
   return (data || []) as Application[];
 }
 
+export async function submitApplication(jobId: string, profile: JobseekerProfile): Promise<string> {
+  const applicantName = profile.name?.trim() || '';
+  if (!applicantName) throw new Error('応募前にプロフィールのお名前を登録してください。');
+
+  const { data, error } = await client().rpc('hc_jobseeker_submit_application', {
+    p_job_id: jobId,
+    p_applicant_name: applicantName,
+    p_applicant_name_kana: profile.name_kana?.trim() || null,
+    p_email: profile.email?.trim() || null,
+    p_phone: profile.phone?.trim() || null,
+    p_qualifications: profile.qualifications?.length ? profile.qualifications.join('、') : null,
+    p_years_of_experience: profile.years_of_experience,
+    p_desired_start_date: profile.desired_start_date || null,
+    p_message: profile.self_intro?.trim() || null,
+  });
+  if (error) throw error;
+  if (typeof data !== 'string' || !data) throw new Error('応募IDを取得できませんでした。');
+  return data;
+}
+
 export async function getProfile(): Promise<JobseekerProfile | null> {
   const { data, error } = await client()
     .from('hc_jobseeker_profiles')
