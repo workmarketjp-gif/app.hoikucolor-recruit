@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
 import {
-  getProfile, listApplications, listJobs, listSavedJobIds, saveJob, unsaveJob, upsertProfile,
+  getProfile, listApplications, listJobs, listSavedJobIds, saveJob, submitApplication, unsaveJob, upsertProfile,
   type Application, type Job, type JobseekerProfile,
 } from './lib/recruitRepository';
 
@@ -183,13 +183,13 @@ function JobsView({ jobs, savedIds, onToggleSaved }: { jobs: Job[]; savedIds: st
 }
 
 function SavedView({ jobs, onToggleSaved }: { jobs: Job[]; onToggleSaved: (id: string) => void }) {
-  return <><header className="page-heading"><div><span className="eyebrow">SAVED JOBS</span><h1>気になる求人</h1><p>あとで見返したい求人をまとめて比較できます。</p></div><span className="result-count">{jobs.length}件</span></header>{jobs.length ? <div className="job-grid">{jobs.map((job) => <JobCard key={job.id} job={job} saved onToggleSaved={onToggleSaved} />)}</div> : <EmptyState title="保存した求人はまだありません" body="求人検索で「気になる」を押すと、ここに保存されます。" action="求人を探す" href={`${publicUrl}/jobs`} />}</>;
+  return <><header className="page-heading"><div><span className="eyebrow">SAVED JOBS</span><h1>気になる求人</h1><p>あとで見返したい求人をまとめて比較できます。</p></div><span className="result-count">{jobs.length}件</span></header>{jobs.length ? <div className="job-grid">{jobs.map((job) => <JobCard key={job.id} job={job} saved onToggleSaved={onToggleSaved} />)}</div> : <EmptyState title="保存した求人はまだありません" body="求人検索で「気になる」を押すと、ここに保存されます。" action="求人を探す" href="/jobs" />}</>;
 }
 
 function ApplicationsView({ applications, jobs }: { applications: Application[]; jobs: Job[] }) {
   const jobMap = new Map(jobs.map((j) => [j.id, j]));
   return <><header className="page-heading"><div><span className="eyebrow">APPLICATIONS</span><h1>応募管理</h1><p>応募から面接・内定までの状況を確認できます。</p></div><span className="result-count">{applications.length}件</span></header>
-    <section className="panel application-panel">{applications.length ? applications.map((app) => { const job = jobMap.get(app.job_id); return <article className="application-row" key={app.id}><div className="application-mark"><Icon name="briefcase" size={18} /></div><div className="application-main"><span className={`status-badge status-${app.status}`}>{statusLabel(app.status)}</span><h3>{job?.title || '求人'}</h3><p>{job?.facility_name || ''}</p><small>応募日 {formatDate(app.applied_at)}</small></div><div className="application-side">{job && <><span><Icon name="map" size={14} /> {job.prefecture || ''} {job.city || ''}</span><a href={`${publicUrl}/jobs/${job.id}`} target="_blank" rel="noreferrer">求人を見る <Icon name="external" size={13} /></a></>}</div></article>; }) : <EmptyState title="応募履歴はまだありません" body="気になる園を見つけたら、求人詳細から応募できます。" />}</section>
+    <section className="panel application-panel">{applications.length ? applications.map((app) => { const job = jobMap.get(app.job_id); return <article className="application-row" key={app.id}><div className="application-mark"><Icon name="briefcase" size={18} /></div><div className="application-main"><span className={`status-badge status-${app.status}`}>{statusLabel(app.status)}</span><h3>{job?.title || '求人'}</h3><p>{job?.facility_name || ''}</p><small>応募日 {formatDate(app.applied_at)}</small></div><div className="application-side">{job && <><span><Icon name="map" size={14} /> {job.prefecture || ''} {job.city || ''}</span><a href="/jobs">求人一覧へ <Icon name="arrow" size={13} /></a></>}</div></article>; }) : <EmptyState title="応募履歴はまだありません" body="気になる園を見つけたら、求人一覧から応募できます。" action="求人を探す" href="/jobs" />}</section>
   </>;
 }
 
@@ -219,7 +219,32 @@ function ProfileView({ profile, onChange }: { profile: JobseekerProfile; onChang
 }
 
 function JobCard({ job, saved, onToggleSaved }: { job: Job; saved: boolean; onToggleSaved: (id: string) => void }) {
-  return <article className="job-card"><div className="job-card-top"><div className="job-location"><Icon name="map" size={14} /> {job.prefecture || '地域未設定'} {job.city || ''}</div><button className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)} aria-label={saved ? '気になるから削除' : '気になるに保存'}><Icon name="heart" size={18} /></button></div><span className="facility-name">{job.facility_name}</span><h3>{job.title}</h3><div className="job-tags">{job.employment_type && <span>{job.employment_type}</span>}{job.facility_type && <span>{job.facility_type}</span>}</div><div className="job-details"><span><Icon name="yen" size={16} /> {salaryLabel(job)}</span>{job.working_hours && <span><Icon name="clock" size={16} /> {job.working_hours}</span>}</div><p>{job.description}</p><div className="job-card-actions"><a className="secondary-button" href={`${publicUrl}/jobs/${job.id}`} target="_blank" rel="noreferrer">詳しく見る</a><a className="primary-button" href={`${publicUrl}/jobs/${job.id}`} target="_blank" rel="noreferrer">応募・見学へ <Icon name="arrow" size={15} /></a></div></article>;
+  const [expanded, setExpanded] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const apply = async () => {
+    setApplying(true); setApplyError(null);
+    try {
+      const profile = await getProfile();
+      if (!profile?.name?.trim()) throw new Error('応募前にプロフィールのお名前を保存してください。');
+      await submitApplication(job.id, profile);
+      window.location.assign('/applications');
+    } catch (err) {
+      setApplyError(err instanceof Error ? err.message : '応募を送信できませんでした。');
+    } finally {
+      setApplying(false);
+    }
+  };
+  return <article className="job-card">
+    <div className="job-card-top"><div className="job-location"><Icon name="map" size={14} /> {job.prefecture || '地域未設定'} {job.city || ''}</div><button className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)} aria-label={saved ? '気になるから削除' : '気になるに保存'}><Icon name="heart" size={18} /></button></div>
+    <span className="facility-name">{job.facility_name}</span><h3>{job.title}</h3>
+    <div className="job-tags">{job.employment_type && <span>{job.employment_type}</span>}{job.facility_type && <span>{job.facility_type}</span>}</div>
+    <div className="job-details"><span><Icon name="yen" size={16} /> {salaryLabel(job)}</span>{job.working_hours && <span><Icon name="clock" size={16} /> {job.working_hours}</span>}</div>
+    <p>{job.description}</p>
+    {expanded && <div className="job-details"><span><strong>勤務地</strong> {job.address || `${job.prefecture || ''} ${job.city || ''}`}</span>{job.holidays && <span><strong>休日</strong> {job.holidays}</span>}{job.required_qualification && <span><strong>応募資格</strong> {job.required_qualification}</span>}{job.benefits && <span><strong>待遇</strong> {job.benefits}</span>}<span><strong>募集人数</strong> {job.number_of_positions}名</span></div>}
+    {applyError && <span className="form-error">{applyError}</span>}
+    <div className="job-card-actions"><button className="secondary-button" type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? '詳細を閉じる' : '詳しく見る'}</button><button className="primary-button" type="button" onClick={apply} disabled={applying}>{applying ? '応募中…' : '応募する'} <Icon name="arrow" size={15} /></button></div>
+  </article>;
 }
 
 function JobRow({ job, saved, onToggleSaved }: { job: Job; saved: boolean; onToggleSaved: (id: string) => void }) {
@@ -231,5 +256,5 @@ function EmptyState({ title, body, action, href }: { title: string; body: string
 function LoadingView() { return <div className="loading-view"><span className="loading-ring" /><strong>読み込んでいます</strong><p>求人・応募情報を確認しています。</p></div>; }
 function csv(value: string) { return value.split(/[,、]/).map((v) => v.trim()).filter(Boolean); }
 function formatDate(value: string) { return new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(value)); }
-function statusLabel(status: string) { return ({ new: '応募済み', applied: '応募済み', screening: '書類確認中', review: '確認中', interview: '面接予定', offer: '内定', hired: '採用', rejected: '選考終了', withdrawn: '辞退' } as Record<string, string>)[status] || status; }
+function statusLabel(status: string) { return ({ new: '応募済み', applied: '応募済み', reviewing: '書類確認中', screening: '書類確認中', review: '確認中', interview: '面接予定', offered: '内定', offer: '内定', hired: '採用', rejected: '選考終了', withdrawn: '辞退' } as Record<string, string>)[status] || status; }
 function salaryLabel(job: Job) { if (job.salary_note) return job.salary_note; if (job.salary_min && job.salary_max) return `${job.salary_type === 'hourly' ? '時給' : '月給'} ${job.salary_min.toLocaleString()}〜${job.salary_max.toLocaleString()}円`; if (job.salary_min) return `${job.salary_type === 'hourly' ? '時給' : '月給'} ${job.salary_min.toLocaleString()}円〜`; return '給与は求人詳細をご確認ください'; }
