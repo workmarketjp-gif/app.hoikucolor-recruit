@@ -14,4 +14,9 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - name: Guard jobseeker application contract
+        run: |
+          set -euo pipefail
+          grep -Fq "'new', 'hoiku_color_jobseeker', v_user_id" supabase/migrations/20260906160000_hc_jobseeker_portal.sql
+          grep -Fq "check (source_type in ('manual','market','hoiku_color_jobseeker'))" supabase/migrations/20260910080000_hc_jobseeker_application_source_type_contract.sql
       - run: npm run build
