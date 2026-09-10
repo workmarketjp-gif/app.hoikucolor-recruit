@@ -2,6 +2,7 @@ import { SignOutButton, useUser } from '@clerk/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
+import { ApplicationMessages } from './components/ApplicationMessages';
 import {
   getProfile, listApplications, listJobs, listSavedJobIds, saveJob, submitApplication, unsaveJob, upsertProfile,
   type Application, type Job, type JobseekerProfile, type VerifiedWorkplaceMetric,
@@ -207,7 +208,7 @@ function SavedView({ jobs, onToggleSaved }: { jobs: Job[]; onToggleSaved: (id: s
 function ApplicationsView({ applications, jobs }: { applications: Application[]; jobs: Job[] }) {
   const jobMap = new Map(jobs.map((j) => [j.id, j]));
   return <><header className="page-heading"><div><span className="eyebrow">APPLICATIONS</span><h1>応募管理</h1><p>応募から面接・内定までの状況を確認できます。</p></div><span className="result-count">{applications.length}件</span></header>
-    <section className="panel application-panel">{applications.length ? applications.map((app) => { const job = jobMap.get(app.job_id); return <article className="application-row" key={app.id}><div className="application-mark"><Icon name="briefcase" size={18} /></div><div className="application-main"><span className={`status-badge status-${app.status}`}>{statusLabel(app.status)}</span><h3>{job?.title || '求人'}</h3><p>{job?.facility_name || ''}</p><small>応募日 {formatDate(app.applied_at)}</small></div><div className="application-side">{job && <><span><Icon name="map" size={14} /> {job.prefecture || ''} {job.city || ''}</span><a href="/jobs">求人一覧へ <Icon name="arrow" size={13} /></a></>}</div></article>; }) : <EmptyState title="応募履歴はまだありません" body="気になる園を見つけたら、求人一覧から応募できます。" action="求人を探す" href="/jobs" />}</section>
+    <section className="panel application-panel">{applications.length ? applications.map((app) => { const job = jobMap.get(app.job_id); return <article className="application-row" key={app.id}><div className="application-mark"><Icon name="briefcase" size={18} /></div><div className="application-main"><span className={`status-badge status-${app.status}`}>{statusLabel(app.status)}</span><h3>{job?.title || '求人'}</h3><p>{job?.facility_name || ''}</p><small>応募日 {formatDate(app.applied_at)}</small></div><div className="application-side">{job && <><span><Icon name="map" size={14} /> {job.prefecture || ''} {job.city || ''}</span><a href="/jobs">求人一覧へ <Icon name="arrow" size={13} /></a></>}<ApplicationMessages applicationId={app.id} /></div></article>; }) : <EmptyState title="応募履歴はまだありません" body="気になる園を見つけたら、求人一覧から応募できます。" action="求人を探す" href="/jobs" />}</section>
   </>;
 }
 
