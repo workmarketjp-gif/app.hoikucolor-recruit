@@ -1,0 +1,257 @@
+.visit-trial-panel {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid rgba(223, 87, 143, 0.2);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 248, 252, 0.96), rgba(255, 255, 255, 0.98));
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.visit-trial-loading {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #faf7f9;
+  color: #6f6670;
+  font-size: 13px;
+}
+
+.visit-trial-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.visit-trial-head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.visit-trial-head span {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  color: #b84e7b;
+}
+
+.visit-trial-head strong {
+  font-size: 16px;
+  color: #342c33;
+}
+
+.visit-trial-head em {
+  flex: none;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid rgba(223, 87, 143, 0.22);
+  color: #b84e7b;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.visit-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.visit-mode-grid button {
+  appearance: none;
+  border: 1px solid #e8e2e6;
+  border-radius: 13px;
+  background: #fff;
+  padding: 11px 8px;
+  display: grid;
+  gap: 3px;
+  text-align: center;
+  cursor: pointer;
+  color: #5a5057;
+}
+
+.visit-mode-grid button.active {
+  border-color: #d85c91;
+  box-shadow: 0 0 0 2px rgba(216, 92, 145, 0.08);
+  color: #a94270;
+  background: #fff8fb;
+}
+
+.visit-mode-grid strong {
+  font-size: 13px;
+}
+
+.visit-mode-grid small {
+  font-size: 11px;
+  color: #8d828a;
+}
+
+.visit-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.visit-form-grid label,
+.visit-message {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.visit-form-grid label > span,
+.visit-message > span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #625860;
+}
+
+.visit-form-grid input,
+.visit-form-grid select,
+.visit-message textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid #ddd5da;
+  border-radius: 11px;
+  background: #fff;
+  color: #302a2f;
+  padding: 10px 11px;
+  font: inherit;
+}
+
+.visit-message textarea {
+  resize: vertical;
+}
+
+.visit-availability,
+.visit-trial-footnote {
+  color: #80747c;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.visit-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: #fff;
+  color: #5d535a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.visit-guidance {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.visit-guidance span {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: #fff;
+  color: #6b6067;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.visit-guidance strong {
+  color: #463d43;
+  font-size: 11px;
+}
+
+.visit-submit {
+  width: 100%;
+  justify-content: center;
+}
+
+.visit-reservation-card {
+  border: 1px solid #e5dde2;
+  border-radius: 14px;
+  background: #fff;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.visit-reservation-card > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.visit-reservation-card p,
+.visit-reservation-card small {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.visit-reservation-card p {
+  color: #433a40;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.visit-reservation-card small {
+  color: #71666d;
+  line-height: 1.6;
+}
+
+.visit-status {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #f4edf1;
+  color: #7e6572;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.visit-status.status-confirmed {
+  background: #edf8f1;
+  color: #32704b;
+}
+
+.visit-trial-panel .form-success {
+  display: block;
+  color: #32704b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .visit-trial-panel {
+    padding: 15px;
+    border-radius: 15px;
+  }
+
+  .visit-mode-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .visit-mode-grid button {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    text-align: left;
+    padding: 11px 12px;
+  }
+
+  .visit-form-grid,
+  .visit-guidance {
+    grid-template-columns: 1fr;
+  }
+
+  .visit-trial-head {
+    align-items: center;
+  }
+}
