@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run test:document-vault && npm run test:visit-trial && npm run test:verified-finance-ranking && npm run test:verified-finance-display && npm run test:spot-job-bridge && tsc -b && vite build",
+    "build": "npm run test:document-vault && npm run test:visit-trial && npm run test:verified-finance-ranking && npm run test:verified-finance-display && npm run test:spot-job-bridge && npm run test:spot-break-canonical && tsc -b && vite build",
     "preview": "vite preview",
     "test:document-vault": "node qa/document-vault-contract.mjs",
     "test:visit-trial": "node qa/visit-trial-contract.mjs",
     "test:verified-finance-ranking": "node qa/verified-finance-ranking-contract.mjs",
     "test:verified-finance-display": "node qa/verified-finance-display-contract.mjs",
-    "test:spot-job-bridge": "node qa/spot-job-bridge-contract.mjs"
+    "test:spot-job-bridge": "node qa/spot-job-bridge-contract.mjs",
+    "test:spot-break-canonical": "node qa/spot-break-canonical-contract.mjs"
   },
   "dependencies": {
     "@clerk/react": "^6.11.3",
