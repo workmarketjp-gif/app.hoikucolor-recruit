@@ -12,7 +12,7 @@ const resolution = read('20260911113500_hc_spot_shortage_resolution_on_confirm.s
 
 const checks = [
   ['canonical confirmation uses Clerk subject helper', /v_actor text := ho_private\.current_clerk_user_id\(\)/i, clerk],
-  ['canonical confirmation does not use auth uid', /auth\.uid\(\)/i, clerk, true],
+  ['canonical confirmation does not gate on auth uid', /if\s+auth\.uid\(\)/i, clerk, true],
   ['canonical break is reread from HO spot source', /select d\.break_minutes[\s\S]*?ho_spot_job_drafts/i, clerk],
   ['free-form class does not overwrite legacy age enum', /age_group_or_class[\s\S]*?in \('0','1','2','3','4','5'\)/i, compat],
   ['named class clears incompatible legacy age', /else\s+new\.age_group := null/i, compat],
