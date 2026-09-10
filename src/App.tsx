@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
 import { ApplicationMessages } from './components/ApplicationMessages';
+import { DocumentVaultPanel } from './components/DocumentVaultPanel';
 import {
   getProfile, listApplications, listJobs, listSavedJobIds, saveJob, submitApplication, unsaveJob, upsertProfile,
   type Application, type Job, type JobseekerProfile, type VerifiedWorkplaceMetric,
@@ -234,7 +235,9 @@ function ProfileView({ profile, onChange }: { profile: JobseekerProfile; onChang
         <Field label="自己紹介" wide><textarea rows={5} value={draft.self_intro || ''} onChange={(e) => update('self_intro', e.target.value)} placeholder="大切にしている保育観や、これまでの経験など" /></Field>
       </div></section>
       <div className="form-actions">{error && <span className="form-error">{error}</span>}{saved && <span className="form-success">保存しました</span>}<button className="primary-button" disabled={saving}>{saving ? '保存中…' : 'プロフィールを保存'}</button></div>
-    </form></>;
+    </form>
+    <DocumentVaultPanel />
+  </>;
 }
 
 function JobCard({ job, saved, onToggleSaved }: { job: Job; saved: boolean; onToggleSaved: (id: string) => void }) {

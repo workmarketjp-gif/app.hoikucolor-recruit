@@ -177,6 +177,18 @@ export async function deleteJobseekerDocument(document: JobseekerDocument) {
   if (deleteMetadataError) throw deleteMetadataError;
 }
 
+export async function listAttachedJobseekerDocumentIds(applicationId: string): Promise<string[]> {
+  const { data, error } = await db()
+    .from('hc_application_documents')
+    .select('source_jobseeker_document_id')
+    .eq('application_id', applicationId)
+    .not('source_jobseeker_document_id', 'is', null);
+  if (error) throw error;
+  return (data ?? [])
+    .map((row) => row.source_jobseeker_document_id)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+}
+
 export async function attachJobseekerDocumentToApplication(
   document: JobseekerDocument,
   applicationId: string,
@@ -197,7 +209,8 @@ export async function attachJobseekerDocumentToApplication(
     .single();
   if (applicationError) throw applicationError;
 
-  const fileName = safeFileName(document.file_path.split('/').at(-1) || document.title);
+  const pathParts = document.file_path.split('/');
+  const fileName = safeFileName(pathParts[pathParts.length - 1] || document.title);
   const destinationPath = `${application.organization_id}/${application.facility_id}/${application.id}/vault-${document.id}/${fileName}`;
 
   const { error: copyError } = await db().storage.from(BUCKET).copy(document.file_path, destinationPath);
