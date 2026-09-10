@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "build": "npm run test:document-vault && tsc -b && vite build",
+    "preview": "vite preview",
+    "test:document-vault": "node qa/document-vault-contract.mjs"
   },
   "dependencies": {
     "@clerk/react": "^6.11.3",
