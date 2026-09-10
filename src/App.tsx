@@ -4,7 +4,7 @@ import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
 import {
   getProfile, listApplications, listJobs, listSavedJobIds, saveJob, submitApplication, unsaveJob, upsertProfile,
-  type Application, type Job, type JobseekerProfile,
+  type Application, type Job, type JobseekerProfile, type VerifiedWorkplaceMetric,
 } from './lib/recruitRepository';
 
 type View = 'home' | 'jobs' | 'saved' | 'applications' | 'profile';
@@ -17,6 +17,19 @@ const navItems: { view: View; label: string; icon: Parameters<typeof Icon>[0]['n
   { view: 'saved', label: '気になる', icon: 'heart' },
   { view: 'applications', label: '応募管理', icon: 'briefcase' },
   { view: 'profile', label: 'プロフィール', icon: 'user' },
+];
+
+const verifiedPriority = [
+  'average_monthly_overtime_hours',
+  'paid_leave_usage_rate_pct',
+  'average_tenure_years',
+  'average_monthly_saturday_shift_count',
+  'nursery_teacher_ratio_pct',
+  'average_experience_years',
+  'average_monthly_early_shift_count',
+  'average_monthly_late_shift_count',
+  'full_time_ratio_pct',
+  'average_age_years',
 ];
 
 function pathToView(pathname: string): View {
@@ -161,7 +174,10 @@ function Dashboard({ name, jobs, savedIds, applications, onNavigate, onToggleSav
 }
 
 function JobsView({ jobs, savedIds, onToggleSaved }: { jobs: Job[]; savedIds: string[]; onToggleSaved: (id: string) => void }) {
-  const [keyword, setKeyword] = useState(''); const [prefecture, setPrefecture] = useState(''); const [employment, setEmployment] = useState('');
+  const [keyword, setKeyword] = useState('');
+  const [prefecture, setPrefecture] = useState('');
+  const [employment, setEmployment] = useState('');
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
   const prefectures = useMemo(() => [...new Set(jobs.map((j) => j.prefecture).filter(Boolean) as string[])].sort(), [jobs]);
   const employments = useMemo(() => [...new Set(jobs.map((j) => j.employment_type).filter(Boolean) as string[])].sort(), [jobs]);
   const filtered = jobs.filter((job) => {
@@ -169,6 +185,7 @@ function JobsView({ jobs, savedIds, onToggleSaved }: { jobs: Job[]; savedIds: st
     if (q && !`${job.title} ${job.facility_name} ${job.description} ${job.prefecture || ''} ${job.city || ''}`.toLowerCase().includes(q)) return false;
     if (prefecture && job.prefecture !== prefecture) return false;
     if (employment && job.employment_type !== employment) return false;
+    if (verifiedOnly && !job.verified_workplace?.verified_metric_count) return false;
     return true;
   });
   return <>
@@ -177,6 +194,7 @@ function JobsView({ jobs, savedIds, onToggleSaved }: { jobs: Job[]; savedIds: st
       <label className="keyword-box"><Icon name="search" size={18} /><input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="園名、職種、キーワードで検索" /></label>
       <select value={prefecture} onChange={(e) => setPrefecture(e.target.value)}><option value="">すべての都道府県</option>{prefectures.map((p) => <option key={p}>{p}</option>)}</select>
       <select value={employment} onChange={(e) => setEmployment(e.target.value)}><option value="">すべての雇用形態</option>{employments.map((p) => <option key={p}>{p}</option>)}</select>
+      <label className="verified-filter"><input type="checkbox" checked={verifiedOnly} onChange={(e) => setVerifiedOnly(e.target.checked)} /><span>HO実績データあり</span></label>
     </section>
     {filtered.length ? <div className="job-grid">{filtered.map((job) => <JobCard key={job.id} job={job} saved={savedIds.includes(job.id)} onToggleSaved={onToggleSaved} />)}</div> : <EmptyState title="条件に合う求人がありません" body="検索条件を変更して、もう一度探してみてください。" />}
   </>;
@@ -238,8 +256,9 @@ function JobCard({ job, saved, onToggleSaved }: { job: Job; saved: boolean; onTo
   return <article className="job-card">
     <div className="job-card-top"><div className="job-location"><Icon name="map" size={14} /> {job.prefecture || '地域未設定'} {job.city || ''}</div><button className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)} aria-label={saved ? '気になるから削除' : '気になるに保存'}><Icon name="heart" size={18} /></button></div>
     <span className="facility-name">{job.facility_name}</span><h3>{job.title}</h3>
-    <div className="job-tags">{job.employment_type && <span>{job.employment_type}</span>}{job.facility_type && <span>{job.facility_type}</span>}</div>
+    <div className="job-tags">{job.employment_type && <span>{job.employment_type}</span>}{job.facility_type && <span>{job.facility_type}</span>}{job.verified_workplace?.verified_metric_count ? <span className="verified-tag">✓ Hoiku Office 実績</span> : null}</div>
     <div className="job-details"><span><Icon name="yen" size={16} /> {salaryLabel(job)}</span>{job.working_hours && <span><Icon name="clock" size={16} /> {job.working_hours}</span>}</div>
+    {job.verified_workplace && <VerifiedWorkplaceSummary job={job} expanded={expanded} />}
     <p>{job.description}</p>
     {expanded && <div className="job-details"><span><strong>勤務地</strong> {job.address || `${job.prefecture || ''} ${job.city || ''}`}</span>{job.holidays && <span><strong>休日</strong> {job.holidays}</span>}{job.required_qualification && <span><strong>応募資格</strong> {job.required_qualification}</span>}{job.benefits && <span><strong>待遇</strong> {job.benefits}</span>}<span><strong>募集人数</strong> {job.number_of_positions}名</span></div>}
     {applyError && <span className="form-error">{applyError}</span>}
@@ -248,7 +267,22 @@ function JobCard({ job, saved, onToggleSaved }: { job: Job; saved: boolean; onTo
 }
 
 function JobRow({ job, saved, onToggleSaved }: { job: Job; saved: boolean; onToggleSaved: (id: string) => void }) {
-  return <article className="job-row"><div className="job-row-mark">{job.facility_name.slice(0, 1)}</div><div><strong>{job.title}</strong><small>{job.facility_name} ・ {job.prefecture || ''} {job.city || ''}</small></div><span>{job.employment_type || '雇用形態未設定'}</span><span className="job-row-salary">{salaryLabel(job)}</span><button className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)}><Icon name="heart" size={17} /></button></article>;
+  return <article className="job-row"><div className="job-row-mark">{job.facility_name.slice(0, 1)}</div><div><strong>{job.title}</strong><small>{job.facility_name} ・ {job.prefecture || ''} {job.city || ''}{job.verified_workplace?.verified_metric_count ? ' ・ ✓ HO実績' : ''}</small></div><span>{job.employment_type || '雇用形態未設定'}</span><span className="job-row-salary">{salaryLabel(job)}</span><button className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)}><Icon name="heart" size={17} /></button></article>;
+}
+
+function VerifiedWorkplaceSummary({ job, expanded }: { job: Job; expanded: boolean }) {
+  const profile = job.verified_workplace;
+  if (!profile?.verified_metric_count) return null;
+  const entries = verifiedPriority
+    .map((key) => [key, profile.verified_metrics[key]] as const)
+    .filter((entry): entry is readonly [string, VerifiedWorkplaceMetric] => Boolean(entry[1]?.value !== null && entry[1]?.value !== undefined))
+    .slice(0, expanded ? 10 : 4);
+  if (!entries.length) return null;
+  return <section className="verified-workplace" aria-label="Hoiku Office実績データ">
+    <div className="verified-workplace-head"><strong>✓ Hoiku Office 実績</strong><span>情報公開率 {Math.round(Number(profile.transparency_pct || 0))}%</span></div>
+    <div className="verified-metric-grid">{entries.map(([key, metric]) => <div className="verified-metric" key={key}><span>{metric.label}</span><strong>{formatVerifiedMetric(metric)}</strong><small>実績 n={metric.sample_size}</small></div>)}</div>
+    <small className="verified-period">集計期間 {formatMonth(profile.period_start)}〜{formatMonth(profile.period_end)} ・ 園の申告値ではなくHoiku Office実績から自動集計</small>
+  </section>;
 }
 
 function Field({ label, wide, children }: { label: string; wide?: boolean; children: React.ReactNode }) { return <label className={`field ${wide ? 'wide' : ''}`}><span>{label}</span>{children}</label>; }
@@ -256,5 +290,7 @@ function EmptyState({ title, body, action, href }: { title: string; body: string
 function LoadingView() { return <div className="loading-view"><span className="loading-ring" /><strong>読み込んでいます</strong><p>求人・応募情報を確認しています。</p></div>; }
 function csv(value: string) { return value.split(/[,、]/).map((v) => v.trim()).filter(Boolean); }
 function formatDate(value: string) { return new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(value)); }
+function formatMonth(value: string) { const date = new Date(`${value}T00:00:00`); return Number.isNaN(date.getTime()) ? value : `${date.getFullYear()}年${date.getMonth() + 1}月`; }
+function formatVerifiedMetric(metric: VerifiedWorkplaceMetric) { const value = typeof metric.value === 'number' ? Number(metric.value.toFixed(1)) : metric.value; return `${value}${metric.unit || ''}`; }
 function statusLabel(status: string) { return ({ new: '応募済み', applied: '応募済み', reviewing: '書類確認中', screening: '書類確認中', review: '確認中', interview: '面接予定', offered: '内定', offer: '内定', hired: '採用', rejected: '選考終了', withdrawn: '辞退' } as Record<string, string>)[status] || status; }
 function salaryLabel(job: Job) { if (job.salary_note) return job.salary_note; if (job.salary_min && job.salary_max) return `${job.salary_type === 'hourly' ? '時給' : '月給'} ${job.salary_min.toLocaleString()}〜${job.salary_max.toLocaleString()}円`; if (job.salary_min) return `${job.salary_type === 'hourly' ? '時給' : '月給'} ${job.salary_min.toLocaleString()}円〜`; return '給与は求人詳細をご確認ください'; }
