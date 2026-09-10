@@ -5,6 +5,7 @@ import { Icon } from './components/Icon';
 import { ApplicationMessages } from './components/ApplicationMessages';
 import { DocumentVaultPanel } from './components/DocumentVaultPanel';
 import { VisitTrialPanel } from './components/VisitTrialPanel';
+import { VerifiedFinanceSummary } from './components/VerifiedFinanceSummary';
 import {
   getProfile, listApplications, listJobs, listSavedJobIds, saveJob, submitApplication, unsaveJob, upsertProfile,
   type Application, type Job, type JobseekerProfile, type VerifiedWorkplaceMetric,
@@ -181,6 +182,7 @@ function JobsView({ jobs, savedIds, onToggleSaved }: { jobs: Job[]; savedIds: st
   const [prefecture, setPrefecture] = useState('');
   const [employment, setEmployment] = useState('');
   const [verifiedOnly, setVerifiedOnly] = useState(false);
+  const [financeVerifiedOnly, setFinanceVerifiedOnly] = useState(false);
   const prefectures = useMemo(() => [...new Set(jobs.map((j) => j.prefecture).filter(Boolean) as string[])].sort(), [jobs]);
   const employments = useMemo(() => [...new Set(jobs.map((j) => j.employment_type).filter(Boolean) as string[])].sort(), [jobs]);
   const filtered = jobs.filter((job) => {
@@ -189,6 +191,7 @@ function JobsView({ jobs, savedIds, onToggleSaved }: { jobs: Job[]; savedIds: st
     if (prefecture && job.prefecture !== prefecture) return false;
     if (employment && job.employment_type !== employment) return false;
     if (verifiedOnly && !job.verified_workplace?.verified_metric_count) return false;
+    if (financeVerifiedOnly && !job.verified_finance?.verified_metric_count) return false;
     return true;
   });
   return <>
@@ -198,6 +201,7 @@ function JobsView({ jobs, savedIds, onToggleSaved }: { jobs: Job[]; savedIds: st
       <select value={prefecture} onChange={(e) => setPrefecture(e.target.value)}><option value="">すべての都道府県</option>{prefectures.map((p) => <option key={p}>{p}</option>)}</select>
       <select value={employment} onChange={(e) => setEmployment(e.target.value)}><option value="">すべての雇用形態</option>{employments.map((p) => <option key={p}>{p}</option>)}</select>
       <label className="verified-filter"><input type="checkbox" checked={verifiedOnly} onChange={(e) => setVerifiedOnly(e.target.checked)} /><span>HO実績データあり</span></label>
+      <label className="verified-filter"><input type="checkbox" checked={financeVerifiedOnly} onChange={(e) => setFinanceVerifiedOnly(e.target.checked)} /><span>HF実績データあり</span></label>
     </section>
     {filtered.length ? <div className="job-grid">{filtered.map((job) => <JobCard key={job.id} job={job} saved={savedIds.includes(job.id)} onToggleSaved={onToggleSaved} />)}</div> : <EmptyState title="条件に合う求人がありません" body="検索条件を変更して、もう一度探してみてください。" />}
   </>;
@@ -261,9 +265,10 @@ function JobCard({ job, saved, onToggleSaved }: { job: Job; saved: boolean; onTo
   return <article className="job-card">
     <div className="job-card-top"><div className="job-location"><Icon name="map" size={14} /> {job.prefecture || '地域未設定'} {job.city || ''}</div><button className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)} aria-label={saved ? '気になるから削除' : '気になるに保存'}><Icon name="heart" size={18} /></button></div>
     <span className="facility-name">{job.facility_name}</span><h3>{job.title}</h3>
-    <div className="job-tags">{job.employment_type && <span>{job.employment_type}</span>}{job.facility_type && <span>{job.facility_type}</span>}{job.verified_workplace?.verified_metric_count ? <span className="verified-tag">✓ Hoiku Office 実績</span> : null}</div>
+    <div className="job-tags">{job.employment_type && <span>{job.employment_type}</span>}{job.facility_type && <span>{job.facility_type}</span>}{job.verified_workplace?.verified_metric_count ? <span className="verified-tag">✓ Hoiku Office 実績</span> : null}{job.verified_finance?.verified_metric_count ? <span className="finance-verified-tag">✓ Hoiku Finance 実績</span> : null}</div>
     <div className="job-details"><span><Icon name="yen" size={16} /> {salaryLabel(job)}</span>{job.working_hours && <span><Icon name="clock" size={16} /> {job.working_hours}</span>}</div>
     {job.verified_workplace && <VerifiedWorkplaceSummary job={job} expanded={expanded} />}
+    {job.verified_finance && <VerifiedFinanceSummary job={job} expanded={expanded} />}
     <p>{job.description}</p>
     {expanded && <div className="job-details"><span><strong>勤務地</strong> {job.address || `${job.prefecture || ''} ${job.city || ''}`}</span>{job.holidays && <span><strong>休日</strong> {job.holidays}</span>}{job.required_qualification && <span><strong>応募資格</strong> {job.required_qualification}</span>}{job.benefits && <span><strong>待遇</strong> {job.benefits}</span>}<span><strong>募集人数</strong> {job.number_of_positions}名</span></div>}
     {expanded && <VisitTrialPanel jobId={job.id} facilityId={job.facility_id} />}
@@ -273,7 +278,7 @@ function JobCard({ job, saved, onToggleSaved }: { job: Job; saved: boolean; onTo
 }
 
 function JobRow({ job, saved, onToggleSaved }: { job: Job; saved: boolean; onToggleSaved: (id: string) => void }) {
-  return <article className="job-row"><div className="job-row-mark">{job.facility_name.slice(0, 1)}</div><div><strong>{job.title}</strong><small>{job.facility_name} ・ {job.prefecture || ''} {job.city || ''}{job.verified_workplace?.verified_metric_count ? ' ・ ✓ HO実績' : ''}</small></div><span>{job.employment_type || '雇用形態未設定'}</span><span className="job-row-salary">{salaryLabel(job)}</span><button className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)}><Icon name="heart" size={17} /></button></article>;
+  return <article className="job-row"><div className="job-row-mark">{job.facility_name.slice(0, 1)}</div><div><strong>{job.title}</strong><small>{job.facility_name} ・ {job.prefecture || ''} {job.city || ''}{job.verified_workplace?.verified_metric_count ? ' ・ ✓ HO実績' : ''}{job.verified_finance?.verified_metric_count ? ' ・ ✓ HF実績' : ''}</small></div><span>{job.employment_type || '雇用形態未設定'}</span><span className="job-row-salary">{salaryLabel(job)}</span><button className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)}><Icon name="heart" size={17} /></button></article>;
 }
 
 function VerifiedWorkplaceSummary({ job, expanded }: { job: Job; expanded: boolean }) {
