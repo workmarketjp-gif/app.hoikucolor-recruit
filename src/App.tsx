@@ -4,6 +4,7 @@ import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
 import { ApplicationMessages } from './components/ApplicationMessages';
 import { DocumentVaultPanel } from './components/DocumentVaultPanel';
+import { VisitTrialPanel } from './components/VisitTrialPanel';
 import {
   getProfile, listApplications, listJobs, listSavedJobIds, saveJob, submitApplication, unsaveJob, upsertProfile,
   type Application, type Job, type JobseekerProfile, type VerifiedWorkplaceMetric,
@@ -265,6 +266,7 @@ function JobCard({ job, saved, onToggleSaved }: { job: Job; saved: boolean; onTo
     {job.verified_workplace && <VerifiedWorkplaceSummary job={job} expanded={expanded} />}
     <p>{job.description}</p>
     {expanded && <div className="job-details"><span><strong>勤務地</strong> {job.address || `${job.prefecture || ''} ${job.city || ''}`}</span>{job.holidays && <span><strong>休日</strong> {job.holidays}</span>}{job.required_qualification && <span><strong>応募資格</strong> {job.required_qualification}</span>}{job.benefits && <span><strong>待遇</strong> {job.benefits}</span>}<span><strong>募集人数</strong> {job.number_of_positions}名</span></div>}
+    {expanded && <VisitTrialPanel jobId={job.id} facilityId={job.facility_id} />}
     {applyError && <span className="form-error">{applyError}</span>}
     <div className="job-card-actions"><button className="secondary-button" type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? '詳細を閉じる' : '詳しく見る'}</button><button className="primary-button" type="button" onClick={apply} disabled={applying}>{applying ? '応募中…' : '応募する'} <Icon name="arrow" size={15} /></button></div>
   </article>;
