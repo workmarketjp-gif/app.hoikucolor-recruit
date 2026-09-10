@@ -8,6 +8,7 @@ import {
   type VisitReservation,
   type VisitSettings,
 } from '../lib/visitRepository';
+import './VisitTrialPanel.css';
 
 const typeLabels: Record<VisitExperienceType, string> = {
   visit: '園見学',
