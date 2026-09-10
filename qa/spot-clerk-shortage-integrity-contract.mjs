@@ -9,6 +9,7 @@ const clerk = read('20260911112000_hc_spot_clerk_identity_boundary.sql')
 const compat = read('20260911112500_ho_shift_shortage_class_compat.sql')
 const mapping = read('20260911113000_hc_spot_shift_age_group_mapping.sql')
 const resolution = read('20260911113500_hc_spot_shortage_resolution_on_confirm.sql')
+const boundary = read('20260911114000_hc_spot_private_impl_execution_boundary.sql')
 
 const checks = [
   ['canonical confirmation uses Clerk subject helper', /v_actor text := ho_private\.current_clerk_user_id\(\)/i, clerk],
@@ -19,6 +20,7 @@ const checks = [
   ['spot shift maps class label to numeric age group', /\^\[0-5\]歳/i, mapping],
   ['spot confirmation decrements shortage immediately', /shortage_count = greatest\(coalesce\(ss\.shortage_count, 0\) - 1, 0\)/i, resolution],
   ['spot confirmation resolves filled shortage', /status = case when coalesce\(ss\.shortage_count, 0\) <= 1 then 'resolved'/i, resolution],
+  ['private implementation is revoked from app roles', /revoke all on function ho_private\.hc_confirm_spot_assignment_impl\(uuid, uuid, integer\)[\s\S]*?from public, anon, authenticated/i, boundary],
 ]
 
 for (const [label, pattern, source, invert = false] of checks) {
