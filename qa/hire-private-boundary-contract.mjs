@@ -30,11 +30,17 @@ for (const marker of required) {
   }
 }
 
-if (/grant execute on function ho_private\.hc_hire_application_impl[\s\S]*to[^;]*authenticated/i.test(migration)) {
-  throw new Error('Authenticated must never receive EXECUTE on raw hire implementation.');
+const rawImplGrant = migration.match(
+  /grant execute on function ho_private\.hc_hire_application_impl\([\s\S]*?;/i,
+)?.[0] ?? '';
+if (!rawImplGrant || /\bauthenticated\b/i.test(rawImplGrant) || /\bservice_role\b/i.test(rawImplGrant) || /\banon\b/i.test(rawImplGrant)) {
+  throw new Error('Raw hire implementation must be executable only by postgres.');
 }
 
-if (/grant execute on function public\.hc_hire_application[\s\S]*to[^;]*anon/i.test(migration)) {
+const publicWrapperGrant = migration.match(
+  /grant execute on function public\.hc_hire_application\([\s\S]*?;/i,
+)?.[0] ?? '';
+if (!publicWrapperGrant || /\banon\b/i.test(publicWrapperGrant)) {
   throw new Error('Anonymous users must never receive EXECUTE on hire RPC.');
 }
 
