@@ -1,5 +1,26 @@
 import { supabase } from './supabase';
 
+export type VerifiedWorkplaceMetric = {
+  value: number | string | null;
+  label: string;
+  unit: string | null;
+  source: 'ho_verified';
+  sample_size: number;
+};
+
+export type VerifiedWorkplaceProfile = {
+  facility_id: string;
+  generated_at: string;
+  period_start: string;
+  period_end: string;
+  methodology_version: string;
+  verified_metrics: Record<string, VerifiedWorkplaceMetric>;
+  verified_metric_count: number;
+  quality_points: number;
+  transparency_pct: number;
+  updated_at: string;
+};
+
 export type Job = {
   id: string;
   facility_id: string;
@@ -22,6 +43,7 @@ export type Job = {
   number_of_positions: number;
   published_at: string | null;
   closing_at: string | null;
+  verified_workplace: VerifiedWorkplaceProfile | null;
 };
 
 export type Application = {
@@ -55,13 +77,42 @@ function client() {
   return supabase;
 }
 
+function publishedAtEpoch(value: string | null) {
+  if (!value) return 0;
+  const epoch = Date.parse(value);
+  return Number.isFinite(epoch) ? epoch : 0;
+}
+
 export async function listJobs(): Promise<Job[]> {
   const { data, error } = await client()
     .from('hc_jobseeker_job_feed')
     .select('*')
     .order('published_at', { ascending: false, nullsFirst: false });
   if (error) throw error;
-  return (data || []) as Job[];
+
+  const rawJobs = (data || []) as Omit<Job, 'verified_workplace'>[];
+  const facilityIds = [...new Set(rawJobs.map((job) => job.facility_id).filter(Boolean))];
+  if (!facilityIds.length) return rawJobs.map((job) => ({ ...job, verified_workplace: null }));
+
+  const profileResult = await client()
+    .from('hc_public_workplace_profiles')
+    .select('facility_id,generated_at,period_start,period_end,methodology_version,verified_metrics,verified_metric_count,quality_points,transparency_pct,updated_at')
+    .in('facility_id', facilityIds);
+  if (profileResult.error) throw profileResult.error;
+
+  const profiles = new Map(
+    ((profileResult.data || []) as VerifiedWorkplaceProfile[]).map((profile) => [profile.facility_id, profile]),
+  );
+
+  return rawJobs
+    .map((job) => ({ ...job, verified_workplace: profiles.get(job.facility_id) || null }))
+    .sort((a, b) => {
+      const qualityDiff = Number(b.verified_workplace?.quality_points || 0) - Number(a.verified_workplace?.quality_points || 0);
+      if (qualityDiff !== 0) return qualityDiff;
+      const transparencyDiff = Number(b.verified_workplace?.transparency_pct || 0) - Number(a.verified_workplace?.transparency_pct || 0);
+      if (transparencyDiff !== 0) return transparencyDiff;
+      return publishedAtEpoch(b.published_at) - publishedAtEpoch(a.published_at);
+    });
 }
 
 export async function listSavedJobIds(): Promise<string[]> {
