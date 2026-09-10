@@ -21,6 +21,27 @@ export type VerifiedWorkplaceProfile = {
   updated_at: string;
 };
 
+export type VerifiedFinanceMetric = {
+  value: number | string | null;
+  label: string;
+  unit: string | null;
+  source: 'hf_verified';
+  sample_size: number;
+};
+
+export type VerifiedFinanceProfile = {
+  facility_id: string;
+  generated_at: string;
+  period_start: string;
+  period_end: string;
+  methodology_version: string;
+  verified_metrics: Record<string, VerifiedFinanceMetric>;
+  verified_metric_count: number;
+  quality_points: number;
+  transparency_pct: number;
+  updated_at: string;
+};
+
 export type Job = {
   id: string;
   facility_id: string;
@@ -44,6 +65,7 @@ export type Job = {
   published_at: string | null;
   closing_at: string | null;
   verified_workplace: VerifiedWorkplaceProfile | null;
+  verified_finance: VerifiedFinanceProfile | null;
 };
 
 export type Application = {
@@ -90,26 +112,42 @@ export async function listJobs(): Promise<Job[]> {
     .order('published_at', { ascending: false, nullsFirst: false });
   if (error) throw error;
 
-  const rawJobs = (data || []) as Omit<Job, 'verified_workplace'>[];
+  const rawJobs = (data || []) as Omit<Job, 'verified_workplace' | 'verified_finance'>[];
   const facilityIds = [...new Set(rawJobs.map((job) => job.facility_id).filter(Boolean))];
-  if (!facilityIds.length) return rawJobs.map((job) => ({ ...job, verified_workplace: null }));
+  if (!facilityIds.length) return rawJobs.map((job) => ({ ...job, verified_workplace: null, verified_finance: null }));
 
-  const profileResult = await client()
-    .from('hc_public_workplace_profiles')
-    .select('facility_id,generated_at,period_start,period_end,methodology_version,verified_metrics,verified_metric_count,quality_points,transparency_pct,updated_at')
-    .in('facility_id', facilityIds);
-  if (profileResult.error) throw profileResult.error;
+  const [workplaceResult, financeResult] = await Promise.all([
+    client().from('hc_public_workplace_profiles')
+      .select('facility_id,generated_at,period_start,period_end,methodology_version,verified_metrics,verified_metric_count,quality_points,transparency_pct,updated_at')
+      .in('facility_id', facilityIds),
+    client().from('hc_public_finance_profiles')
+      .select('facility_id,generated_at,period_start,period_end,methodology_version,verified_metrics,verified_metric_count,quality_points,transparency_pct,updated_at')
+      .in('facility_id', facilityIds),
+  ]);
+  if (workplaceResult.error) throw workplaceResult.error;
+  if (financeResult.error) throw financeResult.error;
 
-  const profiles = new Map(
-    ((profileResult.data || []) as VerifiedWorkplaceProfile[]).map((profile) => [profile.facility_id, profile]),
+  const workplaceProfiles = new Map(
+    ((workplaceResult.data || []) as VerifiedWorkplaceProfile[]).map((profile) => [profile.facility_id, profile]),
+  );
+  const financeProfiles = new Map(
+    ((financeResult.data || []) as VerifiedFinanceProfile[]).map((profile) => [profile.facility_id, profile]),
   );
 
   return rawJobs
-    .map((job) => ({ ...job, verified_workplace: profiles.get(job.facility_id) || null }))
+    .map((job) => ({
+      ...job,
+      verified_workplace: workplaceProfiles.get(job.facility_id) || null,
+      verified_finance: financeProfiles.get(job.facility_id) || null,
+    }))
     .sort((a, b) => {
-      const qualityDiff = Number(b.verified_workplace?.quality_points || 0) - Number(a.verified_workplace?.quality_points || 0);
+      const qualityA = Number(a.verified_workplace?.quality_points || 0) + Number(a.verified_finance?.quality_points || 0);
+      const qualityB = Number(b.verified_workplace?.quality_points || 0) + Number(b.verified_finance?.quality_points || 0);
+      const qualityDiff = qualityB - qualityA;
       if (qualityDiff !== 0) return qualityDiff;
-      const transparencyDiff = Number(b.verified_workplace?.transparency_pct || 0) - Number(a.verified_workplace?.transparency_pct || 0);
+      const transparencyA = Number(a.verified_workplace?.transparency_pct || 0) + Number(a.verified_finance?.transparency_pct || 0);
+      const transparencyB = Number(b.verified_workplace?.transparency_pct || 0) + Number(b.verified_finance?.transparency_pct || 0);
+      const transparencyDiff = transparencyB - transparencyA;
       if (transparencyDiff !== 0) return transparencyDiff;
       return publishedAtEpoch(b.published_at) - publishedAtEpoch(a.published_at);
     });

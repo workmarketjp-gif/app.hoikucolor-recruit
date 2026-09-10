@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run test:document-vault && npm run test:visit-trial && tsc -b && vite build",
+    "build": "npm run test:document-vault && npm run test:visit-trial && npm run test:verified-finance-ranking && tsc -b && vite build",
     "preview": "vite preview",
     "test:document-vault": "node qa/document-vault-contract.mjs",
-    "test:visit-trial": "node qa/visit-trial-contract.mjs"
+    "test:visit-trial": "node qa/visit-trial-contract.mjs",
+    "test:verified-finance-ranking": "node qa/verified-finance-ranking-contract.mjs"
   },
   "dependencies": {
     "@clerk/react": "^6.11.3",
