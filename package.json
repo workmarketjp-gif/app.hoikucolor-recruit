@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run test:document-vault && npm run test:visit-trial && npm run test:verified-finance-ranking && npm run test:verified-finance-display && npm run test:spot-job-bridge && npm run test:spot-break-canonical && npm run test:spot-clerk-shortage-integrity && npm run test:job-rpc-security && npm run test:document-handoff-security && npm run test:legacy-market-import-security && npm run test:notification-email-rpc-security && npm run test:diagnostic-contract-security && npm run test:hire-private-boundary && tsc -b && vite build",
+    "build": "npm run test:document-vault && npm run test:document-vault-handoff-compatibility && npm run test:visit-trial && npm run test:verified-finance-ranking && npm run test:verified-finance-display && npm run test:spot-job-bridge && npm run test:spot-break-canonical && npm run test:spot-clerk-shortage-integrity && npm run test:job-rpc-security && npm run test:document-handoff-security && npm run test:legacy-market-import-security && npm run test:notification-email-rpc-security && npm run test:diagnostic-contract-security && npm run test:hire-private-boundary && tsc -b && vite build",
     "preview": "vite preview",
     "test:document-vault": "node qa/document-vault-contract.mjs",
+    "test:document-vault-handoff-compatibility": "node qa/document-vault-handoff-compatibility-contract.mjs",
     "test:visit-trial": "node qa/visit-trial-contract.mjs",
     "test:verified-finance-ranking": "node qa/verified-finance-ranking-contract.mjs",
     "test:verified-finance-display": "node qa/verified-finance-display-contract.mjs",
