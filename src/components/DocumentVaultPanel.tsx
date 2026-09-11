@@ -107,12 +107,12 @@ export function DocumentVaultPanel() {
         <select value={documentType} onChange={(e) => setDocumentType(e.target.value as JobseekerDocumentType)} style={{ minHeight: 44, flex: '1 1 190px' }}>
           {Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
-        <input ref={fileRef} type="file" accept="application/pdf,image/jpeg,image/png,image/gif,image/webp" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void upload(file); }} />
+        <input ref={fileRef} type="file" accept="application/pdf,image/jpeg,image/png" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void upload(file); }} />
         <button className="secondary-button" type="button" disabled={busy} onClick={() => fileRef.current?.click()}>
           <Icon name="upload" size={16} /> {busy ? '処理中…' : '書類を追加'}
         </button>
       </div>
-      <small>PDF・画像（JPEG / PNG / GIF / WebP）、1ファイル10MBまで。各種類の「応募時に使う」を1件選べます。</small>
+      <small>PDF・画像（JPEG / PNG）、1ファイル10MBまで。Hoiku Officeへの採用書類連携に対応する形式だけを保存できます。各種類の「応募時に使う」を1件選べます。</small>
       {error && <span className="form-error">{error}</span>}
       {notice && <span className="form-success">{notice}</span>}
       {loading ? <div className="empty-state"><p>応募書類を読み込んでいます。</p></div> : documents.length ? (

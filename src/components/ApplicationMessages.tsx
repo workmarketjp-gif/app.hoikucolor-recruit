@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { listApplicationMessages, sendApplicationMessage, type Message } from '../lib/messageRepository';
 import {
   attachJobseekerDocumentToApplication,
-  listAttachedJobseekerDocumentIds,
+  createAttachedApplicationDocumentSignedUrl,
   listJobseekerDocuments,
+  listSubmittedApplicationDocuments,
+  type AttachedApplicationDocument,
   type JobseekerDocument,
 } from '../lib/documentVaultRepository';
 
@@ -19,6 +21,7 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [documents, setDocuments] = useState<JobseekerDocument[]>([]);
+  const [submittedDocuments, setSubmittedDocuments] = useState<AttachedApplicationDocument[]>([]);
   const [attachedIds, setAttachedIds] = useState<string[]>([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,12 +44,15 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
 
   const loadDocuments = async () => {
     try {
-      const [saved, attached] = await Promise.all([
+      const [saved, submitted] = await Promise.all([
         listJobseekerDocuments(),
-        listAttachedJobseekerDocumentIds(applicationId),
+        listSubmittedApplicationDocuments(applicationId),
       ]);
       setDocuments(saved);
-      setAttachedIds(attached);
+      setSubmittedDocuments(submitted);
+      setAttachedIds(submitted
+        .map((document) => document.source_jobseeker_document_id)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0));
     } catch (err) {
       setError(err instanceof Error ? err.message : '応募書類を読み込めませんでした。');
     }
@@ -80,12 +86,22 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
     setDocumentNotice(null);
     try {
       await attachJobseekerDocumentToApplication(document, applicationId);
-      setAttachedIds((current) => [...new Set([...current, document.id])]);
+      await loadDocuments();
       setDocumentNotice(`${documentLabels[document.document_type] || '書類'}をこの応募先へ提出しました。`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '応募書類を提出できませんでした。');
     } finally {
       setDocumentBusyId(null);
+    }
+  };
+
+  const openSubmittedDocument = async (document: AttachedApplicationDocument) => {
+    setError(null);
+    try {
+      const url = await createAttachedApplicationDocumentSignedUrl(document);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '提出済み書類を開けませんでした。');
     }
   };
 
@@ -128,6 +144,18 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
             </div>;
           })}
         </div> : <small>保存済みの書類はありません。プロフィールの「応募書類」から履歴書や保育士証を一度保存すると、次の応募でも再利用できます。</small>}
+
+        {submittedDocuments.length ? <div style={{ display: 'grid', gap: 8, marginTop: 14, paddingTop: 12, borderTop: '1px dashed var(--border, #e7e7ea)' }}>
+          <strong style={{ fontSize: 12 }}>この応募へ提出済み</strong>
+          {submittedDocuments.map((document) => <div key={document.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
+            <span style={{ display: 'grid', minWidth: 0, flex: '1 1 190px' }}>
+              <strong style={{ fontSize: 12 }}>{documentLabels[document.document_type] || '書類'}</strong>
+              <small style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{document.title}</small>
+            </span>
+            <button className="secondary-button" type="button" onClick={() => void openSubmittedDocument(document)}>開く</button>
+          </div>)}
+          <small>提出済みコピーは書類庫の元ファイルを削除しても、この応募の記録として保持されます。</small>
+        </div> : null}
       </section>
 
       <label style={{ display: 'grid', gap: 6 }}>

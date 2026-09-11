@@ -42,8 +42,6 @@ const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
   'image/jpeg',
   'image/png',
-  'image/gif',
-  'image/webp',
 ]);
 
 export const documentVaultBackendEnabled = hasSupabaseConfig;
@@ -69,12 +67,14 @@ function assertUploadable(file: File) {
     throw new Error('書類は10MB以下のファイルを選択してください。');
   }
   if (!ALLOWED_MIME_TYPES.has(file.type)) {
-    throw new Error('PDF、JPEG、PNG、GIF、WebPのみ保存できます。');
+    throw new Error('PDF、JPEG、PNGのみ保存できます。');
   }
 }
 
 const documentColumns =
   'id,jobseeker_clerk_user_id,document_type,title,file_path,mime_type,file_size,is_default,uploaded_at,created_at,updated_at';
+const applicationDocumentColumns =
+  'id,organization_id,facility_id,application_id,document_type,title,file_path,mime_type,file_size,source_jobseeker_document_id,uploaded_by_clerk_user_id,uploaded_at';
 
 export async function listJobseekerDocuments(): Promise<JobseekerDocument[]> {
   const { data, error } = await db()
@@ -177,14 +177,29 @@ export async function deleteJobseekerDocument(document: JobseekerDocument) {
   if (deleteMetadataError) throw deleteMetadataError;
 }
 
-export async function listAttachedJobseekerDocumentIds(applicationId: string): Promise<string[]> {
+export async function listSubmittedApplicationDocuments(applicationId: string): Promise<AttachedApplicationDocument[]> {
   const { data, error } = await db()
     .from('hc_application_documents')
-    .select('source_jobseeker_document_id')
+    .select(applicationDocumentColumns)
     .eq('application_id', applicationId)
-    .not('source_jobseeker_document_id', 'is', null);
+    .order('uploaded_at', { ascending: false });
   if (error) throw error;
-  return (data ?? [])
+  return (data ?? []) as AttachedApplicationDocument[];
+}
+
+export async function createAttachedApplicationDocumentSignedUrl(
+  document: AttachedApplicationDocument,
+  expiresIn = 300,
+) {
+  const { data, error } = await db().storage.from(BUCKET).createSignedUrl(document.file_path, expiresIn);
+  if (error) throw error;
+  if (!data?.signedUrl) throw new Error('提出済み書類を開くURLを作成できませんでした。');
+  return data.signedUrl;
+}
+
+export async function listAttachedJobseekerDocumentIds(applicationId: string): Promise<string[]> {
+  const submitted = await listSubmittedApplicationDocuments(applicationId);
+  return submitted
     .map((row) => row.source_jobseeker_document_id)
     .filter((value): value is string => typeof value === 'string' && value.length > 0);
 }
@@ -195,7 +210,7 @@ export async function attachJobseekerDocumentToApplication(
 ): Promise<AttachedApplicationDocument> {
   const { data: existing, error: existingError } = await db()
     .from('hc_application_documents')
-    .select('id,organization_id,facility_id,application_id,document_type,title,file_path,mime_type,file_size,source_jobseeker_document_id,uploaded_by_clerk_user_id,uploaded_at')
+    .select(applicationDocumentColumns)
     .eq('application_id', applicationId)
     .eq('source_jobseeker_document_id', document.id)
     .maybeSingle();
