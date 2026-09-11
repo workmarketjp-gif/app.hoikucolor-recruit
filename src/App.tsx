@@ -6,6 +6,7 @@ import { ApplicationMessages } from './components/ApplicationMessages';
 import { DocumentVaultPanel } from './components/DocumentVaultPanel';
 import { VisitTrialPanel } from './components/VisitTrialPanel';
 import { VerifiedFinanceSummary } from './components/VerifiedFinanceSummary';
+import { NotificationCenter } from './components/NotificationCenter';
 import {
   getProfile, listApplications, listJobs, listSavedJobIds, saveJob, submitApplication, unsaveJob, upsertProfile,
   type Application, type Job, type JobseekerProfile, type VerifiedWorkplaceMetric,
@@ -135,7 +136,7 @@ export function App() {
           <div className="mobile-brand"><Brand compact /></div>
           <div className="topbar-spacer" />
           <a className="public-link" href={`${publicUrl}/jobs`} target="_blank" rel="noreferrer">求人サイト <Icon name="external" size={14} /></a>
-          <button className="icon-button" aria-label="通知"><Icon name="bell" size={18} /></button>
+          <NotificationCenter onNavigate={(pathname) => navigate(pathToView(pathname))} />
         </header>
 
         <section className="content">
