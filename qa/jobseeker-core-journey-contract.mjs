@@ -6,6 +6,7 @@ const read = (path) => readFileSync(new URL(path, root), 'utf8');
 const app = read('src/App.tsx');
 const main = read('src/main.tsx');
 const repository = read('src/lib/recruitRepository.ts');
+const rankedCatalog = read('supabase/migrations/20260913090000_hc_jobseeker_ranked_catalog_v1.sql');
 const visitRepository = read('src/lib/visitRepository.ts');
 const visitUi = read('src/components/VisitTrialPanel.tsx');
 const transparencyRepository = read('src/lib/jobTransparencyRepository.ts');
@@ -19,9 +20,7 @@ const compareRoute = read('src/CompareRouteRoot.tsx');
 const scoutRoute = read('src/ScoutRouteRoot.tsx');
 
 const requiredRepositoryMarkers = [
-  ".from('hc_jobseeker_job_feed')",
-  ".from('hc_public_workplace_profiles')",
-  ".from('hc_public_finance_profiles')",
+  "rpc('hc_jobseeker_list_ranked_jobs')",
   ".from('hc_saved_jobs')",
   "rpc('hc_jobseeker_submit_application'",
   "rpc('hc_jobseeker_list_applications'",
@@ -30,6 +29,12 @@ const requiredRepositoryMarkers = [
 ];
 for (const marker of requiredRepositoryMarkers) {
   if (!repository.includes(marker)) throw new Error(`Core journey repository contract missing: ${marker}`);
+}
+for (const marker of ['from public.hc_jobseeker_job_feed r', 'hc_public_workplace_profiles', 'hc_public_finance_profiles']) {
+  if (!rankedCatalog.includes(marker)) throw new Error(`Core journey ranked catalog contract missing: ${marker}`);
+}
+if (rankedCatalog.includes('hc_verified_workplace_snapshots') || rankedCatalog.includes('hc_verified_finance_snapshots')) {
+  throw new Error('Core journey ranked catalog must not read raw Verified snapshots.');
 }
 
 if (!app.includes('<VisitTrialPanel jobId={job.id} facilityId={job.facility_id} />')) {
