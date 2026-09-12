@@ -3,6 +3,7 @@ import { ApplicationMessages } from './ApplicationMessages';
 import { Icon } from './Icon';
 import {
   getJobseekerApplicationDetail,
+  respondToInterview,
   type JobseekerApplicationDetail,
   type JobseekerInterview,
   type JobseekerVisit,
@@ -91,7 +92,7 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
           <span><Icon name="clock" size={14} /> 応募日 {formatDate(application.applied_at)}</span>
         </div>
       </div>
-      {upcomingInterview && <div className="next-action-card"><span>NEXT</span><strong>次回の面接</strong><p>{formatDateTime(upcomingInterview.scheduled_at)}</p>{upcomingInterview.location && <small>{upcomingInterview.location}</small>}</div>}
+      {upcomingInterview && <div className="next-action-card"><span>NEXT</span><strong>次回の面接</strong><p>{formatDateTime(upcomingInterview.scheduled_at)}</p>{upcomingInterview.location && <small>{upcomingInterview.location}</small>}{!upcomingInterview.candidate_response_status && <small className="next-action-alert">日時を確認して回答してください</small>}</div>}
     </section>
 
     <section className={`selection-timeline ${terminal ? 'is-terminal' : ''}`} aria-label="選考状況">
@@ -114,7 +115,7 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
 
       <section className="application-detail-card">
         <div className="application-card-head"><div><span className="eyebrow">INTERVIEW</span><h2>面接予定</h2></div><span className="application-count">{interviews.length}件</span></div>
-        {interviews.length ? <div className="application-event-list">{interviews.map((interview) => <InterviewCard interview={interview} key={interview.id} />)}</div> : <p className="application-empty-copy">面接予定はまだ登録されていません。日程が決まるとここに表示されます。</p>}
+        {interviews.length ? <div className="application-event-list">{interviews.map((interview) => <InterviewCard interview={interview} onRespond={onRefresh} key={interview.id} />)}</div> : <p className="application-empty-copy">面接予定はまだ登録されていません。日程が決まるとここに表示されます。</p>}
       </section>
 
       <section className="application-detail-card">
@@ -131,12 +132,52 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
   </>;
 }
 
-function InterviewCard({ interview }: { interview: JobseekerInterview }) {
+function InterviewCard({ interview, onRespond }: { interview: JobseekerInterview; onRespond: () => Promise<void> }) {
   const meetingUrl = safeHttpUrl(interview.meeting_url);
-  return <article className="application-event">
+  const [rescheduleOpen, setRescheduleOpen] = useState(interview.candidate_response_status === 'reschedule_requested');
+  const [message, setMessage] = useState(interview.candidate_response_message || '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canRespond = interview.status === 'scheduled';
+
+  const submit = async (status: 'accepted' | 'reschedule_requested') => {
+    const trimmed = message.trim();
+    if (status === 'reschedule_requested' && !trimmed) {
+      setError('希望日時や都合のよい時間帯を入力してください。');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await respondToInterview(interview.id, status, status === 'reschedule_requested' ? trimmed : null);
+      await onRespond();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '面接日時への回答を送信できませんでした。');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <article className="application-event application-interview-event">
     <div className="application-event-icon"><Icon name="clock" size={17} /></div>
     <div className="application-event-main"><strong>{formatDateTime(interview.scheduled_at)}</strong><span>{interview.duration_minutes}分 ・ {interviewStatusLabel(interview.status)}</span>{interview.location && <small><Icon name="map" size={12} /> {interview.location}</small>}</div>
-    {meetingUrl && <a className="secondary-button" href={meetingUrl} target="_blank" rel="noreferrer">オンライン面接 <Icon name="external" size={13} /></a>}
+    <div className="application-event-actions">{meetingUrl && <a className="secondary-button" href={meetingUrl} target="_blank" rel="noreferrer">オンライン面接 <Icon name="external" size={13} /></a>}</div>
+    <div className="interview-response-panel">
+      {interview.candidate_response_status === 'accepted' && <div className="interview-response-status is-accepted"><strong>✓ この日時で参加すると回答済み</strong>{interview.candidate_responded_at && <small>{formatDateTime(interview.candidate_responded_at)} 回答</small>}</div>}
+      {interview.candidate_response_status === 'reschedule_requested' && <div className="interview-response-status is-reschedule"><strong>日程変更を希望済み</strong>{interview.candidate_response_message && <p>{interview.candidate_response_message}</p>}{interview.candidate_responded_at && <small>{formatDateTime(interview.candidate_responded_at)} 回答</small>}</div>}
+
+      {canRespond && <div className="interview-response-actions">
+        {interview.candidate_response_status !== 'accepted' && <button className="primary-button" type="button" disabled={busy} onClick={() => void submit('accepted')}>{busy ? '送信中…' : 'この日時でOK'}</button>}
+        <button className="secondary-button" type="button" disabled={busy} onClick={() => { setRescheduleOpen((current) => !current); setError(null); }}>{rescheduleOpen ? '日程変更を閉じる' : '日程変更を希望'}</button>
+      </div>}
+
+      {canRespond && rescheduleOpen && <div className="interview-reschedule-form">
+        <label><span>希望日時・都合のよい時間帯</span><textarea rows={3} maxLength={1000} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="例：平日18時以降、または土曜日の午前中を希望します。" /></label>
+        <div><small>{message.length}/1000</small><button className="primary-button" type="button" disabled={busy || !message.trim()} onClick={() => void submit('reschedule_requested')}>{busy ? '送信中…' : '日程変更を送信'}</button></div>
+      </div>}
+      {error && <p className="interview-response-error" role="alert">{error}</p>}
+      {!canRespond && interview.candidate_response_status && <small className="interview-response-closed">面接の状態が更新されたため、回答の変更はできません。</small>}
+    </div>
   </article>;
 }
 
