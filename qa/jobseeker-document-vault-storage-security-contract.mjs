@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 const root = new URL('../', import.meta.url);
 const repository = readFileSync(new URL('src/lib/documentVaultRepository.ts', root), 'utf8');
 const vaultMigration = readFileSync(new URL('supabase/migrations/20260911010500_hc_jobseeker_reusable_document_vault.sql', root), 'utf8');
-const aclMigration = readFileSync(new URL('supabase/migrations/20260913030000_hc_jobseeker_document_storage_policy_acl_v1.sql', root), 'utf8');
+const storageHardeningMigration = readFileSync(new URL('supabase/migrations/20260913030000_hc_jobseeker_document_storage_policy_acl_v1.sql', root), 'utf8');
 const privilegeMigration = readFileSync(new URL('supabase/migrations/20260913030500_hc_jobseeker_document_table_privilege_hardening_v1.sql', root), 'utf8');
 
 const repositoryMarkers = [
@@ -28,23 +28,25 @@ if (repository.includes('upsert: true')) throw new Error('Document vault must no
 const vaultMarkers = [
   'alter table public.hc_jobseeker_documents enable row level security',
   "jobseeker_clerk_user_id = nullif(auth.jwt()->>'sub','')",
-  "parts[1] = 'jobseekers'",
-  "parts[2] = v_current_user",
-  "parts[4] like 'vault-%'",
-  "bucket_id = 'hc-application-documents'",
 ];
 for (const marker of vaultMarkers) {
   if (!vaultMigration.toLowerCase().includes(marker.toLowerCase())) throw new Error(`Document vault RLS contract missing: ${marker}`);
 }
 
-const aclMarkers = [
+const storageHardeningMarkers = [
+  "parts[1] = 'jobseekers'",
+  'parts[2] = v_current_user',
+  "parts[4] like 'vault-%'",
+  "d.file_path = object_name",
+  "o.bucket_id = 'hc-application-documents'",
+  'o.name = object_name',
   'revoke all on function ho_private.color_application_document_object_can_read(text) from public, anon',
   'revoke all on function ho_private.color_application_document_object_can_write(text) from public, anon',
   'grant execute on function ho_private.color_application_document_object_can_read(text) to authenticated',
   'grant execute on function ho_private.color_application_document_object_can_write(text) to authenticated',
 ];
-for (const marker of aclMarkers) {
-  if (!aclMigration.toLowerCase().includes(marker.toLowerCase())) throw new Error(`Document vault Storage predicate ACL missing: ${marker}`);
+for (const marker of storageHardeningMarkers) {
+  if (!storageHardeningMigration.toLowerCase().includes(marker.toLowerCase())) throw new Error(`Document vault Storage hardening contract missing: ${marker}`);
 }
 
 const hardeningMarkers = [
