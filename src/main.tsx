@@ -4,9 +4,11 @@ import { AttentionSummaryEnhancer } from './components/AttentionSummaryEnhancer'
 import { CompareNavigationEnhancer } from './components/CompareNavigationEnhancer';
 import { ExternalJobReturnEnhancer } from './components/ExternalJobReturnEnhancer';
 import { MatchNavigationEnhancer } from './components/MatchNavigationEnhancer';
+import { RankingDisclosureEnhancer } from './components/RankingDisclosureEnhancer';
 import { ScoutNavigationEnhancer } from './components/ScoutNavigationEnhancer';
 import './styles.css';
 import './verified-workplace.css';
+import './mobile-hardening.css';
 
 const AppRoot = lazy(() => import('./AppRoot').then((module) => ({ default: module.AppRoot })));
 const CompareRouteRoot = lazy(() => import('./CompareRouteRoot').then((module) => ({ default: module.CompareRouteRoot })));
@@ -28,6 +30,7 @@ createRoot(document.getElementById('root')!).render(
       <CompareNavigationEnhancer />
       <ScoutNavigationEnhancer />
       <AttentionSummaryEnhancer />
+      <RankingDisclosureEnhancer />
     </>
   </StrictMode>,
 );
