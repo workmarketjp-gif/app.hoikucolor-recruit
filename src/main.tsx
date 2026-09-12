@@ -1,6 +1,7 @@
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CompareNavigationEnhancer } from './components/CompareNavigationEnhancer';
+import { ExternalJobReturnEnhancer } from './components/ExternalJobReturnEnhancer';
 import { MatchNavigationEnhancer } from './components/MatchNavigationEnhancer';
 import { ScoutNavigationEnhancer } from './components/ScoutNavigationEnhancer';
 import './styles.css';
@@ -21,6 +22,7 @@ createRoot(document.getElementById('root')!).render(
       <Suspense fallback={<div className="centered-state"><span className="loading-ring" /><strong>Hoiku Colorを読み込んでいます</strong></div>}>
         {root}
       </Suspense>
+      <ExternalJobReturnEnhancer />
       <MatchNavigationEnhancer />
       <CompareNavigationEnhancer />
       <ScoutNavigationEnhancer />
