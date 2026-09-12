@@ -84,9 +84,12 @@ export function VisitTrialPanel({ jobId, facilityId }: { jobId: string; facility
   useEffect(() => {
     let active = true;
     setLoading(true);
-    Promise.all([getVisitSettings(facilityId), listMyVisitReservations(jobId)])
+    Promise.all([getVisitSettings(jobId), listMyVisitReservations(jobId)])
       .then(([settingRow, reservationRows]) => {
         if (!active) return;
+        if (settingRow && settingRow.facility_id !== facilityId) {
+          throw new Error('求人と見学・体験設定の施設情報が一致しません。');
+        }
         setSettings(settingRow);
         setReservations(reservationRows);
         const firstType = settingRow ? enabledTypes(settingRow)[0] : undefined;
