@@ -4,6 +4,7 @@ const root = new URL('../', import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), 'utf8');
 
 const app = read('src/App.tsx');
+const main = read('src/main.tsx');
 const repository = read('src/lib/recruitRepository.ts');
 const visitRepository = read('src/lib/visitRepository.ts');
 const visitUi = read('src/components/VisitTrialPanel.tsx');
@@ -31,13 +32,11 @@ for (const marker of requiredRepositoryMarkers) {
   if (!repository.includes(marker)) throw new Error(`Core journey repository contract missing: ${marker}`);
 }
 
-const appMarkers = [
-  '<VisitTrialPanel jobId={job.id} facilityId={job.facility_id} />',
-  '<ExternalJobReturnEnhancer',
-  '<AttentionSummaryEnhancer',
-];
-for (const marker of appMarkers) {
-  if (!app.includes(marker)) throw new Error(`Core journey app wiring missing: ${marker}`);
+if (!app.includes('<VisitTrialPanel jobId={job.id} facilityId={job.facility_id} />')) {
+  throw new Error('Core journey app wiring missing: VisitTrialPanel');
+}
+for (const marker of ['<ExternalJobReturnEnhancer />', '<AttentionSummaryEnhancer />']) {
+  if (!main.includes(marker)) throw new Error(`Core journey root wiring missing: ${marker}`);
 }
 
 const visitMarkers = [
