@@ -9,6 +9,7 @@ const mobile = read('src/mobile-hardening.css');
 const ranking = read('src/components/RankingDisclosureEnhancer.tsx');
 const rankingCss = read('src/components/RankingDisclosureEnhancer.css');
 const repo = read('src/lib/recruitRepository.ts');
+const rankedCatalog = read('supabase/migrations/20260913090000_hc_jobseeker_ranked_catalog_v1.sql');
 
 const checks = [
   [main.includes("import './mobile-hardening.css';"), 'global mobile hardening must be loaded after the baseline styles'],
@@ -25,9 +26,10 @@ const checks = [
   [ranking.includes('園の申告内容を Verified 実績として扱うことはありません'), 'facility claims must never be presented as Verified ranking evidence'],
   [ranking.includes("if (badge.textContent !== label)"), 'ranking observer must avoid a self-triggering text mutation loop'],
   [rankingCss.includes('@media(max-width:390px)'), 'ranking disclosure must retain a 390px layout'],
-  [repo.includes('quality_points') && repo.includes('transparency_pct') && repo.includes('publishedAtEpoch'), 'organic ranking must preserve Verified quality, transparency, then freshness ordering'],
-  [repo.includes("from('hc_public_workplace_profiles')") && repo.includes("from('hc_public_finance_profiles')"), 'organic ranking must use candidate-safe public HO/HF profiles'],
-  [!repo.includes("from('hc_verified_workplace_snapshots')") && !repo.includes("from('hc_verified_finance_snapshots')"), 'jobseeker ranking must never read raw Verified snapshots'],
+  [repo.includes('quality_points') && repo.includes('transparency_pct') && repo.includes('publishedAtEpoch'), 'organic ranking fallback must preserve Verified quality, transparency, then freshness ordering'],
+  [repo.includes("rpc('hc_jobseeker_list_ranked_jobs')"), 'jobseeker catalog must use the candidate-safe ranked catalog RPC'],
+  [rankedCatalog.includes('hc_public_workplace_profiles') && rankedCatalog.includes('hc_public_finance_profiles'), 'ranked catalog must enrich only from candidate-safe public HO/HF profiles'],
+  [!rankedCatalog.includes('hc_verified_workplace_snapshots') && !rankedCatalog.includes('hc_verified_finance_snapshots'), 'ranked catalog must never read raw Verified snapshots'],
 ];
 
 const failed = checks.filter(([ok]) => !ok).map(([, message]) => message);
