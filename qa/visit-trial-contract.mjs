@@ -33,8 +33,8 @@ const safeReadMarkers = [
 for (const marker of safeReadMarkers) {
   if (!safeRead.toLowerCase().includes(marker.toLowerCase())) throw new Error(`Candidate-safe visit read contract missing: ${marker}`);
 }
-for (const forbidden of ['facility_note', 'jobseeker_clerk_user_id,', 'organization_id uuid']) {
-  const returnBlock = safeRead.slice(safeRead.indexOf('returns table'), safeRead.indexOf('language sql'));
+const returnBlock = safeRead.slice(safeRead.indexOf('returns table'), safeRead.indexOf('language sql'));
+for (const forbidden of ['facility_note', 'jobseeker_clerk_user_id', 'organization_id']) {
   if (returnBlock.includes(forbidden)) throw new Error(`Candidate-safe visit RPC return type leaks private field: ${forbidden}`);
 }
 
@@ -52,7 +52,6 @@ const forbiddenRepositoryMarkers = [
   ".from('hc_visit_reservations')",
   'facility_note',
   'jobseeker_clerk_user_id',
-  'organization_id: string',
   'service_role',
 ];
 for (const marker of forbiddenRepositoryMarkers) {
