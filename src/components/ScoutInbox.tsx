@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from './Icon';
 import { listJobseekerScouts, respondToJobseekerScout, type JobseekerScout } from '../lib/scoutInboxRepository';
 import './ScoutInbox.css';
@@ -11,10 +11,21 @@ const statusLabels: Record<JobseekerScout['scout_status'], string> = {
   expired: '期限切れ',
 };
 
+const scoutIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function formatDateTime(value: string) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return '';
   return new Intl.DateTimeFormat('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date);
+}
+
+function requestedScoutId() {
+  try {
+    const value = new URLSearchParams(window.location.search).get('scout_id');
+    return value && scoutIdPattern.test(value) ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 export function ScoutInbox() {
@@ -23,21 +34,54 @@ export function ScoutInbox() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [targetScoutId] = useState<string | null>(() => requestedScoutId());
+  const mountedRef = useRef(true);
+  const focusedRef = useRef(false);
   const pendingCount = useMemo(() => items.filter((item) => item.scout_status === 'pending').length, [items]);
 
-  const load = async () => {
-    setLoading(true);
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
     try {
-      setItems(await listJobseekerScouts());
+      const next = await listJobseekerScouts();
+      if (!mountedRef.current) return;
+      setItems(next);
       setError(null);
     } catch (err) {
+      if (!mountedRef.current) return;
       setError(err instanceof Error ? err.message : 'スカウトを読み込めませんでした。');
     } finally {
-      setLoading(false);
+      if (mountedRef.current && !quiet) setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    void load();
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load(true);
+    }, 60_000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void load(true);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      mountedRef.current = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [load]);
+
+  useEffect(() => {
+    if (loading || focusedRef.current || window.location.hash !== '#scout-inbox') return;
+    const targetId = targetScoutId && items.some((item) => item.scout_id === targetScoutId) ? `scout-${targetScoutId}` : 'scout-inbox';
+    const element = document.getElementById(targetId);
+    if (!element) return;
+    focusedRef.current = true;
+    window.setTimeout(() => {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (element instanceof HTMLElement) element.focus({ preventScroll: true });
+    }, 80);
+  }, [items, loading, targetScoutId]);
 
   const respond = async (item: JobseekerScout, decision: 'accepted' | 'declined') => {
     if (busyId) return;
@@ -58,7 +102,7 @@ export function ScoutInbox() {
     }
   };
 
-  return <section className="form-section scout-inbox" id="scout-inbox" aria-labelledby="scout-inbox-heading">
+  return <section className="form-section scout-inbox" id="scout-inbox" tabIndex={-1} aria-labelledby="scout-inbox-heading">
     <div className="form-section-head scout-inbox-head">
       <div><h3 id="scout-inbox-heading">届いた匿名スカウト</h3><p>園には匿名プロフィールだけが共有されています。承諾するまで氏名・メール・電話番号は開示されません。</p></div>
       <span className="scout-inbox-count">回答待ち {pendingCount}件</span>
@@ -69,7 +113,7 @@ export function ScoutInbox() {
     {error && <span className="form-error">{error}</span>}
     {notice && <span className="form-success">{notice}</span>}
     {loading ? <div className="empty-state"><p>スカウトを読み込んでいます。</p></div> : items.length === 0 ? <div className="empty-state"><h3>スカウトはまだ届いていません</h3><p>「匿名スカウトを受け取る」をONにすると、希望条件や保育観を見た園からお誘いが届くことがあります。</p></div> : <div className="scout-inbox-list">
-      {items.map((item) => <article className={`scout-inbox-card status-${item.scout_status}`} key={item.scout_id}>
+      {items.map((item) => <article id={`scout-${item.scout_id}`} tabIndex={-1} className={`scout-inbox-card status-${item.scout_status} ${targetScoutId === item.scout_id ? 'is-targeted' : ''}`} key={item.scout_id}>
         <div className="scout-inbox-card-head"><div><span className={`scout-status status-${item.scout_status}`}>{statusLabels[item.scout_status]}</span><h4>{item.facility_name}</h4><p>{item.organization_name}</p></div><small>{formatDateTime(item.sent_at)}</small></div>
         {(item.job_title || item.employment_type) && <div className="scout-job-line"><Icon name="briefcase" size={15} /><span>{item.job_title || '募集職種'}{item.employment_type ? ` ・ ${item.employment_type}` : ''}</span></div>}
         {item.invitation_message && <p className="scout-message">{item.invitation_message}</p>}
