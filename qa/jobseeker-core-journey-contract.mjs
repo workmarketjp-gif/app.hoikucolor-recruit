@@ -94,13 +94,17 @@ for (const marker of ['application_id', 'interview_id', '/applications', '/scout
 }
 
 for (const marker of [
-  "url.origin !== window.location.origin",
+  'url.origin !== window.location.origin',
   "url.pathname.replace(/\\/$/, '') !== '/jobs'",
-  "sessionStorage.setItem(returnStorageKey",
-  "jobs.findIndex((job) => job.id === jobId)",
+  'sessionStorage.setItem(returnStorageKey',
+  'getRankedJob(jobId)',
+  '`.job-card[data-job-id="${jobId}"]`',
   "detailButton?.click()",
 ]) {
   if (!externalReturn.includes(marker)) throw new Error(`External-job return journey missing: ${marker}`);
+}
+if (!app.includes('targetJobId ? getRankedJob(targetJobId) : Promise.resolve(null)') || !app.includes('data-job-id={job.id}')) {
+  throw new Error('Paginated job list does not preserve exact Google-job return targeting.');
 }
 
 for (const marker of ['compareMatchedJobs', 'matchJob', 'condition_score', '保育観']) {
