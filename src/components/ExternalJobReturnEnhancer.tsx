@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { listJobs } from '../lib/recruitRepository';
+import { getRankedJob } from '../lib/recruitRepository';
 import './ExternalJobReturnEnhancer.css';
 
 const returnStorageKey = 'hc_jobseeker_safe_job_return';
@@ -85,17 +85,15 @@ export function ExternalJobReturnEnhancer() {
 
     const revealTargetJob = async () => {
       try {
-        const jobs = await listJobs();
+        const job = await getRankedJob(jobId);
         if (cancelled) return;
-        const targetIndex = jobs.findIndex((job) => job.id === jobId);
-        if (targetIndex < 0) {
+        if (!job) {
           setNotice('この求人は公開を終了したか、現在は表示できません。求人一覧から最新の募集をご確認ください。');
           return;
         }
 
         const focusCard = () => {
-          const cards = Array.from(document.querySelectorAll<HTMLElement>('.job-card'));
-          const card = cards[targetIndex];
+          const card = document.querySelector<HTMLElement>(`.job-card[data-job-id="${jobId}"]`);
           if (!card) return false;
 
           card.classList.add('hc-deep-linked-job');
@@ -120,7 +118,7 @@ export function ExternalJobReturnEnhancer() {
     };
 
     const stopWaiting = observeUntilResolved(() => {
-      const contentReady = Boolean(document.querySelector('.content .job-list, .content .empty-state'));
+      const contentReady = Boolean(document.querySelector('.content .job-grid, .content .empty-state, .content .loading-view'));
       if (!contentReady) return false;
       void revealTargetJob();
       return true;
