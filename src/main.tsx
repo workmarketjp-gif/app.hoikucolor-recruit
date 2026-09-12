@@ -8,11 +8,8 @@ import { ScoutNavigationEnhancer } from './components/ScoutNavigationEnhancer';
 import './styles.css';
 import './verified-workplace.css';
 
-const root = window.location.pathname.startsWith('/matches')
-  ? <MatchRouteRoot />
-  : window.location.pathname.startsWith('/scouts')
-    ? <ScoutRouteRoot />
-    : <AppRoot />;
+const defaultRoot = window.location.pathname.startsWith('/scouts') ? <ScoutRouteRoot /> : <AppRoot />;
+const root = window.location.pathname.startsWith('/matches') ? <MatchRouteRoot /> : defaultRoot;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
