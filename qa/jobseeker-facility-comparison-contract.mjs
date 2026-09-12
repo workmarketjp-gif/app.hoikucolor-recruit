@@ -14,7 +14,7 @@ function assert(condition, message) {
 }
 
 assert(route.includes('maxComparedJobs = 3'), 'comparison must remain limited to three jobs');
-assert(route.includes('selectedIds.length < 2'), 'comparison table must require at least two selected jobs');
+assert(route.includes('compared.length < 2'), 'comparison table must require at least two selected jobs');
 assert(route.includes("source: 'facility'") && route.includes("source: 'ho_verified'") && route.includes("source: 'hf_verified'"), 'facility-reported and Verified sources must remain distinct');
 assert(route.includes('園掲載') && route.includes('HO Verified') && route.includes('HF Verified'), 'comparison UI must visibly label data provenance');
 assert(route.includes('園の掲載値で補完しません'), 'missing Verified data must not be silently replaced by facility claims');
