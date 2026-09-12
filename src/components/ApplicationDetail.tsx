@@ -15,6 +15,8 @@ type Props = {
   onBack: () => void;
 };
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const steps = [
   { key: 'new', label: '応募' },
   { key: 'reviewing', label: '書類確認' },
@@ -75,6 +77,26 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
   const terminal = application.status === 'rejected' || application.status === 'withdrawn';
   const upcomingInterview = useMemo(() => interviews.find((item) => item.status === 'scheduled') || null, [interviews]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const interviewId = params.get('interview_id');
+    const requestedInterviewId = interviewId && UUID_PATTERN.test(interviewId) && interviews.some((item) => item.id === interviewId) ? interviewId : null;
+    const targetId = window.location.hash === '#application-messages'
+      ? 'application-messages'
+      : requestedInterviewId
+        ? `interview-${requestedInterviewId}`
+        : null;
+    if (!targetId) return;
+
+    const timeoutId = window.setTimeout(() => {
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus({ preventScroll: true });
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [interviews]);
+
   return <>
     <header className="application-detail-heading">
       <button className="application-back" type="button" onClick={onBack}><span aria-hidden="true">←</span> 応募一覧へ</button>
@@ -123,7 +145,7 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
         {visits.length ? <div className="application-event-list">{visits.map((visit) => <VisitCard visit={visit} key={visit.id} />)}</div> : <p className="application-empty-copy">この求人に関連する見学・体験予約はありません。</p>}
       </section>
 
-      <section className="application-detail-card application-communication-card">
+      <section id="application-messages" tabIndex={-1} className="application-detail-card application-communication-card">
         <div className="application-card-head"><div><span className="eyebrow">COMMUNICATION</span><h2>園とのやり取り・提出書類</h2></div></div>
         <p className="application-card-intro">メッセージの確認、履歴書・保育士証などの提出をこの応募ごとに管理できます。</p>
         <ApplicationMessages applicationId={application.id} />
@@ -158,7 +180,7 @@ function InterviewCard({ interview, onRespond }: { interview: JobseekerInterview
     }
   };
 
-  return <article className="application-event application-interview-event">
+  return <article id={`interview-${interview.id}`} tabIndex={-1} className="application-event application-interview-event">
     <div className="application-event-icon"><Icon name="clock" size={17} /></div>
     <div className="application-event-main"><strong>{formatDateTime(interview.scheduled_at)}</strong><span>{interview.duration_minutes}分 ・ {interviewStatusLabel(interview.status)}</span>{interview.location && <small><Icon name="map" size={12} /> {interview.location}</small>}</div>
     <div className="application-event-actions">{meetingUrl && <a className="secondary-button" href={meetingUrl} target="_blank" rel="noreferrer">オンライン面接 <Icon name="external" size={13} /></a>}</div>
