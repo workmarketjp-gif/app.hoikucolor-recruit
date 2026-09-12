@@ -45,8 +45,10 @@ function syncRankingUi() {
       card.prepend(badge);
     }
     const position = index + 1;
-    badge.textContent = `表示順 ${position}`;
-    badge.setAttribute('aria-label', `検索結果の表示順 ${position}番目`);
+    const label = `表示順 ${position}`;
+    const ariaLabel = `検索結果の表示順 ${position}番目`;
+    if (badge.textContent !== label) badge.textContent = label;
+    if (badge.getAttribute('aria-label') !== ariaLabel) badge.setAttribute('aria-label', ariaLabel);
   });
 }
 
