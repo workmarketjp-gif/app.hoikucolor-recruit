@@ -27,17 +27,15 @@ export type VisitSettings = {
 
 export type VisitReservation = {
   id: string;
-  organization_id: string;
   facility_id: string;
   job_id: string;
   application_id: string | null;
-  jobseeker_clerk_user_id: string;
   experience_type: VisitExperienceType;
   starts_at: string;
   ends_at: string;
   status: VisitReservationStatus;
   candidate_message: string | null;
-  facility_note: string | null;
+  facility_message: string | null;
   confirmed_at: string | null;
   cancelled_at: string | null;
   completed_at: string | null;
@@ -61,12 +59,9 @@ export async function getVisitSettings(facilityId: string): Promise<VisitSetting
 }
 
 export async function listMyVisitReservations(jobId?: string): Promise<VisitReservation[]> {
-  let query = client()
-    .from('hc_visit_reservations')
-    .select('id,organization_id,facility_id,job_id,application_id,jobseeker_clerk_user_id,experience_type,starts_at,ends_at,status,candidate_message,facility_note,confirmed_at,cancelled_at,completed_at,created_at,updated_at')
-    .order('starts_at', { ascending: true });
-  if (jobId) query = query.eq('job_id', jobId);
-  const { data, error } = await query;
+  const { data, error } = await client().rpc('hc_list_my_visit_reservations_v2', {
+    p_job_id: jobId || null,
+  });
   if (error) throw error;
   return (data || []) as VisitReservation[];
 }
