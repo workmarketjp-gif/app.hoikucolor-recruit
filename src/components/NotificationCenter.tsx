@@ -9,7 +9,7 @@ import {
 import './NotificationCenter.css';
 
 type Props = {
-  onNavigate: (pathname: string) => void;
+  onNavigate: (target: string) => void;
 };
 
 const ALLOWED_PATHS = new Set(['/', '/jobs', '/saved', '/applications', '/profile']);
@@ -36,6 +36,14 @@ function safePath(linkUrl: string) {
   } catch {
     return '/applications';
   }
+}
+
+function safeTarget(item: JobseekerNotification) {
+  const pathname = safePath(item.link_url);
+  if (pathname === '/applications' && item.application_id) {
+    return `/applications?application_id=${encodeURIComponent(item.application_id)}`;
+  }
+  return pathname;
 }
 
 export function NotificationCenter({ onNavigate }: Props) {
@@ -110,7 +118,7 @@ export function NotificationCenter({ onNavigate }: Props) {
       }
     }
     setOpen(false);
-    onNavigate(safePath(item.link_url));
+    onNavigate(safeTarget(item));
   };
 
   const markAllRead = async () => {
