@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 const enhancer = fs.readFileSync('src/components/ExternalJobReturnEnhancer.tsx', 'utf8');
+const app = fs.readFileSync('src/App.tsx', 'utf8');
 const main = fs.readFileSync('src/main.tsx', 'utf8');
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 
@@ -16,8 +17,10 @@ assert(enhancer.includes("sessionStorage.setItem(returnStorageKey"), 'safe job r
 assert(enhancer.includes("document.querySelector('.hc-auth-page')"), 'direct external job links must only be stored after the unauthenticated screen is confirmed');
 assert(enhancer.includes("document.querySelector('.app-shell')"), 'stored job return must only be consumed after the signed-in app is present');
 assert(enhancer.includes('window.location.replace(storedTarget)'), 'authentication completion must restore the validated job target');
-assert(enhancer.includes("document.querySelectorAll<HTMLElement>('.job-card')"), 'job deep-link must resolve to an actual rendered job card');
-assert(enhancer.includes('jobs.findIndex((job) => job.id === jobId)'), 'job deep-link must match by canonical job UUID');
+assert(enhancer.includes('getRankedJob(jobId)'), 'job deep-link must validate the exact active job without loading the full catalog');
+assert(enhancer.includes('`.job-card[data-job-id="${jobId}"]`'), 'job deep-link must resolve by canonical UUID in the DOM');
+assert(app.includes('data-job-id={job.id}'), 'rendered job cards must expose canonical UUID for safe exact targeting');
+assert(app.includes('targetJobId ? getRankedJob(targetJobId) : Promise.resolve(null)'), 'paginated search must pin a valid exact deep-linked job into the first result view');
 assert(enhancer.includes("button.textContent?.includes('詳しく見る')"), 'target job detail must open automatically');
 assert(enhancer.includes("scrollIntoView({ behavior: 'smooth', block: 'start' })"), 'target job must be brought into view');
 assert(enhancer.includes('この求人は公開を終了したか'), 'expired or unpublished external job links must fail safely');
