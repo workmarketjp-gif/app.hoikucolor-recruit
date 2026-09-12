@@ -2,6 +2,7 @@ import { useUser } from '@clerk/react';
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
 import { ScoutPrivacyPanel } from './ScoutPrivacyPanel';
+import { ProfileMatchingPreferencesPanel } from './ProfileMatchingPreferencesPanel';
 import {
   createJobseekerDocumentSignedUrl,
   deleteJobseekerDocument,
@@ -136,6 +137,7 @@ export function DocumentVaultPanel() {
         ) : <div className="empty-state"><h3>保存した応募書類はまだありません</h3><p>履歴書や保育士証をここに保存すると、応募のたびにアップロードし直す必要がなくなります。</p></div>}
       </div>
     </section>
+    <ProfileMatchingPreferencesPanel />
     <ScoutPrivacyPanel />
   </>;
 }
