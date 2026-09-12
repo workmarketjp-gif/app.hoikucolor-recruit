@@ -1,0 +1,72 @@
+:where(button,a,input,select,textarea):focus-visible{outline:3px solid rgba(251,47,82,.24);outline-offset:2px}
+[id^="interview-"],#application-messages{scroll-margin-top:84px}
+@media(max-width:760px){
+  html,body,#root{max-width:100%;overflow-x:clip}
+  .app-shell,.main-column,.content,.panel,.job-card,.application-panel,.form-section{min-width:0}
+  .topbar{min-height:60px;height:auto;padding-top:max(0px,env(safe-area-inset-top));padding-right:12px;padding-left:12px}
+  .content{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+  .primary-button,.secondary-button,.heart-button,.icon-button,.mobile-menu,.mobile-close{min-height:44px}
+  .heart-button,.icon-button,.mobile-menu,.mobile-close{width:44px;height:44px}
+  .nav-item{min-height:46px}
+  .search-panel select,.keyword-box,.field input{min-height:44px}
+  .verified-filter{min-height:44px;display:flex;align-items:center;gap:8px;padding:0 4px}
+  .verified-filter input{width:18px;height:18px;flex:none}
+  .job-card{padding:16px}
+  .job-details{row-gap:9px}
+  .job-details span{min-width:0;overflow-wrap:anywhere}
+  .job-card>p{min-height:0}
+  .application-row{padding:14px 13px}
+  .application-main,.application-side{min-width:0}
+  .application-main h3,.application-main p,.application-main small,.application-side span{overflow-wrap:anywhere}
+  .profile-form,.form-grid,.field{min-width:0}
+  .form-actions{align-items:stretch;flex-direction:column-reverse}
+  .form-actions .primary-button{width:100%}
+  .compare-table-scroll{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+  .compare-table th,.compare-table td{overflow-wrap:anywhere}
+  .match-job-card,.compare-pick-card{min-width:0}
+  .match-actions button,.compare-pick-card{min-height:44px}
+}
+@media(max-width:460px){
+  .topbar{gap:6px;padding-right:10px;padding-left:10px}
+  .mobile-brand .brand-type strong{font-size:16px}
+  .content{width:calc(100% - 20px)}
+  .page-heading{display:block;margin-bottom:18px}
+  .page-heading h1{font-size:21px;line-height:1.25}
+  .page-heading p{max-width:none;font-size:11px;line-height:1.7}
+  .welcome-card{padding:18px;border-radius:14px}
+  .welcome-card h2{font-size:17px;line-height:1.4}
+  .metric-grid{gap:9px}
+  .metric-card{min-height:112px;padding:15px}
+  .search-panel{gap:9px;padding:11px}
+  .job-card{padding:14px;border-radius:13px}
+  .job-card h3{font-size:16px}
+  .job-card-actions{grid-template-columns:1fr;gap:7px}
+  .job-card-actions .primary-button,.job-card-actions .secondary-button{width:100%}
+  .application-row{display:grid;grid-template-columns:36px minmax(0,1fr);gap:10px}
+  .application-mark{width:36px;height:36px}
+  .application-side{grid-column:2;width:100%;align-items:flex-start}
+  .form-section{padding:16px;border-radius:13px}
+  .empty-state{min-height:220px;padding:28px 18px}
+  .compare-table{min-width:720px}
+  .compare-row-label{width:136px}
+  .compare-table th,.compare-table td{padding:10px 9px}
+  .match-route-content,.compare-route-content{max-width:100%}
+  .match-job-card{padding:14px}
+}
+@media(max-width:390px){
+  .content{width:calc(100% - 18px);padding-top:18px}
+  .topbar{min-height:58px}
+  .mobile-brand .brand-flower{width:27px;height:27px}
+  .mobile-brand .petal{width:12px;height:12px}
+  .mobile-brand .brand-type strong{font-size:15px}
+  .page-heading h1{font-size:20px}
+  .eyebrow{font-size:9px}
+  .job-tags{gap:5px}
+  .job-tags span{padding:5px 7px}
+  .match-actions{grid-template-columns:1fr}
+  .match-score-row{grid-template-columns:1fr}
+  .compare-picker{padding:11px}
+  .compare-source-legend>div{padding:10px}
+  .compare-table{min-width:700px}
+  .compare-row-label{width:132px}
+}
