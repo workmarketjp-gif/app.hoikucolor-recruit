@@ -64,6 +64,7 @@ export type Job = {
   number_of_positions: number;
   published_at: string | null;
   closing_at: string | null;
+  spot_break_minutes?: number | null;
   verified_workplace: VerifiedWorkplaceProfile | null;
   verified_finance: VerifiedFinanceProfile | null;
 };
@@ -147,52 +148,43 @@ function publishedAtEpoch(value: string | null) {
   return Number.isFinite(epoch) ? epoch : 0;
 }
 
-export async function listJobs(): Promise<Job[]> {
-  const { data, error } = await client()
-    .from('hc_jobseeker_job_feed')
-    .select('*')
-    .order('published_at', { ascending: false, nullsFirst: false });
+const JOB_CATALOG_CACHE_MS = 30_000;
+let jobCatalogCache: { expiresAt: number; promise: Promise<Job[]> } | null = null;
+
+async function loadRankedJobs(): Promise<Job[]> {
+  const { data, error } = await client().rpc('hc_jobseeker_list_ranked_jobs');
   if (error) throw error;
 
-  const rawJobs = (data || []) as Omit<Job, 'verified_workplace' | 'verified_finance'>[];
-  const facilityIds = [...new Set(rawJobs.map((job) => job.facility_id).filter(Boolean))];
-  if (!facilityIds.length) return rawJobs.map((job) => ({ ...job, verified_workplace: null, verified_finance: null }));
+  return ((data || []) as Job[]).sort((a, b) => {
+    const qualityA = Number(a.verified_workplace?.quality_points || 0) + Number(a.verified_finance?.quality_points || 0);
+    const qualityB = Number(b.verified_workplace?.quality_points || 0) + Number(b.verified_finance?.quality_points || 0);
+    const qualityDiff = qualityB - qualityA;
+    if (qualityDiff !== 0) return qualityDiff;
+    const transparencyA = Number(a.verified_workplace?.transparency_pct || 0) + Number(a.verified_finance?.transparency_pct || 0);
+    const transparencyB = Number(b.verified_workplace?.transparency_pct || 0) + Number(b.verified_finance?.transparency_pct || 0);
+    const transparencyDiff = transparencyB - transparencyA;
+    if (transparencyDiff !== 0) return transparencyDiff;
+    return publishedAtEpoch(b.published_at) - publishedAtEpoch(a.published_at);
+  });
+}
 
-  const [workplaceResult, financeResult] = await Promise.all([
-    client().from('hc_public_workplace_profiles')
-      .select('facility_id,generated_at,period_start,period_end,methodology_version,verified_metrics,verified_metric_count,quality_points,transparency_pct,updated_at')
-      .in('facility_id', facilityIds),
-    client().from('hc_public_finance_profiles')
-      .select('facility_id,generated_at,period_start,period_end,methodology_version,verified_metrics,verified_metric_count,quality_points,transparency_pct,updated_at')
-      .in('facility_id', facilityIds),
-  ]);
-  if (workplaceResult.error) throw workplaceResult.error;
-  if (financeResult.error) throw financeResult.error;
+export async function listJobs(): Promise<Job[]> {
+  const now = Date.now();
+  if (jobCatalogCache && jobCatalogCache.expiresAt > now) return jobCatalogCache.promise;
 
-  const workplaceProfiles = new Map(
-    ((workplaceResult.data || []) as VerifiedWorkplaceProfile[]).map((profile) => [profile.facility_id, profile]),
-  );
-  const financeProfiles = new Map(
-    ((financeResult.data || []) as VerifiedFinanceProfile[]).map((profile) => [profile.facility_id, profile]),
-  );
+  const promise = loadRankedJobs().catch((error) => {
+    if (jobCatalogCache?.promise === promise) jobCatalogCache = null;
+    throw error;
+  });
+  jobCatalogCache = { expiresAt: now + JOB_CATALOG_CACHE_MS, promise };
+  return promise;
+}
 
-  return rawJobs
-    .map((job) => ({
-      ...job,
-      verified_workplace: workplaceProfiles.get(job.facility_id) || null,
-      verified_finance: financeProfiles.get(job.facility_id) || null,
-    }))
-    .sort((a, b) => {
-      const qualityA = Number(a.verified_workplace?.quality_points || 0) + Number(a.verified_finance?.quality_points || 0);
-      const qualityB = Number(b.verified_workplace?.quality_points || 0) + Number(b.verified_finance?.quality_points || 0);
-      const qualityDiff = qualityB - qualityA;
-      if (qualityDiff !== 0) return qualityDiff;
-      const transparencyA = Number(a.verified_workplace?.transparency_pct || 0) + Number(a.verified_finance?.transparency_pct || 0);
-      const transparencyB = Number(b.verified_workplace?.transparency_pct || 0) + Number(b.verified_finance?.transparency_pct || 0);
-      const transparencyDiff = transparencyB - transparencyA;
-      if (transparencyDiff !== 0) return transparencyDiff;
-      return publishedAtEpoch(b.published_at) - publishedAtEpoch(a.published_at);
-    });
+export async function getRankedJob(jobId: string): Promise<Job | null> {
+  const { data, error } = await client().rpc('hc_jobseeker_get_ranked_job', { p_job_id: jobId });
+  if (error) throw error;
+  const rows = (data || []) as Job[];
+  return rows[0] || null;
 }
 
 export async function listSavedJobIds(): Promise<string[]> {
