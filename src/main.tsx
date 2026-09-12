@@ -1,5 +1,6 @@
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
+import { AttentionSummaryEnhancer } from './components/AttentionSummaryEnhancer';
 import { CompareNavigationEnhancer } from './components/CompareNavigationEnhancer';
 import { ExternalJobReturnEnhancer } from './components/ExternalJobReturnEnhancer';
 import { MatchNavigationEnhancer } from './components/MatchNavigationEnhancer';
@@ -26,6 +27,7 @@ createRoot(document.getElementById('root')!).render(
       <MatchNavigationEnhancer />
       <CompareNavigationEnhancer />
       <ScoutNavigationEnhancer />
+      <AttentionSummaryEnhancer />
     </>
   </StrictMode>,
 );
