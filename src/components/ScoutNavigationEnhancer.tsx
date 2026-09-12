@@ -64,11 +64,9 @@ export function ScoutNavigationEnhancer() {
     const discover = () => {
       scheduled = 0;
       const sideNav = document.querySelector('.side-nav');
-      const existingScoutNav = sideNav?.querySelector<HTMLElement>('a[href="/scouts"], [data-scout-navigation="true"]') || null;
+      const existingScoutNav = sideNav?.querySelector<HTMLElement>(':scope > a[href="/scouts"]') || null;
       let navHost: HTMLElement | null = null;
-      if (sideNav && !existingScoutNav) {
-        navHost = ensureHost(sideNav, 'nav', sideNav.lastElementChild);
-      }
+      if (sideNav && !existingScoutNav) navHost = ensureHost(sideNav, 'nav', sideNav.lastElementChild);
 
       const metricGrid = document.querySelector('.metric-grid');
       let dashboardHost: HTMLElement | null = null;
@@ -76,7 +74,7 @@ export function ScoutNavigationEnhancer() {
 
       const topbar = document.querySelector('.topbar');
       let topbarHost: HTMLElement | null = null;
-      if (topbar && !topbar.querySelector('.scout-topbar-link')) {
+      if (topbar) {
         const notification = topbar.querySelector('.notification-center');
         topbarHost = ensureHost(topbar, 'topbar', notification);
       }
