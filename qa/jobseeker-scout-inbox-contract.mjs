@@ -2,8 +2,10 @@ import fs from 'node:fs';
 
 const migration = fs.readFileSync('supabase/migrations/20260912031500_hc_jobseeker_scout_inbox_v1.sql','utf8');
 const notificationTypeMigration = fs.readFileSync('supabase/migrations/20260912032000_hc_jobseeker_scout_notification_type_v1.sql','utf8');
+const deepLinkMigration = fs.readFileSync('supabase/migrations/20260912041000_hc_jobseeker_scout_deep_link_v1.sql','utf8');
 const repository = fs.readFileSync('src/lib/scoutInboxRepository.ts','utf8');
 const panel = fs.readFileSync('src/components/ScoutInbox.tsx','utf8');
+const notificationCenter = fs.readFileSync('src/components/NotificationCenter.tsx','utf8');
 const vault = fs.readFileSync('src/components/DocumentVaultPanel.tsx','utf8');
 
 function expect(condition,message){ if(!condition) throw new Error(message); }
@@ -19,11 +21,19 @@ expect(migration.includes("s.status='accepted' and s.organization_id=p_organizat
 expect(migration.includes('revoke all on function hc_private.hc_accepted_scout_identity'), 'identity helper must remain private');
 expect(migration.includes("'scout_received'"), 'new scouts must generate a candidate notification');
 expect(notificationTypeMigration.includes("'scout_received'::text"), 'notification type constraint must allow scout_received');
+expect(deepLinkMigration.includes("'/profile?scout_id=' || v_id::text || '#scout-inbox'"), 'new scout notifications must deep-link to the specific scout card');
+expect(deepLinkMigration.includes("event_key ~ '^jobseeker:scout:[0-9a-fA-F-]{36}:received$'"), 'existing scout notification links must only be backfilled from validated event keys');
 expect(repository.includes("rpc('hc_jobseeker_list_scouts')"), 'candidate inbox must use safe list RPC');
 expect(repository.includes("rpc('hc_jobseeker_respond_scout'"), 'candidate response must use safe response RPC');
 expect(panel.includes('承諾する') && panel.includes('辞退する'), 'candidate UI must support accept and decline');
 expect(panel.includes('承諾するまで氏名・メール・電話番号は開示されません'), 'candidate UI must explain consent boundary');
 expect(panel.includes('辞退した場合、氏名・連絡先は園へ共有されません'), 'decline confirmation must explain no identity sharing');
+expect(panel.includes("new URLSearchParams(window.location.search).get('scout_id')"), 'scout inbox must resolve a validated scout_id deep link');
+expect(panel.includes("window.location.hash !== '#scout-inbox'"), 'scout inbox must only auto-focus when the scout inbox anchor was requested');
+expect(panel.includes('scrollIntoView') && panel.includes('is-targeted'), 'notification deep links must focus and visually highlight the target scout');
+expect(panel.includes('setInterval') && panel.includes('visibilitychange'), 'scout inbox must refresh while the signed-in app remains open');
+expect(notificationCenter.includes("item.notification_type === 'scout_received'"), 'notification center must special-case scout deep links');
+expect(notificationCenter.includes("target.includes('#scout-inbox')"), 'notification navigation must preserve the scout anchor instead of dropping it');
 expect(vault.includes('<ScoutInbox />'), 'scout inbox must be reachable from the candidate profile');
 
 console.log('jobseeker scout inbox contract: OK');
