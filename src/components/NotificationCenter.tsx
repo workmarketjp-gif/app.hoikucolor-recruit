@@ -13,6 +13,7 @@ type Props = {
 };
 
 const ALLOWED_PATHS = new Set(['/', '/jobs', '/saved', '/applications', '/profile']);
+const SCOUT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function relativeTime(value: string) {
   const timestamp = new Date(value).getTime();
@@ -28,22 +29,25 @@ function relativeTime(value: string) {
   return new Intl.DateTimeFormat('ja-JP', { month: 'numeric', day: 'numeric' }).format(new Date(timestamp));
 }
 
-function safePath(linkUrl: string) {
+function safeTarget(item: JobseekerNotification) {
   try {
-    const parsed = new URL(linkUrl || '/applications', window.location.origin);
-    if (parsed.origin !== window.location.origin) return '/applications';
-    return ALLOWED_PATHS.has(parsed.pathname) ? parsed.pathname : '/applications';
+    const parsed = new URL(item.link_url || '/applications', window.location.origin);
+    if (parsed.origin !== window.location.origin || !ALLOWED_PATHS.has(parsed.pathname)) return '/applications';
+
+    if (parsed.pathname === '/applications' && item.application_id) {
+      return `/applications?application_id=${encodeURIComponent(item.application_id)}`;
+    }
+
+    if (item.notification_type === 'scout_received' && parsed.pathname === '/profile') {
+      const scoutId = parsed.searchParams.get('scout_id');
+      const query = scoutId && SCOUT_ID_PATTERN.test(scoutId) ? `?scout_id=${encodeURIComponent(scoutId)}` : '';
+      return `/profile${query}#scout-inbox`;
+    }
+
+    return parsed.pathname;
   } catch {
     return '/applications';
   }
-}
-
-function safeTarget(item: JobseekerNotification) {
-  const pathname = safePath(item.link_url);
-  if (pathname === '/applications' && item.application_id) {
-    return `/applications?application_id=${encodeURIComponent(item.application_id)}`;
-  }
-  return pathname;
 }
 
 export function NotificationCenter({ onNavigate }: Props) {
@@ -118,7 +122,12 @@ export function NotificationCenter({ onNavigate }: Props) {
       }
     }
     setOpen(false);
-    onNavigate(safeTarget(item));
+    const target = safeTarget(item);
+    if (target.startsWith('/profile') && target.includes('#scout-inbox')) {
+      window.location.assign(target);
+      return;
+    }
+    onNavigate(target);
   };
 
   const markAllRead = async () => {
