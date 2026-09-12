@@ -117,11 +117,17 @@ export function NotificationCenter({ onNavigate }: Props) {
         void loadScoutCount();
       }
     };
+    const onExternalRefresh = () => {
+      void load(true);
+      void loadScoutCount();
+    };
     document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('hc:notifications-refresh', onExternalRefresh);
     return () => {
       mountedRef.current = false;
       window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('hc:notifications-refresh', onExternalRefresh);
     };
   }, [load, loadScoutCount]);
 
@@ -148,6 +154,7 @@ export function NotificationCenter({ onNavigate }: Props) {
         if (updated) {
           const readAt = new Date().toISOString();
           setItems((current) => current.map((row) => row.id === item.id ? { ...row, read_at: readAt } : row));
+          window.dispatchEvent(new CustomEvent('hc:attention-refresh'));
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : '通知を既読にできませんでした。');
@@ -169,6 +176,7 @@ export function NotificationCenter({ onNavigate }: Props) {
       if (updatedCount > 0) {
         const readAt = new Date().toISOString();
         setItems((current) => current.map((row) => row.read_at ? row : { ...row, read_at: readAt }));
+        window.dispatchEvent(new CustomEvent('hc:attention-refresh'));
       }
       setError(null);
     } catch (err) {
