@@ -69,6 +69,42 @@ export type Job = {
   verified_finance: VerifiedFinanceProfile | null;
 };
 
+export type JobSearchCursor = {
+  quality: number | string;
+  transparency: number | string;
+  publishedAt: string | null;
+  id: string;
+};
+
+export type JobSearchFilters = {
+  keyword?: string;
+  prefecture?: string;
+  employmentType?: string;
+  hoVerifiedOnly?: boolean;
+  hfVerifiedOnly?: boolean;
+  limit?: number;
+  cursor?: JobSearchCursor | null;
+};
+
+export type JobSearchPage = {
+  jobs: Job[];
+  totalCount: number;
+  hasMore: boolean;
+  nextCursor: JobSearchCursor | null;
+};
+
+export type JobSearchFacets = {
+  prefectures: string[];
+  employmentTypes: string[];
+};
+
+type JobSearchRpcRow = Job & {
+  rank_quality: number | string;
+  rank_transparency: number | string;
+  total_count: number | string;
+  has_more: boolean;
+};
+
 export type Application = {
   id: string;
   job_id: string;
@@ -168,6 +204,8 @@ async function loadRankedJobs(): Promise<Job[]> {
   });
 }
 
+// Retained for matching/comparison routes until their ranking algorithms move server-side.
+// The primary dashboard and /jobs route must use paginated candidate-safe search below.
 export async function listJobs(): Promise<Job[]> {
   const now = Date.now();
   if (jobCatalogCache && jobCatalogCache.expiresAt > now) return jobCatalogCache.promise;
@@ -178,6 +216,60 @@ export async function listJobs(): Promise<Job[]> {
   });
   jobCatalogCache = { expiresAt: now + JOB_CATALOG_CACHE_MS, promise };
   return promise;
+}
+
+export async function searchJobs(filters: JobSearchFilters = {}): Promise<JobSearchPage> {
+  const cursor = filters.cursor || null;
+  const limit = Math.max(1, Math.min(filters.limit || 24, 50));
+  const { data, error } = await client().rpc('hc_jobseeker_search_jobs', {
+    p_query: filters.keyword?.trim() || null,
+    p_prefecture: filters.prefecture?.trim() || null,
+    p_employment_type: filters.employmentType?.trim() || null,
+    p_ho_verified: Boolean(filters.hoVerifiedOnly),
+    p_hf_verified: Boolean(filters.hfVerifiedOnly),
+    p_limit: limit,
+    p_after_quality: cursor?.quality ?? null,
+    p_after_transparency: cursor?.transparency ?? null,
+    p_after_published_at: cursor?.publishedAt ?? null,
+    p_after_id: cursor?.id ?? null,
+  });
+  if (error) throw error;
+
+  const rows = (data || []) as JobSearchRpcRow[];
+  const last = rows.at(-1) || null;
+  const hasMore = Boolean(rows[0]?.has_more);
+  const jobs = rows.map(({ rank_quality: _rankQuality, rank_transparency: _rankTransparency, total_count: _totalCount, has_more: _hasMore, ...job }) => job);
+  return {
+    jobs,
+    totalCount: Number(rows[0]?.total_count || 0),
+    hasMore,
+    nextCursor: hasMore && last ? {
+      quality: last.rank_quality,
+      transparency: last.rank_transparency,
+      publishedAt: last.published_at,
+      id: last.id,
+    } : null,
+  };
+}
+
+export async function listFeaturedJobs(limit = 3): Promise<JobSearchPage> {
+  return searchJobs({ limit: Math.max(1, Math.min(limit, 12)) });
+}
+
+export async function getJobSearchFacets(): Promise<JobSearchFacets> {
+  const { data, error } = await client().rpc('hc_jobseeker_job_search_facets');
+  if (error) throw error;
+  const row = (data || [])[0] as { prefectures?: string[] | null; employment_types?: string[] | null } | undefined;
+  return {
+    prefectures: row?.prefectures || [],
+    employmentTypes: row?.employment_types || [],
+  };
+}
+
+export async function listSavedRankedJobs(): Promise<Job[]> {
+  const { data, error } = await client().rpc('hc_jobseeker_list_saved_ranked_jobs');
+  if (error) throw error;
+  return (data || []) as Job[];
 }
 
 export async function getRankedJob(jobId: string): Promise<Job | null> {
