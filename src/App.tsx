@@ -1,5 +1,5 @@
 import { SignOutButton, useUser } from '@clerk/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
 import { ApplicationDetail } from './components/ApplicationDetail';
@@ -8,8 +8,9 @@ import { VisitTrialPanel } from './components/VisitTrialPanel';
 import { VerifiedFinanceSummary } from './components/VerifiedFinanceSummary';
 import { NotificationCenter } from './components/NotificationCenter';
 import {
-  getProfile, listApplications, listJobs, listSavedJobIds, saveJob, submitApplication, unsaveJob, upsertProfile,
-  type Application, type Job, type JobseekerProfile, type VerifiedWorkplaceMetric,
+  getJobSearchFacets, getProfile, listApplications, listFeaturedJobs, listSavedJobIds, listSavedRankedJobs,
+  saveJob, searchJobs, submitApplication, unsaveJob, upsertProfile,
+  type Application, type Job, type JobSearchCursor, type JobseekerProfile, type VerifiedWorkplaceMetric,
 } from './lib/recruitRepository';
 
 type View = 'home' | 'jobs' | 'saved' | 'applications' | 'profile';
@@ -55,6 +56,8 @@ export function App() {
   const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(() => applicationIdFromLocation());
   const [mobileOpen, setMobileOpen] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [publicJobCount, setPublicJobCount] = useState(0);
+  const [savedJobs, setSavedJobs] = useState<Job[]>([]);
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [profile, setProfile] = useState<JobseekerProfile | null>(null);
@@ -74,10 +77,11 @@ export function App() {
     if (!user?.id) return;
     let active = true;
     setLoading(true);
-    Promise.all([listJobs(), listSavedJobIds(), listApplications(), getProfile()])
-      .then(([jobRows, savedRows, applicationRows, profileRow]) => {
+    Promise.all([listFeaturedJobs(3), listSavedRankedJobs(), listSavedJobIds(), listApplications(), getProfile()])
+      .then(([featuredPage, savedJobRows, savedRows, applicationRows, profileRow]) => {
         if (!active) return;
-        setJobs(jobRows); setSavedIds(savedRows); setApplications(applicationRows);
+        setJobs(featuredPage.jobs); setPublicJobCount(featuredPage.totalCount); setSavedJobs(savedJobRows);
+        setSavedIds(savedRows); setApplications(applicationRows);
         setProfile(profileRow || {
           clerk_user_id: user.id,
           email: user.primaryEmailAddress?.emailAddress || null,
@@ -128,16 +132,18 @@ export function App() {
     if (!user?.id) return;
     const wasSaved = savedIds.includes(jobId);
     setSavedIds((prev) => wasSaved ? prev.filter((id) => id !== jobId) : [jobId, ...prev]);
+    if (wasSaved) setSavedJobs((prev) => prev.filter((job) => job.id !== jobId));
     try {
       if (wasSaved) await unsaveJob(jobId); else await saveJob(jobId, user.id);
+      setSavedJobs(await listSavedRankedJobs());
     } catch (err) {
       setSavedIds((prev) => wasSaved ? [jobId, ...prev] : prev.filter((id) => id !== jobId));
+      setSavedJobs(await listSavedRankedJobs().catch(() => savedJobs));
       setError(err instanceof Error ? err.message : '保存状態を更新できませんでした。');
     }
   };
 
   const displayName = profile?.name || user?.firstName || 'ゲスト';
-  const savedJobs = jobs.filter((job) => savedIds.includes(job.id));
 
   return (
     <div className="app-shell">
@@ -180,8 +186,8 @@ export function App() {
           {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError(null)}>閉じる</button></div>}
           {loading ? <LoadingView /> : (
             <>
-              {view === 'home' && <Dashboard name={displayName} jobs={jobs} savedIds={savedIds} applications={applications} onNavigate={navigate} onToggleSaved={toggleSaved} />}
-              {view === 'jobs' && <JobsView jobs={jobs} savedIds={savedIds} onToggleSaved={toggleSaved} />}
+              {view === 'home' && <Dashboard name={displayName} jobs={jobs} publicJobCount={publicJobCount} savedIds={savedIds} applications={applications} onNavigate={navigate} onToggleSaved={toggleSaved} />}
+              {view === 'jobs' && <JobsView savedIds={savedIds} onToggleSaved={toggleSaved} />}
               {view === 'saved' && <SavedView jobs={savedJobs} onToggleSaved={toggleSaved} />}
               {view === 'applications' && (selectedApplicationId ? <ApplicationDetail applicationId={selectedApplicationId} onBack={closeApplication} /> : <ApplicationsView applications={applications} onOpen={openApplication} />)}
               {view === 'profile' && profile && <ProfileView profile={profile} onChange={setProfile} />}
@@ -193,7 +199,7 @@ export function App() {
   );
 }
 
-function Dashboard({ name, jobs, savedIds, applications, onNavigate, onToggleSaved }: { name: string; jobs: Job[]; savedIds: string[]; applications: Application[]; onNavigate: (v: View) => void; onToggleSaved: (id: string) => void }) {
+function Dashboard({ name, jobs, publicJobCount, savedIds, applications, onNavigate, onToggleSaved }: { name: string; jobs: Job[]; publicJobCount: number; savedIds: string[]; applications: Application[]; onNavigate: (v: View) => void; onToggleSaved: (id: string) => void }) {
   const latest = jobs.slice(0, 3);
   const inProgress = applications.filter((a) => !['rejected', 'withdrawn', 'hired'].includes(a.status)).length;
   return <>
@@ -206,34 +212,81 @@ function Dashboard({ name, jobs, savedIds, applications, onNavigate, onToggleSav
       <button className="metric-card" onClick={() => onNavigate('saved')}><span className="metric-icon"><Icon name="heart" /></span><span>気になる求人</span><strong>{savedIds.length}<small>件</small></strong><p>保存した求人を比較</p></button>
       <button className="metric-card" onClick={() => onNavigate('applications')}><span className="metric-icon"><Icon name="briefcase" /></span><span>応募履歴</span><strong>{applications.length}<small>件</small></strong><p>これまでの応募</p></button>
       <button className="metric-card" onClick={() => onNavigate('applications')}><span className="metric-icon"><Icon name="clock" /></span><span>選考中</span><strong>{inProgress}<small>件</small></strong><p>現在進んでいる選考</p></button>
-      <button className="metric-card" onClick={() => onNavigate('jobs')}><span className="metric-icon"><Icon name="sparkles" /></span><span>公開求人</span><strong>{jobs.length}<small>件</small></strong><p>現在掲載中</p></button>
+      <button className="metric-card" onClick={() => onNavigate('jobs')}><span className="metric-icon"><Icon name="sparkles" /></span><span>公開求人</span><strong>{publicJobCount}<small>件</small></strong><p>現在掲載中</p></button>
     </div>
     <section className="panel">
-      <div className="panel-head"><div><span className="eyebrow">NEW JOBS</span><h3>新着求人</h3></div><button onClick={() => onNavigate('jobs')}>すべて見る <Icon name="chevron" size={14} /></button></div>
-      {latest.length ? <div className="job-list compact">{latest.map((job) => <JobRow key={job.id} job={job} saved={savedIds.includes(job.id)} onToggleSaved={onToggleSaved} />)}</div> : <EmptyState title="公開中の求人はまだありません" body="園から求人が公開されると、ここに新着求人が表示されます。" />}
+      <div className="panel-head"><div><span className="eyebrow">NEW JOBS</span><h3>おすすめ求人</h3></div><button onClick={() => onNavigate('jobs')}>すべて見る <Icon name="chevron" size={14} /></button></div>
+      {latest.length ? <div className="job-list compact">{latest.map((job) => <JobRow key={job.id} job={job} saved={savedIds.includes(job.id)} onToggleSaved={onToggleSaved} />)}</div> : <EmptyState title="公開中の求人はまだありません" body="園から求人が公開されると、ここに求人が表示されます。" />}
     </section>
   </>;
 }
 
-function JobsView({ jobs, savedIds, onToggleSaved }: { jobs: Job[]; savedIds: string[]; onToggleSaved: (id: string) => void }) {
+function JobsView({ savedIds, onToggleSaved }: { savedIds: string[]; onToggleSaved: (id: string) => void }) {
   const [keyword, setKeyword] = useState('');
   const [prefecture, setPrefecture] = useState('');
   const [employment, setEmployment] = useState('');
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [financeVerifiedOnly, setFinanceVerifiedOnly] = useState(false);
-  const prefectures = useMemo(() => [...new Set(jobs.map((j) => j.prefecture).filter(Boolean) as string[])].sort(), [jobs]);
-  const employments = useMemo(() => [...new Set(jobs.map((j) => j.employment_type).filter(Boolean) as string[])].sort(), [jobs]);
-  const filtered = jobs.filter((job) => {
-    const q = keyword.trim().toLowerCase();
-    if (q && !`${job.title} ${job.facility_name} ${job.description} ${job.prefecture || ''} ${job.city || ''}`.toLowerCase().includes(q)) return false;
-    if (prefecture && job.prefecture !== prefecture) return false;
-    if (employment && job.employment_type !== employment) return false;
-    if (verifiedOnly && !job.verified_workplace?.verified_metric_count) return false;
-    if (financeVerifiedOnly && !job.verified_finance?.verified_metric_count) return false;
-    return true;
-  });
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [prefectures, setPrefectures] = useState<string[]>([]);
+  const [employments, setEmployments] = useState<string[]>([]);
+  const [cursor, setCursor] = useState<JobSearchCursor | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [searching, setSearching] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getJobSearchFacets()
+      .then((facets) => {
+        if (!active) return;
+        setPrefectures(facets.prefectures);
+        setEmployments(facets.employmentTypes);
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setSearching(true);
+      setSearchError(null);
+      searchJobs({ keyword, prefecture, employmentType: employment, hoVerifiedOnly: verifiedOnly, hfVerifiedOnly: financeVerifiedOnly, limit: 24 })
+        .then((page) => {
+          if (!active) return;
+          setJobs(page.jobs);
+          setTotalCount(page.totalCount);
+          setHasMore(page.hasMore);
+          setCursor(page.nextCursor);
+        })
+        .catch((err) => active && setSearchError(err instanceof Error ? err.message : '求人を検索できませんでした。'))
+        .finally(() => active && setSearching(false));
+    }, keyword.trim() ? 250 : 0);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [keyword, prefecture, employment, verifiedOnly, financeVerifiedOnly]);
+
+  const loadMore = async () => {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    setSearchError(null);
+    try {
+      const page = await searchJobs({ keyword, prefecture, employmentType: employment, hoVerifiedOnly: verifiedOnly, hfVerifiedOnly: financeVerifiedOnly, limit: 24, cursor });
+      setJobs((prev) => [...prev, ...page.jobs.filter((job) => !prev.some((existing) => existing.id === job.id))]);
+      setTotalCount(page.totalCount);
+      setHasMore(page.hasMore);
+      setCursor(page.nextCursor);
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : '次の求人を読み込めませんでした。');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   return <>
-    <header className="page-heading"><div><span className="eyebrow">JOB SEARCH</span><h1>求人を探す</h1><p>園の色・保育観・働き方を見ながら、自分に合う求人を探せます。</p></div><span className="result-count">{filtered.length}件</span></header>
+    <header className="page-heading"><div><span className="eyebrow">JOB SEARCH</span><h1>求人を探す</h1><p>園の色・保育観・働き方を見ながら、自分に合う求人を探せます。</p></div><span className="result-count">{totalCount}件</span></header>
     <section className="search-panel">
       <label className="keyword-box"><Icon name="search" size={18} /><input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="園名、職種、キーワードで検索" /></label>
       <select value={prefecture} onChange={(e) => setPrefecture(e.target.value)}><option value="">すべての都道府県</option>{prefectures.map((p) => <option key={p}>{p}</option>)}</select>
@@ -241,7 +294,11 @@ function JobsView({ jobs, savedIds, onToggleSaved }: { jobs: Job[]; savedIds: st
       <label className="verified-filter"><input type="checkbox" checked={verifiedOnly} onChange={(e) => setVerifiedOnly(e.target.checked)} /><span>HO実績データあり</span></label>
       <label className="verified-filter"><input type="checkbox" checked={financeVerifiedOnly} onChange={(e) => setFinanceVerifiedOnly(e.target.checked)} /><span>HF実績データあり</span></label>
     </section>
-    {filtered.length ? <div className="job-grid">{filtered.map((job) => <JobCard key={job.id} job={job} saved={savedIds.includes(job.id)} onToggleSaved={onToggleSaved} />)}</div> : <EmptyState title="条件に合う求人がありません" body="検索条件を変更して、もう一度探してみてください。" />}
+    {searchError && <div className="error-banner"><span>{searchError}</span><button onClick={() => setSearchError(null)}>閉じる</button></div>}
+    {searching && !jobs.length ? <LoadingView /> : jobs.length ? <>
+      <div className="job-grid" aria-busy={searching}>{jobs.map((job) => <JobCard key={job.id} job={job} saved={savedIds.includes(job.id)} onToggleSaved={onToggleSaved} />)}</div>
+      {hasMore && <div className="form-actions"><button className="secondary-button" type="button" onClick={loadMore} disabled={loadingMore}>{loadingMore ? '読み込み中…' : `さらに求人を見る（${jobs.length}/${totalCount}件）`}</button></div>}
+    </> : <EmptyState title="条件に合う求人がありません" body="検索条件を変更して、もう一度探してみてください。" />}
   </>;
 }
 
