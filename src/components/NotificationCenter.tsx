@@ -14,7 +14,8 @@ type Props = {
 };
 
 const ALLOWED_PATHS = new Set(['/', '/jobs', '/saved', '/applications', '/profile', '/scouts']);
-const SCOUT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const INTERVIEW_NOTIFICATION_TYPES = new Set(['interview_scheduled', 'interview_cancelled']);
 
 function relativeTime(value: string) {
   const timestamp = new Date(value).getTime();
@@ -35,13 +36,26 @@ function safeTarget(item: JobseekerNotification) {
     const parsed = new URL(item.link_url || '/applications', window.location.origin);
     if (parsed.origin !== window.location.origin || !ALLOWED_PATHS.has(parsed.pathname)) return '/applications';
 
-    if (parsed.pathname === '/applications' && item.application_id) {
-      return `/applications?application_id=${encodeURIComponent(item.application_id)}`;
+    if (parsed.pathname === '/applications' && item.application_id && UUID_PATTERN.test(item.application_id)) {
+      const params = new URLSearchParams({ application_id: item.application_id });
+      let hash = '';
+
+      if (INTERVIEW_NOTIFICATION_TYPES.has(item.notification_type)) {
+        const interviewId = parsed.searchParams.get('interview_id');
+        if (interviewId && UUID_PATTERN.test(interviewId)) {
+          params.set('interview_id', interviewId);
+          hash = `#interview-${interviewId}`;
+        }
+      } else if (item.notification_type === 'message_received') {
+        hash = '#application-messages';
+      }
+
+      return `/applications?${params.toString()}${hash}`;
     }
 
     if (item.notification_type === 'scout_received' && (parsed.pathname === '/profile' || parsed.pathname === '/scouts')) {
       const scoutId = parsed.searchParams.get('scout_id');
-      const query = scoutId && SCOUT_ID_PATTERN.test(scoutId) ? `?scout_id=${encodeURIComponent(scoutId)}` : '';
+      const query = scoutId && UUID_PATTERN.test(scoutId) ? `?scout_id=${encodeURIComponent(scoutId)}` : '';
       return `/scouts${query}#scout-inbox`;
     }
 
@@ -142,7 +156,7 @@ export function NotificationCenter({ onNavigate }: Props) {
     }
     setOpen(false);
     const target = safeTarget(item);
-    if (target.startsWith('/scouts')) {
+    if (target.startsWith('/scouts') || target.startsWith('/applications?')) {
       window.location.assign(target);
       return;
     }
