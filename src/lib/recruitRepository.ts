@@ -84,6 +84,8 @@ export type Application = {
   city: string | null;
 };
 
+export type JobseekerInterviewResponseStatus = 'accepted' | 'reschedule_requested';
+
 export type JobseekerInterview = {
   id: string;
   application_id: string;
@@ -93,6 +95,9 @@ export type JobseekerInterview = {
   meeting_url: string | null;
   status: string;
   updated_at: string;
+  candidate_response_status: JobseekerInterviewResponseStatus | null;
+  candidate_response_message: string | null;
+  candidate_responded_at: string | null;
 };
 
 export type JobseekerVisit = {
@@ -224,6 +229,19 @@ export async function getJobseekerApplicationDetail(applicationId: string): Prom
     interviews: Array.isArray(detail.interviews) ? detail.interviews : [],
     visits: Array.isArray(detail.visits) ? detail.visits : [],
   };
+}
+
+export async function respondToInterview(
+  interviewId: string,
+  responseStatus: JobseekerInterviewResponseStatus,
+  candidateMessage: string | null = null,
+): Promise<void> {
+  const { error } = await client().rpc('hc_jobseeker_respond_interview', {
+    p_interview_id: interviewId,
+    p_response_status: responseStatus,
+    p_candidate_message: candidateMessage?.trim() || null,
+  });
+  if (error) throw error;
 }
 
 export async function submitApplication(jobId: string, profile: JobseekerProfile): Promise<string> {
