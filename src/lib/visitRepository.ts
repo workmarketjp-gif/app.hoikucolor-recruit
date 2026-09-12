@@ -5,7 +5,6 @@ export type VisitReservationStatus = 'requested' | 'confirmed' | 'declined' | 'c
 
 export type VisitSettings = {
   id: string;
-  organization_id: string;
   facility_id: string;
   visit_enabled: boolean;
   half_day_trial_enabled: boolean;
@@ -17,7 +16,6 @@ export type VisitSettings = {
   visit_duration_minutes: number;
   half_day_duration_minutes: number;
   full_day_duration_minutes: number;
-  capacity_per_slot: number;
   min_notice_hours: number;
   max_days_ahead: number;
   public_note: string | null;
@@ -47,14 +45,14 @@ function client() {
   return supabase;
 }
 
-export async function getVisitSettings(facilityId: string): Promise<VisitSettings | null> {
-  const { data, error } = await client()
-    .from('hc_visit_settings')
-    .select('id,organization_id,facility_id,visit_enabled,half_day_trial_enabled,full_day_trial_enabled,available_weekdays,first_start_time,last_start_time,slot_interval_minutes,visit_duration_minutes,half_day_duration_minutes,full_day_duration_minutes,capacity_per_slot,min_notice_hours,max_days_ahead,public_note,what_to_bring,dress_code')
-    .eq('facility_id', facilityId)
-    .maybeSingle();
+export async function getVisitSettings(jobId: string): Promise<VisitSettings | null> {
+  const { data, error } = await client().rpc('hc_jobseeker_get_visit_settings', {
+    p_job_id: jobId,
+  });
   if (error) throw error;
-  return data as VisitSettings | null;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== 'object') return null;
+  return row as VisitSettings;
 }
 
 export async function listMyVisitReservations(jobId?: string): Promise<VisitReservation[]> {
