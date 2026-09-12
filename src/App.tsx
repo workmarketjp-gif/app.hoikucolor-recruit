@@ -2,7 +2,7 @@ import { SignOutButton, useUser } from '@clerk/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
-import { ApplicationMessages } from './components/ApplicationMessages';
+import { ApplicationDetail } from './components/ApplicationDetail';
 import { DocumentVaultPanel } from './components/DocumentVaultPanel';
 import { VisitTrialPanel } from './components/VisitTrialPanel';
 import { VerifiedFinanceSummary } from './components/VerifiedFinanceSummary';
@@ -14,6 +14,7 @@ import {
 
 type View = 'home' | 'jobs' | 'saved' | 'applications' | 'profile';
 const publicUrl = (import.meta.env.VITE_HOIKU_COLOR_PUBLIC_URL || 'https://hoikucolor.jp').replace(/\/$/, '');
+const applicationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const viewPaths: Record<View, string> = { home: '/', jobs: '/jobs', saved: '/saved', applications: '/applications', profile: '/profile' };
 const navItems: { view: View; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
@@ -42,9 +43,16 @@ function pathToView(pathname: string): View {
   return match?.[0] || 'home';
 }
 
+function applicationIdFromLocation() {
+  if (!window.location.pathname.startsWith('/applications')) return null;
+  const value = new URLSearchParams(window.location.search).get('application_id');
+  return value && applicationIdPattern.test(value) ? value : null;
+}
+
 export function App() {
   const { user } = useUser();
   const [view, setView] = useState<View>(() => pathToView(window.location.pathname));
+  const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(() => applicationIdFromLocation());
   const [mobileOpen, setMobileOpen] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [savedIds, setSavedIds] = useState<string[]>([]);
@@ -54,7 +62,10 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const onPop = () => setView(pathToView(window.location.pathname));
+    const onPop = () => {
+      setView(pathToView(window.location.pathname));
+      setSelectedApplicationId(applicationIdFromLocation());
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
@@ -84,7 +95,33 @@ export function App() {
 
   const navigate = (next: View) => {
     window.history.pushState({}, '', viewPaths[next]);
-    setView(next); setMobileOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
+    setView(next); setSelectedApplicationId(null); setMobileOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openApplication = (applicationId: string) => {
+    if (!applicationIdPattern.test(applicationId)) return;
+    window.history.pushState({}, '', `/applications?application_id=${encodeURIComponent(applicationId)}`);
+    setView('applications'); setSelectedApplicationId(applicationId); setMobileOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const closeApplication = () => {
+    window.history.pushState({}, '', '/applications');
+    setView('applications'); setSelectedApplicationId(null); window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const navigateTarget = (target: string) => {
+    try {
+      const url = new URL(target, window.location.origin);
+      if (url.origin !== window.location.origin) return navigate('applications');
+      const nextView = pathToView(url.pathname);
+      if (nextView === 'applications') {
+        const applicationId = url.searchParams.get('application_id');
+        if (applicationId && applicationIdPattern.test(applicationId)) return openApplication(applicationId);
+      }
+      navigate(nextView);
+    } catch {
+      navigate('applications');
+    }
   };
 
   const toggleSaved = async (jobId: string) => {
@@ -136,7 +173,7 @@ export function App() {
           <div className="mobile-brand"><Brand compact /></div>
           <div className="topbar-spacer" />
           <a className="public-link" href={`${publicUrl}/jobs`} target="_blank" rel="noreferrer">求人サイト <Icon name="external" size={14} /></a>
-          <NotificationCenter onNavigate={(pathname) => navigate(pathToView(pathname))} />
+          <NotificationCenter onNavigate={navigateTarget} />
         </header>
 
         <section className="content">
@@ -146,7 +183,7 @@ export function App() {
               {view === 'home' && <Dashboard name={displayName} jobs={jobs} savedIds={savedIds} applications={applications} onNavigate={navigate} onToggleSaved={toggleSaved} />}
               {view === 'jobs' && <JobsView jobs={jobs} savedIds={savedIds} onToggleSaved={toggleSaved} />}
               {view === 'saved' && <SavedView jobs={savedJobs} onToggleSaved={toggleSaved} />}
-              {view === 'applications' && <ApplicationsView applications={applications} jobs={jobs} />}
+              {view === 'applications' && (selectedApplicationId ? <ApplicationDetail applicationId={selectedApplicationId} onBack={closeApplication} /> : <ApplicationsView applications={applications} onOpen={openApplication} />)}
               {view === 'profile' && profile && <ProfileView profile={profile} onChange={setProfile} />}
             </>
           )}
@@ -212,10 +249,9 @@ function SavedView({ jobs, onToggleSaved }: { jobs: Job[]; onToggleSaved: (id: s
   return <><header className="page-heading"><div><span className="eyebrow">SAVED JOBS</span><h1>気になる求人</h1><p>あとで見返したい求人をまとめて比較できます。</p></div><span className="result-count">{jobs.length}件</span></header>{jobs.length ? <div className="job-grid">{jobs.map((job) => <JobCard key={job.id} job={job} saved onToggleSaved={onToggleSaved} />)}</div> : <EmptyState title="保存した求人はまだありません" body="求人検索で「気になる」を押すと、ここに保存されます。" action="求人を探す" href="/jobs" />}</>;
 }
 
-function ApplicationsView({ applications, jobs }: { applications: Application[]; jobs: Job[] }) {
-  const jobMap = new Map(jobs.map((j) => [j.id, j]));
+function ApplicationsView({ applications, onOpen }: { applications: Application[]; onOpen: (applicationId: string) => void }) {
   return <><header className="page-heading"><div><span className="eyebrow">APPLICATIONS</span><h1>応募管理</h1><p>応募から面接・内定までの状況を確認できます。</p></div><span className="result-count">{applications.length}件</span></header>
-    <section className="panel application-panel">{applications.length ? applications.map((app) => { const job = jobMap.get(app.job_id); return <article className="application-row" key={app.id}><div className="application-mark"><Icon name="briefcase" size={18} /></div><div className="application-main"><span className={`status-badge status-${app.status}`}>{statusLabel(app.status)}</span><h3>{job?.title || '求人'}</h3><p>{job?.facility_name || ''}</p><small>応募日 {formatDate(app.applied_at)}</small></div><div className="application-side">{job && <><span><Icon name="map" size={14} /> {job.prefecture || ''} {job.city || ''}</span><a href="/jobs">求人一覧へ <Icon name="arrow" size={13} /></a></>}<ApplicationMessages applicationId={app.id} /></div></article>; }) : <EmptyState title="応募履歴はまだありません" body="気になる園を見つけたら、求人一覧から応募できます。" action="求人を探す" href="/jobs" />}</section>
+    <section className="panel application-panel">{applications.length ? applications.map((app) => <article className="application-row" key={app.id} role="button" tabIndex={0} aria-label={`${app.facility_name} ${app.job_title}の応募詳細を開く`} onClick={() => onOpen(app.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(app.id); } }}><div className="application-mark"><Icon name="briefcase" size={18} /></div><div className="application-main"><span className={`status-badge status-${app.status}`}>{statusLabel(app.status)}</span><h3>{app.job_title || '求人'}</h3><p>{app.facility_name || ''}</p><small>応募日 {formatDate(app.applied_at)}</small><span className="application-open-detail">詳細を見る <Icon name="arrow" size={13} /></span></div><div className="application-side">{(app.prefecture || app.city) && <span><Icon name="map" size={14} /> {app.prefecture || ''} {app.city || ''}</span>}{app.employment_type && <span><Icon name="briefcase" size={14} /> {app.employment_type}</span>}</div></article>) : <EmptyState title="応募履歴はまだありません" body="気になる園を見つけたら、求人一覧から応募できます。" action="求人を探す" href="/jobs" />}</section>
   </>;
 }
 
