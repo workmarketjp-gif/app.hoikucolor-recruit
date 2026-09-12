@@ -3,10 +3,13 @@ import fs from 'node:fs';
 const migration = fs.readFileSync('supabase/migrations/20260912031500_hc_jobseeker_scout_inbox_v1.sql','utf8');
 const notificationTypeMigration = fs.readFileSync('supabase/migrations/20260912032000_hc_jobseeker_scout_notification_type_v1.sql','utf8');
 const deepLinkMigration = fs.readFileSync('supabase/migrations/20260912041000_hc_jobseeker_scout_deep_link_v1.sql','utf8');
+const routeMigration = fs.readFileSync('supabase/migrations/20260912051000_hc_jobseeker_scout_route_v1.sql','utf8');
 const repository = fs.readFileSync('src/lib/scoutInboxRepository.ts','utf8');
 const panel = fs.readFileSync('src/components/ScoutInbox.tsx','utf8');
 const notificationCenter = fs.readFileSync('src/components/NotificationCenter.tsx','utf8');
 const vault = fs.readFileSync('src/components/DocumentVaultPanel.tsx','utf8');
+const scoutRoute = fs.readFileSync('src/ScoutRouteRoot.tsx','utf8');
+const main = fs.readFileSync('src/main.tsx','utf8');
 
 function expect(condition,message){ if(!condition) throw new Error(message); }
 
@@ -21,8 +24,10 @@ expect(migration.includes("s.status='accepted' and s.organization_id=p_organizat
 expect(migration.includes('revoke all on function hc_private.hc_accepted_scout_identity'), 'identity helper must remain private');
 expect(migration.includes("'scout_received'"), 'new scouts must generate a candidate notification');
 expect(notificationTypeMigration.includes("'scout_received'::text"), 'notification type constraint must allow scout_received');
-expect(deepLinkMigration.includes("'/profile?scout_id=' || v_id::text || '#scout-inbox'"), 'new scout notifications must deep-link to the specific scout card');
-expect(deepLinkMigration.includes("event_key ~ '^jobseeker:scout:[0-9a-fA-F-]{36}:received$'"), 'existing scout notification links must only be backfilled from validated event keys');
+expect(deepLinkMigration.includes("event_key ~ '^jobseeker:scout:[0-9a-fA-F-]{36}:received$'"), 'legacy scout notification links must only be backfilled from validated event keys');
+expect(routeMigration.includes("'/scouts?scout_id=' || v_id::text || '#scout-inbox'"), 'new scout notifications must deep-link to the dedicated scout page');
+expect(routeMigration.includes("event_key ~ '^jobseeker:scout:[0-9a-fA-F-]{36}:received$'"), 'dedicated route backfill must only use validated scout event keys');
+expect(routeMigration.includes('revoke all on function hc_private.hc_create_scout_invitation'), 'scout creation helper must remain private after route migration');
 expect(repository.includes("rpc('hc_jobseeker_list_scouts')"), 'candidate inbox must use safe list RPC');
 expect(repository.includes("rpc('hc_jobseeker_respond_scout'"), 'candidate response must use safe response RPC');
 expect(panel.includes('承諾する') && panel.includes('辞退する'), 'candidate UI must support accept and decline');
@@ -33,7 +38,15 @@ expect(panel.includes("window.location.hash !== '#scout-inbox'"), 'scout inbox m
 expect(panel.includes('scrollIntoView') && panel.includes('is-targeted'), 'notification deep links must focus and visually highlight the target scout');
 expect(panel.includes('setInterval') && panel.includes('visibilitychange'), 'scout inbox must refresh while the signed-in app remains open');
 expect(notificationCenter.includes("item.notification_type === 'scout_received'"), 'notification center must special-case scout deep links');
-expect(notificationCenter.includes("target.includes('#scout-inbox')"), 'notification navigation must preserve the scout anchor instead of dropping it');
-expect(vault.includes('<ScoutInbox />'), 'scout inbox must be reachable from the candidate profile');
+expect(notificationCenter.includes("return `/scouts${query}#scout-inbox`"), 'notification center must route scout notifications to /scouts');
+expect(notificationCenter.includes('listJobseekerScouts') && notificationCenter.includes("item.scout_status === 'pending'"), 'topbar scout shortcut must expose the pending count');
+expect(notificationCenter.includes("target.startsWith('/scouts')"), 'notification navigation must preserve the dedicated scout deep link');
+expect(vault.includes('<ScoutInbox />'), 'scout inbox must remain reachable from the candidate profile');
+expect(main.includes("window.location.pathname.startsWith('/scouts') ? <ScoutRouteRoot /> : <AppRoot />"), 'main entry must route /scouts to the dedicated authenticated page');
+expect(scoutRoute.includes('<ScoutInbox />'), 'dedicated scout page must render the inbox');
+expect(scoutRoute.includes('<ScoutPrivacyPanel />'), 'dedicated scout page must expose privacy controls');
+expect(scoutRoute.includes('<ProfileMatchingPreferencesPanel />'), 'dedicated scout page must expose matching preferences');
+expect(scoutRoute.includes("item.href === '/scouts' ? 'active' : ''"), 'dedicated scout page navigation must identify the active section');
+expect(scoutRoute.includes('setSupabaseAccessTokenGetter(() => session.getToken())'), 'dedicated scout page must use the signed-in Clerk token for Supabase');
 
 console.log('jobseeker scout inbox contract: OK');
