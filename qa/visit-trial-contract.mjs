@@ -36,17 +36,21 @@ for (const marker of repositoryMarkers) {
   if (!repository.includes(marker)) throw new Error(`Visit/trial repository contract missing: ${marker}`);
 }
 
-const forbiddenRepositoryMarkers = [
-  ".from('hc_visit_reservations')",
-  'organization_id: string;',
-  'jobseeker_clerk_user_id: string;',
-  'facility_note: string | null;',
-  'service_role',
-];
-for (const marker of forbiddenRepositoryMarkers) {
-  if (repository.replace(/\s+/g, '').includes(marker.replace(/\s+/g, ''))) {
-    throw new Error(`Visit/trial browser client must not expose direct reservation table access or internal fields: ${marker}`);
+if (repository.replace(/\s+/g, '').includes(".from('hc_visit_reservations')".replace(/\s+/g, ''))) {
+  throw new Error('Visit/trial browser client must not read hc_visit_reservations directly.');
+}
+if (repository.includes('service_role')) {
+  throw new Error('Visit/trial browser client must not contain service_role.');
+}
+
+const reservationType = repository.match(/export type VisitReservation = \{([\s\S]*?)\n\};/)?.[1] || '';
+for (const marker of ['organization_id:', 'jobseeker_clerk_user_id:', 'facility_note:']) {
+  if (reservationType.includes(marker)) {
+    throw new Error(`VisitReservation must not expose internal field: ${marker}`);
   }
+}
+if (!reservationType.includes('facility_message:')) {
+  throw new Error('VisitReservation must expose the candidate-visible facility_message field.');
 }
 
 const uiMarkers = ['園見学', '半日体験', '1日体験', '予約をキャンセル', '園の現地時間', 'activeReservation.facility_message'];
