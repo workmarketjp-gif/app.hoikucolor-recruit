@@ -31,22 +31,26 @@ function syncRankingUi() {
       <div class="hc-ranking-disclosure-copy">
         <strong>情報公開を優先したオーガニック表示です</strong>
         <p>現在は有料の上位表示を適用していません。HO / HF Verified の品質ポイント、情報公開率、公開日時の順で表示します。園の申告内容を Verified 実績として扱うことはありません。</p>
-        <small>検索で絞り込んだ場合の番号は、絞り込み後の表示順です。将来、有料枠を導入する場合は「PR」と明示し、オーガニック評価と分離します。</small>
+        <small>検索で絞り込んだ場合の番号は、絞り込み後の表示順です。Google求人などから特定求人を開いた場合は「指定求人」と明示します。将来、有料枠を導入する場合は「PR」と明示し、オーガニック評価と分離します。</small>
       </div>`;
     searchPanel.parentElement?.insertBefore(disclosure, searchPanel);
   }
 
+  const deepLinkedJobId = new URLSearchParams(window.location.search).get('job_id');
   const cards = Array.from(grid.querySelectorAll<HTMLElement>(':scope > .job-card'));
-  cards.forEach((card, index) => {
+  let organicPosition = 0;
+  cards.forEach((card) => {
     let badge = card.querySelector<HTMLElement>(`:scope > .${badgeClass}`);
     if (!badge) {
       badge = document.createElement('span');
       badge.className = badgeClass;
       card.prepend(badge);
     }
-    const position = index + 1;
-    const label = `表示順 ${position}`;
-    const ariaLabel = `検索結果の表示順 ${position}番目`;
+
+    const isDeepLinkedTarget = Boolean(deepLinkedJobId && card.dataset.jobId === deepLinkedJobId);
+    if (!isDeepLinkedTarget) organicPosition += 1;
+    const label = isDeepLinkedTarget ? '指定求人' : `表示順 ${organicPosition}`;
+    const ariaLabel = isDeepLinkedTarget ? 'Google求人などから指定された求人' : `検索結果の表示順 ${organicPosition}番目`;
     if (badge.textContent !== label) badge.textContent = label;
     if (badge.getAttribute('aria-label') !== ariaLabel) badge.setAttribute('aria-label', ariaLabel);
   });
