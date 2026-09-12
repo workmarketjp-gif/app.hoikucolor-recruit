@@ -37,20 +37,20 @@ function safeTarget(item: JobseekerNotification) {
     if (parsed.origin !== window.location.origin || !ALLOWED_PATHS.has(parsed.pathname)) return '/applications';
 
     if (parsed.pathname === '/applications' && item.application_id && UUID_PATTERN.test(item.application_id)) {
-      const params = new URLSearchParams({ application_id: item.application_id });
+      let target = `/applications?application_id=${encodeURIComponent(item.application_id)}`;
       let hash = '';
 
       if (INTERVIEW_NOTIFICATION_TYPES.has(item.notification_type)) {
         const interviewId = parsed.searchParams.get('interview_id');
         if (interviewId && UUID_PATTERN.test(interviewId)) {
-          params.set('interview_id', interviewId);
+          target += `&interview_id=${encodeURIComponent(interviewId)}`;
           hash = `#interview-${interviewId}`;
         }
       } else if (item.notification_type === 'message_received') {
         hash = '#application-messages';
       }
 
-      return `/applications?${params.toString()}${hash}`;
+      return `${target}${hash}`;
     }
 
     if (item.notification_type === 'scout_received' && (parsed.pathname === '/profile' || parsed.pathname === '/scouts')) {
