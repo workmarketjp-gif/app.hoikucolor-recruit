@@ -16,7 +16,7 @@ const repositoryMarkers = [
   'createSignedUrl(',
   '.copy(document.file_path, destinationPath)',
   '`jobseekers/${ownerId}/${id}/${fileName}`',
-  '`$\{application.organization_id\}/$\{application.facility_id\}/$\{application.id\}/vault-$\{document.id\}/$\{fileName\}`'.replaceAll('\\$', '$'),
+  '`${application.organization_id}/${application.facility_id}/${application.id}/vault-${document.id}/${fileName}`',
 ];
 for (const marker of repositoryMarkers) {
   if (!repository.includes(marker)) throw new Error(`Document vault storage contract missing: ${marker}`);
