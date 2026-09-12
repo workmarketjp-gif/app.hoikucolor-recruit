@@ -170,10 +170,7 @@ export async function unsaveJob(jobId: string) {
 }
 
 export async function listApplications(): Promise<Application[]> {
-  const { data, error } = await client()
-    .from('hc_applications')
-    .select('id,job_id,applicant_name,status,desired_start_date,message,applied_at,updated_at')
-    .order('applied_at', { ascending: false });
+  const { data, error } = await client().rpc('hc_jobseeker_list_applications');
   if (error) throw error;
   return (data || []) as Application[];
 }
