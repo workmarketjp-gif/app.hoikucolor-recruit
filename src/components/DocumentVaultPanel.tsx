@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
 import { ScoutPrivacyPanel } from './ScoutPrivacyPanel';
 import { ProfileMatchingPreferencesPanel } from './ProfileMatchingPreferencesPanel';
+import { ScoutInbox } from './ScoutInbox';
 import {
   createJobseekerDocumentSignedUrl,
   deleteJobseekerDocument,
@@ -139,5 +140,6 @@ export function DocumentVaultPanel() {
     </section>
     <ProfileMatchingPreferencesPanel />
     <ScoutPrivacyPanel />
+    <ScoutInbox />
   </>;
 }
