@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run test:document-vault && npm run test:document-vault-handoff-compatibility && npm run test:visit-trial && npm run test:verified-finance-ranking && npm run test:verified-finance-display && npm run test:spot-job-bridge && npm run test:spot-break-canonical && npm run test:spot-clerk-shortage-integrity && npm run test:job-rpc-security && npm run test:document-handoff-security && npm run test:legacy-market-import-security && npm run test:notification-email-rpc-security && npm run test:jobseeker-notification-center && npm run test:jobseeker-application-detail && npm run test:diagnostic-contract-security && npm run test:hire-private-boundary && tsc -b && vite build",
+    "build": "npm run test:document-vault && npm run test:document-vault-handoff-compatibility && npm run test:visit-trial && npm run test:verified-finance-ranking && npm run test:verified-finance-display && npm run test:spot-job-bridge && npm run test:spot-break-canonical && npm run test:spot-clerk-shortage-integrity && npm run test:job-rpc-security && npm run test:document-handoff-security && npm run test:legacy-market-import-security && npm run test:notification-email-rpc-security && npm run test:jobseeker-notification-center && npm run test:jobseeker-application-detail && npm run test:jobseeker-scout-privacy && npm run test:diagnostic-contract-security && npm run test:hire-private-boundary && tsc -b && vite build",
     "preview": "vite preview",
     "test:document-vault": "node qa/document-vault-contract.mjs",
     "test:document-vault-handoff-compatibility": "node qa/document-vault-handoff-compatibility-contract.mjs",
@@ -21,6 +21,7 @@
     "test:notification-email-rpc-security": "node qa/notification-email-rpc-security-contract.mjs",
     "test:jobseeker-notification-center": "node qa/jobseeker-notification-center-contract.mjs",
     "test:jobseeker-application-detail": "node qa/jobseeker-application-detail-contract.mjs",
+    "test:jobseeker-scout-privacy": "node qa/jobseeker-scout-privacy-contract.mjs",
     "test:diagnostic-contract-security": "node qa/diagnostic-contract-security-contract.mjs",
     "test:hire-private-boundary": "node qa/hire-private-boundary-contract.mjs"
   },
