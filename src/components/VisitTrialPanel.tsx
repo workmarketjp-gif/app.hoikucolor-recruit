@@ -168,7 +168,6 @@ export function VisitTrialPanel({ jobId, facilityId }: { jobId: string; facility
     {activeReservation ? <div className="visit-reservation-card">
       <div><span className={`visit-status status-${activeReservation.status}`}>{statusLabels[activeReservation.status]}</span><strong>{typeLabels[activeReservation.experience_type]}</strong></div>
       <p>{formatJapanDateTime(activeReservation.starts_at)}（園の現地時間）</p>
-      {activeReservation.facility_note && <small>園から：{activeReservation.facility_note}</small>}
       <button type="button" className="secondary-button" disabled={cancelling} onClick={() => cancel(activeReservation.id)}>{cancelling ? '処理中…' : '予約をキャンセル'}</button>
     </div> : <>
       <div className="visit-mode-grid">
