@@ -6,13 +6,14 @@ import {
   markJobseekerNotificationRead,
   type JobseekerNotification,
 } from '../lib/notificationRepository';
+import { listJobseekerScouts } from '../lib/scoutInboxRepository';
 import './NotificationCenter.css';
 
 type Props = {
   onNavigate: (target: string) => void;
 };
 
-const ALLOWED_PATHS = new Set(['/', '/jobs', '/saved', '/applications', '/profile']);
+const ALLOWED_PATHS = new Set(['/', '/jobs', '/saved', '/applications', '/profile', '/scouts']);
 const SCOUT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function relativeTime(value: string) {
@@ -38,10 +39,10 @@ function safeTarget(item: JobseekerNotification) {
       return `/applications?application_id=${encodeURIComponent(item.application_id)}`;
     }
 
-    if (item.notification_type === 'scout_received' && parsed.pathname === '/profile') {
+    if (item.notification_type === 'scout_received' && (parsed.pathname === '/profile' || parsed.pathname === '/scouts')) {
       const scoutId = parsed.searchParams.get('scout_id');
       const query = scoutId && SCOUT_ID_PATTERN.test(scoutId) ? `?scout_id=${encodeURIComponent(scoutId)}` : '';
-      return `/profile${query}#scout-inbox`;
+      return `/scouts${query}#scout-inbox`;
     }
 
     return parsed.pathname;
@@ -53,6 +54,7 @@ function safeTarget(item: JobseekerNotification) {
 export function NotificationCenter({ onNavigate }: Props) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<JobseekerNotification[]>([]);
+  const [pendingScoutCount, setPendingScoutCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -75,14 +77,31 @@ export function NotificationCenter({ onNavigate }: Props) {
     }
   }, []);
 
+  const loadScoutCount = useCallback(async () => {
+    try {
+      const scouts = await listJobseekerScouts();
+      if (!mountedRef.current) return;
+      setPendingScoutCount(scouts.filter((item) => item.scout_status === 'pending').length);
+    } catch {
+      if (mountedRef.current) setPendingScoutCount(0);
+    }
+  }, []);
+
   useEffect(() => {
     mountedRef.current = true;
     void load();
+    void loadScoutCount();
     const intervalId = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void load(true);
+      if (document.visibilityState === 'visible') {
+        void load(true);
+        void loadScoutCount();
+      }
     }, 60_000);
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') void load(true);
+      if (document.visibilityState === 'visible') {
+        void load(true);
+        void loadScoutCount();
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
@@ -90,7 +109,7 @@ export function NotificationCenter({ onNavigate }: Props) {
       window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [load]);
+  }, [load, loadScoutCount]);
 
   useEffect(() => {
     if (!open) return;
@@ -123,7 +142,7 @@ export function NotificationCenter({ onNavigate }: Props) {
     }
     setOpen(false);
     const target = safeTarget(item);
-    if (target.startsWith('/profile') && target.includes('#scout-inbox')) {
+    if (target.startsWith('/scouts')) {
       window.location.assign(target);
       return;
     }
@@ -145,6 +164,10 @@ export function NotificationCenter({ onNavigate }: Props) {
 
   return (
     <div className="notification-center" ref={rootRef}>
+      <a className={`icon-button scout-shortcut ${window.location.pathname.startsWith('/scouts') ? 'is-active' : ''}`} href="/scouts" aria-label={pendingScoutCount ? `スカウト 回答待ち${pendingScoutCount}件` : 'スカウト'} title="スカウト">
+        <Icon name="sparkles" size={18} />
+        {pendingScoutCount > 0 && <span className="notification-badge" aria-hidden="true">{pendingScoutCount > 99 ? '99+' : pendingScoutCount}</span>}
+      </a>
       <button
         type="button"
         className={`icon-button notification-trigger ${open ? 'is-open' : ''}`}
