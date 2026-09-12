@@ -27,27 +27,29 @@ for (const marker of dbMarkers) {
 
 const repositoryMarkers = [
   ".from('hc_visit_settings')",
-  ".from('hc_visit_reservations')",
+  "rpc('hc_list_my_visit_reservations_v2'",
   "rpc('hc_request_visit'",
   "rpc('hc_cancel_visit'",
+  'facility_message',
 ];
 for (const marker of repositoryMarkers) {
   if (!repository.includes(marker)) throw new Error(`Visit/trial repository contract missing: ${marker}`);
 }
 
 const forbiddenRepositoryMarkers = [
-  ".from('hc_visit_reservations').insert",
-  ".from('hc_visit_reservations').update",
-  ".from('hc_visit_reservations').delete",
+  ".from('hc_visit_reservations')",
+  'organization_id: string;',
+  'jobseeker_clerk_user_id: string;',
+  'facility_note: string | null;',
   'service_role',
 ];
 for (const marker of forbiddenRepositoryMarkers) {
   if (repository.replace(/\s+/g, '').includes(marker.replace(/\s+/g, ''))) {
-    throw new Error(`Visit/trial browser client must not contain direct privileged write: ${marker}`);
+    throw new Error(`Visit/trial browser client must not expose direct reservation table access or internal fields: ${marker}`);
   }
 }
 
-const uiMarkers = ['園見学', '半日体験', '1日体験', '予約をキャンセル', '園の現地時間'];
+const uiMarkers = ['園見学', '半日体験', '1日体験', '予約をキャンセル', '園の現地時間', 'activeReservation.facility_message'];
 for (const marker of uiMarkers) {
   if (!ui.includes(marker)) throw new Error(`Visit/trial UI contract missing: ${marker}`);
 }
