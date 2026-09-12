@@ -125,7 +125,7 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
       <section className="application-detail-card application-communication-card">
         <div className="application-card-head"><div><span className="eyebrow">COMMUNICATION</span><h2>園とのやり取り・提出書類</h2></div></div>
         <p className="application-card-intro">メッセージの確認、履歴書・保育士証などの提出をこの応募ごとに管理できます。</p>
-        <ApplicationMessages applicationId={application.id} initiallyOpen />
+        <ApplicationMessages applicationId={application.id} />
       </section>
     </div>
   </>;
