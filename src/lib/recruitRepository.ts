@@ -77,6 +77,43 @@ export type Application = {
   message: string | null;
   applied_at: string;
   updated_at: string;
+  job_title: string;
+  employment_type: string | null;
+  facility_name: string;
+  prefecture: string | null;
+  city: string | null;
+};
+
+export type JobseekerInterview = {
+  id: string;
+  application_id: string;
+  scheduled_at: string;
+  duration_minutes: number;
+  location: string | null;
+  meeting_url: string | null;
+  status: string;
+  updated_at: string;
+};
+
+export type JobseekerVisit = {
+  id: string;
+  application_id: string | null;
+  job_id: string;
+  experience_type: 'visit' | 'half_day_trial' | 'full_day_trial';
+  starts_at: string;
+  ends_at: string;
+  status: string;
+  candidate_message: string | null;
+  confirmed_at: string | null;
+  cancelled_at: string | null;
+  completed_at: string | null;
+  updated_at: string;
+};
+
+export type JobseekerApplicationDetail = {
+  application: Application;
+  interviews: JobseekerInterview[];
+  visits: JobseekerVisit[];
 };
 
 export type JobseekerProfile = {
@@ -170,12 +207,23 @@ export async function unsaveJob(jobId: string) {
 }
 
 export async function listApplications(): Promise<Application[]> {
-  const { data, error } = await client()
-    .from('hc_applications')
-    .select('id,job_id,applicant_name,status,desired_start_date,message,applied_at,updated_at')
-    .order('applied_at', { ascending: false });
+  const { data, error } = await client().rpc('hc_jobseeker_list_applications');
   if (error) throw error;
   return (data || []) as Application[];
+}
+
+export async function getJobseekerApplicationDetail(applicationId: string): Promise<JobseekerApplicationDetail | null> {
+  const { data, error } = await client().rpc('hc_jobseeker_get_application_detail', {
+    p_application_id: applicationId,
+  });
+  if (error) throw error;
+  if (!data) return null;
+  const detail = data as JobseekerApplicationDetail;
+  return {
+    application: detail.application,
+    interviews: Array.isArray(detail.interviews) ? detail.interviews : [],
+    visits: Array.isArray(detail.visits) ? detail.visits : [],
+  };
 }
 
 export async function submitApplication(jobId: string, profile: JobseekerProfile): Promise<string> {
@@ -190,7 +238,7 @@ export async function submitApplication(jobId: string, profile: JobseekerProfile
     p_phone: profile.phone?.trim() || null,
     p_qualifications: profile.qualifications?.length ? profile.qualifications.join('、') : null,
     p_years_of_experience: profile.years_of_experience,
-    p_desired_start_date: profile.desired_start_date || null,
+    p_desired_start_date: profile.desired_start_date,
     p_message: profile.self_intro?.trim() || null,
   });
   if (error) throw error;
