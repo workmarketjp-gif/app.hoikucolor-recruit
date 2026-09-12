@@ -8,7 +8,7 @@ import { VisitTrialPanel } from './components/VisitTrialPanel';
 import { VerifiedFinanceSummary } from './components/VerifiedFinanceSummary';
 import { NotificationCenter } from './components/NotificationCenter';
 import {
-  getJobSearchFacets, getProfile, listApplications, listFeaturedJobs, listSavedJobIds, listSavedRankedJobs,
+  getJobSearchFacets, getProfile, getRankedJob, listApplications, listFeaturedJobs, listSavedJobIds, listSavedRankedJobs,
   saveJob, searchJobs, submitApplication, unsaveJob, upsertProfile,
   type Application, type Job, type JobSearchCursor, type JobseekerProfile, type VerifiedWorkplaceMetric,
 } from './lib/recruitRepository';
@@ -47,6 +47,12 @@ function pathToView(pathname: string): View {
 function applicationIdFromLocation() {
   if (!window.location.pathname.startsWith('/applications')) return null;
   const value = new URLSearchParams(window.location.search).get('application_id');
+  return value && applicationIdPattern.test(value) ? value : null;
+}
+
+function jobIdFromLocation() {
+  if (window.location.pathname.replace(/\/$/, '') !== '/jobs') return null;
+  const value = new URLSearchParams(window.location.search).get('job_id');
   return value && applicationIdPattern.test(value) ? value : null;
 }
 
@@ -254,10 +260,15 @@ function JobsView({ savedIds, onToggleSaved }: { savedIds: string[]; onToggleSav
     const timer = window.setTimeout(() => {
       setSearching(true);
       setSearchError(null);
-      searchJobs({ keyword, prefecture, employmentType: employment, hoVerifiedOnly: verifiedOnly, hfVerifiedOnly: financeVerifiedOnly, limit: 24 })
-        .then((page) => {
+      const targetJobId = !keyword.trim() && !prefecture && !employment && !verifiedOnly && !financeVerifiedOnly ? jobIdFromLocation() : null;
+      Promise.all([
+        searchJobs({ keyword, prefecture, employmentType: employment, hoVerifiedOnly: verifiedOnly, hfVerifiedOnly: financeVerifiedOnly, limit: 24 }),
+        targetJobId ? getRankedJob(targetJobId) : Promise.resolve(null),
+      ])
+        .then(([page, targetJob]) => {
           if (!active) return;
-          setJobs(page.jobs);
+          const pageJobs = targetJob && !page.jobs.some((job) => job.id === targetJob.id) ? [targetJob, ...page.jobs] : page.jobs;
+          setJobs(pageJobs);
           setTotalCount(page.totalCount);
           setHasMore(page.hasMore);
           setCursor(page.nextCursor);
@@ -297,7 +308,7 @@ function JobsView({ savedIds, onToggleSaved }: { savedIds: string[]; onToggleSav
     {searchError && <div className="error-banner"><span>{searchError}</span><button onClick={() => setSearchError(null)}>閉じる</button></div>}
     {searching && !jobs.length ? <LoadingView /> : jobs.length ? <>
       <div className="job-grid" aria-busy={searching}>{jobs.map((job) => <JobCard key={job.id} job={job} saved={savedIds.includes(job.id)} onToggleSaved={onToggleSaved} />)}</div>
-      {hasMore && <div className="form-actions"><button className="secondary-button" type="button" onClick={loadMore} disabled={loadingMore}>{loadingMore ? '読み込み中…' : `さらに求人を見る（${jobs.length}/${totalCount}件）`}</button></div>}
+      {hasMore && <div className="form-actions"><button className="secondary-button" type="button" onClick={loadMore} disabled={loadingMore}>{loadingMore ? '読み込み中…' : `さらに求人を見る（${Math.min(jobs.length, totalCount)}/${totalCount}件）`}</button></div>}
     </> : <EmptyState title="条件に合う求人がありません" body="検索条件を変更して、もう一度探してみてください。" />}
   </>;
 }
@@ -356,7 +367,7 @@ function JobCard({ job, saved, onToggleSaved }: { job: Job; saved: boolean; onTo
       setApplying(false);
     }
   };
-  return <article className="job-card">
+  return <article className="job-card" data-job-id={job.id}>
     <div className="job-card-top"><div className="job-location"><Icon name="map" size={14} /> {job.prefecture || '地域未設定'} {job.city || ''}</div><button className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)} aria-label={saved ? '気になるから削除' : '気になるに保存'}><Icon name="heart" size={18} /></button></div>
     <span className="facility-name">{job.facility_name}</span><h3>{job.title}</h3>
     <div className="job-tags">{job.employment_type && <span>{job.employment_type}</span>}{job.facility_type && <span>{job.facility_type}</span>}{job.verified_workplace?.verified_metric_count ? <span className="verified-tag">✓ Hoiku Office 実績</span> : null}{job.verified_finance?.verified_metric_count ? <span className="finance-verified-tag">✓ Hoiku Finance 実績</span> : null}</div>
