@@ -12,6 +12,7 @@ const visitUi = read('src/components/VisitTrialPanel.tsx');
 const transparencyRepository = read('src/lib/jobTransparencyRepository.ts');
 const transparencyUi = read('src/components/InterviewTransparencyPanel.tsx');
 const applicationDetail = read('src/components/ApplicationDetail.tsx');
+const applicationMessages = read('src/components/ApplicationMessages.tsx');
 const attention = read('src/components/AttentionSummaryEnhancer.tsx');
 const notifications = read('src/components/NotificationCenter.tsx');
 const externalReturn = read('src/components/ExternalJobReturnEnhancer.tsx');
@@ -84,9 +85,19 @@ for (const marker of [
   'pending_scouts_count',
   '#application-messages',
   '#scout-inbox',
-  'IntersectionObserver',
+  "window.addEventListener('hc:application-messages-viewed'",
 ]) {
   if (!attention.includes(marker)) throw new Error(`Attention-summary journey missing: ${marker}`);
+}
+for (const marker of [
+  "window.location.hash !== '#application-messages'",
+  "load({ acknowledge: true })",
+  "new CustomEvent('hc:application-messages-viewed'",
+]) {
+  if (!applicationMessages.includes(marker)) throw new Error(`Message-read journey missing: ${marker}`);
+}
+if (attention.includes('IntersectionObserver')) {
+  throw new Error('Closed communication-card visibility must not acknowledge unread facility messages.');
 }
 
 for (const marker of ['application_id', 'interview_id', '/applications', '/scouts']) {
