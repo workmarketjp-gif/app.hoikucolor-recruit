@@ -16,6 +16,7 @@ type Props = {
 const ALLOWED_PATHS = new Set(['/', '/jobs', '/saved', '/applications', '/profile', '/scouts', '/spot-jobs']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const INTERVIEW_NOTIFICATION_TYPES = new Set(['interview_scheduled', 'interview_cancelled']);
+const SPOT_NOTIFICATION_TYPES = new Set(['spot_confirmed', 'spot_cancelled', 'spot_completed', 'spot_no_show']);
 
 function relativeTime(value: string) {
   const timestamp = new Date(value).getTime();
@@ -59,7 +60,7 @@ function safeTarget(item: JobseekerNotification) {
       return `/scouts${query}#scout-inbox`;
     }
 
-    if (item.notification_type === 'spot_confirmed' && parsed.pathname === '/spot-jobs') {
+    if (SPOT_NOTIFICATION_TYPES.has(item.notification_type) && parsed.pathname === '/spot-jobs') {
       const assignmentId = parsed.searchParams.get('assignment_id');
       if (assignmentId && UUID_PATTERN.test(assignmentId)) {
         return `/spot-jobs?assignment_id=${encodeURIComponent(assignmentId)}#spot-assignment-${assignmentId}`;

@@ -12,7 +12,7 @@ export type JobseekerNotification = {
 };
 
 function client() {
-  if (!supabase) throw new Error('Supabaseの接続設定がありません。Vercelの環境変数を確認してください。');
+  if (!supabase) throw new Error('Supabaseの接続設定がありません。Cloudflareまたはローカルの環境変数を確認してください。');
   return supabase;
 }
 
