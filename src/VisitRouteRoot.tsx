@@ -184,6 +184,7 @@ function VisitHistory() {
       setError(null);
     } catch (err) {
       if (!mountedRef.current) return;
+      setMissingTarget(false);
       setError(err instanceof Error ? err.message : '見学・体験の履歴を読み込めませんでした。');
     } finally {
       if (mountedRef.current && !quiet) setLoading(false);
@@ -213,13 +214,13 @@ function VisitHistory() {
   }, [load]);
 
   useEffect(() => {
-    if (loading || !visitId || handledVisitRef.current === visitId) return;
+    if (loading || error || !visitId || handledVisitRef.current === visitId) return;
     const ownedVisit = visits.find((item) => item.reservation_id === visitId);
-    handledVisitRef.current = visitId;
     if (!ownedVisit) {
       setMissingTarget(true);
       return;
     }
+    handledVisitRef.current = visitId;
     setMissingTarget(false);
     window.requestAnimationFrame(() => {
       const target = document.getElementById(`visit-${visitId}`);
@@ -227,7 +228,7 @@ function VisitHistory() {
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
       target.focus({ preventScroll: true });
     });
-  }, [loading, visitId, visits]);
+  }, [error, loading, visitId, visits]);
 
   const active = useMemo(() => visits
     .filter((item) => ACTIVE_STATUSES.has(item.status))

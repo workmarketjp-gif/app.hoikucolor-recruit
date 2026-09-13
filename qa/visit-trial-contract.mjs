@@ -146,6 +146,7 @@ const routeMarkers = [
   "document.addEventListener('visibilitychange', refreshWhenVisible)",
   "window.addEventListener('hc:visits-refresh', refreshWhenVisible)",
   'visits.find((item) => item.reservation_id === visitId)',
+  'if (loading || error || !visitId || handledVisitRef.current === visitId) return;',
   'handledVisitRef.current = visitId',
   'id={`visit-${item.reservation_id}`}',
   'tabIndex={-1}',
@@ -160,6 +161,17 @@ const routeMarkers = [
 ];
 for (const marker of routeMarkers) {
   if (!route.includes(marker)) throw new Error(`Dedicated visit history route contract missing: ${marker}`);
+}
+const missingVisitGuardIndex = route.indexOf('if (!ownedVisit)');
+const handledVisitIndex = route.indexOf('handledVisitRef.current = visitId');
+if (missingVisitGuardIndex < 0 || handledVisitIndex < 0 || handledVisitIndex < missingVisitGuardIndex) {
+  throw new Error('Visit deep-link must stay retryable until the requested owned reservation is actually loaded.');
+}
+if (!route.includes('setMissingTarget(false);\n      setError(')) {
+  throw new Error('Visit deep-link must clear stale missing-target state when the history request itself fails.');
+}
+if (!route.includes('}, [error, loading, visitId, visits]);')) {
+  throw new Error('Visit deep-link recovery must react when a failed history request later succeeds.');
 }
 if (!main.includes("window.location.pathname.startsWith('/visits') ? <VisitRouteRoot />")) throw new Error('Dedicated /visits route is not wired in main.tsx.');
 if (!main.includes('<VisitNavigationEnhancer />')) throw new Error('Visit history navigation enhancer is not mounted globally.');
