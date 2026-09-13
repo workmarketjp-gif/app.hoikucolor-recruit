@@ -26,7 +26,7 @@ const checks = [
   [/assignment_id/.test(route) && /UUID_PATTERN/.test(route) && /spot-assignment-\$\{assignmentId\}/.test(route), 'spot notification deep-link must validate and focus an owned assignment'],
   [route.includes('assignment.break_minutes') && route.includes('assignment.hourly_rate') && route.includes('assignment.work_date'), 'confirmed-work card must preserve canonical date, rate and break'],
   [notifications.includes("'/spot-jobs'"), 'notification navigation allow-list must include the spot route'],
-  [/item\.notification_type === 'spot_confirmed'/.test(notifications) && /UUID_PATTERN\.test\(assignmentId\)/.test(notifications), 'spot notification assignment id must be UUID-validated'],
+  [/SPOT_NOTIFICATION_TYPES\.has\(item\.notification_type\)/.test(notifications) && /UUID_PATTERN\.test\(assignmentId\)/.test(notifications), 'spot notification assignment id must be UUID-validated for confirmed and later lifecycle notifications'],
   [notifications.includes("target.startsWith('/spot-jobs?')"), 'spot confirmation deep-links must preserve assignment query/hash navigation'],
   [css.includes('.spot-assignment-card:focus') && css.includes('@media(max-width:390px)'), 'confirmed-work cards must retain focus and 390px mobile hardening'],
 ];
