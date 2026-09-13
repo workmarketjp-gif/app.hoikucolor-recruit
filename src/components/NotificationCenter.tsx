@@ -13,7 +13,7 @@ type Props = {
   onNavigate: (target: string) => void;
 };
 
-const ALLOWED_PATHS = new Set(['/', '/jobs', '/saved', '/applications', '/profile', '/scouts']);
+const ALLOWED_PATHS = new Set(['/', '/jobs', '/saved', '/applications', '/profile', '/scouts', '/spot-jobs']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const INTERVIEW_NOTIFICATION_TYPES = new Set(['interview_scheduled', 'interview_cancelled']);
 
@@ -57,6 +57,14 @@ function safeTarget(item: JobseekerNotification) {
       const scoutId = parsed.searchParams.get('scout_id');
       const query = scoutId && UUID_PATTERN.test(scoutId) ? `?scout_id=${encodeURIComponent(scoutId)}` : '';
       return `/scouts${query}#scout-inbox`;
+    }
+
+    if (item.notification_type === 'spot_confirmed' && parsed.pathname === '/spot-jobs') {
+      const assignmentId = parsed.searchParams.get('assignment_id');
+      if (assignmentId && UUID_PATTERN.test(assignmentId)) {
+        return `/spot-jobs?assignment_id=${encodeURIComponent(assignmentId)}#spot-assignment-${assignmentId}`;
+      }
+      return '/spot-jobs';
     }
 
     return parsed.pathname;
@@ -165,7 +173,7 @@ export function NotificationCenter({ onNavigate }: Props) {
       }
     }
     setOpen(false);
-    if (target.startsWith('/scouts') || target.startsWith('/applications?')) {
+    if (target.startsWith('/scouts') || target.startsWith('/applications?') || target.startsWith('/spot-jobs?')) {
       window.location.assign(target);
       return;
     }
