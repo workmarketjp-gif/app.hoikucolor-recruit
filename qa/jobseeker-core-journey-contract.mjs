@@ -38,6 +38,27 @@ if (rankedCatalog.includes('hc_verified_workplace_snapshots') || rankedCatalog.i
   throw new Error('Core journey ranked catalog must not read raw Verified snapshots.');
 }
 
+for (const marker of [
+  'listJobseekerDocuments',
+  'document.is_default',
+  'attachJobseekerDocumentToApplication(document, applicationId)',
+  'Promise.allSettled',
+  'setApplicationDocumentHandoffWarning(applicationId, true)',
+]) {
+  if (!repository.includes(marker)) throw new Error(`Default Document Vault handoff missing: ${marker}`);
+}
+if (!repository.includes('await handoffDefaultDocuments(data);')) {
+  throw new Error('Successful application submission must trigger default Document Vault handoff.');
+}
+for (const marker of [
+  'hasApplicationDocumentHandoffWarning(applicationId)',
+  'clearApplicationDocumentHandoffWarning(applicationId)',
+  'defaultDocumentIds.every',
+  '応募自体は完了していますが',
+]) {
+  if (!applicationMessages.includes(marker)) throw new Error(`Recoverable Document Vault handoff UX missing: ${marker}`);
+}
+
 if (!app.includes('<VisitTrialPanel jobId={job.id} facilityId={job.facility_id} />')) {
   throw new Error('Core journey app wiring missing: VisitTrialPanel');
 }

@@ -1,3 +1,4 @@
+import { attachJobseekerDocumentToApplication, listJobseekerDocuments } from './documentVaultRepository';
 import { supabase } from './supabase';
 
 export type VerifiedWorkplaceMetric = {
@@ -174,7 +175,7 @@ export type JobseekerProfile = {
 };
 
 function client() {
-  if (!supabase) throw new Error('Supabaseの接続設定がありません。Vercelの環境変数を確認してください。');
+  if (!supabase) throw new Error('Supabaseの接続設定がありません。Cloudflareまたはローカルの環境変数を確認してください。');
   return supabase;
 }
 
@@ -186,12 +187,60 @@ function publishedAtEpoch(value: string | null) {
 
 const JOB_CATALOG_CACHE_MS = 30_000;
 const COMPARE_JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DOCUMENT_HANDOFF_WARNING_PREFIX = 'hc:application-document-handoff:';
 let jobCatalogCache: { expiresAt: number; key: string; promise: Promise<Job[]> } | null = null;
 
 function comparisonRequestedJobIds(): string[] {
   if (typeof window === 'undefined' || !window.location.pathname.startsWith('/compare')) return [];
   const params = new URLSearchParams(window.location.search);
   return [...new Set(params.getAll('job_id').filter((id) => COMPARE_JOB_ID_PATTERN.test(id)))].slice(0, 3);
+}
+
+function documentHandoffWarningKey(applicationId: string) {
+  return `${DOCUMENT_HANDOFF_WARNING_PREFIX}${applicationId}`;
+}
+
+function setApplicationDocumentHandoffWarning(applicationId: string, incomplete: boolean) {
+  if (typeof window === 'undefined') return;
+  const key = documentHandoffWarningKey(applicationId);
+  try {
+    if (incomplete) window.sessionStorage.setItem(key, '1');
+    else window.sessionStorage.removeItem(key);
+  } catch {
+    // Storage availability must never change whether the application itself succeeds.
+  }
+}
+
+export function hasApplicationDocumentHandoffWarning(applicationId: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.sessionStorage.getItem(documentHandoffWarningKey(applicationId)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function clearApplicationDocumentHandoffWarning(applicationId: string) {
+  setApplicationDocumentHandoffWarning(applicationId, false);
+}
+
+async function handoffDefaultDocuments(applicationId: string) {
+  try {
+    const defaultDocuments = (await listJobseekerDocuments()).filter((document) => document.is_default);
+    if (!defaultDocuments.length) {
+      setApplicationDocumentHandoffWarning(applicationId, false);
+      return;
+    }
+
+    const results = await Promise.allSettled(
+      defaultDocuments.map((document) => attachJobseekerDocumentToApplication(document, applicationId)),
+    );
+    setApplicationDocumentHandoffWarning(applicationId, results.some((result) => result.status === 'rejected'));
+  } catch {
+    // The application row already exists at this point. Preserve that success and make
+    // the recoverable document handoff visible when the candidate opens the application.
+    setApplicationDocumentHandoffWarning(applicationId, true);
+  }
 }
 
 async function loadRankedJobs(exactJobIds: string[] = []): Promise<Job[]> {
@@ -373,6 +422,8 @@ export async function submitApplication(jobId: string, profile: JobseekerProfile
   });
   if (error) throw error;
   if (typeof data !== 'string' || !data) throw new Error('応募IDを取得できませんでした。');
+
+  await handoffDefaultDocuments(data);
   return data;
 }
 

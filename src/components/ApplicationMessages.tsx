@@ -8,6 +8,10 @@ import {
   type AttachedApplicationDocument,
   type JobseekerDocument,
 } from '../lib/documentVaultRepository';
+import {
+  clearApplicationDocumentHandoffWarning,
+  hasApplicationDocumentHandoffWarning,
+} from '../lib/recruitRepository';
 
 const documentLabels: Record<string, string> = {
   resume: '履歴書',
@@ -33,6 +37,7 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
   const [documentBusyId, setDocumentBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [documentNotice, setDocumentNotice] = useState<string | null>(null);
+  const [handoffWarning, setHandoffWarning] = useState(() => hasApplicationDocumentHandoffWarning(applicationId));
 
   const announceMessagesViewed = () => {
     window.dispatchEvent(new CustomEvent('hc:application-messages-viewed', {
@@ -59,11 +64,20 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
         listJobseekerDocuments(),
         listSubmittedApplicationDocuments(applicationId),
       ]);
+      const nextAttachedIds = submitted
+        .map((document) => document.source_jobseeker_document_id)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0);
       setDocuments(saved);
       setSubmittedDocuments(submitted);
-      setAttachedIds(submitted
-        .map((document) => document.source_jobseeker_document_id)
-        .filter((value): value is string => typeof value === 'string' && value.length > 0));
+      setAttachedIds(nextAttachedIds);
+
+      if (handoffWarning) {
+        const defaultDocumentIds = saved.filter((document) => document.is_default).map((document) => document.id);
+        if (defaultDocumentIds.every((documentId) => nextAttachedIds.includes(documentId))) {
+          clearApplicationDocumentHandoffWarning(applicationId);
+          setHandoffWarning(false);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '応募書類を読み込めませんでした。');
     }
@@ -75,6 +89,7 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
   };
 
   useEffect(() => {
+    setHandoffWarning(hasApplicationDocumentHandoffWarning(applicationId));
     if (window.location.hash !== '#application-messages') return;
     void openAndLoad();
     // Deep-link hydration should run once for the currently selected application.
@@ -152,6 +167,7 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
           <strong style={{ fontSize: 13 }}>応募書類</strong>
           <a href="/profile" style={{ fontSize: 12 }}>書類庫を管理</a>
         </div>
+        {handoffWarning && <p className="form-error" role="alert">応募自体は完了していますが、「応募時に使用」の書類を自動提出できませんでした。未提出の書類を下からこの応募先へ提出してください。</p>}
         {documentNotice && <p className="form-success" style={{ margin: '0 0 8px' }}>{documentNotice}</p>}
         {documents.length ? <div style={{ display: 'grid', gap: 8 }}>
           {documents.map((document) => {
