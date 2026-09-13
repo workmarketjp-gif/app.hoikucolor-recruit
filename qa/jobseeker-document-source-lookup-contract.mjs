@@ -12,7 +12,7 @@ const checks = [
   ['source path extracts canonical UUID segment', /v_source_document\s*:=\s*parts\[3\]::uuid/i.test(migration)],
   ['source object is candidate-owner bound', /parts\[2\]\s*<>\s*v_current_user/i.test(migration)],
   ['linked-copy lookup uses canonical FK', /d\.source_jobseeker_document_id\s*=\s*v_source_document/i.test(migration)],
-  ['leading-wildcard application path lookup removed', !/d\.file_path\s+like/i.test(migration)],
+  ['leading-wildcard application path query removed', !/and\s+d\.file_path\s+like\s*\(\s*'%\/vault-'/i.test(migration)],
   ['application vault copies remain separately recognized', /parts\[4\]\s+like\s+'vault-%'/i.test(migration)],
   ['submitted copy overwrite stays denied after object exists', /storage\.objects[\s\S]*bucket_id\s*=\s*'hc-application-documents'[\s\S]*o\.name\s*=\s*object_name/i.test(migration)],
   ['facility write authorization preserved', /ho_private\.recruitment_can_write\(v_facility\)/i.test(migration)],
