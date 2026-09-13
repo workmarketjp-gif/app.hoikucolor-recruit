@@ -1,5 +1,5 @@
 import { SignOutButton, useUser } from '@clerk/react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
 import { ApplicationDetail } from './components/ApplicationDetail';
@@ -70,6 +70,15 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const refreshApplications = useCallback(async (surfaceError = false) => {
+    if (!user?.id) return;
+    try {
+      setApplications(await listApplications());
+    } catch (err) {
+      if (surfaceError) setError(err instanceof Error ? err.message : '応募情報を更新できませんでした。');
+    }
+  }, [user?.id]);
+
   useEffect(() => {
     const onPop = () => {
       setView(pathToView(window.location.pathname));
@@ -102,6 +111,28 @@ export function App() {
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refreshApplications(false);
+    };
+    const intervalId = window.setInterval(refreshWhenVisible, 60_000);
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('hc:applications-refresh', refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('hc:applications-refresh', refreshWhenVisible);
+    };
+  }, [user?.id, refreshApplications]);
+
+  useEffect(() => {
+    if (!user?.id || loading || view !== 'applications' || selectedApplicationId) return;
+    void refreshApplications(true);
+  }, [user?.id, loading, view, selectedApplicationId, refreshApplications]);
 
   const navigate = (next: View) => {
     window.history.pushState({}, '', viewPaths[next]);
