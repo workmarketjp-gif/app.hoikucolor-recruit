@@ -8,10 +8,6 @@ import {
   type AttachedApplicationDocument,
   type JobseekerDocument,
 } from '../lib/documentVaultRepository';
-import {
-  clearApplicationDocumentHandoffWarning,
-  hasApplicationDocumentHandoffWarning,
-} from '../lib/recruitRepository';
 
 const documentLabels: Record<string, string> = {
   resume: '履歴書',
@@ -31,13 +27,14 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
   const [documents, setDocuments] = useState<JobseekerDocument[]>([]);
   const [submittedDocuments, setSubmittedDocuments] = useState<AttachedApplicationDocument[]>([]);
   const [attachedIds, setAttachedIds] = useState<string[]>([]);
+  const [missingDefaultDocumentIds, setMissingDefaultDocumentIds] = useState<string[]>([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [documentBusyId, setDocumentBusyId] = useState<string | null>(null);
+  const [repairingDefaults, setRepairingDefaults] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [documentNotice, setDocumentNotice] = useState<string | null>(null);
-  const [handoffWarning, setHandoffWarning] = useState(() => hasApplicationDocumentHandoffWarning(applicationId));
 
   const announceMessagesViewed = () => {
     window.dispatchEvent(new CustomEvent('hc:application-messages-viewed', {
@@ -67,17 +64,13 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
       const nextAttachedIds = submitted
         .map((document) => document.source_jobseeker_document_id)
         .filter((value): value is string => typeof value === 'string' && value.length > 0);
+      const missingDefaultIds = saved
+        .filter((document) => document.is_default && !nextAttachedIds.includes(document.id))
+        .map((document) => document.id);
       setDocuments(saved);
       setSubmittedDocuments(submitted);
       setAttachedIds(nextAttachedIds);
-
-      if (handoffWarning) {
-        const defaultDocumentIds = saved.filter((document) => document.is_default).map((document) => document.id);
-        if (defaultDocumentIds.every((documentId) => nextAttachedIds.includes(documentId))) {
-          clearApplicationDocumentHandoffWarning(applicationId);
-          setHandoffWarning(false);
-        }
-      }
+      setMissingDefaultDocumentIds(missingDefaultIds);
     } catch (err) {
       setError(err instanceof Error ? err.message : '応募書類を読み込めませんでした。');
     }
@@ -89,7 +82,6 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
   };
 
   useEffect(() => {
-    setHandoffWarning(hasApplicationDocumentHandoffWarning(applicationId));
     if (window.location.hash !== '#application-messages') return;
     void openAndLoad();
     // Deep-link hydration should run once for the currently selected application.
@@ -133,6 +125,30 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
     }
   };
 
+  const attachMissingDefaultDocuments = async () => {
+    const missing = documents.filter((document) => document.is_default && missingDefaultDocumentIds.includes(document.id));
+    if (!missing.length) return;
+    setRepairingDefaults(true);
+    setError(null);
+    setDocumentNotice(null);
+    try {
+      const results = await Promise.allSettled(
+        missing.map((document) => attachJobseekerDocumentToApplication(document, applicationId)),
+      );
+      await loadDocuments();
+      const failedCount = results.filter((result) => result.status === 'rejected').length;
+      if (failedCount > 0) {
+        setError(`既定書類${missing.length}件のうち${failedCount}件を提出できませんでした。未提出の書類は個別に再試行してください。`);
+      } else {
+        setDocumentNotice(`未提出だった既定書類${missing.length}件をこの応募先へ提出しました。`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '既定書類を提出できませんでした。');
+    } finally {
+      setRepairingDefaults(false);
+    }
+  };
+
   const openSubmittedDocument = async (document: AttachedApplicationDocument) => {
     setError(null);
     try {
@@ -167,7 +183,12 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
           <strong style={{ fontSize: 13 }}>応募書類</strong>
           <a href="/profile" style={{ fontSize: 12 }}>書類庫を管理</a>
         </div>
-        {handoffWarning && <p className="form-error" role="alert">応募自体は完了していますが、「応募時に使用」の書類を自動提出できませんでした。未提出の書類を下からこの応募先へ提出してください。</p>}
+        {missingDefaultDocumentIds.length > 0 && <div className="form-error" role="alert" style={{ display: 'grid', gap: 8, marginBottom: 8 }}>
+          <span>現在「応募時に使用」に設定されている書類のうち、{missingDefaultDocumentIds.length}件がこの応募にはまだ提出されていません。</span>
+          <button className="secondary-button" type="button" onClick={() => void attachMissingDefaultDocuments()} disabled={repairingDefaults || documentBusyId !== null} style={{ justifySelf: 'start' }}>
+            {repairingDefaults ? '既定書類を提出中…' : '未提出の既定書類をまとめて提出'}
+          </button>
+        </div>}
         {documentNotice && <p className="form-success" style={{ margin: '0 0 8px' }}>{documentNotice}</p>}
         {documents.length ? <div style={{ display: 'grid', gap: 8 }}>
           {documents.map((document) => {
@@ -177,7 +198,7 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
                 <strong style={{ fontSize: 12 }}>{documentLabels[document.document_type] || '書類'}{document.is_default ? ' ・応募時に使用' : ''}</strong>
                 <small style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{document.title}</small>
               </span>
-              <button className="secondary-button" type="button" disabled={attached || documentBusyId !== null} onClick={() => void attachDocument(document)}>
+              <button className="secondary-button" type="button" disabled={attached || repairingDefaults || documentBusyId !== null} onClick={() => void attachDocument(document)}>
                 {attached ? '提出済み' : documentBusyId === document.id ? '提出中…' : 'この応募に提出'}
               </button>
             </div>;

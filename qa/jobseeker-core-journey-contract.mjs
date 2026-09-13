@@ -43,7 +43,6 @@ for (const marker of [
   'document.is_default',
   'attachJobseekerDocumentToApplication(document, applicationId)',
   'Promise.allSettled',
-  'setApplicationDocumentHandoffWarning(applicationId, true)',
 ]) {
   if (!repository.includes(marker)) throw new Error(`Default Document Vault handoff missing: ${marker}`);
 }
@@ -51,12 +50,23 @@ if (!repository.includes('await handoffDefaultDocuments(data);')) {
   throw new Error('Successful application submission must trigger default Document Vault handoff.');
 }
 for (const marker of [
-  'hasApplicationDocumentHandoffWarning(applicationId)',
-  'clearApplicationDocumentHandoffWarning(applicationId)',
-  'defaultDocumentIds.every',
-  '応募自体は完了していますが',
+  'listJobseekerDocuments()',
+  'listSubmittedApplicationDocuments(applicationId)',
+  'document.is_default && !nextAttachedIds.includes(document.id)',
+  'setMissingDefaultDocumentIds(missingDefaultIds)',
+  'attachMissingDefaultDocuments',
+  'missing.map((document) => attachJobseekerDocumentToApplication(document, applicationId))',
+  '未提出の既定書類をまとめて提出',
+  'この応募にはまだ提出されていません',
 ]) {
-  if (!applicationMessages.includes(marker)) throw new Error(`Recoverable Document Vault handoff UX missing: ${marker}`);
+  if (!applicationMessages.includes(marker)) throw new Error(`Server-backed Document Vault recovery UX missing: ${marker}`);
+}
+for (const forbidden of [
+  'hasApplicationDocumentHandoffWarning',
+  'clearApplicationDocumentHandoffWarning',
+  'sessionStorage',
+]) {
+  if (applicationMessages.includes(forbidden)) throw new Error(`Application document recovery must not rely on browser session state: ${forbidden}`);
 }
 
 if (!app.includes('<VisitTrialPanel jobId={job.id} facilityId={job.facility_id} />')) {
