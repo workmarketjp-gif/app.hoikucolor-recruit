@@ -185,13 +185,20 @@ function publishedAtEpoch(value: string | null) {
 }
 
 const JOB_CATALOG_CACHE_MS = 30_000;
-let jobCatalogCache: { expiresAt: number; promise: Promise<Job[]> } | null = null;
+const COMPARE_JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+let jobCatalogCache: { expiresAt: number; key: string; promise: Promise<Job[]> } | null = null;
 
-async function loadRankedJobs(): Promise<Job[]> {
+function comparisonRequestedJobIds(): string[] {
+  if (typeof window === 'undefined' || !window.location.pathname.startsWith('/compare')) return [];
+  const params = new URLSearchParams(window.location.search);
+  return [...new Set(params.getAll('job_id').filter((id) => COMPARE_JOB_ID_PATTERN.test(id)))].slice(0, 3);
+}
+
+async function loadRankedJobs(exactJobIds: string[] = []): Promise<Job[]> {
   const { data, error } = await client().rpc('hc_jobseeker_list_ranked_jobs');
   if (error) throw error;
 
-  return ((data || []) as Job[]).sort((a, b) => {
+  const ranked = ((data || []) as Job[]).sort((a, b) => {
     const qualityA = Number(a.verified_workplace?.quality_points || 0) + Number(a.verified_finance?.quality_points || 0);
     const qualityB = Number(b.verified_workplace?.quality_points || 0) + Number(b.verified_finance?.quality_points || 0);
     const qualityDiff = qualityB - qualityA;
@@ -202,19 +209,40 @@ async function loadRankedJobs(): Promise<Job[]> {
     if (transparencyDiff !== 0) return transparencyDiff;
     return publishedAtEpoch(b.published_at) - publishedAtEpoch(a.published_at);
   });
+
+  if (!exactJobIds.length) return ranked;
+
+  const byId = new Map(ranked.map((job) => [job.id, job]));
+  const missingIds = exactJobIds.filter((jobId) => !byId.has(jobId));
+  if (missingIds.length) {
+    const exactJobs = await Promise.all(missingIds.map((jobId) => getRankedJob(jobId)));
+    exactJobs.forEach((job) => {
+      if (job) byId.set(job.id, job);
+    });
+  }
+
+  const requestedJobs = exactJobIds.flatMap((jobId) => {
+    const job = byId.get(jobId);
+    return job ? [job] : [];
+  });
+  const requestedSet = new Set(requestedJobs.map((job) => job.id));
+  return [...requestedJobs, ...ranked.filter((job) => !requestedSet.has(job.id))];
 }
 
-// Retained for matching/comparison routes until their ranking algorithms move server-side.
-// The primary dashboard and /jobs route must use paginated candidate-safe search below.
+// Matching/comparison consume a bounded server-side shortlist. On /compare, valid job_id query
+// parameters are additionally hydrated through the candidate-safe exact lookup so a shared
+// comparison URL never drops a still-published job merely because it ranks outside the top 120.
 export async function listJobs(): Promise<Job[]> {
   const now = Date.now();
-  if (jobCatalogCache && jobCatalogCache.expiresAt > now) return jobCatalogCache.promise;
+  const requestedJobIds = comparisonRequestedJobIds();
+  const cacheKey = requestedJobIds.length ? `compare:${requestedJobIds.join(',')}` : 'ranked-shortlist';
+  if (jobCatalogCache && jobCatalogCache.expiresAt > now && jobCatalogCache.key === cacheKey) return jobCatalogCache.promise;
 
-  const promise = loadRankedJobs().catch((error) => {
+  const promise = loadRankedJobs(requestedJobIds).catch((error) => {
     if (jobCatalogCache?.promise === promise) jobCatalogCache = null;
     throw error;
   });
-  jobCatalogCache = { expiresAt: now + JOB_CATALOG_CACHE_MS, promise };
+  jobCatalogCache = { expiresAt: now + JOB_CATALOG_CACHE_MS, key: cacheKey, promise };
   return promise;
 }
 
