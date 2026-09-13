@@ -25,6 +25,11 @@
   .compare-table th,.compare-table td{overflow-wrap:anywhere}
   .match-job-card,.compare-pick-card{min-width:0}
   .match-actions button,.compare-pick-card{min-height:44px}
+  .application-back,.application-refresh,.application-event .secondary-button,.interview-response-actions .primary-button,.interview-response-actions .secondary-button,.interview-reschedule-form .primary-button,.profile-chip,.profile-preference-grid input,.profile-time-grid input,.scout-toggle,.scout-search-result button,.scout-block-row .secondary-button,.notification-head button,.visit-form-grid input,.visit-form-grid select,.visit-actions .secondary-button,.compare-job-heading button,.form-section[aria-labelledby="document-vault-heading"] article>button,.interview-faqs summary{min-height:44px!important}
+  .profile-chip,.scout-toggle,.notification-head button,.compare-job-heading button{display:inline-flex;align-items:center;justify-content:center}
+  .interview-faqs summary{display:flex;align-items:center}
+  .notification-popover{top:calc(62px + env(safe-area-inset-top))!important;max-height:calc(100dvh - 78px - env(safe-area-inset-top) - env(safe-area-inset-bottom))!important}
+  .selection-timeline{overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
 }
 @media(max-width:460px){
   .topbar{gap:6px;padding-right:10px;padding-left:10px}
