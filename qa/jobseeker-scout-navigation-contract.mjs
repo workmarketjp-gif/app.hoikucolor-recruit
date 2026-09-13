@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const read = (path) => fs.readFileSync(path, 'utf8');
 const component = read('src/components/ScoutNavigationEnhancer.tsx');
 const css = read('src/components/ScoutNavigationEnhancer.css');
+const notification = read('src/components/NotificationCenter.tsx');
 const main = read('src/main.tsx');
 const repository = read('src/lib/scoutInboxRepository.ts');
 
@@ -12,7 +13,7 @@ const checks = [
   ['only pending invitations contribute to the badge', component.includes("scout.scout_status === 'pending'")],
   ['sidebar exposes the dedicated scouts route', component.includes('href="/scouts"') && component.includes('data-scout-navigation="true"')],
   ['dashboard exposes a scouts callout', component.includes('scout-dashboard-callout') && component.includes('回答待ちのスカウト')],
-  ['topbar exposes a scouts shortcut', component.includes('scout-topbar-link') && component.includes('aria-label={pendingCount')],
+  ['topbar scout shortcut is owned only by the notification center', notification.includes('className={`icon-button scout-shortcut') && !component.includes('scout-topbar-link') && !component.includes("ensureHost(topbar, 'topbar'")],
   ['pending state refreshes while the app remains open', component.includes('60000') && component.includes('visibilitychange')],
   ['existing scouts nav gets a pending badge instead of a duplicate link', component.includes('existingScoutNav') && component.includes('scout-existing-nav-badge')],
   ['mobile dashboard layout is explicitly constrained', css.includes('@media(max-width:760px)') && css.includes('grid-template-columns:38px minmax(0,1fr)')],

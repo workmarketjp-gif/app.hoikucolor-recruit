@@ -2,7 +2,11 @@
 [id^="interview-"],#application-messages{scroll-margin-top:84px}
 @media(max-width:760px){
   html,body,#root{max-width:100%;overflow-x:clip}
+  body:has(.sidebar.is-open){overflow:hidden}
   .app-shell,.main-column,.content,.panel,.job-card,.application-panel,.form-section{min-width:0}
+  .sidebar{max-height:100dvh;overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;padding-top:calc(20px + env(safe-area-inset-top));padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+  .side-nav,.sidebar-public,.account-card{flex-shrink:0}
+  .mobile-close{top:calc(15px + env(safe-area-inset-top))!important}
   .topbar{min-height:60px;height:auto;padding-top:max(0px,env(safe-area-inset-top));padding-right:12px;padding-left:12px}
   .content{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
   .primary-button,.secondary-button,.heart-button,.icon-button,.mobile-menu,.mobile-close{min-height:44px}
@@ -30,6 +34,7 @@
   .interview-faqs summary{display:flex;align-items:center}
   .notification-popover{top:calc(62px + env(safe-area-inset-top))!important;max-height:calc(100dvh - 78px - env(safe-area-inset-top) - env(safe-area-inset-bottom))!important}
   .selection-timeline{overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+  .error-banner span,.centered-card p,.sidebar-public strong{min-width:0;overflow-wrap:anywhere}
 }
 @media(max-width:460px){
   .topbar{gap:6px;padding-right:10px;padding-left:10px}
@@ -61,6 +66,7 @@
 @media(max-width:390px){
   .content{width:calc(100% - 18px);padding-top:18px}
   .topbar{min-height:58px}
+  .mobile-brand .brand-logo-image{width:96px}
   .mobile-brand .brand-flower{width:27px;height:27px}
   .mobile-brand .petal{width:12px;height:12px}
   .mobile-brand .brand-type strong{font-size:15px}
@@ -74,4 +80,7 @@
   .compare-source-legend>div{padding:10px}
   .compare-table{min-width:700px}
   .compare-row-label{width:132px}
+}
+@media(max-width:350px){
+  .mobile-brand .brand-logo-image{width:72px}
 }

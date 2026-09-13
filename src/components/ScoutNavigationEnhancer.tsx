@@ -8,10 +8,9 @@ type Targets = {
   navHost: HTMLElement | null;
   existingScoutNav: HTMLElement | null;
   dashboardHost: HTMLElement | null;
-  topbarHost: HTMLElement | null;
 };
 
-const emptyTargets: Targets = { navHost: null, existingScoutNav: null, dashboardHost: null, topbarHost: null };
+const emptyTargets: Targets = { navHost: null, existingScoutNav: null, dashboardHost: null };
 
 function ensureHost(parent: Element, marker: string, before?: Element | null) {
   const existing = parent.querySelector<HTMLElement>(`:scope > [data-hc-scout-host="${marker}"]`);
@@ -25,7 +24,7 @@ function ensureHost(parent: Element, marker: string, before?: Element | null) {
 }
 
 function sameTargets(a: Targets, b: Targets) {
-  return a.navHost === b.navHost && a.existingScoutNav === b.existingScoutNav && a.dashboardHost === b.dashboardHost && a.topbarHost === b.topbarHost;
+  return a.navHost === b.navHost && a.existingScoutNav === b.existingScoutNav && a.dashboardHost === b.dashboardHost;
 }
 
 export function ScoutNavigationEnhancer() {
@@ -72,14 +71,7 @@ export function ScoutNavigationEnhancer() {
       let dashboardHost: HTMLElement | null = null;
       if (metricGrid?.parentElement) dashboardHost = ensureHost(metricGrid.parentElement, 'dashboard', metricGrid);
 
-      const topbar = document.querySelector('.topbar');
-      let topbarHost: HTMLElement | null = null;
-      if (topbar) {
-        const notification = topbar.querySelector('.notification-center');
-        topbarHost = ensureHost(topbar, 'topbar', notification);
-      }
-
-      const next = { navHost, existingScoutNav, dashboardHost, topbarHost };
+      const next = { navHost, existingScoutNav, dashboardHost };
       setTargets((current) => sameTargets(current, next) ? current : next);
     };
 
@@ -113,14 +105,6 @@ export function ScoutNavigationEnhancer() {
     {targets.existingScoutNav && pendingCount > 0 && createPortal(
       <span className="scout-existing-nav-badge" aria-label={`回答待ちスカウト${pendingCount}件`}>{pendingCount > 99 ? '99+' : pendingCount}</span>,
       targets.existingScoutNav,
-    )}
-
-    {targets.topbarHost && createPortal(
-      <a className="icon-button scout-topbar-link" href="/scouts" aria-label={pendingCount ? `スカウト 回答待ち${pendingCount}件` : 'スカウト'} title="スカウト">
-        <Icon name="sparkles" size={18} />
-        {pendingCount > 0 && <span className="scout-topbar-badge">{pendingCount > 99 ? '99+' : pendingCount}</span>}
-      </a>,
-      targets.topbarHost,
     )}
 
     {targets.dashboardHost && createPortal(
