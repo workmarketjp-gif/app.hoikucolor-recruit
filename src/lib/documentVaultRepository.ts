@@ -144,7 +144,36 @@ async function cleanupUnregisteredObject(path: string) {
   if (error) throw error;
 }
 
+export async function reconcileStaleJobseekerDocumentOrphans(): Promise<number> {
+  const { data, error } = await db().rpc('hc_jobseeker_list_stale_document_orphans');
+  if (error) throw error;
+
+  const paths = (Array.isArray(data) ? data : [])
+    .map((row) => (row && typeof row === 'object' && 'file_path' in row ? row.file_path : null))
+    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+  let removed = 0;
+  for (const path of paths) {
+    // The Storage DELETE policy re-checks ownership and canonical metadata at
+    // deletion time. If metadata appeared after the stale-orphan RPC, deletion
+    // is denied rather than racing a valid Vault/application record.
+    const { error: removeError } = await db().storage.from(BUCKET).remove([path]);
+    if (!removeError) removed += 1;
+  }
+  return removed;
+}
+
+let orphanReconciliationPromise: Promise<number> | null = null;
+function startOrphanReconciliation() {
+  if (orphanReconciliationPromise) return;
+  orphanReconciliationPromise = reconcileStaleJobseekerDocumentOrphans().catch(() => 0);
+}
+
 export async function listJobseekerDocuments(): Promise<JobseekerDocument[]> {
+  // Background-only maintenance: never block the Vault UI on cleanup. The RPC
+  // returns only stale, unregistered objects owned by the current candidate.
+  startOrphanReconciliation();
+
   const { data, error } = await db()
     .from('hc_jobseeker_documents')
     .select(documentColumns)
@@ -172,20 +201,14 @@ export async function uploadJobseekerDocument(
 
   await ensureUploadedSourceObject(path, file);
 
-  const { data, error } = await db()
-    .from('hc_jobseeker_documents')
-    .insert({
-      id,
-      jobseeker_clerk_user_id: ownerId,
-      document_type: documentType,
-      title,
-      file_path: path,
-      mime_type: file.type,
-      file_size: file.size,
-      is_default: false,
-    })
-    .select(documentColumns)
-    .single();
+  const { data, error } = await db().rpc('hc_register_jobseeker_document_source', {
+    p_document_id: id,
+    p_document_type: documentType,
+    p_title: title,
+    p_file_path: path,
+    p_mime_type: file.type,
+    p_file_size: file.size,
+  });
 
   let saved = data as JobseekerDocument | null;
   if (error || !saved) {
@@ -193,7 +216,8 @@ export async function uploadJobseekerDocument(
       saved = await findJobseekerDocumentById(id);
     } catch {
       // Do not delete an object when the metadata commit result itself is unknown.
-      // A refresh can safely discover a row that actually committed server-side.
+      // A later stale-orphan reconciliation can safely remove it only if no
+      // canonical row ever appears.
       throw new Error('書類保存の結果を確認できませんでした。画面を再読み込みして確認してください。');
     }
 
