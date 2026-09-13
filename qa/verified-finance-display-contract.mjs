@@ -2,14 +2,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
-const app = fs.readFileSync(path.join(root, 'src/App.tsx'), 'utf8');
-const summary = fs.readFileSync(path.join(root, 'src/components/VerifiedFinanceSummary.tsx'), 'utf8');
-const css = fs.readFileSync(path.join(root, 'src/components/VerifiedFinanceSummary.css'), 'utf8');
-const repository = fs.readFileSync(path.join(root, 'src/lib/recruitRepository.ts'), 'utf8');
+const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
+const app = read('src/App.tsx');
+const summary = read('src/components/VerifiedFinanceSummary.tsx');
+const css = read('src/components/VerifiedFinanceSummary.css');
+const repository = read('src/lib/recruitRepository.ts');
+const rankedCatalog = read('supabase/migrations/20260913090000_hc_jobseeker_ranked_catalog_v1.sql');
 
 const checks = [
-  [repository.includes("from('hc_public_finance_profiles')"), 'jobseeker app must read only the public HF verified profile'],
-  [!repository.includes("from('hc_verified_finance_snapshots')"), 'jobseeker app must never read raw HF verified snapshots'],
+  [repository.includes("rpc('hc_jobseeker_list_ranked_jobs')"), 'jobseeker app must load the candidate-safe ranked catalog'],
+  [rankedCatalog.includes('hc_public_finance_profiles'), 'ranked catalog must read only the public HF verified profile'],
+  [!repository.includes("from('hc_verified_finance_snapshots')") && !rankedCatalog.includes('hc_verified_finance_snapshots'), 'jobseeker app/catalog must never read raw HF verified snapshots'],
   [app.includes('<VerifiedFinanceSummary job={job} expanded={expanded} />'), 'job details must render HF verified data'],
   [app.includes('✓ Hoiku Finance 実績'), 'job cards must identify HF verified provenance'],
   [app.includes('HF実績データあり'), 'job search must expose an HF verified filter'],

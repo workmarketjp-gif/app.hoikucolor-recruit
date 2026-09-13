@@ -64,8 +64,45 @@ export type Job = {
   number_of_positions: number;
   published_at: string | null;
   closing_at: string | null;
+  spot_break_minutes?: number | null;
   verified_workplace: VerifiedWorkplaceProfile | null;
   verified_finance: VerifiedFinanceProfile | null;
+};
+
+export type JobSearchCursor = {
+  quality: number | string;
+  transparency: number | string;
+  publishedAt: string | null;
+  id: string;
+};
+
+export type JobSearchFilters = {
+  keyword?: string;
+  prefecture?: string;
+  employmentType?: string;
+  hoVerifiedOnly?: boolean;
+  hfVerifiedOnly?: boolean;
+  limit?: number;
+  cursor?: JobSearchCursor | null;
+};
+
+export type JobSearchPage = {
+  jobs: Job[];
+  totalCount: number;
+  hasMore: boolean;
+  nextCursor: JobSearchCursor | null;
+};
+
+export type JobSearchFacets = {
+  prefectures: string[];
+  employmentTypes: string[];
+};
+
+type JobSearchRpcRow = Job & {
+  rank_quality: number | string;
+  rank_transparency: number | string;
+  total_count: number | string;
+  has_more: boolean;
 };
 
 export type Application = {
@@ -77,6 +114,48 @@ export type Application = {
   message: string | null;
   applied_at: string;
   updated_at: string;
+  job_title: string;
+  employment_type: string | null;
+  facility_name: string;
+  prefecture: string | null;
+  city: string | null;
+};
+
+export type JobseekerInterviewResponseStatus = 'accepted' | 'reschedule_requested';
+
+export type JobseekerInterview = {
+  id: string;
+  application_id: string;
+  scheduled_at: string;
+  duration_minutes: number;
+  location: string | null;
+  meeting_url: string | null;
+  status: string;
+  updated_at: string;
+  candidate_response_status: JobseekerInterviewResponseStatus | null;
+  candidate_response_message: string | null;
+  candidate_responded_at: string | null;
+};
+
+export type JobseekerVisit = {
+  id: string;
+  application_id: string | null;
+  job_id: string;
+  experience_type: 'visit' | 'half_day_trial' | 'full_day_trial';
+  starts_at: string;
+  ends_at: string;
+  status: string;
+  candidate_message: string | null;
+  confirmed_at: string | null;
+  cancelled_at: string | null;
+  completed_at: string | null;
+  updated_at: string;
+};
+
+export type JobseekerApplicationDetail = {
+  application: Application;
+  interviews: JobseekerInterview[];
+  visits: JobseekerVisit[];
 };
 
 export type JobseekerProfile = {
@@ -105,52 +184,127 @@ function publishedAtEpoch(value: string | null) {
   return Number.isFinite(epoch) ? epoch : 0;
 }
 
-export async function listJobs(): Promise<Job[]> {
-  const { data, error } = await client()
-    .from('hc_jobseeker_job_feed')
-    .select('*')
-    .order('published_at', { ascending: false, nullsFirst: false });
+const JOB_CATALOG_CACHE_MS = 30_000;
+const COMPARE_JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+let jobCatalogCache: { expiresAt: number; key: string; promise: Promise<Job[]> } | null = null;
+
+function comparisonRequestedJobIds(): string[] {
+  if (typeof window === 'undefined' || !window.location.pathname.startsWith('/compare')) return [];
+  const params = new URLSearchParams(window.location.search);
+  return [...new Set(params.getAll('job_id').filter((id) => COMPARE_JOB_ID_PATTERN.test(id)))].slice(0, 3);
+}
+
+async function loadRankedJobs(exactJobIds: string[] = []): Promise<Job[]> {
+  const { data, error } = await client().rpc('hc_jobseeker_list_ranked_jobs');
   if (error) throw error;
 
-  const rawJobs = (data || []) as Omit<Job, 'verified_workplace' | 'verified_finance'>[];
-  const facilityIds = [...new Set(rawJobs.map((job) => job.facility_id).filter(Boolean))];
-  if (!facilityIds.length) return rawJobs.map((job) => ({ ...job, verified_workplace: null, verified_finance: null }));
+  const ranked = ((data || []) as Job[]).sort((a, b) => {
+    const qualityA = Number(a.verified_workplace?.quality_points || 0) + Number(a.verified_finance?.quality_points || 0);
+    const qualityB = Number(b.verified_workplace?.quality_points || 0) + Number(b.verified_finance?.quality_points || 0);
+    const qualityDiff = qualityB - qualityA;
+    if (qualityDiff !== 0) return qualityDiff;
+    const transparencyA = Number(a.verified_workplace?.transparency_pct || 0) + Number(a.verified_finance?.transparency_pct || 0);
+    const transparencyB = Number(b.verified_workplace?.transparency_pct || 0) + Number(b.verified_finance?.transparency_pct || 0);
+    const transparencyDiff = transparencyB - transparencyA;
+    if (transparencyDiff !== 0) return transparencyDiff;
+    return publishedAtEpoch(b.published_at) - publishedAtEpoch(a.published_at);
+  });
 
-  const [workplaceResult, financeResult] = await Promise.all([
-    client().from('hc_public_workplace_profiles')
-      .select('facility_id,generated_at,period_start,period_end,methodology_version,verified_metrics,verified_metric_count,quality_points,transparency_pct,updated_at')
-      .in('facility_id', facilityIds),
-    client().from('hc_public_finance_profiles')
-      .select('facility_id,generated_at,period_start,period_end,methodology_version,verified_metrics,verified_metric_count,quality_points,transparency_pct,updated_at')
-      .in('facility_id', facilityIds),
-  ]);
-  if (workplaceResult.error) throw workplaceResult.error;
-  if (financeResult.error) throw financeResult.error;
+  if (!exactJobIds.length) return ranked;
 
-  const workplaceProfiles = new Map(
-    ((workplaceResult.data || []) as VerifiedWorkplaceProfile[]).map((profile) => [profile.facility_id, profile]),
-  );
-  const financeProfiles = new Map(
-    ((financeResult.data || []) as VerifiedFinanceProfile[]).map((profile) => [profile.facility_id, profile]),
-  );
-
-  return rawJobs
-    .map((job) => ({
-      ...job,
-      verified_workplace: workplaceProfiles.get(job.facility_id) || null,
-      verified_finance: financeProfiles.get(job.facility_id) || null,
-    }))
-    .sort((a, b) => {
-      const qualityA = Number(a.verified_workplace?.quality_points || 0) + Number(a.verified_finance?.quality_points || 0);
-      const qualityB = Number(b.verified_workplace?.quality_points || 0) + Number(b.verified_finance?.quality_points || 0);
-      const qualityDiff = qualityB - qualityA;
-      if (qualityDiff !== 0) return qualityDiff;
-      const transparencyA = Number(a.verified_workplace?.transparency_pct || 0) + Number(a.verified_finance?.transparency_pct || 0);
-      const transparencyB = Number(b.verified_workplace?.transparency_pct || 0) + Number(b.verified_finance?.transparency_pct || 0);
-      const transparencyDiff = transparencyB - transparencyA;
-      if (transparencyDiff !== 0) return transparencyDiff;
-      return publishedAtEpoch(b.published_at) - publishedAtEpoch(a.published_at);
+  const byId = new Map(ranked.map((job) => [job.id, job]));
+  const missingIds = exactJobIds.filter((jobId) => !byId.has(jobId));
+  if (missingIds.length) {
+    const exactJobs = await Promise.all(missingIds.map((jobId) => getRankedJob(jobId)));
+    exactJobs.forEach((job) => {
+      if (job) byId.set(job.id, job);
     });
+  }
+
+  const requestedJobs = exactJobIds.flatMap((jobId) => {
+    const job = byId.get(jobId);
+    return job ? [job] : [];
+  });
+  const requestedSet = new Set(requestedJobs.map((job) => job.id));
+  return [...requestedJobs, ...ranked.filter((job) => !requestedSet.has(job.id))];
+}
+
+// Matching/comparison consume a bounded server-side shortlist. On /compare, valid job_id query
+// parameters are additionally hydrated through the candidate-safe exact lookup so a shared
+// comparison URL never drops a still-published job merely because it ranks outside the top 120.
+export async function listJobs(): Promise<Job[]> {
+  const now = Date.now();
+  const requestedJobIds = comparisonRequestedJobIds();
+  const cacheKey = requestedJobIds.length ? `compare:${requestedJobIds.join(',')}` : 'ranked-shortlist';
+  if (jobCatalogCache && jobCatalogCache.expiresAt > now && jobCatalogCache.key === cacheKey) return jobCatalogCache.promise;
+
+  const promise = loadRankedJobs(requestedJobIds).catch((error) => {
+    if (jobCatalogCache?.promise === promise) jobCatalogCache = null;
+    throw error;
+  });
+  jobCatalogCache = { expiresAt: now + JOB_CATALOG_CACHE_MS, key: cacheKey, promise };
+  return promise;
+}
+
+export async function searchJobs(filters: JobSearchFilters = {}): Promise<JobSearchPage> {
+  const cursor = filters.cursor || null;
+  const limit = Math.max(1, Math.min(filters.limit || 24, 50));
+  const { data, error } = await client().rpc('hc_jobseeker_search_jobs', {
+    p_query: filters.keyword?.trim() || null,
+    p_prefecture: filters.prefecture?.trim() || null,
+    p_employment_type: filters.employmentType?.trim() || null,
+    p_ho_verified: Boolean(filters.hoVerifiedOnly),
+    p_hf_verified: Boolean(filters.hfVerifiedOnly),
+    p_limit: limit,
+    p_after_quality: cursor?.quality ?? null,
+    p_after_transparency: cursor?.transparency ?? null,
+    p_after_published_at: cursor?.publishedAt ?? null,
+    p_after_id: cursor?.id ?? null,
+  });
+  if (error) throw error;
+
+  const rows = (data || []) as JobSearchRpcRow[];
+  const last = rows.at(-1) || null;
+  const hasMore = Boolean(rows[0]?.has_more);
+  const jobs = rows.map(({ rank_quality: _rankQuality, rank_transparency: _rankTransparency, total_count: _totalCount, has_more: _hasMore, ...job }) => job);
+  return {
+    jobs,
+    totalCount: Number(rows[0]?.total_count || 0),
+    hasMore,
+    nextCursor: hasMore && last ? {
+      quality: last.rank_quality,
+      transparency: last.rank_transparency,
+      publishedAt: last.published_at,
+      id: last.id,
+    } : null,
+  };
+}
+
+export async function listFeaturedJobs(limit = 3): Promise<JobSearchPage> {
+  return searchJobs({ limit: Math.max(1, Math.min(limit, 12)) });
+}
+
+export async function getJobSearchFacets(): Promise<JobSearchFacets> {
+  const { data, error } = await client().rpc('hc_jobseeker_job_search_facets');
+  if (error) throw error;
+  const row = (data || [])[0] as { prefectures?: string[] | null; employment_types?: string[] | null } | undefined;
+  return {
+    prefectures: row?.prefectures || [],
+    employmentTypes: row?.employment_types || [],
+  };
+}
+
+export async function listSavedRankedJobs(): Promise<Job[]> {
+  const { data, error } = await client().rpc('hc_jobseeker_list_saved_ranked_jobs');
+  if (error) throw error;
+  return (data || []) as Job[];
+}
+
+export async function getRankedJob(jobId: string): Promise<Job | null> {
+  const { data, error } = await client().rpc('hc_jobseeker_get_ranked_job', { p_job_id: jobId });
+  if (error) throw error;
+  const rows = (data || []) as Job[];
+  return rows[0] || null;
 }
 
 export async function listSavedJobIds(): Promise<string[]> {
@@ -170,12 +324,36 @@ export async function unsaveJob(jobId: string) {
 }
 
 export async function listApplications(): Promise<Application[]> {
-  const { data, error } = await client()
-    .from('hc_applications')
-    .select('id,job_id,applicant_name,status,desired_start_date,message,applied_at,updated_at')
-    .order('applied_at', { ascending: false });
+  const { data, error } = await client().rpc('hc_jobseeker_list_applications');
   if (error) throw error;
   return (data || []) as Application[];
+}
+
+export async function getJobseekerApplicationDetail(applicationId: string): Promise<JobseekerApplicationDetail | null> {
+  const { data, error } = await client().rpc('hc_jobseeker_get_application_detail', {
+    p_application_id: applicationId,
+  });
+  if (error) throw error;
+  if (!data) return null;
+  const detail = data as JobseekerApplicationDetail;
+  return {
+    application: detail.application,
+    interviews: Array.isArray(detail.interviews) ? detail.interviews : [],
+    visits: Array.isArray(detail.visits) ? detail.visits : [],
+  };
+}
+
+export async function respondToInterview(
+  interviewId: string,
+  responseStatus: JobseekerInterviewResponseStatus,
+  candidateMessage: string | null = null,
+): Promise<void> {
+  const { error } = await client().rpc('hc_jobseeker_respond_interview', {
+    p_interview_id: interviewId,
+    p_response_status: responseStatus,
+    p_candidate_message: candidateMessage?.trim() || null,
+  });
+  if (error) throw error;
 }
 
 export async function submitApplication(jobId: string, profile: JobseekerProfile): Promise<string> {
@@ -190,7 +368,7 @@ export async function submitApplication(jobId: string, profile: JobseekerProfile
     p_phone: profile.phone?.trim() || null,
     p_qualifications: profile.qualifications?.length ? profile.qualifications.join('、') : null,
     p_years_of_experience: profile.years_of_experience,
-    p_desired_start_date: profile.desired_start_date || null,
+    p_desired_start_date: profile.desired_start_date,
     p_message: profile.self_intro?.trim() || null,
   });
   if (error) throw error;

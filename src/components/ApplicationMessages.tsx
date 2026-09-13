@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { listApplicationMessages, sendApplicationMessage, type Message } from '../lib/messageRepository';
 import {
   attachJobseekerDocumentToApplication,
@@ -17,6 +17,10 @@ const documentLabels: Record<string, string> = {
   other: 'その他',
 };
 
+type LoadMessageOptions = {
+  acknowledge?: boolean;
+};
+
 export function ApplicationMessages({ applicationId }: { applicationId: string }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -30,11 +34,18 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
   const [error, setError] = useState<string | null>(null);
   const [documentNotice, setDocumentNotice] = useState<string | null>(null);
 
-  const load = async () => {
+  const announceMessagesViewed = () => {
+    window.dispatchEvent(new CustomEvent('hc:application-messages-viewed', {
+      detail: { applicationId },
+    }));
+  };
+
+  const load = async ({ acknowledge = false }: LoadMessageOptions = {}) => {
     setLoading(true);
     setError(null);
     try {
       setMessages(await listApplicationMessages(applicationId));
+      if (acknowledge) announceMessagesViewed();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'メッセージを読み込めませんでした。');
     } finally {
@@ -58,10 +69,22 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
     }
   };
 
+  const openAndLoad = async () => {
+    setOpen(true);
+    await Promise.allSettled([load({ acknowledge: true }), loadDocuments()]);
+  };
+
+  useEffect(() => {
+    if (window.location.hash !== '#application-messages') return;
+    void openAndLoad();
+    // Deep-link hydration should run once for the currently selected application.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicationId]);
+
   const toggle = async () => {
     const next = !open;
     setOpen(next);
-    if (next) await Promise.allSettled([load(), loadDocuments()]);
+    if (next) await Promise.allSettled([load({ acknowledge: true }), loadDocuments()]);
   };
 
   const send = async () => {
@@ -109,10 +132,10 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
     <button className="secondary-button" type="button" onClick={toggle} aria-expanded={open}>
       {open ? 'メッセージ・書類を閉じる' : '園とメッセージ・書類'}
     </button>
-    {open && <div className="panel" style={{ marginTop: 10, padding: 14, minWidth: 0 }}>
+    {open && <div className="panel" data-application-messages-panel={applicationId} style={{ marginTop: 10, padding: 14, minWidth: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 10 }}>
         <strong>園とのメッセージ</strong>
-        <button type="button" className="secondary-button" onClick={() => void Promise.allSettled([load(), loadDocuments()])} disabled={loading}>{loading ? '更新中…' : '更新'}</button>
+        <button type="button" className="secondary-button" onClick={() => void Promise.allSettled([load({ acknowledge: true }), loadDocuments()])} disabled={loading}>{loading ? '更新中…' : '更新'}</button>
       </div>
       {error && <p className="form-error">{error}</p>}
       <div aria-live="polite" style={{ display: 'grid', gap: 8, maxHeight: 280, overflowY: 'auto', marginBottom: 12 }}>

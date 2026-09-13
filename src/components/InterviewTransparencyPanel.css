@@ -1,0 +1,257 @@
+.interview-transparency {
+  margin: 22px 0;
+  padding: 22px;
+  border: 1px solid #f0dce8;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #fff 0%, #fff9fc 100%);
+  box-shadow: 0 10px 30px rgba(91, 52, 75, 0.06);
+}
+
+.interview-transparency.is-loading,
+.interview-transparency.is-error {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: #6f5d69;
+  font-size: 13px;
+}
+
+.interview-transparency.is-error {
+  border-color: #f0d1d1;
+  background: #fffafa;
+}
+
+.interview-transparency-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.interview-transparency-head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.interview-transparency-head span {
+  color: #c44583;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.interview-transparency-head strong {
+  color: #332a30;
+  font-size: 18px;
+}
+
+.interview-transparency-head p {
+  max-width: 360px;
+  margin: 0;
+  color: #756770;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.interview-source-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 12px;
+}
+
+.interview-source-legend span,
+.interview-faqs-head span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.facility-source,
+.interview-faqs-head span {
+  color: #895773;
+  background: #f8eaf1;
+}
+
+.verified-source {
+  color: #27645b;
+  background: #e7f5f1;
+}
+
+.interview-comparison {
+  overflow: hidden;
+  border: 1px solid #eee5ea;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.interview-comparison-row {
+  display: grid;
+  grid-template-columns: minmax(110px, .7fr) minmax(0, 1.35fr) minmax(0, 1.15fr);
+}
+
+.interview-comparison-row + .interview-comparison-row {
+  border-top: 1px solid #f1e9ed;
+}
+
+.interview-comparison-row > * {
+  min-width: 0;
+  padding: 13px 14px;
+  line-height: 1.55;
+}
+
+.interview-comparison-row > * + * {
+  border-left: 1px solid #f1e9ed;
+}
+
+.interview-comparison-row.is-head {
+  color: #66565f;
+  background: #faf7f9;
+  font-size: 11px;
+}
+
+.interview-comparison-row:not(.is-head) > strong {
+  color: #4d4148;
+  font-size: 12px;
+}
+
+.interview-comparison-row [role="cell"] {
+  color: #443941;
+  font-size: 12px;
+}
+
+.interview-comparison-row .verified-value {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  color: #27645b;
+}
+
+.interview-comparison-row .verified-value strong {
+  font-size: 14px;
+}
+
+.interview-comparison-row .verified-value small {
+  color: #75847f;
+  font-size: 10px;
+}
+
+.interview-comparison-row .is-missing {
+  color: #a3979e;
+}
+
+.interview-faqs {
+  margin-top: 18px;
+  border-top: 1px solid #eee5ea;
+  padding-top: 16px;
+}
+
+.interview-faqs-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.interview-faqs-head strong {
+  color: #4d4148;
+  font-size: 13px;
+}
+
+.interview-faqs details {
+  border-bottom: 1px solid #f2eaee;
+}
+
+.interview-faqs summary {
+  padding: 12px 2px;
+  color: #4d4148;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.interview-faqs details p {
+  margin: 0 0 14px;
+  padding: 0 2px;
+  color: #6e6068;
+  font-size: 12px;
+  line-height: 1.75;
+}
+
+.interview-transparency-note {
+  margin: 14px 0 0;
+  color: #8a7d85;
+  font-size: 10.5px;
+  line-height: 1.7;
+}
+
+@media (max-width: 620px) {
+  .interview-transparency {
+    margin: 18px -2px;
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .interview-transparency-head {
+    display: grid;
+    gap: 8px;
+  }
+
+  .interview-transparency-head p {
+    max-width: none;
+  }
+
+  .interview-comparison {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .interview-comparison-row.is-head {
+    display: none;
+  }
+
+  .interview-comparison-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    margin-bottom: 10px;
+    overflow: hidden;
+    border: 1px solid #eee5ea;
+    border-radius: 14px;
+    background: #fff;
+  }
+
+  .interview-comparison-row + .interview-comparison-row {
+    border-top: 1px solid #eee5ea;
+  }
+
+  .interview-comparison-row > * {
+    padding: 10px 12px;
+  }
+
+  .interview-comparison-row > * + * {
+    border-top: 1px solid #f1e9ed;
+    border-left: 0;
+  }
+
+  .interview-comparison-row [role="cell"]::before {
+    display: block;
+    margin-bottom: 3px;
+    color: #9a8993;
+    font-size: 9px;
+    font-weight: 800;
+  }
+
+  .interview-comparison-row [role="cell"]:nth-child(2)::before {
+    content: '園の公開回答（申告）';
+  }
+
+  .interview-comparison-row [role="cell"]:nth-child(3)::before {
+    content: 'HO Verified（実績）';
+  }
+}

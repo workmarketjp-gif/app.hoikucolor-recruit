@@ -1,18 +1,21 @@
 import { SignOutButton, useUser } from '@clerk/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
-import { ApplicationMessages } from './components/ApplicationMessages';
+import { ApplicationDetail } from './components/ApplicationDetail';
 import { DocumentVaultPanel } from './components/DocumentVaultPanel';
 import { VisitTrialPanel } from './components/VisitTrialPanel';
 import { VerifiedFinanceSummary } from './components/VerifiedFinanceSummary';
+import { NotificationCenter } from './components/NotificationCenter';
 import {
-  getProfile, listApplications, listJobs, listSavedJobIds, saveJob, submitApplication, unsaveJob, upsertProfile,
-  type Application, type Job, type JobseekerProfile, type VerifiedWorkplaceMetric,
+  getJobSearchFacets, getProfile, getRankedJob, listApplications, listFeaturedJobs, listSavedJobIds, listSavedRankedJobs,
+  saveJob, searchJobs, submitApplication, unsaveJob, upsertProfile,
+  type Application, type Job, type JobSearchCursor, type JobseekerProfile, type VerifiedWorkplaceMetric,
 } from './lib/recruitRepository';
 
 type View = 'home' | 'jobs' | 'saved' | 'applications' | 'profile';
 const publicUrl = (import.meta.env.VITE_HOIKU_COLOR_PUBLIC_URL || 'https://hoikucolor.jp').replace(/\/$/, '');
+const applicationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const viewPaths: Record<View, string> = { home: '/', jobs: '/jobs', saved: '/saved', applications: '/applications', profile: '/profile' };
 const navItems: { view: View; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
@@ -41,11 +44,26 @@ function pathToView(pathname: string): View {
   return match?.[0] || 'home';
 }
 
+function applicationIdFromLocation() {
+  if (!window.location.pathname.startsWith('/applications')) return null;
+  const value = new URLSearchParams(window.location.search).get('application_id');
+  return value && applicationIdPattern.test(value) ? value : null;
+}
+
+function jobIdFromLocation() {
+  if (window.location.pathname.replace(/\/$/, '') !== '/jobs') return null;
+  const value = new URLSearchParams(window.location.search).get('job_id');
+  return value && applicationIdPattern.test(value) ? value : null;
+}
+
 export function App() {
   const { user } = useUser();
   const [view, setView] = useState<View>(() => pathToView(window.location.pathname));
+  const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(() => applicationIdFromLocation());
   const [mobileOpen, setMobileOpen] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [publicJobCount, setPublicJobCount] = useState(0);
+  const [savedJobs, setSavedJobs] = useState<Job[]>([]);
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [profile, setProfile] = useState<JobseekerProfile | null>(null);
@@ -53,7 +71,10 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const onPop = () => setView(pathToView(window.location.pathname));
+    const onPop = () => {
+      setView(pathToView(window.location.pathname));
+      setSelectedApplicationId(applicationIdFromLocation());
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
@@ -62,10 +83,11 @@ export function App() {
     if (!user?.id) return;
     let active = true;
     setLoading(true);
-    Promise.all([listJobs(), listSavedJobIds(), listApplications(), getProfile()])
-      .then(([jobRows, savedRows, applicationRows, profileRow]) => {
+    Promise.all([listFeaturedJobs(3), listSavedRankedJobs(), listSavedJobIds(), listApplications(), getProfile()])
+      .then(([featuredPage, savedJobRows, savedRows, applicationRows, profileRow]) => {
         if (!active) return;
-        setJobs(jobRows); setSavedIds(savedRows); setApplications(applicationRows);
+        setJobs(featuredPage.jobs); setPublicJobCount(featuredPage.totalCount); setSavedJobs(savedJobRows);
+        setSavedIds(savedRows); setApplications(applicationRows);
         setProfile(profileRow || {
           clerk_user_id: user.id,
           email: user.primaryEmailAddress?.emailAddress || null,
@@ -83,23 +105,51 @@ export function App() {
 
   const navigate = (next: View) => {
     window.history.pushState({}, '', viewPaths[next]);
-    setView(next); setMobileOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
+    setView(next); setSelectedApplicationId(null); setMobileOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openApplication = (applicationId: string) => {
+    if (!applicationIdPattern.test(applicationId)) return;
+    window.history.pushState({}, '', `/applications?application_id=${encodeURIComponent(applicationId)}`);
+    setView('applications'); setSelectedApplicationId(applicationId); setMobileOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const closeApplication = () => {
+    window.history.pushState({}, '', '/applications');
+    setView('applications'); setSelectedApplicationId(null); window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const navigateTarget = (target: string) => {
+    try {
+      const url = new URL(target, window.location.origin);
+      if (url.origin !== window.location.origin) return navigate('applications');
+      const nextView = pathToView(url.pathname);
+      if (nextView === 'applications') {
+        const applicationId = url.searchParams.get('application_id');
+        if (applicationId && applicationIdPattern.test(applicationId)) return openApplication(applicationId);
+      }
+      navigate(nextView);
+    } catch {
+      navigate('applications');
+    }
   };
 
   const toggleSaved = async (jobId: string) => {
     if (!user?.id) return;
     const wasSaved = savedIds.includes(jobId);
     setSavedIds((prev) => wasSaved ? prev.filter((id) => id !== jobId) : [jobId, ...prev]);
+    if (wasSaved) setSavedJobs((prev) => prev.filter((job) => job.id !== jobId));
     try {
       if (wasSaved) await unsaveJob(jobId); else await saveJob(jobId, user.id);
+      setSavedJobs(await listSavedRankedJobs());
     } catch (err) {
       setSavedIds((prev) => wasSaved ? [jobId, ...prev] : prev.filter((id) => id !== jobId));
+      setSavedJobs(await listSavedRankedJobs().catch(() => savedJobs));
       setError(err instanceof Error ? err.message : '保存状態を更新できませんでした。');
     }
   };
 
   const displayName = profile?.name || user?.firstName || 'ゲスト';
-  const savedJobs = jobs.filter((job) => savedIds.includes(job.id));
 
   return (
     <div className="app-shell">
@@ -135,17 +185,17 @@ export function App() {
           <div className="mobile-brand"><Brand compact /></div>
           <div className="topbar-spacer" />
           <a className="public-link" href={`${publicUrl}/jobs`} target="_blank" rel="noreferrer">求人サイト <Icon name="external" size={14} /></a>
-          <button className="icon-button" aria-label="通知"><Icon name="bell" size={18} /></button>
+          <NotificationCenter onNavigate={navigateTarget} />
         </header>
 
         <section className="content">
           {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError(null)}>閉じる</button></div>}
           {loading ? <LoadingView /> : (
             <>
-              {view === 'home' && <Dashboard name={displayName} jobs={jobs} savedIds={savedIds} applications={applications} onNavigate={navigate} onToggleSaved={toggleSaved} />}
-              {view === 'jobs' && <JobsView jobs={jobs} savedIds={savedIds} onToggleSaved={toggleSaved} />}
+              {view === 'home' && <Dashboard name={displayName} jobs={jobs} publicJobCount={publicJobCount} savedIds={savedIds} applications={applications} onNavigate={navigate} onToggleSaved={toggleSaved} />}
+              {view === 'jobs' && <JobsView savedIds={savedIds} onToggleSaved={toggleSaved} />}
               {view === 'saved' && <SavedView jobs={savedJobs} onToggleSaved={toggleSaved} />}
-              {view === 'applications' && <ApplicationsView applications={applications} jobs={jobs} />}
+              {view === 'applications' && (selectedApplicationId ? <ApplicationDetail applicationId={selectedApplicationId} onBack={closeApplication} /> : <ApplicationsView applications={applications} onOpen={openApplication} />)}
               {view === 'profile' && profile && <ProfileView profile={profile} onChange={setProfile} />}
             </>
           )}
@@ -155,7 +205,7 @@ export function App() {
   );
 }
 
-function Dashboard({ name, jobs, savedIds, applications, onNavigate, onToggleSaved }: { name: string; jobs: Job[]; savedIds: string[]; applications: Application[]; onNavigate: (v: View) => void; onToggleSaved: (id: string) => void }) {
+function Dashboard({ name, jobs, publicJobCount, savedIds, applications, onNavigate, onToggleSaved }: { name: string; jobs: Job[]; publicJobCount: number; savedIds: string[]; applications: Application[]; onNavigate: (v: View) => void; onToggleSaved: (id: string) => void }) {
   const latest = jobs.slice(0, 3);
   const inProgress = applications.filter((a) => !['rejected', 'withdrawn', 'hired'].includes(a.status)).length;
   return <>
@@ -168,34 +218,86 @@ function Dashboard({ name, jobs, savedIds, applications, onNavigate, onToggleSav
       <button className="metric-card" onClick={() => onNavigate('saved')}><span className="metric-icon"><Icon name="heart" /></span><span>気になる求人</span><strong>{savedIds.length}<small>件</small></strong><p>保存した求人を比較</p></button>
       <button className="metric-card" onClick={() => onNavigate('applications')}><span className="metric-icon"><Icon name="briefcase" /></span><span>応募履歴</span><strong>{applications.length}<small>件</small></strong><p>これまでの応募</p></button>
       <button className="metric-card" onClick={() => onNavigate('applications')}><span className="metric-icon"><Icon name="clock" /></span><span>選考中</span><strong>{inProgress}<small>件</small></strong><p>現在進んでいる選考</p></button>
-      <button className="metric-card" onClick={() => onNavigate('jobs')}><span className="metric-icon"><Icon name="sparkles" /></span><span>公開求人</span><strong>{jobs.length}<small>件</small></strong><p>現在掲載中</p></button>
+      <button className="metric-card" onClick={() => onNavigate('jobs')}><span className="metric-icon"><Icon name="sparkles" /></span><span>公開求人</span><strong>{publicJobCount}<small>件</small></strong><p>現在掲載中</p></button>
     </div>
     <section className="panel">
-      <div className="panel-head"><div><span className="eyebrow">NEW JOBS</span><h3>新着求人</h3></div><button onClick={() => onNavigate('jobs')}>すべて見る <Icon name="chevron" size={14} /></button></div>
-      {latest.length ? <div className="job-list compact">{latest.map((job) => <JobRow key={job.id} job={job} saved={savedIds.includes(job.id)} onToggleSaved={onToggleSaved} />)}</div> : <EmptyState title="公開中の求人はまだありません" body="園から求人が公開されると、ここに新着求人が表示されます。" />}
+      <div className="panel-head"><div><span className="eyebrow">NEW JOBS</span><h3>おすすめ求人</h3></div><button onClick={() => onNavigate('jobs')}>すべて見る <Icon name="chevron" size={14} /></button></div>
+      {latest.length ? <div className="job-list compact">{latest.map((job) => <JobRow key={job.id} job={job} saved={savedIds.includes(job.id)} onToggleSaved={onToggleSaved} />)}</div> : <EmptyState title="公開中の求人はまだありません" body="園から求人が公開されると、ここに求人が表示されます。" />}
     </section>
   </>;
 }
 
-function JobsView({ jobs, savedIds, onToggleSaved }: { jobs: Job[]; savedIds: string[]; onToggleSaved: (id: string) => void }) {
+function JobsView({ savedIds, onToggleSaved }: { savedIds: string[]; onToggleSaved: (id: string) => void }) {
   const [keyword, setKeyword] = useState('');
   const [prefecture, setPrefecture] = useState('');
   const [employment, setEmployment] = useState('');
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [financeVerifiedOnly, setFinanceVerifiedOnly] = useState(false);
-  const prefectures = useMemo(() => [...new Set(jobs.map((j) => j.prefecture).filter(Boolean) as string[])].sort(), [jobs]);
-  const employments = useMemo(() => [...new Set(jobs.map((j) => j.employment_type).filter(Boolean) as string[])].sort(), [jobs]);
-  const filtered = jobs.filter((job) => {
-    const q = keyword.trim().toLowerCase();
-    if (q && !`${job.title} ${job.facility_name} ${job.description} ${job.prefecture || ''} ${job.city || ''}`.toLowerCase().includes(q)) return false;
-    if (prefecture && job.prefecture !== prefecture) return false;
-    if (employment && job.employment_type !== employment) return false;
-    if (verifiedOnly && !job.verified_workplace?.verified_metric_count) return false;
-    if (financeVerifiedOnly && !job.verified_finance?.verified_metric_count) return false;
-    return true;
-  });
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [prefectures, setPrefectures] = useState<string[]>([]);
+  const [employments, setEmployments] = useState<string[]>([]);
+  const [cursor, setCursor] = useState<JobSearchCursor | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [searching, setSearching] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getJobSearchFacets()
+      .then((facets) => {
+        if (!active) return;
+        setPrefectures(facets.prefectures);
+        setEmployments(facets.employmentTypes);
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setSearching(true);
+      setSearchError(null);
+      const targetJobId = !keyword.trim() && !prefecture && !employment && !verifiedOnly && !financeVerifiedOnly ? jobIdFromLocation() : null;
+      Promise.all([
+        searchJobs({ keyword, prefecture, employmentType: employment, hoVerifiedOnly: verifiedOnly, hfVerifiedOnly: financeVerifiedOnly, limit: 24 }),
+        targetJobId ? getRankedJob(targetJobId) : Promise.resolve(null),
+      ])
+        .then(([page, targetJob]) => {
+          if (!active) return;
+          const pageJobs = targetJob && !page.jobs.some((job) => job.id === targetJob.id) ? [targetJob, ...page.jobs] : page.jobs;
+          setJobs(pageJobs);
+          setTotalCount(page.totalCount);
+          setHasMore(page.hasMore);
+          setCursor(page.nextCursor);
+        })
+        .catch((err) => active && setSearchError(err instanceof Error ? err.message : '求人を検索できませんでした。'))
+        .finally(() => active && setSearching(false));
+    }, keyword.trim() ? 250 : 0);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [keyword, prefecture, employment, verifiedOnly, financeVerifiedOnly]);
+
+  const loadMore = async () => {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    setSearchError(null);
+    try {
+      const page = await searchJobs({ keyword, prefecture, employmentType: employment, hoVerifiedOnly: verifiedOnly, hfVerifiedOnly: financeVerifiedOnly, limit: 24, cursor });
+      setJobs((prev) => [...prev, ...page.jobs.filter((job) => !prev.some((existing) => existing.id === job.id))]);
+      setTotalCount(page.totalCount);
+      setHasMore(page.hasMore);
+      setCursor(page.nextCursor);
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : '次の求人を読み込めませんでした。');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   return <>
-    <header className="page-heading"><div><span className="eyebrow">JOB SEARCH</span><h1>求人を探す</h1><p>園の色・保育観・働き方を見ながら、自分に合う求人を探せます。</p></div><span className="result-count">{filtered.length}件</span></header>
+    <header className="page-heading"><div><span className="eyebrow">JOB SEARCH</span><h1>求人を探す</h1><p>園の色・保育観・働き方を見ながら、自分に合う求人を探せます。</p></div><span className="result-count">{totalCount}件</span></header>
     <section className="search-panel">
       <label className="keyword-box"><Icon name="search" size={18} /><input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="園名、職種、キーワードで検索" /></label>
       <select value={prefecture} onChange={(e) => setPrefecture(e.target.value)}><option value="">すべての都道府県</option>{prefectures.map((p) => <option key={p}>{p}</option>)}</select>
@@ -203,7 +305,11 @@ function JobsView({ jobs, savedIds, onToggleSaved }: { jobs: Job[]; savedIds: st
       <label className="verified-filter"><input type="checkbox" checked={verifiedOnly} onChange={(e) => setVerifiedOnly(e.target.checked)} /><span>HO実績データあり</span></label>
       <label className="verified-filter"><input type="checkbox" checked={financeVerifiedOnly} onChange={(e) => setFinanceVerifiedOnly(e.target.checked)} /><span>HF実績データあり</span></label>
     </section>
-    {filtered.length ? <div className="job-grid">{filtered.map((job) => <JobCard key={job.id} job={job} saved={savedIds.includes(job.id)} onToggleSaved={onToggleSaved} />)}</div> : <EmptyState title="条件に合う求人がありません" body="検索条件を変更して、もう一度探してみてください。" />}
+    {searchError && <div className="error-banner"><span>{searchError}</span><button onClick={() => setSearchError(null)}>閉じる</button></div>}
+    {searching && !jobs.length ? <LoadingView /> : jobs.length ? <>
+      <div className="job-grid" aria-busy={searching}>{jobs.map((job) => <JobCard key={job.id} job={job} saved={savedIds.includes(job.id)} onToggleSaved={onToggleSaved} />)}</div>
+      {hasMore && <div className="form-actions"><button className="secondary-button" type="button" onClick={loadMore} disabled={loadingMore}>{loadingMore ? '読み込み中…' : `さらに求人を見る（${Math.min(jobs.length, totalCount)}/${totalCount}件）`}</button></div>}
+    </> : <EmptyState title="条件に合う求人がありません" body="検索条件を変更して、もう一度探してみてください。" />}
   </>;
 }
 
@@ -211,10 +317,9 @@ function SavedView({ jobs, onToggleSaved }: { jobs: Job[]; onToggleSaved: (id: s
   return <><header className="page-heading"><div><span className="eyebrow">SAVED JOBS</span><h1>気になる求人</h1><p>あとで見返したい求人をまとめて比較できます。</p></div><span className="result-count">{jobs.length}件</span></header>{jobs.length ? <div className="job-grid">{jobs.map((job) => <JobCard key={job.id} job={job} saved onToggleSaved={onToggleSaved} />)}</div> : <EmptyState title="保存した求人はまだありません" body="求人検索で「気になる」を押すと、ここに保存されます。" action="求人を探す" href="/jobs" />}</>;
 }
 
-function ApplicationsView({ applications, jobs }: { applications: Application[]; jobs: Job[] }) {
-  const jobMap = new Map(jobs.map((j) => [j.id, j]));
+function ApplicationsView({ applications, onOpen }: { applications: Application[]; onOpen: (applicationId: string) => void }) {
   return <><header className="page-heading"><div><span className="eyebrow">APPLICATIONS</span><h1>応募管理</h1><p>応募から面接・内定までの状況を確認できます。</p></div><span className="result-count">{applications.length}件</span></header>
-    <section className="panel application-panel">{applications.length ? applications.map((app) => { const job = jobMap.get(app.job_id); return <article className="application-row" key={app.id}><div className="application-mark"><Icon name="briefcase" size={18} /></div><div className="application-main"><span className={`status-badge status-${app.status}`}>{statusLabel(app.status)}</span><h3>{job?.title || '求人'}</h3><p>{job?.facility_name || ''}</p><small>応募日 {formatDate(app.applied_at)}</small></div><div className="application-side">{job && <><span><Icon name="map" size={14} /> {job.prefecture || ''} {job.city || ''}</span><a href="/jobs">求人一覧へ <Icon name="arrow" size={13} /></a></>}<ApplicationMessages applicationId={app.id} /></div></article>; }) : <EmptyState title="応募履歴はまだありません" body="気になる園を見つけたら、求人一覧から応募できます。" action="求人を探す" href="/jobs" />}</section>
+    <section className="panel application-panel">{applications.length ? applications.map((app) => <article className="application-row" key={app.id} role="button" tabIndex={0} aria-label={`${app.facility_name} ${app.job_title}の応募詳細を開く`} onClick={() => onOpen(app.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(app.id); } }}><div className="application-mark"><Icon name="briefcase" size={18} /></div><div className="application-main"><span className={`status-badge status-${app.status}`}>{statusLabel(app.status)}</span><h3>{app.job_title || '求人'}</h3><p>{app.facility_name || ''}</p><small>応募日 {formatDate(app.applied_at)}</small><span className="application-open-detail">詳細を見る <Icon name="arrow" size={13} /></span></div><div className="application-side">{(app.prefecture || app.city) && <span><Icon name="map" size={14} /> {app.prefecture || ''} {app.city || ''}</span>}{app.employment_type && <span><Icon name="briefcase" size={14} /> {app.employment_type}</span>}</div></article>) : <EmptyState title="応募履歴はまだありません" body="気になる園を見つけたら、求人一覧から応募できます。" action="求人を探す" href="/jobs" />}</section>
   </>;
 }
 
@@ -262,7 +367,7 @@ function JobCard({ job, saved, onToggleSaved }: { job: Job; saved: boolean; onTo
       setApplying(false);
     }
   };
-  return <article className="job-card">
+  return <article className="job-card" data-job-id={job.id}>
     <div className="job-card-top"><div className="job-location"><Icon name="map" size={14} /> {job.prefecture || '地域未設定'} {job.city || ''}</div><button className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)} aria-label={saved ? '気になるから削除' : '気になるに保存'}><Icon name="heart" size={18} /></button></div>
     <span className="facility-name">{job.facility_name}</span><h3>{job.title}</h3>
     <div className="job-tags">{job.employment_type && <span>{job.employment_type}</span>}{job.facility_type && <span>{job.facility_type}</span>}{job.verified_workplace?.verified_metric_count ? <span className="verified-tag">✓ Hoiku Office 実績</span> : null}{job.verified_finance?.verified_metric_count ? <span className="finance-verified-tag">✓ Hoiku Finance 実績</span> : null}</div>
