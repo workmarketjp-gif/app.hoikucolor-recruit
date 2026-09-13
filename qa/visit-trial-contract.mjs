@@ -4,8 +4,13 @@ const root = new URL('../', import.meta.url);
 const foundation = readFileSync(new URL('supabase/migrations/20260911030000_hc_visit_trial_booking.sql', root), 'utf8');
 const safeRead = readFileSync(new URL('supabase/migrations/20260912010256_hc_jobseeker_visit_reservation_safe_read_v1.sql', root), 'utf8');
 const safeSettings = readFileSync(new URL('supabase/migrations/20260912140000_hc_jobseeker_visit_settings_safe_read_v1.sql', root), 'utf8');
+const historyRouteSql = readFileSync(new URL('supabase/migrations/20260914040000_hc_jobseeker_visit_history_route_v1.sql', root), 'utf8');
 const repository = readFileSync(new URL('src/lib/visitRepository.ts', root), 'utf8');
 const ui = readFileSync(new URL('src/components/VisitTrialPanel.tsx', root), 'utf8');
+const route = readFileSync(new URL('src/VisitRouteRoot.tsx', root), 'utf8');
+const main = readFileSync(new URL('src/main.tsx', root), 'utf8');
+const notificationCenter = readFileSync(new URL('src/components/NotificationCenter.tsx', root), 'utf8');
+const navigation = readFileSync(new URL('src/components/VisitNavigationEnhancer.tsx', root), 'utf8');
 const app = readFileSync(new URL('src/App.tsx', root), 'utf8');
 
 const foundationMarkers = [
@@ -58,11 +63,33 @@ for (const forbidden of ['organization_id', 'capacity_per_slot', 'updated_by_cle
   if (settingsReturnBlock.includes(forbidden)) throw new Error(`Candidate-safe visit settings RPC return type leaks private/internal field: ${forbidden}`);
 }
 
+const historyMarkers = [
+  'create or replace function public.hc_jobseeker_list_my_visits()',
+  'security definer',
+  "set search_path = ''",
+  "nullif(ho_private.current_clerk_user_id(), '') is not null",
+  'r.jobseeker_clerk_user_id = ho_private.current_clerk_user_id()',
+  'limit 100',
+  'revoke all on function public.hc_jobseeker_list_my_visits() from public, anon, authenticated',
+  'grant execute on function public.hc_jobseeker_list_my_visits() to authenticated, service_role',
+  "v_link := format('/visits?visit_id=%s#visit-%s'",
+  "'jobseeker:visit:' || new.id::text || ':' || new.status",
+];
+for (const marker of historyMarkers) {
+  if (!historyRouteSql.toLowerCase().includes(marker.toLowerCase())) throw new Error(`Candidate visit history/deep-link contract missing: ${marker}`);
+}
+const historyReturnBlock = historyRouteSql.slice(historyRouteSql.indexOf('returns table'), historyRouteSql.indexOf('language sql'));
+for (const forbidden of ['facility_note', 'jobseeker_clerk_user_id', 'organization_id', 'facility_id']) {
+  if (historyReturnBlock.includes(forbidden)) throw new Error(`Candidate visit history RPC return type leaks private/internal field: ${forbidden}`);
+}
+
 const repositoryMarkers = [
   "rpc('hc_jobseeker_get_visit_settings'",
   "rpc('hc_list_my_visit_reservations'",
+  "rpc('hc_jobseeker_list_my_visits'",
   "rpc('hc_request_visit'",
   "rpc('hc_cancel_visit'",
+  'Cloudflareまたはローカルの環境変数',
 ];
 for (const marker of repositoryMarkers) {
   if (!repository.includes(marker)) throw new Error(`Visit/trial repository contract missing: ${marker}`);
@@ -108,5 +135,38 @@ if (!ui.includes('if (!quiet && mountedRef.current) setLoading(true);')) throw n
 if (!app.includes('<VisitTrialPanel jobId={job.id} facilityId={job.facility_id} />')) {
   throw new Error('Visit/trial booking is not connected to expanded job details.');
 }
+
+const routeMarkers = [
+  'listMyVisits()',
+  "const ACTIVE_STATUSES = new Set<VisitReservationStatus>(['requested', 'confirmed'])",
+  "document.visibilityState !== 'visible'",
+  'window.setInterval(refreshWhenVisible, 60_000)',
+  "window.addEventListener('focus', refreshWhenVisible)",
+  "window.addEventListener('pageshow', refreshWhenVisible)",
+  "document.addEventListener('visibilitychange', refreshWhenVisible)",
+  "window.addEventListener('hc:visits-refresh', refreshWhenVisible)",
+  'visits.find((item) => item.reservation_id === visitId)',
+  'handledVisitRef.current = visitId',
+  'id={`visit-${item.reservation_id}`}',
+  'tabIndex={-1}',
+  '園見学',
+  '半日体験',
+  '1日体験',
+  '日程調整中',
+  '日程調整不可',
+  'キャンセル',
+  '完了',
+  '未参加',
+];
+for (const marker of routeMarkers) {
+  if (!route.includes(marker)) throw new Error(`Dedicated visit history route contract missing: ${marker}`);
+}
+if (!main.includes("window.location.pathname.startsWith('/visits') ? <VisitRouteRoot />")) throw new Error('Dedicated /visits route is not wired in main.tsx.');
+if (!main.includes('<VisitNavigationEnhancer />')) throw new Error('Visit history navigation enhancer is not mounted globally.');
+if (!navigation.includes('href="/visits"') || !navigation.includes('見学・体験')) throw new Error('Visit history navigation entry is missing.');
+if (!notificationCenter.includes("'/visits'")) throw new Error('Notification safe-path allow-list must include /visits.');
+if (!notificationCenter.includes('VISIT_NOTIFICATION_TYPES')) throw new Error('Visit lifecycle notifications are not recognized by NotificationCenter.');
+if (!notificationCenter.includes("parsed.searchParams.get('visit_id')")) throw new Error('Visit notification deep link must validate visit_id.');
+if (!notificationCenter.includes("target.startsWith('/visits')")) throw new Error('Visit notification must perform a real route navigation.');
 
 console.log('Hoiku Color visit/trial candidate privacy contract passed.');

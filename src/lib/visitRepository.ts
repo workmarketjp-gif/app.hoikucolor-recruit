@@ -40,8 +40,29 @@ export type VisitReservation = {
   updated_at: string;
 };
 
+export type JobseekerVisit = {
+  reservation_id: string;
+  job_id: string;
+  application_id: string | null;
+  facility_name: string;
+  job_title: string;
+  prefecture: string | null;
+  city: string | null;
+  address: string | null;
+  experience_type: VisitExperienceType;
+  starts_at: string;
+  ends_at: string;
+  status: VisitReservationStatus;
+  candidate_message: string | null;
+  confirmed_at: string | null;
+  cancelled_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 function client() {
-  if (!supabase) throw new Error('Supabaseの接続設定がありません。Vercelの環境変数を確認してください。');
+  if (!supabase) throw new Error('Supabaseの接続設定がありません。Cloudflareまたはローカルの環境変数を確認してください。');
   return supabase;
 }
 
@@ -61,6 +82,12 @@ export async function listMyVisitReservations(jobId?: string): Promise<VisitRese
   });
   if (error) throw error;
   return (data || []) as VisitReservation[];
+}
+
+export async function listMyVisits(): Promise<JobseekerVisit[]> {
+  const { data, error } = await client().rpc('hc_jobseeker_list_my_visits');
+  if (error) throw error;
+  return (data || []) as JobseekerVisit[];
 }
 
 export async function requestVisit(params: {

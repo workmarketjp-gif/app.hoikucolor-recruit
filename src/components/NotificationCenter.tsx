@@ -13,10 +13,11 @@ type Props = {
   onNavigate: (target: string) => void;
 };
 
-const ALLOWED_PATHS = new Set(['/', '/jobs', '/saved', '/applications', '/profile', '/scouts', '/spot-jobs']);
+const ALLOWED_PATHS = new Set(['/', '/jobs', '/saved', '/applications', '/profile', '/scouts', '/spot-jobs', '/visits']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const INTERVIEW_NOTIFICATION_TYPES = new Set(['interview_scheduled', 'interview_cancelled']);
 const SPOT_NOTIFICATION_TYPES = new Set(['spot_confirmed', 'spot_cancelled', 'spot_completed', 'spot_no_show']);
+const VISIT_NOTIFICATION_TYPES = new Set(['visit_confirmed', 'visit_declined', 'visit_cancelled', 'visit_completed', 'visit_no_show']);
 
 function relativeTime(value: string) {
   const timestamp = new Date(value).getTime();
@@ -66,6 +67,14 @@ function safeTarget(item: JobseekerNotification) {
         return `/spot-jobs?assignment_id=${encodeURIComponent(assignmentId)}#spot-assignment-${assignmentId}`;
       }
       return '/spot-jobs';
+    }
+
+    if (VISIT_NOTIFICATION_TYPES.has(item.notification_type) && parsed.pathname === '/visits') {
+      const visitId = parsed.searchParams.get('visit_id');
+      if (visitId && UUID_PATTERN.test(visitId)) {
+        return `/visits?visit_id=${encodeURIComponent(visitId)}#visit-${visitId}`;
+      }
+      return '/visits';
     }
 
     return parsed.pathname;
@@ -172,7 +181,7 @@ export function NotificationCenter({ onNavigate }: Props) {
       }
     }
     setOpen(false);
-    if (target.startsWith('/scouts') || target.startsWith('/applications?') || target.startsWith('/spot-jobs?')) {
+    if (target.startsWith('/scouts') || target.startsWith('/applications?') || target.startsWith('/spot-jobs') || target.startsWith('/visits')) {
       window.location.assign(target);
       return;
     }
