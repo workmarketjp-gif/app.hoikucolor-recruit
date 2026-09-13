@@ -13,6 +13,8 @@ const transparencyRepository = read('src/lib/jobTransparencyRepository.ts');
 const transparencyUi = read('src/components/InterviewTransparencyPanel.tsx');
 const applicationDetail = read('src/components/ApplicationDetail.tsx');
 const applicationMessages = read('src/components/ApplicationMessages.tsx');
+const expectationRepository = read('src/lib/applicationDocumentExpectationRepository.ts');
+const expectationSnapshot = read('supabase/migrations/20260913220000_hc_jobseeker_application_document_expectation_snapshot_v1.sql');
 const attention = read('src/components/AttentionSummaryEnhancer.tsx');
 const notifications = read('src/components/NotificationCenter.tsx');
 const externalReturn = read('src/components/ExternalJobReturnEnhancer.tsx');
@@ -49,24 +51,54 @@ for (const marker of [
 if (!repository.includes('await handoffDefaultDocuments(data);')) {
   throw new Error('Successful application submission must trigger default Document Vault handoff.');
 }
+
+for (const marker of [
+  "from('hc_application_document_expectations')",
+  'source_jobseeker_document_id_snapshot',
+  'destination_file_path',
+]) {
+  if (!expectationRepository.includes(marker)) throw new Error(`Application-time Document Vault expectation repository missing: ${marker}`);
+}
+for (const marker of [
+  'create table if not exists public.hc_application_document_expectations',
+  'v_application_created boolean := false',
+  'if v_application_created then',
+  'd.is_default',
+  'source_jobseeker_document_id_snapshot',
+  'destination_file_path',
+  "jobseeker_clerk_user_id = ((select auth.jwt()) ->> 'sub')",
+  'grant select on table public.hc_application_document_expectations to authenticated',
+]) {
+  if (!expectationSnapshot.includes(marker)) throw new Error(`Application-time Document Vault snapshot migration missing: ${marker}`);
+}
+for (const forbidden of [
+  'grant insert on table public.hc_application_document_expectations to authenticated',
+  'grant update on table public.hc_application_document_expectations to authenticated',
+  'grant delete on table public.hc_application_document_expectations to authenticated',
+]) {
+  if (expectationSnapshot.includes(forbidden)) throw new Error(`Candidates must not mutate application-time document expectations: ${forbidden}`);
+}
 for (const marker of [
   'listJobseekerDocuments()',
   'listSubmittedApplicationDocuments(applicationId)',
-  'document.is_default && !nextAttachedIds.includes(document.id)',
-  'setMissingDefaultDocumentIds(missingDefaultIds)',
-  'attachMissingDefaultDocuments',
-  'missing.map((document) => attachJobseekerDocumentToApplication(document, applicationId))',
-  '未提出の既定書類をまとめて提出',
-  'この応募にはまだ提出されていません',
+  'listApplicationDocumentExpectations(applicationId)',
+  'submittedPaths.has(expectation.destination_file_path)',
+  'source_jobseeker_document_id_snapshot',
+  'setMissingExpectedDocuments(missingExpectations)',
+  'attachMissingExpectedDocuments',
+  'repairableMissingDocuments.map((document) => attachJobseekerDocumentToApplication(document, applicationId))',
+  '応募した時点で「応募時に使用」',
+  '未提出の応募時書類をまとめて提出',
 ]) {
-  if (!applicationMessages.includes(marker)) throw new Error(`Server-backed Document Vault recovery UX missing: ${marker}`);
+  if (!applicationMessages.includes(marker)) throw new Error(`Application-time Document Vault recovery UX missing: ${marker}`);
 }
 for (const forbidden of [
   'hasApplicationDocumentHandoffWarning',
   'clearApplicationDocumentHandoffWarning',
   'sessionStorage',
+  'document.is_default && !nextAttachedIds.includes(document.id)',
 ]) {
-  if (applicationMessages.includes(forbidden)) throw new Error(`Application document recovery must not rely on browser session state: ${forbidden}`);
+  if (applicationMessages.includes(forbidden)) throw new Error(`Application document recovery must not depend on mutable current-default/session state: ${forbidden}`);
 }
 
 if (!app.includes('<VisitTrialPanel jobId={job.id} facilityId={job.facility_id} />')) {

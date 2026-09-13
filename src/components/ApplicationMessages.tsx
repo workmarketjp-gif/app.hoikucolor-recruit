@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { listApplicationMessages, sendApplicationMessage, type Message } from '../lib/messageRepository';
 import {
   attachJobseekerDocumentToApplication,
@@ -8,6 +8,10 @@ import {
   type AttachedApplicationDocument,
   type JobseekerDocument,
 } from '../lib/documentVaultRepository';
+import {
+  listApplicationDocumentExpectations,
+  type ApplicationDocumentExpectation,
+} from '../lib/applicationDocumentExpectationRepository';
 
 const documentLabels: Record<string, string> = {
   resume: '履歴書',
@@ -27,7 +31,7 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
   const [documents, setDocuments] = useState<JobseekerDocument[]>([]);
   const [submittedDocuments, setSubmittedDocuments] = useState<AttachedApplicationDocument[]>([]);
   const [attachedIds, setAttachedIds] = useState<string[]>([]);
-  const [missingDefaultDocumentIds, setMissingDefaultDocumentIds] = useState<string[]>([]);
+  const [missingExpectedDocuments, setMissingExpectedDocuments] = useState<ApplicationDocumentExpectation[]>([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -35,6 +39,18 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
   const [repairingDefaults, setRepairingDefaults] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [documentNotice, setDocumentNotice] = useState<string | null>(null);
+
+  const documentById = useMemo(
+    () => new Map(documents.map((document) => [document.id, document])),
+    [documents],
+  );
+  const repairableMissingDocuments = useMemo(
+    () => missingExpectedDocuments
+      .map((expectation) => documentById.get(expectation.source_jobseeker_document_id_snapshot))
+      .filter((document): document is JobseekerDocument => Boolean(document)),
+    [documentById, missingExpectedDocuments],
+  );
+  const unavailableMissingCount = missingExpectedDocuments.length - repairableMissingDocuments.length;
 
   const announceMessagesViewed = () => {
     window.dispatchEvent(new CustomEvent('hc:application-messages-viewed', {
@@ -57,20 +73,27 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
 
   const loadDocuments = async () => {
     try {
-      const [saved, submitted] = await Promise.all([
+      const [saved, submitted, expectations] = await Promise.all([
         listJobseekerDocuments(),
         listSubmittedApplicationDocuments(applicationId),
+        listApplicationDocumentExpectations(applicationId),
       ]);
       const nextAttachedIds = submitted
         .map((document) => document.source_jobseeker_document_id)
         .filter((value): value is string => typeof value === 'string' && value.length > 0);
-      const missingDefaultIds = saved
-        .filter((document) => document.is_default && !nextAttachedIds.includes(document.id))
-        .map((document) => document.id);
+      const submittedPaths = new Set(submitted.map((document) => document.file_path));
+      const savedIds = new Set(saved.map((document) => document.id));
+      const submittedTypes = new Set(submitted.map((document) => document.document_type));
+      const missingExpectations = expectations.filter((expectation) => {
+        if (submittedPaths.has(expectation.destination_file_path)) return false;
+        if (!savedIds.has(expectation.source_jobseeker_document_id_snapshot)
+          && submittedTypes.has(expectation.document_type)) return false;
+        return true;
+      });
       setDocuments(saved);
       setSubmittedDocuments(submitted);
       setAttachedIds(nextAttachedIds);
-      setMissingDefaultDocumentIds(missingDefaultIds);
+      setMissingExpectedDocuments(missingExpectations);
     } catch (err) {
       setError(err instanceof Error ? err.message : '応募書類を読み込めませんでした。');
     }
@@ -125,25 +148,24 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
     }
   };
 
-  const attachMissingDefaultDocuments = async () => {
-    const missing = documents.filter((document) => document.is_default && missingDefaultDocumentIds.includes(document.id));
-    if (!missing.length) return;
+  const attachMissingExpectedDocuments = async () => {
+    if (!repairableMissingDocuments.length) return;
     setRepairingDefaults(true);
     setError(null);
     setDocumentNotice(null);
     try {
       const results = await Promise.allSettled(
-        missing.map((document) => attachJobseekerDocumentToApplication(document, applicationId)),
+        repairableMissingDocuments.map((document) => attachJobseekerDocumentToApplication(document, applicationId)),
       );
       await loadDocuments();
       const failedCount = results.filter((result) => result.status === 'rejected').length;
       if (failedCount > 0) {
-        setError(`既定書類${missing.length}件のうち${failedCount}件を提出できませんでした。未提出の書類は個別に再試行してください。`);
+        setError(`応募時書類${repairableMissingDocuments.length}件のうち${failedCount}件を提出できませんでした。未提出の書類は個別に再試行してください。`);
       } else {
-        setDocumentNotice(`未提出だった既定書類${missing.length}件をこの応募先へ提出しました。`);
+        setDocumentNotice(`応募時に選ばれていた未提出書類${repairableMissingDocuments.length}件をこの応募先へ提出しました。`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '既定書類を提出できませんでした。');
+      setError(err instanceof Error ? err.message : '応募時書類を提出できませんでした。');
     } finally {
       setRepairingDefaults(false);
     }
@@ -183,11 +205,12 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
           <strong style={{ fontSize: 13 }}>応募書類</strong>
           <a href="/profile" style={{ fontSize: 12 }}>書類庫を管理</a>
         </div>
-        {missingDefaultDocumentIds.length > 0 && <div className="form-error" role="alert" style={{ display: 'grid', gap: 8, marginBottom: 8 }}>
-          <span>現在「応募時に使用」に設定されている書類のうち、{missingDefaultDocumentIds.length}件がこの応募にはまだ提出されていません。</span>
-          <button className="secondary-button" type="button" onClick={() => void attachMissingDefaultDocuments()} disabled={repairingDefaults || documentBusyId !== null} style={{ justifySelf: 'start' }}>
-            {repairingDefaults ? '既定書類を提出中…' : '未提出の既定書類をまとめて提出'}
-          </button>
+        {missingExpectedDocuments.length > 0 && <div className="form-error" role="alert" style={{ display: 'grid', gap: 8, marginBottom: 8 }}>
+          <span>応募した時点で「応募時に使用」に設定されていた書類のうち、{missingExpectedDocuments.length}件がこの応募にはまだ提出されていません。</span>
+          {repairableMissingDocuments.length > 0 && <button className="secondary-button" type="button" onClick={() => void attachMissingExpectedDocuments()} disabled={repairingDefaults || documentBusyId !== null} style={{ justifySelf: 'start' }}>
+            {repairingDefaults ? '応募時書類を提出中…' : '未提出の応募時書類をまとめて提出'}
+          </button>}
+          {unavailableMissingCount > 0 && <small>応募時に選ばれていた書類のうち{unavailableMissingCount}件は現在の書類庫にありません。必要な場合は、下の現在の書類をこの応募へ提出してください。</small>}
         </div>}
         {documentNotice && <p className="form-success" style={{ margin: '0 0 8px' }}>{documentNotice}</p>}
         {documents.length ? <div style={{ display: 'grid', gap: 8 }}>
