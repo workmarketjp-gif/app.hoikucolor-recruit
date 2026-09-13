@@ -148,7 +148,10 @@ export function NotificationCenter({ onNavigate }: Props) {
   }, [open]);
 
   const openNotification = async (item: JobseekerNotification) => {
-    if (!item.read_at) {
+    const target = safeTarget(item);
+    const deferReadToMessagePanel = item.notification_type === 'message_received' && target.endsWith('#application-messages');
+
+    if (!item.read_at && !deferReadToMessagePanel) {
       try {
         const updated = await markJobseekerNotificationRead(item.id);
         if (updated) {
@@ -162,7 +165,6 @@ export function NotificationCenter({ onNavigate }: Props) {
       }
     }
     setOpen(false);
-    const target = safeTarget(item);
     if (target.startsWith('/scouts') || target.startsWith('/applications?')) {
       window.location.assign(target);
       return;
