@@ -15,11 +15,19 @@ const checks = [
   [notification.includes("hash = '#application-messages'"), 'message notification navigation must use the safe message anchor'],
   [notification.includes("target.startsWith('/applications?')"), 'selection deep links must preserve query/hash navigation'],
   [detail.includes('interviews.some((item) => item.id === interviewId)'), 'application detail must reject interview IDs not belonging to the loaded application'],
+  [detail.includes('focusedTargetRef.current === targetId'), 'application deep links must not repeatedly steal focus after background refreshes'],
+  [detail.includes('focusedTargetRef.current = null;'), 'application deep links must remain retryable if the target DOM is not available yet'],
   [detail.includes('id={`interview-${interview.id}`}'), 'interview cards must expose stable deep-link anchors'],
   [detail.includes('id="application-messages"'), 'communication panel must expose a stable deep-link anchor'],
   [detail.includes("target.scrollIntoView({ behavior: 'smooth', block: 'center' })"), 'deep-linked selection context must scroll into view'],
   [detail.includes('target.focus({ preventScroll: true })'), 'deep-linked selection context must receive keyboard focus'],
 ];
+
+const interviewOwnershipIndex = detail.indexOf('interviews.some((item) => item.id === interviewId)');
+const focusedTargetIndex = detail.indexOf('focusedTargetRef.current = targetId;');
+if (interviewOwnershipIndex < 0 || focusedTargetIndex < 0 || focusedTargetIndex < interviewOwnershipIndex) {
+  checks.push([false, 'interview deep-link must not be marked handled before candidate-owned application data verifies the interview']);
+}
 
 for (const [ok, message] of checks) {
   if (!ok) throw new Error(message);

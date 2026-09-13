@@ -57,6 +57,7 @@ function SpotRouteGate() {
   const [error, setError] = useState<string | null>(null);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const handledAssignmentRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!session) {
@@ -114,11 +115,13 @@ function SpotRouteGate() {
   }, [session, refresh]);
 
   useEffect(() => {
-    if (loading || assignments.length === 0) return;
     const assignmentId = new URLSearchParams(window.location.search).get('assignment_id');
-    if (!assignmentId || !UUID_PATTERN.test(assignmentId) || !assignments.some((item) => item.assignment_id === assignmentId)) return;
+    if (loading || !assignmentId || !UUID_PATTERN.test(assignmentId) || handledAssignmentRef.current === assignmentId) return;
+    const ownedAssignment = assignments.find((item) => item.assignment_id === assignmentId);
+    if (!ownedAssignment) return;
     const target = document.getElementById(`spot-assignment-${assignmentId}`);
     if (!target) return;
+    handledAssignmentRef.current = assignmentId;
     window.requestAnimationFrame(() => {
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
       target.focus({ preventScroll: true });

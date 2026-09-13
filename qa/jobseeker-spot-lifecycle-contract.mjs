@@ -30,10 +30,21 @@ const checks = [
   [/window\.addEventListener\('hc:spot-refresh', refreshWhenVisible\)/.test(route), 'spot state must support explicit same-session refresh requests'],
   [/window\.removeEventListener\('focus', refreshWhenVisible\)/.test(route) && /window\.removeEventListener\('pageshow', refreshWhenVisible\)/.test(route) && /document\.removeEventListener\('visibilitychange', refreshWhenVisible\)/.test(route) && /window\.removeEventListener\('hc:spot-refresh', refreshWhenVisible\)/.test(route), 'spot freshness listeners must clean up on unmount'],
   [/if \(!quiet && mountedRef\.current\) setLoading\(true\)/.test(route), 'quiet spot refresh must not replace the route with a loading screen'],
+  [/const handledAssignmentRef = useRef<string \| null>\(null\)/.test(route), 'spot assignment deep-link must remember a successfully handled target'],
+  [/handledAssignmentRef\.current === assignmentId/.test(route), 'spot assignment deep-link must avoid stealing focus again after background refreshes'],
+  [/assignments\.find\(\(item\) => item\.assignment_id === assignmentId\)/.test(route), 'spot assignment deep-link must verify the requested assignment is in the candidate-owned read model'],
+  [/handledAssignmentRef\.current = assignmentId/.test(route), 'spot assignment deep-link must only mark a target handled after it is renderable'],
   [/x\.jobseeker_clerk_user_id = v_user_id/i.test(confirmedMigration), 'candidate spot history must remain owner scoped'],
   [repository.includes("rpc('hc_jobseeker_list_my_spot_assignments')"), 'candidate must continue reading lifecycle state through the safe RPC'],
   [!repository.includes("from('hc_spot_assignments')"), 'candidate client must not directly query canonical spot assignments'],
 ];
+
+const ownershipIndex = route.indexOf('const ownedAssignment = assignments.find((item) => item.assignment_id === assignmentId);');
+const targetIndex = route.indexOf('const target = document.getElementById(`spot-assignment-${assignmentId}`);');
+const handledIndex = route.indexOf('handledAssignmentRef.current = assignmentId;');
+if (ownershipIndex < 0 || targetIndex < 0 || handledIndex < 0 || handledIndex < ownershipIndex || handledIndex < targetIndex) {
+  checks.push([false, 'spot deep-link must stay retryable until the owned assignment and DOM target are actually available']);
+}
 
 const failed = checks.filter(([ok]) => !ok).map(([, message]) => message);
 if (failed.length) {
