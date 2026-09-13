@@ -26,6 +26,10 @@ assert(route.includes('matchJob({ job, profile, preferences })'), 'candidate mat
 assert(!route.includes('.insert(') && !route.includes('.update(') && !route.includes('.delete('), 'comparison route must be read-only');
 assert(repository.includes("rpc('hc_jobseeker_list_ranked_jobs')") && rankedCatalog.includes('hc_public_workplace_profiles') && rankedCatalog.includes('hc_public_finance_profiles'), 'comparison must consume the candidate-safe public Verified projection path');
 assert(!rankedCatalog.includes('hc_verified_workplace_snapshots') && !rankedCatalog.includes('hc_verified_finance_snapshots'), 'comparison catalog must never read raw Verified snapshots');
+assert(repository.includes("window.location.pathname.startsWith('/compare')") && repository.includes("params.getAll('job_id')"), 'comparison must retain valid exact job ids from shared comparison URLs');
+assert(repository.includes('missingIds.map((jobId) => getRankedJob(jobId))') && repository.includes("rpc('hc_jobseeker_get_ranked_job'"), 'comparison must exact-hydrate jobs that fall outside the bounded shortlist');
+assert(repository.includes("`compare:${requestedJobIds.join(',')}`") && repository.includes("key: cacheKey"), 'comparison exact hydration must not be masked by the default shortlist cache');
+assert(rankedCatalog.includes('create or replace function public.hc_jobseeker_get_ranked_job') && rankedCatalog.includes('where r.id = p_job_id'), 'exact comparison hydration must remain candidate-safe and job-scoped');
 assert(main.includes("startsWith('/compare')") && main.includes('CompareRouteRoot') && main.includes('CompareNavigationEnhancer'), 'comparison route is not wired into the lazy app root');
 assert(enhancer.includes('href="/compare"') && enhancer.includes('2〜3園を、申告値と実績値を分けて比較'), 'candidate navigation must expose the comparison flow');
 assert(css.includes('@media(max-width:620px)') && css.includes('overflow:auto') && css.includes('position:sticky'), 'mobile comparison must retain horizontal scroll and row labels');
