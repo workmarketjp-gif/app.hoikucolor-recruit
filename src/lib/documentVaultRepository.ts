@@ -76,6 +76,74 @@ const documentColumns =
 const applicationDocumentColumns =
   'id,organization_id,facility_id,application_id,document_type,title,file_path,mime_type,file_size,source_jobseeker_document_id,uploaded_by_clerk_user_id,uploaded_at';
 
+async function storageObjectExists(path: string) {
+  const { data, error } = await db().storage.from(BUCKET).createSignedUrl(path, 30);
+  return !error && Boolean(data?.signedUrl);
+}
+
+async function ensureUploadedSourceObject(path: string, file: File) {
+  const bucket = db().storage.from(BUCKET);
+  const upload = () => bucket.upload(path, file, {
+    upsert: false,
+    contentType: file.type,
+  });
+
+  const first = await upload();
+  if (!first.error) return;
+  if (await storageObjectExists(path)) return;
+
+  const retry = await upload();
+  if (!retry.error) return;
+  if (await storageObjectExists(path)) return;
+  throw retry.error;
+}
+
+async function ensureApplicationCopy(sourcePath: string, destinationPath: string) {
+  const bucket = db().storage.from(BUCKET);
+  const copy = () => bucket.copy(sourcePath, destinationPath);
+
+  const first = await copy();
+  if (!first.error) return;
+
+  // A Storage request can commit server-side while the response is lost. The
+  // candidate-safe read policy allows probing only this deterministic own path.
+  if (await storageObjectExists(destinationPath)) return;
+
+  const retry = await copy();
+  if (!retry.error) return;
+  if (await storageObjectExists(destinationPath)) return;
+  throw retry.error;
+}
+
+async function findJobseekerDocumentById(documentId: string): Promise<JobseekerDocument | null> {
+  const { data, error } = await db()
+    .from('hc_jobseeker_documents')
+    .select(documentColumns)
+    .eq('id', documentId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as JobseekerDocument | null) ?? null;
+}
+
+async function findAttachedDocument(
+  applicationId: string,
+  documentId: string,
+): Promise<AttachedApplicationDocument | null> {
+  const { data, error } = await db()
+    .from('hc_application_documents')
+    .select(applicationDocumentColumns)
+    .eq('application_id', applicationId)
+    .eq('source_jobseeker_document_id', documentId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as AttachedApplicationDocument | null) ?? null;
+}
+
+async function cleanupUnregisteredObject(path: string) {
+  const { error } = await db().storage.from(BUCKET).remove([path]);
+  if (error) throw error;
+}
+
 export async function listJobseekerDocuments(): Promise<JobseekerDocument[]> {
   const { data, error } = await db()
     .from('hc_jobseeker_documents')
@@ -102,11 +170,7 @@ export async function uploadJobseekerDocument(
   const path = `jobseekers/${ownerId}/${id}/${fileName}`;
   const title = (options.title?.trim() || file.name || fileName).slice(0, 200);
 
-  const { error: uploadError } = await db().storage.from(BUCKET).upload(path, file, {
-    upsert: false,
-    contentType: file.type,
-  });
-  if (uploadError) throw uploadError;
+  await ensureUploadedSourceObject(path, file);
 
   const { data, error } = await db()
     .from('hc_jobseeker_documents')
@@ -123,12 +187,31 @@ export async function uploadJobseekerDocument(
     .select(documentColumns)
     .single();
 
-  if (error) {
-    await db().storage.from(BUCKET).remove([path]).catch(() => undefined);
-    throw error;
+  let saved = data as JobseekerDocument | null;
+  if (error || !saved) {
+    try {
+      saved = await findJobseekerDocumentById(id);
+    } catch {
+      // Do not delete an object when the metadata commit result itself is unknown.
+      // A refresh can safely discover a row that actually committed server-side.
+      throw new Error('書類保存の結果を確認できませんでした。画面を再読み込みして確認してください。');
+    }
+
+    if (!saved) {
+      try {
+        await cleanupUnregisteredObject(path);
+      } catch {
+        throw new Error('書類の保存に失敗し、未登録ファイルの後処理にも失敗しました。もう一度お試しください。');
+      }
+      if (error) throw error;
+      throw new Error('書類を保存できませんでした。');
+    }
   }
 
-  const saved = data as JobseekerDocument;
+  if (saved.file_path !== path || saved.jobseeker_clerk_user_id !== ownerId) {
+    throw new Error('保存済み書類の整合性を確認できませんでした。');
+  }
+
   if (options.makeDefault) return setDefaultJobseekerDocument(saved.id);
   return saved;
 }
@@ -150,18 +233,30 @@ export async function createJobseekerDocumentSignedUrl(document: JobseekerDocume
 }
 
 export async function deleteJobseekerDocument(document: JobseekerDocument) {
-  const { data: filePath, error: deleteMetadataError } = await db().rpc('hc_delete_jobseeker_document', {
+  const { data: filePath, error: prepareError } = await db().rpc('hc_prepare_jobseeker_document_delete', {
     p_document_id: document.id,
   });
-  if (deleteMetadataError) throw deleteMetadataError;
-  if (typeof filePath !== 'string' || !filePath) {
+  if (prepareError) throw prepareError;
+  if (typeof filePath !== 'string' || !filePath || filePath !== document.file_path) {
     throw new Error('削除対象の書類を確認できませんでした。');
   }
 
   const { error: removeError } = await db().storage.from(BUCKET).remove([filePath]);
+
+  // Finalize even when the Storage response failed: the object may already have
+  // been removed server-side. The RPC commits metadata deletion only when it can
+  // prove that the private object no longer exists.
+  const { data: finalized, error: finalizeError } = await db().rpc('hc_finalize_jobseeker_document_delete', {
+    p_document_id: document.id,
+    p_file_path: filePath,
+  });
+
+  if (!finalizeError && finalized === true) return;
   if (removeError) {
-    throw new Error('書類庫からは削除しましたが、元ファイルの後処理に失敗しました。');
+    throw new Error('元ファイルの削除を確認できませんでした。書類は一覧に残るため、再度削除できます。');
   }
+  if (finalizeError) throw finalizeError;
+  throw new Error('書類の削除を完了できませんでした。');
 }
 
 export async function listSubmittedApplicationDocuments(applicationId: string): Promise<AttachedApplicationDocument[]> {
@@ -195,14 +290,8 @@ export async function attachJobseekerDocumentToApplication(
   document: JobseekerDocument,
   applicationId: string,
 ): Promise<AttachedApplicationDocument> {
-  const { data: existing, error: existingError } = await db()
-    .from('hc_application_documents')
-    .select(applicationDocumentColumns)
-    .eq('application_id', applicationId)
-    .eq('source_jobseeker_document_id', document.id)
-    .maybeSingle();
-  if (existingError) throw existingError;
-  if (existing) return existing as AttachedApplicationDocument;
+  const existing = await findAttachedDocument(applicationId, document.id);
+  if (existing) return existing;
 
   const { data: application, error: applicationError } = await db()
     .from('hc_applications')
@@ -215,8 +304,7 @@ export async function attachJobseekerDocumentToApplication(
   const fileName = safeFileName(pathParts[pathParts.length - 1] || document.title);
   const destinationPath = `${application.organization_id}/${application.facility_id}/${application.id}/vault-${document.id}/${fileName}`;
 
-  const { error: copyError } = await db().storage.from(BUCKET).copy(document.file_path, destinationPath);
-  if (copyError) throw copyError;
+  await ensureApplicationCopy(document.file_path, destinationPath);
 
   const { data, error } = await db().rpc('hc_register_jobseeker_document_attachment', {
     p_document_id: document.id,
@@ -224,14 +312,32 @@ export async function attachJobseekerDocumentToApplication(
     p_destination_path: destinationPath,
   });
 
-  if (error) {
-    await db().storage.from(BUCKET).remove([destinationPath]).catch(() => undefined);
-    throw error;
-  }
-  if (!data || typeof data !== 'object') {
-    await db().storage.from(BUCKET).remove([destinationPath]).catch(() => undefined);
-    throw new Error('応募書類へ添付できませんでした。');
+  if (!error && data && typeof data === 'object') {
+    return data as AttachedApplicationDocument;
   }
 
-  return data as AttachedApplicationDocument;
+  let recovered: AttachedApplicationDocument | null;
+  try {
+    recovered = await findAttachedDocument(applicationId, document.id);
+  } catch {
+    // The registration request may have committed even if its response was lost.
+    // Never delete the destination until we can prove no immutable metadata exists.
+    throw new Error('応募書類の登録結果を確認できませんでした。応募管理を再読み込みして確認してください。');
+  }
+
+  if (recovered) {
+    if (recovered.file_path !== destinationPath) {
+      throw new Error('提出済み書類の保存先が一致しません。');
+    }
+    return recovered;
+  }
+
+  try {
+    await cleanupUnregisteredObject(destinationPath);
+  } catch {
+    throw new Error('応募書類への添付に失敗し、未登録コピーの後処理にも失敗しました。もう一度お試しください。');
+  }
+
+  if (error) throw error;
+  throw new Error('応募書類へ添付できませんでした。');
 }
