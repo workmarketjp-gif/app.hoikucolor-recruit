@@ -13,6 +13,10 @@ type Targets = {
   topbarHost: HTMLElement | null;
 };
 
+type ApplicationMessagesViewedDetail = {
+  applicationId?: string;
+};
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const emptyTargets: Targets = { dashboardHost: null, topbarHost: null };
 const emptySummary: JobseekerAttentionSummary = {
@@ -133,22 +137,16 @@ export function AttentionSummaryEnhancer() {
   }, []);
 
   useEffect(() => {
-    let intersectionObserver: IntersectionObserver | null = null;
-    let mutationScheduled = 0;
+    const onMessagesViewed = (event: Event) => {
+      const detail = (event as CustomEvent<ApplicationMessagesViewedDetail>).detail;
+      const applicationId = detail?.applicationId;
+      if (!applicationId || !UUID_PATTERN.test(applicationId)) return;
 
-    const attach = () => {
-      mutationScheduled = 0;
-      intersectionObserver?.disconnect();
-      intersectionObserver = null;
+      const selectedApplicationId = new URLSearchParams(window.location.search).get('application_id');
+      if (selectedApplicationId !== applicationId || markedApplications.current.has(applicationId)) return;
 
-      const target = document.getElementById('application-messages');
-      if (!target) return;
-      const applicationId = new URLSearchParams(window.location.search).get('application_id');
-      if (!applicationId || !UUID_PATTERN.test(applicationId) || markedApplications.current.has(applicationId)) return;
-
-      const markRead = async () => {
-        if (markedApplications.current.has(applicationId)) return;
-        markedApplications.current.add(applicationId);
+      markedApplications.current.add(applicationId);
+      void (async () => {
         try {
           const updated = await markJobseekerApplicationMessagesRead(applicationId);
           if (updated > 0) {
@@ -158,37 +156,11 @@ export function AttentionSummaryEnhancer() {
         } catch {
           markedApplications.current.delete(applicationId);
         }
-      };
-
-      if (!('IntersectionObserver' in window)) {
-        void markRead();
-        return;
-      }
-
-      intersectionObserver = new IntersectionObserver((entries) => {
-        if (entries.some((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.25)) {
-          intersectionObserver?.disconnect();
-          void markRead();
-        }
-      }, { threshold: [0.25] });
-      intersectionObserver.observe(target);
+      })();
     };
 
-    const scheduleAttach = () => {
-      if (mutationScheduled) return;
-      mutationScheduled = window.requestAnimationFrame(attach);
-    };
-
-    attach();
-    const observer = new MutationObserver(scheduleAttach);
-    observer.observe(document.body, { childList: true, subtree: true });
-    window.addEventListener('popstate', scheduleAttach);
-    return () => {
-      observer.disconnect();
-      intersectionObserver?.disconnect();
-      window.removeEventListener('popstate', scheduleAttach);
-      if (mutationScheduled) window.cancelAnimationFrame(mutationScheduled);
-    };
+    window.addEventListener('hc:application-messages-viewed', onMessagesViewed);
+    return () => window.removeEventListener('hc:application-messages-viewed', onMessagesViewed);
   }, [load]);
 
   const selectionCount = summary.unanswered_interviews_count + summary.unread_messages_count;

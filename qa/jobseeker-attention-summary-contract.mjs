@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const migration = fs.readFileSync(new URL('../supabase/migrations/20260912125500_hc_jobseeker_attention_summary_v1.sql', import.meta.url), 'utf8');
 const repository = fs.readFileSync(new URL('../src/lib/attentionRepository.ts', import.meta.url), 'utf8');
 const enhancer = fs.readFileSync(new URL('../src/components/AttentionSummaryEnhancer.tsx', import.meta.url), 'utf8');
+const applicationMessages = fs.readFileSync(new URL('../src/components/ApplicationMessages.tsx', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../src/components/AttentionSummaryEnhancer.css', import.meta.url), 'utf8');
 const notification = fs.readFileSync(new URL('../src/components/NotificationCenter.tsx', import.meta.url), 'utf8');
 const main = fs.readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
@@ -24,8 +25,12 @@ const checks = [
   [enhancer.includes('UUID_PATTERN.test(item.application_id)'), 'attention interview targets must validate application UUIDs'],
   [enhancer.includes('UUID_PATTERN.test(item.interview_id)'), 'attention interview targets must validate interview UUIDs'],
   [enhancer.includes("UUID_PATTERN.test(scoutId)"), 'attention scout targets must validate scout UUIDs'],
-  [enhancer.includes("document.getElementById('application-messages')"), 'message read state must be acknowledged from the visible communication panel'],
-  [enhancer.includes("entry.intersectionRatio >= 0.25"), 'message notifications must not be marked read before the communication panel is materially visible'],
+  [applicationMessages.includes("window.location.hash !== '#application-messages'"), 'message deep-link must auto-open the communication panel'],
+  [applicationMessages.includes("load({ acknowledge: true })"), 'opening the communication panel must acknowledge only after loading messages'],
+  [applicationMessages.includes("new CustomEvent('hc:application-messages-viewed'"), 'successful message loading must emit an explicit viewed event'],
+  [enhancer.includes("window.addEventListener('hc:application-messages-viewed'"), 'attention enhancer must acknowledge messages from the explicit viewed event'],
+  [enhancer.includes('selectedApplicationId !== applicationId'), 'message acknowledgement event must be bound to the currently selected application'],
+  [!enhancer.includes('IntersectionObserver'), 'scrolling a closed communication card must not mark facility messages read'],
   [enhancer.includes("window.dispatchEvent(new CustomEvent('hc:notifications-refresh'))"), 'message acknowledgement must refresh the notification center'],
   [notification.includes("window.addEventListener('hc:notifications-refresh'"), 'notification center must accept external message-read refreshes'],
   [notification.includes("new CustomEvent('hc:attention-refresh')"), 'notification reads must refresh dashboard attention counts'],
