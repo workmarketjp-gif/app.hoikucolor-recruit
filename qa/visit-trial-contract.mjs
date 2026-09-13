@@ -88,11 +88,23 @@ const uiMarkers = [
   '園の現地時間',
   'getVisitSettings(jobId)',
   "settingRow.facility_id !== facilityId",
+  'const loadVisitState = useCallback(async (quiet = false) => {',
+  "document.visibilityState === 'visible'",
+  'window.setInterval(refreshWhenVisible, 60_000)',
+  "window.addEventListener('focus', refreshWhenVisible)",
+  "window.addEventListener('pageshow', refreshWhenVisible)",
+  "document.addEventListener('visibilitychange', refreshWhenVisible)",
+  "window.addEventListener('hc:visits-refresh', refreshWhenVisible)",
+  "window.removeEventListener('focus', refreshWhenVisible)",
+  "window.removeEventListener('pageshow', refreshWhenVisible)",
+  "document.removeEventListener('visibilitychange', refreshWhenVisible)",
+  "window.removeEventListener('hc:visits-refresh', refreshWhenVisible)",
 ];
 for (const marker of uiMarkers) {
   if (!ui.includes(marker)) throw new Error(`Visit/trial UI contract missing: ${marker}`);
 }
 if (ui.includes('facility_note')) throw new Error('Candidate visit UI must never render facility_note.');
+if (!ui.includes('if (!quiet && mountedRef.current) setLoading(true);')) throw new Error('Visit/trial background refresh must not replace the panel with a loading state.');
 if (!app.includes('<VisitTrialPanel jobId={job.id} facilityId={job.facility_id} />')) {
   throw new Error('Visit/trial booking is not connected to expanded job details.');
 }

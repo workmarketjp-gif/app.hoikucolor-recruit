@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   cancelVisit,
   getVisitSettings,
@@ -75,31 +75,56 @@ export function VisitTrialPanel({ jobId, facilityId }: { jobId: string; facility
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const mountedRef = useRef(true);
 
-  const reloadReservations = async () => {
-    const rows = await listMyVisitReservations(jobId);
-    setReservations(rows);
-  };
+  const loadVisitState = useCallback(async (quiet = false) => {
+    if (!quiet && mountedRef.current) setLoading(true);
+    try {
+      const [settingRow, reservationRows] = await Promise.all([getVisitSettings(jobId), listMyVisitReservations(jobId)]);
+      if (!mountedRef.current) return;
+      if (settingRow && settingRow.facility_id !== facilityId) {
+        throw new Error('求人と見学・体験設定の施設情報が一致しません。');
+      }
+      setSettings(settingRow);
+      setReservations(reservationRows);
+      if (settingRow) {
+        const types = enabledTypes(settingRow);
+        const firstType = types[0];
+        if (firstType) setExperienceType((current) => types.includes(current) ? current : firstType);
+      }
+      setError(null);
+    } catch (err) {
+      if (!mountedRef.current || quiet) return;
+      setError(err instanceof Error ? err.message : '見学・体験情報を読み込めませんでした。');
+    } finally {
+      if (mountedRef.current && !quiet) setLoading(false);
+    }
+  }, [facilityId, jobId]);
 
   useEffect(() => {
-    let active = true;
-    setLoading(true);
-    Promise.all([getVisitSettings(jobId), listMyVisitReservations(jobId)])
-      .then(([settingRow, reservationRows]) => {
-        if (!active) return;
-        if (settingRow && settingRow.facility_id !== facilityId) {
-          throw new Error('求人と見学・体験設定の施設情報が一致しません。');
-        }
-        setSettings(settingRow);
-        setReservations(reservationRows);
-        const firstType = settingRow ? enabledTypes(settingRow)[0] : undefined;
-        if (firstType) setExperienceType(firstType);
-        setError(null);
-      })
-      .catch((err) => active && setError(err instanceof Error ? err.message : '見学・体験情報を読み込めませんでした。'))
-      .finally(() => active && setLoading(false));
-    return () => { active = false; };
-  }, [facilityId, jobId]);
+    mountedRef.current = true;
+    void loadVisitState(false);
+    return () => { mountedRef.current = false; };
+  }, [loadVisitState]);
+
+  useEffect(() => {
+    if (loading) return;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void loadVisitState(true);
+    };
+    const intervalId = window.setInterval(refreshWhenVisible, 60_000);
+    window.addEventListener('focus', refreshWhenVisible);
+    window.addEventListener('pageshow', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('hc:visits-refresh', refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshWhenVisible);
+      window.removeEventListener('pageshow', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('hc:visits-refresh', refreshWhenVisible);
+    };
+  }, [loading, loadVisitState]);
 
   const timeOptions = useMemo(() => {
     if (!settings) return [];
@@ -140,7 +165,7 @@ export function VisitTrialPanel({ jobId, facilityId }: { jobId: string; facility
         localTime,
         candidateMessage: message,
       });
-      await reloadReservations();
+      await loadVisitState(true);
       setMessage('');
       setSuccess('見学・体験を申し込みました。園からの確定連絡をお待ちください。');
     } catch (err) {
@@ -156,7 +181,7 @@ export function VisitTrialPanel({ jobId, facilityId }: { jobId: string; facility
     setSuccess(null);
     try {
       await cancelVisit(reservationId);
-      await reloadReservations();
+      await loadVisitState(true);
       setSuccess('予約をキャンセルしました。');
     } catch (err) {
       setError(err instanceof Error ? err.message : '予約をキャンセルできませんでした。');

@@ -1,5 +1,5 @@
 import { ClerkProvider, useAuth, useClerk, useSession, useUser } from '@clerk/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
 import { NotificationCenter } from './components/NotificationCenter';
@@ -56,6 +56,7 @@ function SpotRouteGate() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
     if (!session) {
@@ -70,22 +71,47 @@ function SpotRouteGate() {
     if (isLoaded && !isSignedIn) window.location.replace('/login');
   }, [isLoaded, isSignedIn]);
 
-  const refresh = async () => {
+  const refresh = useCallback(async (quiet = false) => {
     if (!session) return;
-    setLoading(true);
+    if (!quiet && mountedRef.current) setLoading(true);
     try {
       const [nextJobs, nextAssignments] = await Promise.all([listSpotJobs(), listMySpotAssignments()]);
+      if (!mountedRef.current) return;
       setJobs(nextJobs);
       setAssignments(nextAssignments);
       setError(null);
     } catch (err) {
+      if (!mountedRef.current || quiet) return;
       setError(err instanceof Error ? err.message : 'スポット求人を読み込めませんでした。');
     } finally {
-      setLoading(false);
+      if (mountedRef.current && !quiet) setLoading(false);
     }
-  };
+  }, [session]);
 
-  useEffect(() => { void refresh(); }, [session]);
+  useEffect(() => {
+    mountedRef.current = true;
+    void refresh(false);
+    return () => { mountedRef.current = false; };
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!session) return;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refresh(true);
+    };
+    const intervalId = window.setInterval(refreshWhenVisible, 60_000);
+    window.addEventListener('focus', refreshWhenVisible);
+    window.addEventListener('pageshow', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('hc:spot-refresh', refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshWhenVisible);
+      window.removeEventListener('pageshow', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('hc:spot-refresh', refreshWhenVisible);
+    };
+  }, [session, refresh]);
 
   useEffect(() => {
     if (loading || assignments.length === 0) return;
