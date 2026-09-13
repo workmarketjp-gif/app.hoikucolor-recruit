@@ -76,7 +76,7 @@ function formatDateTime(value?: string | null) {
 export function AttentionSummaryEnhancer() {
   const [summary, setSummary] = useState<JobseekerAttentionSummary>(emptySummary);
   const [targets, setTargets] = useState<Targets>(emptyTargets);
-  const markedApplications = useRef(new Set<string>());
+  const acknowledgingApplications = useRef(new Set<string>());
 
   const load = useCallback(async () => {
     try {
@@ -143,9 +143,9 @@ export function AttentionSummaryEnhancer() {
       if (!applicationId || !UUID_PATTERN.test(applicationId)) return;
 
       const selectedApplicationId = new URLSearchParams(window.location.search).get('application_id');
-      if (selectedApplicationId !== applicationId || markedApplications.current.has(applicationId)) return;
+      if (selectedApplicationId !== applicationId || acknowledgingApplications.current.has(applicationId)) return;
 
-      markedApplications.current.add(applicationId);
+      acknowledgingApplications.current.add(applicationId);
       void (async () => {
         try {
           const updated = await markJobseekerApplicationMessagesRead(applicationId);
@@ -154,7 +154,9 @@ export function AttentionSummaryEnhancer() {
             window.dispatchEvent(new CustomEvent('hc:notifications-refresh'));
           }
         } catch {
-          markedApplications.current.delete(applicationId);
+          // Keep the server unread state as the source of truth; a later view can retry.
+        } finally {
+          acknowledgingApplications.current.delete(applicationId);
         }
       })();
     };

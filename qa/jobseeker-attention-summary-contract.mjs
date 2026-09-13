@@ -30,6 +30,7 @@ const checks = [
   [applicationMessages.includes("new CustomEvent('hc:application-messages-viewed'"), 'successful message loading must emit an explicit viewed event'],
   [enhancer.includes("window.addEventListener('hc:application-messages-viewed'"), 'attention enhancer must acknowledge messages from the explicit viewed event'],
   [enhancer.includes('selectedApplicationId !== applicationId'), 'message acknowledgement event must be bound to the currently selected application'],
+  [enhancer.includes('acknowledgingApplications.current.delete(applicationId)'), 'message acknowledgement guard must be released so later messages in the same application can be acknowledged'],
   [!enhancer.includes('IntersectionObserver'), 'scrolling a closed communication card must not mark facility messages read'],
   [enhancer.includes("window.dispatchEvent(new CustomEvent('hc:notifications-refresh'))"), 'message acknowledgement must refresh the notification center'],
   [notification.includes("window.addEventListener('hc:notifications-refresh'"), 'notification center must accept external message-read refreshes'],
