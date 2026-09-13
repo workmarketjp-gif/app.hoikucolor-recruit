@@ -181,7 +181,7 @@ export function NotificationCenter({ onNavigate }: Props) {
       }
     }
     setOpen(false);
-    if (target.startsWith('/scouts') || target.startsWith('/applications?') || target.startsWith('/spot-jobs') || target.startsWith('/visits')) {
+    if (target.startsWith('/scouts') || target.startsWith('/applications?') || target.startsWith('/spot-jobs?') || target === '/spot-jobs' || target.startsWith('/visits')) {
       window.location.assign(target);
       return;
     }
