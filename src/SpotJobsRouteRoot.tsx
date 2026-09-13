@@ -5,12 +5,13 @@ import { Icon } from './components/Icon';
 import { NotificationCenter } from './components/NotificationCenter';
 import { loadHoikuColorClerkPublishableKey } from './lib/clerkConfig';
 import { getProfile, submitApplication } from './lib/recruitRepository';
-import { listSpotJobs, type SpotJobListing } from './lib/spotJobRepository';
+import { listMySpotAssignments, listSpotJobs, type SpotAssignment, type SpotJobListing } from './lib/spotJobRepository';
 import { setSupabaseAccessTokenGetter } from './lib/supabase';
 import './SpotJobsRouteRoot.css';
 
 const publicUrl = (import.meta.env.VITE_HOIKU_COLOR_PUBLIC_URL || 'https://hoikucolor.jp').replace(/\/$/, '');
 const poppyUrl = (import.meta.env.VITE_HOIKU_POPPY_URL || 'https://app.hoikupoppy.ai').replace(/\/$/, '');
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const navItems = [
   { href: '/', label: 'ホーム', icon: 'home' as const },
@@ -51,6 +52,7 @@ function SpotRouteGate() {
   const { signOut } = useClerk();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [jobs, setJobs] = useState<SpotJobListing[]>([]);
+  const [assignments, setAssignments] = useState<SpotAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [applyingId, setApplyingId] = useState<string | null>(null);
@@ -72,7 +74,9 @@ function SpotRouteGate() {
     if (!session) return;
     setLoading(true);
     try {
-      setJobs(await listSpotJobs());
+      const [nextJobs, nextAssignments] = await Promise.all([listSpotJobs(), listMySpotAssignments()]);
+      setJobs(nextJobs);
+      setAssignments(nextAssignments);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'スポット求人を読み込めませんでした。');
@@ -82,6 +86,18 @@ function SpotRouteGate() {
   };
 
   useEffect(() => { void refresh(); }, [session]);
+
+  useEffect(() => {
+    if (loading || assignments.length === 0) return;
+    const assignmentId = new URLSearchParams(window.location.search).get('assignment_id');
+    if (!assignmentId || !UUID_PATTERN.test(assignmentId) || !assignments.some((item) => item.assignment_id === assignmentId)) return;
+    const target = document.getElementById(`spot-assignment-${assignmentId}`);
+    if (!target) return;
+    window.requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus({ preventScroll: true });
+    });
+  }, [assignments, loading]);
 
   const apply = async (job: SpotJobListing) => {
     setApplyingId(job.job_id);
@@ -150,20 +166,52 @@ function SpotRouteGate() {
             <a className="secondary-button" href="/jobs"><Icon name="search" size={15} /> 通常求人を見る</a>
           </header>
 
-          <section className="spot-guide" aria-label="スポット求人の流れ">
-            <strong>Hoiku Office連携</strong><span>園が勤務を確定すると、Hoiku Officeのシフトへ連携されます。確定前は応募状態として管理されます。</span>
-          </section>
-
           {error && <div className="error-banner"><span>{error}</span><button type="button" onClick={() => setError(null)}>閉じる</button></div>}
-          {loading ? <SpotRouteState title="スポット求人を確認しています" body="募集中の勤務枠を読み込んでいます。" loading embedded /> : (
-            jobs.length ? <div className="spot-job-grid">{jobs.map((job) => (
-              <SpotJobCard key={job.job_id} job={job} applying={applyingId === job.job_id} onApply={() => void apply(job)} />
-            ))}</div> : <div className="empty-state"><span className="empty-icon"><Icon name="clock" /></span><h3>現在募集中のスポット求人はありません</h3><p>新しい勤務枠が公開されると、ここに表示されます。</p><a className="secondary-button" href="/jobs">通常求人を見る</a></div>
+          {loading ? <SpotRouteState title="スポット勤務を確認しています" body="募集中の勤務枠と確定した勤務を読み込んでいます。" loading embedded /> : (
+            <>
+              {assignments.length > 0 && (
+                <section className="spot-assignment-section" aria-labelledby="spot-assignment-heading">
+                  <div className="spot-section-heading">
+                    <div><span className="eyebrow">MY SPOT WORK</span><h2 id="spot-assignment-heading">あなたのスポット勤務</h2></div>
+                    <p>園が勤務を確定した後も、募集枠が満員・募集終了になってもここから勤務日時を確認できます。</p>
+                  </div>
+                  <div className="spot-assignment-grid">{assignments.map((assignment) => <SpotAssignmentCard key={assignment.assignment_id} assignment={assignment} />)}</div>
+                </section>
+              )}
+
+              <section className="spot-guide" aria-label="スポット求人の流れ">
+                <strong>Hoiku Office連携</strong><span>園が勤務を確定すると、Hoiku Officeのシフトへ連携されます。確定後は上の「あなたのスポット勤務」からいつでも確認できます。</span>
+              </section>
+
+              {jobs.length ? <div className="spot-job-grid">{jobs.map((job) => (
+                <SpotJobCard key={job.job_id} job={job} applying={applyingId === job.job_id} onApply={() => void apply(job)} />
+              ))}</div> : <div className="empty-state"><span className="empty-icon"><Icon name="clock" /></span><h3>現在募集中のスポット求人はありません</h3><p>{assignments.length ? '確定済みの勤務は上の「あなたのスポット勤務」から確認できます。' : '新しい勤務枠が公開されると、ここに表示されます。'}</p><a className="secondary-button" href="/jobs">通常求人を見る</a></div>}
+            </>
           )}
         </section>
       </main>
     </div>
   );
+}
+
+function SpotAssignmentCard({ assignment }: { assignment: SpotAssignment }) {
+  const workedMinutes = useMemo(() => Math.max(0, timeToMinutes(assignment.end_time) - timeToMinutes(assignment.start_time) - assignment.break_minutes), [assignment]);
+  const active = assignment.assignment_status === 'confirmed';
+  return <article id={`spot-assignment-${assignment.assignment_id}`} className={`spot-assignment-card ${active ? 'is-confirmed' : ''}`} tabIndex={-1}>
+    <div className="spot-job-card-head">
+      <div><span className={`spot-status-badge status-${assignment.assignment_status}`}>{spotAssignmentStatusLabel(assignment.assignment_status)}</span><span className="spot-location"><Icon name="map" size={14} /> {assignment.prefecture || '地域未設定'} {assignment.city || ''}</span></div>
+      {active && <span className="spot-office-linked">Hoiku Office シフト連携済み</span>}
+    </div>
+    <span className="facility-name">{assignment.facility_name}</span><h3>{assignment.title}</h3>
+    <div className="spot-primary-details">
+      <div><small>勤務日</small><strong>{formatWorkDate(assignment.work_date)}</strong></div>
+      <div><small>勤務時間</small><strong>{formatTime(assignment.start_time)}〜{formatTime(assignment.end_time)}</strong></div>
+      <div><small>時給</small><strong>¥{Number(assignment.hourly_rate).toLocaleString('ja-JP')}</strong></div>
+      <div><small>休憩</small><strong>{assignment.break_minutes}分</strong></div>
+    </div>
+    <div className="spot-secondary-details"><span><strong>実働</strong> {formatWorkedMinutes(workedMinutes)}</span>{assignment.address && <span><strong>勤務先</strong> {assignment.address}</span>}</div>
+    <div className="spot-card-actions"><a className="secondary-button" href={`/applications?application_id=${encodeURIComponent(assignment.application_id)}`}>応募内容を見る <Icon name="arrow" size={14} /></a></div>
+  </article>;
 }
 
 function SpotJobCard({ job, applying, onApply }: { job: SpotJobListing; applying: boolean; onApply: () => void }) {
@@ -207,3 +255,4 @@ function formatWorkedMinutes(value: number) { const h = Math.floor(value / 60); 
 function formatWorkDate(value: string) { return new Intl.DateTimeFormat('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short', timeZone: 'Asia/Tokyo' }).format(new Date(`${value}T12:00:00+09:00`)); }
 function formatClosing(value: string) { return new Intl.DateTimeFormat('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }).format(new Date(value)); }
 function applicationStatusLabel(status: string) { return ({ new: '応募済み', applied: '応募済み', reviewing: '確認中', screening: '確認中', interview: '面接調整中', hired: '確定', rejected: '不採用', withdrawn: '辞退' } as Record<string, string>)[status] || status; }
+function spotAssignmentStatusLabel(status: string) { return ({ confirmed: '勤務確定', completed: '勤務完了', cancelled: 'キャンセル', no_show: '未勤務' } as Record<string, string>)[status] || status; }
