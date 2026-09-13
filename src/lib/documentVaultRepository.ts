@@ -150,31 +150,18 @@ export async function createJobseekerDocumentSignedUrl(document: JobseekerDocume
 }
 
 export async function deleteJobseekerDocument(document: JobseekerDocument) {
-  const { data: links, error: linkError } = await db()
-    .from('hc_application_documents')
-    .select('id')
-    .eq('source_jobseeker_document_id', document.id)
-    .limit(1);
-  if (linkError) throw linkError;
-
-  if ((links ?? []).length > 0) {
-    const { error: deleteMetadataError } = await db()
-      .from('hc_jobseeker_documents')
-      .delete()
-      .eq('id', document.id);
-    if (deleteMetadataError) throw deleteMetadataError;
-    const { error: removeError } = await db().storage.from(BUCKET).remove([document.file_path]);
-    if (removeError) throw new Error('書類庫からは削除しましたが、元ファイルの後処理に失敗しました。');
-    return;
+  const { data: filePath, error: deleteMetadataError } = await db().rpc('hc_delete_jobseeker_document', {
+    p_document_id: document.id,
+  });
+  if (deleteMetadataError) throw deleteMetadataError;
+  if (typeof filePath !== 'string' || !filePath) {
+    throw new Error('削除対象の書類を確認できませんでした。');
   }
 
-  const { error: removeError } = await db().storage.from(BUCKET).remove([document.file_path]);
-  if (removeError) throw removeError;
-  const { error: deleteMetadataError } = await db()
-    .from('hc_jobseeker_documents')
-    .delete()
-    .eq('id', document.id);
-  if (deleteMetadataError) throw deleteMetadataError;
+  const { error: removeError } = await db().storage.from(BUCKET).remove([filePath]);
+  if (removeError) {
+    throw new Error('書類庫からは削除しましたが、元ファイルの後処理に失敗しました。');
+  }
 }
 
 export async function listSubmittedApplicationDocuments(applicationId: string): Promise<AttachedApplicationDocument[]> {
