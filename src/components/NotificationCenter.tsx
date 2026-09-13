@@ -114,28 +114,26 @@ export function NotificationCenter({ onNavigate }: Props) {
     mountedRef.current = true;
     void load();
     void loadScoutCount();
-    const intervalId = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void load(true);
-        void loadScoutCount();
-      }
-    }, 60_000);
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        void load(true);
-        void loadScoutCount();
-      }
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void load(true);
+      void loadScoutCount();
     };
+    const intervalId = window.setInterval(refreshWhenVisible, 60_000);
     const onExternalRefresh = () => {
       void load(true);
       void loadScoutCount();
     };
-    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', refreshWhenVisible);
+    window.addEventListener('pageshow', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
     window.addEventListener('hc:notifications-refresh', onExternalRefresh);
     return () => {
       mountedRef.current = false;
       window.clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', refreshWhenVisible);
+      window.removeEventListener('pageshow', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
       window.removeEventListener('hc:notifications-refresh', onExternalRefresh);
     };
   }, [load, loadScoutCount]);

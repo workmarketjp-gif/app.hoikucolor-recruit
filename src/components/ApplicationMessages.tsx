@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listApplicationMessages, sendApplicationMessage, type Message } from '../lib/messageRepository';
 import {
   attachJobseekerDocumentToApplication,
@@ -23,6 +23,7 @@ const documentLabels: Record<string, string> = {
 
 type LoadMessageOptions = {
   acknowledge?: boolean;
+  quiet?: boolean;
 };
 
 export function ApplicationMessages({ applicationId }: { applicationId: string }) {
@@ -39,6 +40,7 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
   const [repairingDefaults, setRepairingDefaults] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [documentNotice, setDocumentNotice] = useState<string | null>(null);
+  const mountedRef = useRef(true);
 
   const documentById = useMemo(
     () => new Map(documents.map((document) => [document.id, document])),
@@ -52,32 +54,38 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
   );
   const unavailableMissingCount = missingExpectedDocuments.length - repairableMissingDocuments.length;
 
-  const announceMessagesViewed = () => {
+  const announceMessagesViewed = useCallback(() => {
     window.dispatchEvent(new CustomEvent('hc:application-messages-viewed', {
       detail: { applicationId },
     }));
-  };
+  }, [applicationId]);
 
-  const load = async ({ acknowledge = false }: LoadMessageOptions = {}) => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async ({ acknowledge = false, quiet = false }: LoadMessageOptions = {}) => {
+    if (!quiet && mountedRef.current) {
+      setLoading(true);
+      setError(null);
+    }
     try {
-      setMessages(await listApplicationMessages(applicationId));
+      const next = await listApplicationMessages(applicationId);
+      if (!mountedRef.current) return;
+      setMessages(next);
       if (acknowledge) announceMessagesViewed();
     } catch (err) {
+      if (!mountedRef.current || quiet) return;
       setError(err instanceof Error ? err.message : 'メッセージを読み込めませんでした。');
     } finally {
-      setLoading(false);
+      if (mountedRef.current && !quiet) setLoading(false);
     }
-  };
+  }, [applicationId, announceMessagesViewed]);
 
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async (quiet = false) => {
     try {
       const [saved, submitted, expectations] = await Promise.all([
         listJobseekerDocuments(),
         listSubmittedApplicationDocuments(applicationId),
         listApplicationDocumentExpectations(applicationId),
       ]);
+      if (!mountedRef.current) return;
       const nextAttachedIds = submitted
         .map((document) => document.source_jobseeker_document_id)
         .filter((value): value is string => typeof value === 'string' && value.length > 0);
@@ -95,21 +103,48 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
       setAttachedIds(nextAttachedIds);
       setMissingExpectedDocuments(missingExpectations);
     } catch (err) {
+      if (!mountedRef.current || quiet) return;
       setError(err instanceof Error ? err.message : '応募書類を読み込めませんでした。');
     }
-  };
+  }, [applicationId]);
 
-  const openAndLoad = async () => {
+  const openAndLoad = useCallback(async () => {
     setOpen(true);
     await Promise.allSettled([load({ acknowledge: true }), loadDocuments()]);
-  };
+  }, [load, loadDocuments]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     if (window.location.hash !== '#application-messages') return;
     void openAndLoad();
-    // Deep-link hydration should run once for the currently selected application.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applicationId]);
+  }, [applicationId, openAndLoad]);
+
+  useEffect(() => {
+    if (!open) return;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void Promise.allSettled([
+        load({ acknowledge: true, quiet: true }),
+        loadDocuments(true),
+      ]);
+    };
+    const intervalId = window.setInterval(refreshWhenVisible, 60_000);
+    window.addEventListener('focus', refreshWhenVisible);
+    window.addEventListener('pageshow', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('hc:messages-refresh', refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshWhenVisible);
+      window.removeEventListener('pageshow', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('hc:messages-refresh', refreshWhenVisible);
+    };
+  }, [load, loadDocuments, open]);
 
   const toggle = async () => {
     const next = !open;

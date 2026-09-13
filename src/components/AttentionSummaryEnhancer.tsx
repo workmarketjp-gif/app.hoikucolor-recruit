@@ -88,17 +88,21 @@ export function AttentionSummaryEnhancer() {
 
   useEffect(() => {
     const initialTimer = window.setTimeout(() => void load(), 450);
-    const intervalId = window.setInterval(() => {
+    const refreshWhenVisible = () => {
       if (document.visibilityState === 'visible') void load();
-    }, 60_000);
-    const onVisibility = () => { if (document.visibilityState === 'visible') void load(); };
+    };
+    const intervalId = window.setInterval(refreshWhenVisible, 60_000);
     const onRefresh = () => void load();
-    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', refreshWhenVisible);
+    window.addEventListener('pageshow', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
     window.addEventListener('hc:attention-refresh', onRefresh);
     return () => {
       window.clearTimeout(initialTimer);
       window.clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', refreshWhenVisible);
+      window.removeEventListener('pageshow', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
       window.removeEventListener('hc:attention-refresh', onRefresh);
     };
   }, [load]);

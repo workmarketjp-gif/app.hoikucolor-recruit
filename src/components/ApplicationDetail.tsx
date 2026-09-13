@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApplicationMessages } from './ApplicationMessages';
 import { Icon } from './Icon';
 import {
@@ -41,27 +41,56 @@ export function ApplicationDetail({ applicationId, onBack }: Props) {
   const [detail, setDetail] = useState<JobseekerApplicationDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet && mountedRef.current) {
+      setLoading(true);
+      setError(null);
+    }
     try {
-      setDetail(await getJobseekerApplicationDetail(applicationId));
+      const next = await getJobseekerApplicationDetail(applicationId);
+      if (!mountedRef.current) return;
+      setDetail(next);
+      setError(null);
     } catch (err) {
+      if (!mountedRef.current || quiet) return;
       setError(err instanceof Error ? err.message : '応募情報を読み込めませんでした。');
     } finally {
-      setLoading(false);
+      if (mountedRef.current && !quiet) setLoading(false);
     }
   }, [applicationId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    mountedRef.current = true;
+    void load(false);
+    return () => { mountedRef.current = false; };
+  }, [load]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void load(true);
+    };
+    const intervalId = window.setInterval(refreshWhenVisible, 60_000);
+    window.addEventListener('focus', refreshWhenVisible);
+    window.addEventListener('pageshow', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('hc:application-detail-refresh', refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshWhenVisible);
+      window.removeEventListener('pageshow', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('hc:application-detail-refresh', refreshWhenVisible);
+    };
+  }, [load]);
 
   if (loading) {
     return <section className="application-detail-state" aria-live="polite"><span className="loading-ring" /><strong>応募情報を読み込んでいます</strong></section>;
   }
 
   if (error) {
-    return <section className="application-detail-state is-error"><strong>応募情報を読み込めませんでした</strong><p>{error}</p><div><button className="secondary-button" type="button" onClick={onBack}>応募一覧へ戻る</button><button className="primary-button" type="button" onClick={() => void load()}>再読み込み</button></div></section>;
+    return <section className="application-detail-state is-error"><strong>応募情報を読み込めませんでした</strong><p>{error}</p><div><button className="secondary-button" type="button" onClick={onBack}>応募一覧へ戻る</button><button className="primary-button" type="button" onClick={() => void load(false)}>再読み込み</button></div></section>;
   }
 
   if (!detail) {
@@ -71,11 +100,12 @@ export function ApplicationDetail({ applicationId, onBack }: Props) {
   return <ApplicationDetailBody detail={detail} onBack={onBack} onRefresh={load} />;
 }
 
-function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: JobseekerApplicationDetail; onBack: () => void; onRefresh: () => Promise<void> }) {
+function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: JobseekerApplicationDetail; onBack: () => void; onRefresh: (quiet?: boolean) => Promise<void> }) {
   const { application, interviews, visits } = detail;
   const currentStep = statusOrder[application.status] ?? 0;
   const terminal = application.status === 'rejected' || application.status === 'withdrawn';
   const upcomingInterview = useMemo(() => interviews.find((item) => item.status === 'scheduled') || null, [interviews]);
+  const focusedTargetRef = useRef<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -86,11 +116,15 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
       : requestedInterviewId
         ? `interview-${requestedInterviewId}`
         : null;
-    if (!targetId) return;
+    if (!targetId || focusedTargetRef.current === targetId) return;
+    focusedTargetRef.current = targetId;
 
     const timeoutId = window.setTimeout(() => {
       const target = document.getElementById(targetId);
-      if (!target) return;
+      if (!target) {
+        focusedTargetRef.current = null;
+        return;
+      }
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
       target.focus({ preventScroll: true });
     }, 0);
@@ -100,7 +134,7 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
   return <>
     <header className="application-detail-heading">
       <button className="application-back" type="button" onClick={onBack}><span aria-hidden="true">←</span> 応募一覧へ</button>
-      <button className="secondary-button application-refresh" type="button" onClick={() => void onRefresh()}>更新</button>
+      <button className="secondary-button application-refresh" type="button" onClick={() => void onRefresh(false)}>更新</button>
     </header>
 
     <section className="application-detail-hero">
@@ -154,7 +188,7 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
   </>;
 }
 
-function InterviewCard({ interview, onRespond }: { interview: JobseekerInterview; onRespond: () => Promise<void> }) {
+function InterviewCard({ interview, onRespond }: { interview: JobseekerInterview; onRespond: (quiet?: boolean) => Promise<void> }) {
   const meetingUrl = safeHttpUrl(interview.meeting_url);
   const [rescheduleOpen, setRescheduleOpen] = useState(interview.candidate_response_status === 'reschedule_requested');
   const [message, setMessage] = useState(interview.candidate_response_message || '');
@@ -172,7 +206,9 @@ function InterviewCard({ interview, onRespond }: { interview: JobseekerInterview
     setError(null);
     try {
       await respondToInterview(interview.id, status, status === 'reschedule_requested' ? trimmed : null);
-      await onRespond();
+      await onRespond(true);
+      window.dispatchEvent(new CustomEvent('hc:attention-refresh'));
+      window.dispatchEvent(new CustomEvent('hc:notifications-refresh'));
     } catch (err) {
       setError(err instanceof Error ? err.message : '面接日時への回答を送信できませんでした。');
     } finally {
