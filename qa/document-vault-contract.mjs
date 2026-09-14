@@ -25,7 +25,7 @@ const repositoryMarkers = [
   "const BUCKET = 'hc-application-documents'",
   'upsert: false',
   '.createSignedUrl(',
-  '.copy(document.file_path, destinationPath)',
+  'ensureApplicationCopy(document.file_path, destinationPath)',
   "rpc('hc_register_jobseeker_document_attachment'",
   "source_jobseeker_document_id",
 ];

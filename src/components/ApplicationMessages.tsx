@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listApplicationMessages, sendApplicationMessage, type Message } from '../lib/messageRepository';
 import {
   attachJobseekerDocumentToApplication,
@@ -8,6 +8,10 @@ import {
   type AttachedApplicationDocument,
   type JobseekerDocument,
 } from '../lib/documentVaultRepository';
+import {
+  listApplicationDocumentExpectations,
+  type ApplicationDocumentExpectation,
+} from '../lib/applicationDocumentExpectationRepository';
 
 const documentLabels: Record<string, string> = {
   resume: '履歴書',
@@ -17,51 +21,135 @@ const documentLabels: Record<string, string> = {
   other: 'その他',
 };
 
+type LoadMessageOptions = {
+  acknowledge?: boolean;
+  quiet?: boolean;
+};
+
 export function ApplicationMessages({ applicationId }: { applicationId: string }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [documents, setDocuments] = useState<JobseekerDocument[]>([]);
   const [submittedDocuments, setSubmittedDocuments] = useState<AttachedApplicationDocument[]>([]);
   const [attachedIds, setAttachedIds] = useState<string[]>([]);
+  const [missingExpectedDocuments, setMissingExpectedDocuments] = useState<ApplicationDocumentExpectation[]>([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [documentBusyId, setDocumentBusyId] = useState<string | null>(null);
+  const [repairingDefaults, setRepairingDefaults] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [documentNotice, setDocumentNotice] = useState<string | null>(null);
+  const mountedRef = useRef(true);
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
+  const documentById = useMemo(
+    () => new Map(documents.map((document) => [document.id, document])),
+    [documents],
+  );
+  const repairableMissingDocuments = useMemo(
+    () => missingExpectedDocuments
+      .map((expectation) => documentById.get(expectation.source_jobseeker_document_id_snapshot))
+      .filter((document): document is JobseekerDocument => Boolean(document)),
+    [documentById, missingExpectedDocuments],
+  );
+  const unavailableMissingCount = missingExpectedDocuments.length - repairableMissingDocuments.length;
+
+  const announceMessagesViewed = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('hc:application-messages-viewed', {
+      detail: { applicationId },
+    }));
+  }, [applicationId]);
+
+  const load = useCallback(async ({ acknowledge = false, quiet = false }: LoadMessageOptions = {}) => {
+    if (!quiet && mountedRef.current) {
+      setLoading(true);
+      setError(null);
+    }
     try {
-      setMessages(await listApplicationMessages(applicationId));
+      const next = await listApplicationMessages(applicationId);
+      if (!mountedRef.current) return;
+      setMessages(next);
+      if (acknowledge) announceMessagesViewed();
     } catch (err) {
+      if (!mountedRef.current || quiet) return;
       setError(err instanceof Error ? err.message : 'メッセージを読み込めませんでした。');
     } finally {
-      setLoading(false);
+      if (mountedRef.current && !quiet) setLoading(false);
     }
-  };
+  }, [applicationId, announceMessagesViewed]);
 
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async (quiet = false) => {
     try {
-      const [saved, submitted] = await Promise.all([
+      const [saved, submitted, expectations] = await Promise.all([
         listJobseekerDocuments(),
         listSubmittedApplicationDocuments(applicationId),
+        listApplicationDocumentExpectations(applicationId),
       ]);
+      if (!mountedRef.current) return;
+      const nextAttachedIds = submitted
+        .map((document) => document.source_jobseeker_document_id)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0);
+      const submittedPaths = new Set(submitted.map((document) => document.file_path));
+      const savedIds = new Set(saved.map((document) => document.id));
+      const submittedTypes = new Set(submitted.map((document) => document.document_type));
+      const missingExpectations = expectations.filter((expectation) => {
+        if (submittedPaths.has(expectation.destination_file_path)) return false;
+        if (!savedIds.has(expectation.source_jobseeker_document_id_snapshot)
+          && submittedTypes.has(expectation.document_type)) return false;
+        return true;
+      });
       setDocuments(saved);
       setSubmittedDocuments(submitted);
-      setAttachedIds(submitted
-        .map((document) => document.source_jobseeker_document_id)
-        .filter((value): value is string => typeof value === 'string' && value.length > 0));
+      setAttachedIds(nextAttachedIds);
+      setMissingExpectedDocuments(missingExpectations);
     } catch (err) {
+      if (!mountedRef.current || quiet) return;
       setError(err instanceof Error ? err.message : '応募書類を読み込めませんでした。');
     }
-  };
+  }, [applicationId]);
+
+  const openAndLoad = useCallback(async () => {
+    setOpen(true);
+    await Promise.allSettled([load({ acknowledge: true }), loadDocuments()]);
+  }, [load, loadDocuments]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  useEffect(() => {
+    if (window.location.hash !== '#application-messages') return;
+    void openAndLoad();
+  }, [applicationId, openAndLoad]);
+
+  useEffect(() => {
+    if (!open) return;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void Promise.allSettled([
+        load({ acknowledge: true, quiet: true }),
+        loadDocuments(true),
+      ]);
+    };
+    const intervalId = window.setInterval(refreshWhenVisible, 60_000);
+    window.addEventListener('focus', refreshWhenVisible);
+    window.addEventListener('pageshow', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('hc:messages-refresh', refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshWhenVisible);
+      window.removeEventListener('pageshow', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('hc:messages-refresh', refreshWhenVisible);
+    };
+  }, [load, loadDocuments, open]);
 
   const toggle = async () => {
     const next = !open;
     setOpen(next);
-    if (next) await Promise.allSettled([load(), loadDocuments()]);
+    if (next) await Promise.allSettled([load({ acknowledge: true }), loadDocuments()]);
   };
 
   const send = async () => {
@@ -95,6 +183,29 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
     }
   };
 
+  const attachMissingExpectedDocuments = async () => {
+    if (!repairableMissingDocuments.length) return;
+    setRepairingDefaults(true);
+    setError(null);
+    setDocumentNotice(null);
+    try {
+      const results = await Promise.allSettled(
+        repairableMissingDocuments.map((document) => attachJobseekerDocumentToApplication(document, applicationId)),
+      );
+      await loadDocuments();
+      const failedCount = results.filter((result) => result.status === 'rejected').length;
+      if (failedCount > 0) {
+        setError(`応募時書類${repairableMissingDocuments.length}件のうち${failedCount}件を提出できませんでした。未提出の書類は個別に再試行してください。`);
+      } else {
+        setDocumentNotice(`応募時に選ばれていた未提出書類${repairableMissingDocuments.length}件をこの応募先へ提出しました。`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '応募時書類を提出できませんでした。');
+    } finally {
+      setRepairingDefaults(false);
+    }
+  };
+
   const openSubmittedDocument = async (document: AttachedApplicationDocument) => {
     setError(null);
     try {
@@ -109,10 +220,10 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
     <button className="secondary-button" type="button" onClick={toggle} aria-expanded={open}>
       {open ? 'メッセージ・書類を閉じる' : '園とメッセージ・書類'}
     </button>
-    {open && <div className="panel" style={{ marginTop: 10, padding: 14, minWidth: 0 }}>
+    {open && <div className="panel" data-application-messages-panel={applicationId} style={{ marginTop: 10, padding: 14, minWidth: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 10 }}>
         <strong>園とのメッセージ</strong>
-        <button type="button" className="secondary-button" onClick={() => void Promise.allSettled([load(), loadDocuments()])} disabled={loading}>{loading ? '更新中…' : '更新'}</button>
+        <button type="button" className="secondary-button" onClick={() => void Promise.allSettled([load({ acknowledge: true }), loadDocuments()])} disabled={loading}>{loading ? '更新中…' : '更新'}</button>
       </div>
       {error && <p className="form-error">{error}</p>}
       <div aria-live="polite" style={{ display: 'grid', gap: 8, maxHeight: 280, overflowY: 'auto', marginBottom: 12 }}>
@@ -129,6 +240,13 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
           <strong style={{ fontSize: 13 }}>応募書類</strong>
           <a href="/profile" style={{ fontSize: 12 }}>書類庫を管理</a>
         </div>
+        {missingExpectedDocuments.length > 0 && <div className="form-error" role="alert" style={{ display: 'grid', gap: 8, marginBottom: 8 }}>
+          <span>応募した時点で「応募時に使用」に設定されていた書類のうち、{missingExpectedDocuments.length}件がこの応募にはまだ提出されていません。</span>
+          {repairableMissingDocuments.length > 0 && <button className="secondary-button" type="button" onClick={() => void attachMissingExpectedDocuments()} disabled={repairingDefaults || documentBusyId !== null} style={{ justifySelf: 'start' }}>
+            {repairingDefaults ? '応募時書類を提出中…' : '未提出の応募時書類をまとめて提出'}
+          </button>}
+          {unavailableMissingCount > 0 && <small>応募時に選ばれていた書類のうち{unavailableMissingCount}件は現在の書類庫にありません。必要な場合は、下の現在の書類をこの応募へ提出してください。</small>}
+        </div>}
         {documentNotice && <p className="form-success" style={{ margin: '0 0 8px' }}>{documentNotice}</p>}
         {documents.length ? <div style={{ display: 'grid', gap: 8 }}>
           {documents.map((document) => {
@@ -138,7 +256,7 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
                 <strong style={{ fontSize: 12 }}>{documentLabels[document.document_type] || '書類'}{document.is_default ? ' ・応募時に使用' : ''}</strong>
                 <small style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{document.title}</small>
               </span>
-              <button className="secondary-button" type="button" disabled={attached || documentBusyId !== null} onClick={() => void attachDocument(document)}>
+              <button className="secondary-button" type="button" disabled={attached || repairingDefaults || documentBusyId !== null} onClick={() => void attachDocument(document)}>
                 {attached ? '提出済み' : documentBusyId === document.id ? '提出中…' : 'この応募に提出'}
               </button>
             </div>;

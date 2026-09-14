@@ -1,0 +1,54 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+const root = path.resolve(import.meta.dirname, '..');
+const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
+const migration = read('supabase/migrations/20260913170000_hc_jobseeker_spot_assignment_lifecycle_notifications_v1.sql');
+const confirmedMigration = read('supabase/migrations/20260913160000_hc_jobseeker_confirmed_spot_work_v1.sql');
+const notifications = read('src/components/NotificationCenter.tsx');
+const route = read('src/SpotJobsRouteRoot.tsx');
+const repository = read('src/lib/spotJobRepository.ts');
+
+const checks = [
+  [/spot_cancelled/.test(migration) && /spot_completed/.test(migration) && /spot_no_show/.test(migration), 'spot lifecycle notification types must remain allowed'],
+  [/scout_received/.test(migration), 'spot lifecycle migration must preserve the scout notification type'],
+  [/tg_op = 'UPDATE'[\s\S]*old\.status is not distinct from new\.status/i.test(migration), 'unchanged assignment status must not emit duplicate notifications'],
+  [/new\.status not in \('confirmed','cancelled','completed','no_show'\)/i.test(migration), 'spot lifecycle trigger must fail closed to canonical assignment states'],
+  [/after insert or update of status on public\.hc_spot_assignments/i.test(migration), 'spot notifications must cover initial confirmation and later lifecycle updates'],
+  [/jobseeker:spot:' \|\| new\.id::text \|\| ':' \|\| new\.status/i.test(migration), 'spot lifecycle notifications must have idempotent per-status event keys'],
+  [/\/spot-jobs\?assignment_id=' \|\| new\.id::text \|\| '#spot-assignment-/i.test(migration), 'spot lifecycle notifications must deep-link to the exact assignment'],
+  [/SPOT_NOTIFICATION_TYPES/.test(notifications) && /spot_confirmed/.test(notifications) && /spot_cancelled/.test(notifications) && /spot_completed/.test(notifications) && /spot_no_show/.test(notifications), 'notification navigation must recognize every spot lifecycle type'],
+  [/SPOT_NOTIFICATION_TYPES\.has\(item\.notification_type\)/.test(notifications), 'all spot lifecycle notifications must use the validated assignment deep-link path'],
+  [/UUID_PATTERN\.test\(assignmentId\)/.test(notifications), 'spot lifecycle deep-link assignment IDs must remain UUID validated'],
+  [/confirmed: '勤務確定'/.test(route) && /completed: '勤務完了'/.test(route) && /cancelled: 'キャンセル'/.test(route) && /no_show: '未勤務'/.test(route), 'spot assignment cards must render every canonical lifecycle state'],
+  [/const refresh = useCallback\(async \(quiet = false\) =>/.test(route), 'spot job and assignment state must have a quiet refresh path'],
+  [/document\.visibilityState === 'visible'/.test(route), 'spot background polling must be suppressed while hidden'],
+  [/window\.setInterval\(refreshWhenVisible, 60_000\)/.test(route), 'spot state must refresh periodically while visible'],
+  [/window\.addEventListener\('focus', refreshWhenVisible\)/.test(route), 'spot state must refresh on browser focus'],
+  [/window\.addEventListener\('pageshow', refreshWhenVisible\)/.test(route), 'spot state must refresh after mobile/back-forward cache restoration'],
+  [/document\.addEventListener\('visibilitychange', refreshWhenVisible\)/.test(route), 'spot state must refresh when a hidden tab becomes visible'],
+  [/window\.addEventListener\('hc:spot-refresh', refreshWhenVisible\)/.test(route), 'spot state must support explicit same-session refresh requests'],
+  [/window\.removeEventListener\('focus', refreshWhenVisible\)/.test(route) && /window\.removeEventListener\('pageshow', refreshWhenVisible\)/.test(route) && /document\.removeEventListener\('visibilitychange', refreshWhenVisible\)/.test(route) && /window\.removeEventListener\('hc:spot-refresh', refreshWhenVisible\)/.test(route), 'spot freshness listeners must clean up on unmount'],
+  [/if \(!quiet && mountedRef\.current\) setLoading\(true\)/.test(route), 'quiet spot refresh must not replace the route with a loading screen'],
+  [/const handledAssignmentRef = useRef<string \| null>\(null\)/.test(route), 'spot assignment deep-link must remember a successfully handled target'],
+  [/handledAssignmentRef\.current === assignmentId/.test(route), 'spot assignment deep-link must avoid stealing focus again after background refreshes'],
+  [/assignments\.find\(\(item\) => item\.assignment_id === assignmentId\)/.test(route), 'spot assignment deep-link must verify the requested assignment is in the candidate-owned read model'],
+  [/handledAssignmentRef\.current = assignmentId/.test(route), 'spot assignment deep-link must only mark a target handled after it is renderable'],
+  [/x\.jobseeker_clerk_user_id = v_user_id/i.test(confirmedMigration), 'candidate spot history must remain owner scoped'],
+  [repository.includes("rpc('hc_jobseeker_list_my_spot_assignments')"), 'candidate must continue reading lifecycle state through the safe RPC'],
+  [!repository.includes("from('hc_spot_assignments')"), 'candidate client must not directly query canonical spot assignments'],
+];
+
+const ownershipIndex = route.indexOf('const ownedAssignment = assignments.find((item) => item.assignment_id === assignmentId);');
+const targetIndex = route.indexOf('const target = document.getElementById(`spot-assignment-${assignmentId}`);');
+const handledIndex = route.indexOf('handledAssignmentRef.current = assignmentId;');
+if (ownershipIndex < 0 || targetIndex < 0 || handledIndex < 0 || handledIndex < ownershipIndex || handledIndex < targetIndex) {
+  checks.push([false, 'spot deep-link must stay retryable until the owned assignment and DOM target are actually available']);
+}
+
+const failed = checks.filter(([ok]) => !ok).map(([, message]) => message);
+if (failed.length) {
+  console.error('Jobseeker spot lifecycle contract failed:\n- ' + failed.join('\n- '));
+  process.exit(1);
+}
+console.log(`Jobseeker spot lifecycle contract passed (${checks.length} checks).`);
