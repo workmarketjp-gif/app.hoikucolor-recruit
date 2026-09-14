@@ -4,6 +4,7 @@ const root = new URL('../', import.meta.url);
 const repository = readFileSync(new URL('src/lib/documentVaultRepository.ts', root), 'utf8');
 const migration = readFileSync(new URL('supabase/migrations/20260914102000_hc_jobseeker_document_two_phase_delete_v1.sql', root), 'utf8');
 const orphanMigration = readFileSync(new URL('supabase/migrations/20260914110000_hc_jobseeker_document_orphan_reconciliation_v1.sql', root), 'utf8');
+const concurrencyMigration = readFileSync(new URL('supabase/migrations/20260914120000_hc_jobseeker_document_concurrency_lock_v1.sql', root), 'utf8');
 
 const repositoryMarkers = [
   'storageObjectExists(destinationPath)',
@@ -79,6 +80,32 @@ if (!/storage\.objects[\s\S]*o\.name = p_file_path[\s\S]*insert into public\.hc_
 }
 if (!/storage\.objects[\s\S]*o\.name = p_destination_path[\s\S]*insert into public\.hc_application_documents/i.test(orphanMigration)) {
   throw new Error('Application metadata registration must prove the immutable copy exists before insert.');
+}
+
+const concurrencyMarkers = [
+  'create or replace function ho_private.color_document_object_xact_lock',
+  'pg_advisory_xact_lock',
+  "hashtextextended('hc-color-document:' || p_object_name, 0)",
+  'revoke all on function ho_private.color_document_object_xact_lock(text) from public, anon, authenticated',
+  'perform ho_private.color_document_object_xact_lock(p_file_path)',
+  'perform ho_private.color_document_object_xact_lock(p_destination_path)',
+  'create or replace function ho_private.color_application_document_object_can_delete',
+  'perform ho_private.color_document_object_xact_lock(object_name)',
+];
+for (const marker of concurrencyMarkers) {
+  if (!concurrencyMigration.toLowerCase().includes(marker.toLowerCase())) throw new Error(`Document Vault concurrency guard missing: ${marker}`);
+}
+if (!/o\.name = p_file_path\s+for update/i.test(concurrencyMigration)) {
+  throw new Error('Source registration must hold the Storage row lock until canonical metadata commits.');
+}
+if (!/o\.name = p_destination_path\s+for update/i.test(concurrencyMigration)) {
+  throw new Error('Application attachment registration must hold the Storage row lock until immutable metadata commits.');
+}
+if (!/color_application_document_object_can_delete[\s\S]*returns boolean[\s\S]*language plpgsql\s+volatile/i.test(concurrencyMigration)) {
+  throw new Error('Candidate Storage delete predicate must remain volatile because it takes a transaction lock.');
+}
+if (concurrencyMigration.includes('hc_verified_workplace_snapshots') || concurrencyMigration.includes('hc_verified_finance_snapshots')) {
+  throw new Error('Document Vault concurrency migration must not change HO/HF Verified snapshots.');
 }
 
 console.log('Hoiku Color Document Vault failure-recovery contract passed.');
