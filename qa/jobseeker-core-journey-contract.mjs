@@ -110,7 +110,7 @@ for (const marker of ['<ExternalJobReturnEnhancer />', '<AttentionSummaryEnhance
 
 const visitMarkers = [
   "rpc('hc_jobseeker_get_visit_settings'",
-  "rpc('hc_list_my_visit_reservations'",
+  "rpc('hc_list_my_visit_reservations_v2'",
   "rpc('hc_request_visit'",
   "rpc('hc_cancel_visit'",
 ];
