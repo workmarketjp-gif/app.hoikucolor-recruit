@@ -33,6 +33,7 @@ export type VisitReservation = {
   ends_at: string;
   status: VisitReservationStatus;
   candidate_message: string | null;
+  facility_message: string | null;
   confirmed_at: string | null;
   cancelled_at: string | null;
   completed_at: string | null;
@@ -77,7 +78,7 @@ export async function getVisitSettings(jobId: string): Promise<VisitSettings | n
 }
 
 export async function listMyVisitReservations(jobId?: string): Promise<VisitReservation[]> {
-  const { data, error } = await client().rpc('hc_list_my_visit_reservations', {
+  const { data, error } = await client().rpc('hc_list_my_visit_reservations_v2', {
     p_job_id: jobId || null,
   });
   if (error) throw error;
