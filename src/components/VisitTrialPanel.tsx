@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   cancelVisit,
   getVisitSettings,
@@ -8,6 +8,7 @@ import {
   type VisitReservation,
   type VisitSettings,
 } from '../lib/visitRepository';
+import { InterviewTransparencyPanel } from './InterviewTransparencyPanel';
 import './VisitTrialPanel.css';
 
 const typeLabels: Record<VisitExperienceType, string> = {
@@ -74,28 +75,56 @@ export function VisitTrialPanel({ jobId, facilityId }: { jobId: string; facility
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const mountedRef = useRef(true);
 
-  const reloadReservations = async () => {
-    const rows = await listMyVisitReservations(jobId);
-    setReservations(rows);
-  };
+  const loadVisitState = useCallback(async (quiet = false) => {
+    if (!quiet && mountedRef.current) setLoading(true);
+    try {
+      const [settingRow, reservationRows] = await Promise.all([getVisitSettings(jobId), listMyVisitReservations(jobId)]);
+      if (!mountedRef.current) return;
+      if (settingRow && settingRow.facility_id !== facilityId) {
+        throw new Error('求人と見学・体験設定の施設情報が一致しません。');
+      }
+      setSettings(settingRow);
+      setReservations(reservationRows);
+      if (settingRow) {
+        const types = enabledTypes(settingRow);
+        const firstType = types[0];
+        if (firstType) setExperienceType((current) => types.includes(current) ? current : firstType);
+      }
+      setError(null);
+    } catch (err) {
+      if (!mountedRef.current || quiet) return;
+      setError(err instanceof Error ? err.message : '見学・体験情報を読み込めませんでした。');
+    } finally {
+      if (mountedRef.current && !quiet) setLoading(false);
+    }
+  }, [facilityId, jobId]);
 
   useEffect(() => {
-    let active = true;
-    setLoading(true);
-    Promise.all([getVisitSettings(facilityId), listMyVisitReservations(jobId)])
-      .then(([settingRow, reservationRows]) => {
-        if (!active) return;
-        setSettings(settingRow);
-        setReservations(reservationRows);
-        const firstType = settingRow ? enabledTypes(settingRow)[0] : undefined;
-        if (firstType) setExperienceType(firstType);
-        setError(null);
-      })
-      .catch((err) => active && setError(err instanceof Error ? err.message : '見学・体験情報を読み込めませんでした。'))
-      .finally(() => active && setLoading(false));
-    return () => { active = false; };
-  }, [facilityId, jobId]);
+    mountedRef.current = true;
+    void loadVisitState(false);
+    return () => { mountedRef.current = false; };
+  }, [loadVisitState]);
+
+  useEffect(() => {
+    if (loading) return;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void loadVisitState(true);
+    };
+    const intervalId = window.setInterval(refreshWhenVisible, 60_000);
+    window.addEventListener('focus', refreshWhenVisible);
+    window.addEventListener('pageshow', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('hc:visits-refresh', refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshWhenVisible);
+      window.removeEventListener('pageshow', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('hc:visits-refresh', refreshWhenVisible);
+    };
+  }, [loading, loadVisitState]);
 
   const timeOptions = useMemo(() => {
     if (!settings) return [];
@@ -111,8 +140,10 @@ export function VisitTrialPanel({ jobId, facilityId }: { jobId: string; facility
     if (timeOptions.length && !timeOptions.includes(localTime)) setLocalTime(timeOptions[0]);
   }, [localTime, timeOptions]);
 
-  if (loading) return <div className="visit-trial-loading">見学・体験の受付状況を確認しています…</div>;
-  if (!settings || enabledTypes(settings).length === 0) return null;
+  const transparencyPanel = <InterviewTransparencyPanel jobId={jobId} facilityId={facilityId} />;
+
+  if (loading) return <>{transparencyPanel}<div className="visit-trial-loading">見学・体験の受付状況を確認しています…</div></>;
+  if (!settings || enabledTypes(settings).length === 0) return transparencyPanel;
 
   const activeReservation = reservations.find((reservation) => reservation.status === 'requested' || reservation.status === 'confirmed');
   const modes = enabledTypes(settings);
@@ -134,7 +165,7 @@ export function VisitTrialPanel({ jobId, facilityId }: { jobId: string; facility
         localTime,
         candidateMessage: message,
       });
-      await reloadReservations();
+      await loadVisitState(true);
       setMessage('');
       setSuccess('見学・体験を申し込みました。園からの確定連絡をお待ちください。');
     } catch (err) {
@@ -150,7 +181,7 @@ export function VisitTrialPanel({ jobId, facilityId }: { jobId: string; facility
     setSuccess(null);
     try {
       await cancelVisit(reservationId);
-      await reloadReservations();
+      await loadVisitState(true);
       setSuccess('予約をキャンセルしました。');
     } catch (err) {
       setError(err instanceof Error ? err.message : '予約をキャンセルできませんでした。');
@@ -159,36 +190,39 @@ export function VisitTrialPanel({ jobId, facilityId }: { jobId: string; facility
     }
   };
 
-  return <section className="visit-trial-panel" aria-label="見学・体験予約">
-    <div className="visit-trial-head">
-      <div><span>VISIT / EXPERIENCE</span><strong>応募前に、園を見てみる</strong></div>
-      <em>受付中</em>
-    </div>
+  return <>
+    {transparencyPanel}
+    <section className="visit-trial-panel" aria-label="見学・体験予約">
+      <div className="visit-trial-head">
+        <div><span>VISIT / EXPERIENCE</span><strong>応募前に、園を見てみる</strong></div>
+        <em>受付中</em>
+      </div>
 
-    {activeReservation ? <div className="visit-reservation-card">
-      <div><span className={`visit-status status-${activeReservation.status}`}>{statusLabels[activeReservation.status]}</span><strong>{typeLabels[activeReservation.experience_type]}</strong></div>
-      <p>{formatJapanDateTime(activeReservation.starts_at)}（園の現地時間）</p>
-      {activeReservation.facility_note && <small>園から：{activeReservation.facility_note}</small>}
-      <button type="button" className="secondary-button" disabled={cancelling} onClick={() => cancel(activeReservation.id)}>{cancelling ? '処理中…' : '予約をキャンセル'}</button>
-    </div> : <>
-      <div className="visit-mode-grid">
-        {modes.map((mode) => <button type="button" key={mode} className={experienceType === mode ? 'active' : ''} onClick={() => setExperienceType(mode)}>
-          <strong>{typeLabels[mode]}</strong>
-          <small>{mode === 'visit' ? `${settings.visit_duration_minutes}分` : mode === 'half_day_trial' ? `約${Math.round(settings.half_day_duration_minutes / 60)}時間` : `約${Math.round(settings.full_day_duration_minutes / 60)}時間`}</small>
-        </button>)}
-      </div>
-      <div className="visit-form-grid">
-        <label><span>希望日</span><input type="date" value={localDate} onChange={(event) => setLocalDate(event.target.value)} /></label>
-        <label><span>開始時間</span><select value={localTime} onChange={(event) => setLocalTime(event.target.value)}>{timeOptions.map((time) => <option key={time} value={time}>{time}</option>)}</select></label>
-      </div>
-      <small className="visit-availability">受付曜日：{days || '設定中'} ／ {hhmm(settings.first_start_time)}〜{hhmm(settings.last_start_time)} ／ {settings.min_notice_hours}時間前まで ／ 最大{settings.max_days_ahead}日先まで</small>
-      <label className="visit-message"><span>園へのひとこと（任意）</span><textarea rows={2} maxLength={1000} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="見学で確認したいことなどがあれば入力してください" /></label>
-      {settings.public_note && <p className="visit-note">{settings.public_note}</p>}
-      {(settings.what_to_bring || settings.dress_code) && <div className="visit-guidance">{settings.what_to_bring && <span><strong>持ち物</strong>{settings.what_to_bring}</span>}{settings.dress_code && <span><strong>服装</strong>{settings.dress_code}</span>}</div>}
-      <button type="button" className="primary-button visit-submit" onClick={submit} disabled={submitting}>{submitting ? '申込中…' : `${typeLabels[experienceType]}を申し込む`}</button>
-    </>}
-    {error && <span className="form-error">{error}</span>}
-    {success && <span className="form-success">{success}</span>}
-    <small className="visit-trial-footnote">日時は園の現地時間です。申込後、園が確認すると予約確定になります。</small>
-  </section>;
+      {activeReservation ? <div className="visit-reservation-card">
+        <div><span className={`visit-status status-${activeReservation.status}`}>{statusLabels[activeReservation.status]}</span><strong>{typeLabels[activeReservation.experience_type]}</strong></div>
+        <p>{formatJapanDateTime(activeReservation.starts_at)}（園の現地時間）</p>
+        {activeReservation.facility_message && <small>園から：{activeReservation.facility_message}</small>}
+        <button type="button" className="secondary-button" disabled={cancelling} onClick={() => cancel(activeReservation.id)}>{cancelling ? '処理中…' : '予約をキャンセル'}</button>
+      </div> : <>
+        <div className="visit-mode-grid">
+          {modes.map((mode) => <button type="button" key={mode} className={experienceType === mode ? 'active' : ''} onClick={() => setExperienceType(mode)}>
+            <strong>{typeLabels[mode]}</strong>
+            <small>{mode === 'visit' ? `${settings.visit_duration_minutes}分` : mode === 'half_day_trial' ? `約${Math.round(settings.half_day_duration_minutes / 60)}時間` : `約${Math.round(settings.full_day_duration_minutes / 60)}時間`}</small>
+          </button>)}
+        </div>
+        <div className="visit-form-grid">
+          <label><span>希望日</span><input type="date" value={localDate} onChange={(event) => setLocalDate(event.target.value)} /></label>
+          <label><span>開始時間</span><select value={localTime} onChange={(event) => setLocalTime(event.target.value)}>{timeOptions.map((time) => <option key={time} value={time}>{time}</option>)}</select></label>
+        </div>
+        <small className="visit-availability">受付曜日：{days || '設定中'} ／ {hhmm(settings.first_start_time)}〜{hhmm(settings.last_start_time)} ／ {settings.min_notice_hours}時間前まで ／ 最大{settings.max_days_ahead}日先まで</small>
+        <label className="visit-message"><span>園へのひとこと（任意）</span><textarea rows={2} maxLength={1000} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="見学で確認したいことなどがあれば入力してください" /></label>
+        {settings.public_note && <p className="visit-note">{settings.public_note}</p>}
+        {(settings.what_to_bring || settings.dress_code) && <div className="visit-guidance">{settings.what_to_bring && <span><strong>持ち物</strong>{settings.what_to_bring}</span>}{settings.dress_code && <span><strong>服装</strong>{settings.dress_code}</span>}</div>}
+        <button type="button" className="primary-button visit-submit" onClick={submit} disabled={submitting}>{submitting ? '申込中…' : `${typeLabels[experienceType]}を申し込む`}</button>
+      </>}
+      {error && <span className="form-error">{error}</span>}
+      {success && <span className="form-success">{success}</span>}
+      <small className="visit-trial-footnote">日時は園の現地時間です。申込後、園が確認すると予約確定になります。</small>
+    </section>
+  </>;
 }
