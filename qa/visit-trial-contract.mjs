@@ -85,7 +85,7 @@ for (const forbidden of ['facility_note', 'jobseeker_clerk_user_id', 'organizati
 
 const repositoryMarkers = [
   "rpc('hc_jobseeker_get_visit_settings'",
-  "rpc('hc_list_my_visit_reservations'",
+  "rpc('hc_list_my_visit_reservations_v2'",
   "rpc('hc_jobseeker_list_my_visits'",
   "rpc('hc_request_visit'",
   "rpc('hc_cancel_visit'",
@@ -107,12 +107,21 @@ for (const marker of forbiddenRepositoryMarkers) {
   if (repository.includes(marker)) throw new Error(`Candidate visit repository must not access private visit surface: ${marker}`);
 }
 
+const reservationType = repository.match(/export type VisitReservation = \{([\s\S]*?)\n\};/)?.[1] || '';
+for (const marker of ['organization_id:', 'jobseeker_clerk_user_id:', 'facility_note:']) {
+  if (reservationType.includes(marker)) throw new Error(`VisitReservation must not expose internal field: ${marker}`);
+}
+if (!reservationType.includes('facility_message:')) {
+  throw new Error('VisitReservation must expose the candidate-visible facility_message field.');
+}
+
 const uiMarkers = [
   '園見学',
   '半日体験',
   '1日体験',
   '予約をキャンセル',
   '園の現地時間',
+  'activeReservation.facility_message',
   'getVisitSettings(jobId)',
   "settingRow.facility_id !== facilityId",
   'const loadVisitState = useCallback(async (quiet = false) => {',
