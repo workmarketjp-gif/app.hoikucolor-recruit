@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, hc-w02-closed-saved-validation-20260920]
   pull_request:
 
 jobs:
@@ -31,6 +31,8 @@ jobs:
         run: |
           node qa/jobseeker-profile-matching-contract.mjs
           node qa/document-vault-contract.mjs
+      - name: Guard HC-W02 saved closed-job visibility
+        run: node qa/jobseeker-saved-closed-state-contract.mjs
       - name: Guard Native CA-04 document camera recovery slice
         working-directory: native
         run: npm run test:camera-document-capture
