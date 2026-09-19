@@ -57,11 +57,33 @@ export default function JobDetailScreen() {
     return () => { generation.current += 1; };
   }, [load]);
 
+  const routeToApplication = (applicationId: string, documentWarning = false) => {
+    setExistingApplicationId(applicationId);
+    const warning = documentWarning ? '?documentWarning=1' : '';
+    router.replace(`/application/${applicationId}${warning}` as never);
+  };
+
+  const reconcileAmbiguousApplication = async () => {
+    try {
+      const recoveryPinned = await pinCandidateAction();
+      if (!recoveryPinned) return false;
+      const applications = await listApplications(recoveryPinned.client);
+      if (!recoveryPinned.isCurrent()) return true;
+      const committed = applications.find((application) => application.job_id === jobId);
+      if (!committed) return false;
+      routeToApplication(committed.id);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const apply = async () => {
     if (!profile) {
       setError('応募前にプロフィールを登録してください。');
       return;
     }
+    if (applying || existingApplicationId) return;
     setApplying(true);
     setError(null);
     try {
@@ -69,10 +91,13 @@ export default function JobDetailScreen() {
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
       const result = await submitApplication(pinned.client, jobId, profile);
       if (!pinned.isCurrent()) return;
-      setExistingApplicationId(result.applicationId);
-      const warning = result.documentHandoffFailures > 0 ? '?documentWarning=1' : '';
-      router.replace(`/application/${result.applicationId}${warning}` as never);
+      routeToApplication(result.applicationId, result.documentHandoffFailures > 0);
     } catch (applyError) {
+      // A transport error can happen after the server has already committed the
+      // canonical application. Re-read the candidate's own applications before
+      // showing failure or allowing another tap. This keeps process/network
+      // ambiguity from becoming a second application or a false "not applied" UI.
+      if (await reconcileAmbiguousApplication()) return;
       setError(String((applyError as { message?: unknown })?.message ?? applyError));
     } finally {
       setApplying(false);
