@@ -1,0 +1,20 @@
+name: HC Message Safe Read Validate 1715
+
+on:
+  push:
+    branches: [hc-validate-message-safe-read-20260919-1715]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Guard Native CA-04 document camera recovery slice
+        working-directory: native
+        run: npm run test:camera-document-capture
+      - run: node qa/jobseeker-message-safe-read-contract.mjs
+      - run: npm run build
