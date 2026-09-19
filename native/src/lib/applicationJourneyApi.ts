@@ -37,6 +37,9 @@ export type JobseekerApplicationSummary = {
   facility_name: string;
   prefecture: string | null;
   city: string | null;
+  candidate_offer_response?: 'accepted' | 'declined' | null;
+  candidate_offer_responded_at?: string | null;
+  candidate_offer_message?: string | null;
 };
 
 export type JobseekerInterviewResponseStatus = 'accepted' | 'reschedule_requested';
@@ -189,8 +192,6 @@ export async function submitApplication(
   const applicantName = profile.name?.trim() ?? '';
   if (!applicantName) throw new Error('応募前にプロフィールのお名前を登録してください。');
 
-  // The canonical server RPC is already idempotent for (job, authenticated jobseeker):
-  // an ambiguous retry returns the existing application instead of inserting a second row.
   const { data, error } = await client.rpc('hc_jobseeker_submit_application', {
     p_job_id: jobId,
     p_applicant_name: applicantName,
@@ -220,8 +221,6 @@ export async function submitApplication(
     );
     documentHandoffFailures = results.filter((result) => result.status === 'rejected').length;
   } catch {
-    // The application is already canonical at this point. Never report it as failed
-    // because a recoverable document handoff had a network/storage error.
     documentHandoffFailures = 1;
   }
 
@@ -296,10 +295,6 @@ export async function sendApplicationMessageDurable(params: {
   if (!data || typeof data !== 'object' || Array.isArray(data) || typeof (data as { id?: unknown }).id !== 'string') {
     throw new Error('メッセージ送信結果を確認できませんでした。');
   }
-
-  // Do not clear the durable retry key until the candidate-safe canonical read
-  // confirms the exact resource. If this read is interrupted, a retry reuses the
-  // same request id and the backend receipt returns the original message.
   const messages = await listApplicationMessages(params.client, params.applicationId);
   const confirmed = messages.find((message) => message.id === (data as { id: string }).id);
   if (!confirmed || confirmed.sender_role !== 'jobseeker' || confirmed.body !== body) {
@@ -337,9 +332,6 @@ export async function respondToInterviewDurable(params: {
     payloadParts: [params.applicationId, params.interviewId, params.responseStatus, message],
     lease,
   });
-
-  // This canonical RPC itself is content-idempotent: an exact retry upserts the
-  // same response and only emits the candidate message when the response changed.
   const { error } = await params.client.rpc('hc_jobseeker_respond_interview', {
     p_interview_id: params.interviewId,
     p_response_status: params.responseStatus,
@@ -357,6 +349,52 @@ export async function respondToInterviewDurable(params: {
     throw new Error('面接回答の反映を確認できませんでした。再読み込みして確認してください。');
   }
   await clearDurableMutation({ userId: params.ownerId, kind: 'interview', scopeId: params.interviewId });
+}
+
+export async function acceptOffer(
+  client: SupabaseClient,
+  applicationId: string,
+  message?: string | null,
+) {
+  assertUuid(applicationId, '応募ID');
+  const cleanMessage = cleanOptionalText(message);
+  if (cleanMessage && cleanMessage.length > 1000) throw new Error('連絡事項は1000文字以内で入力してください。');
+  const { data, error } = await client.rpc('hc_jobseeker_accept_offer', {
+    p_application_id: applicationId,
+    p_message: cleanMessage,
+  });
+  if (error) throw error;
+  if (!data || typeof data !== 'object' || Array.isArray(data) || (data as { offer_response?: unknown }).offer_response !== 'accepted') {
+    throw new Error('内定承諾の結果を確認できませんでした。');
+  }
+  const detail = await getApplicationDetail(client, applicationId);
+  if (!detail || detail.application.candidate_offer_response !== 'accepted') {
+    throw new Error('内定承諾の反映を確認できませんでした。再読み込みして確認してください。');
+  }
+  return detail;
+}
+
+export async function withdrawApplication(
+  client: SupabaseClient,
+  applicationId: string,
+  reason?: string | null,
+) {
+  assertUuid(applicationId, '応募ID');
+  const cleanReason = cleanOptionalText(reason);
+  if (cleanReason && cleanReason.length > 1000) throw new Error('辞退理由は1000文字以内で入力してください。');
+  const { data, error } = await client.rpc('hc_jobseeker_withdraw_application', {
+    p_application_id: applicationId,
+    p_reason: cleanReason,
+  });
+  if (error) throw error;
+  if (!data || typeof data !== 'object' || Array.isArray(data) || (data as { status?: unknown }).status !== 'withdrawn') {
+    throw new Error('応募辞退の結果を確認できませんでした。');
+  }
+  const detail = await getApplicationDetail(client, applicationId);
+  if (!detail || detail.application.status !== 'withdrawn') {
+    throw new Error('応募辞退の反映を確認できませんでした。再読み込みして確認してください。');
+  }
+  return detail;
 }
 
 export async function getVisitSettings(
@@ -398,14 +436,7 @@ export async function requestVisitDurable(params: {
     userId: params.ownerId,
     kind: 'visit',
     scopeId,
-    payloadParts: [
-      params.jobId,
-      params.applicationId ?? null,
-      params.experienceType,
-      params.localDate,
-      params.localTime,
-      message,
-    ],
+    payloadParts: [params.jobId, params.applicationId ?? null, params.experienceType, params.localDate, params.localTime, message],
     lease,
   });
 
