@@ -59,4 +59,13 @@ jobs:
         run: npx tsc -p native/qa/tsconfig.account-deletion-client.json
       - name: Typecheck materialized Native push client core
         run: npx tsc -p native/qa/tsconfig.push-core.json
-      - run: npm run build
+      - name: Run npm build with diagnostic log
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee hc-w02-build.log
+      - name: Upload HC-W02 build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hc-w02-build-log
+          path: hc-w02-build.log
