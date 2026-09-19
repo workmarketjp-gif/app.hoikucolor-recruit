@@ -72,6 +72,9 @@ jobs:
       - name: Guard Native CA-01 runnable shell
         working-directory: native
         run: node qa/native-ca01-shell-contract.mjs
+      - name: Guard Native CA-02 application/deep-link journey
+        working-directory: native
+        run: node qa/native-ca02-application-deeplink-contract.mjs
       - name: Typecheck materialized Native source
         run: npx tsc -p native/qa/tsconfig.stub.json
       - name: Typecheck Native account deletion client slice
