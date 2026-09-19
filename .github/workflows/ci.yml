@@ -69,6 +69,9 @@ jobs:
       - name: Guard Native root runtime boundary
         working-directory: native
         run: node qa/native-root-runtime-contract.mjs
+      - name: Guard Native CA-01 runnable shell
+        working-directory: native
+        run: node qa/native-ca01-shell-contract.mjs
       - name: Typecheck materialized Native source
         run: npx tsc -p native/qa/tsconfig.stub.json
       - name: Typecheck Native account deletion client slice
