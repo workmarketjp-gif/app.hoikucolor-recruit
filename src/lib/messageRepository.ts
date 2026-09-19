@@ -15,7 +15,6 @@ export type MessageThread = {
 export type Message = {
   id: string;
   thread_id: string;
-  sender_clerk_user_id: string;
   sender_role: 'jobseeker' | 'facility';
   body: string;
   created_at: string;
@@ -36,12 +35,9 @@ export async function getOrCreateApplicationThread(applicationId: string): Promi
 }
 
 export async function listApplicationMessages(applicationId: string): Promise<Message[]> {
-  const thread = await getOrCreateApplicationThread(applicationId);
-  const { data, error } = await client()
-    .from('hc_messages')
-    .select('id,thread_id,sender_clerk_user_id,sender_role,body,created_at')
-    .eq('thread_id', thread.id)
-    .order('created_at', { ascending: true });
+  const { data, error } = await client().rpc('hc_jobseeker_list_application_messages', {
+    p_application_id: applicationId,
+  });
   if (error) throw error;
   return (data || []) as Message[];
 }
