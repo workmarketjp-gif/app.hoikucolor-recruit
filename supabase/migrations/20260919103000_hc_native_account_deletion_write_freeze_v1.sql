@@ -40,6 +40,26 @@ begin
   end if;
 end $$;
 
+create or replace function hc_private.lock_jobseeker_account_deletion_v1(p_actor text)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path=''
+as $$
+begin
+  if nullif(btrim(coalesce(p_actor,'')),'') is not null then
+    -- Must match hc_jobseeker_request_account_deletion_v1 / cancel exactly.
+    -- This closes the commit-order race between a candidate write and deletion request.
+    perform pg_catalog.pg_advisory_xact_lock(
+      pg_catalog.hashtextextended('hc-account-delete|'||p_actor,0)
+    );
+  end if;
+end $$;
+
+revoke all on function hc_private.lock_jobseeker_account_deletion_v1(text)
+  from public, anon, authenticated;
+
 create or replace function hc_private.jobseeker_account_is_frozen_v1(p_actor text)
 returns boolean
 language sql
@@ -69,11 +89,12 @@ revoke all on function hc_private.jobseeker_account_is_frozen_v1(text)
 create or replace function hc_private.assert_jobseeker_mutation_allowed_v1(p_actor text)
 returns void
 language plpgsql
-stable
+volatile
 security definer
 set search_path=''
 as $$
 begin
+  perform hc_private.lock_jobseeker_account_deletion_v1(p_actor);
   if hc_private.jobseeker_account_is_frozen_v1(p_actor) then
     raise exception 'HC_ACCOUNT_DELETION_IN_PROGRESS'
       using errcode='42501',
@@ -136,11 +157,13 @@ begin
     end;
   end if;
 
-  if ((v_old_relevant and v_old_owner=v_actor) or (v_new_relevant and v_new_owner=v_actor))
-     and hc_private.jobseeker_account_is_frozen_v1(v_actor) then
-    raise exception 'HC_ACCOUNT_DELETION_IN_PROGRESS'
-      using errcode='42501',
-            detail='Candidate-owned Hoiku Color data is frozen during account deletion.';
+  if (v_old_relevant and v_old_owner=v_actor) or (v_new_relevant and v_new_owner=v_actor) then
+    perform hc_private.lock_jobseeker_account_deletion_v1(v_actor);
+    if hc_private.jobseeker_account_is_frozen_v1(v_actor) then
+      raise exception 'HC_ACCOUNT_DELETION_IN_PROGRESS'
+        using errcode='42501',
+              detail='Candidate-owned Hoiku Color data is frozen during account deletion.';
+    end if;
   end if;
 
   if tg_op='DELETE' then return old; else return new; end if;
@@ -244,11 +267,13 @@ begin
       and new.notifications_authorized=false;
   end if;
 
-  if hc_private.jobseeker_account_is_frozen_v1(v_actor)
-     and not v_is_explicit_revoke then
-    raise exception 'HC_ACCOUNT_DELETION_IN_PROGRESS'
-      using errcode='42501',
-            detail='Hoiku Color push registration is frozen during account deletion.';
+  if not v_is_explicit_revoke then
+    perform hc_private.lock_jobseeker_account_deletion_v1(v_actor);
+    if hc_private.jobseeker_account_is_frozen_v1(v_actor) then
+      raise exception 'HC_ACCOUNT_DELETION_IN_PROGRESS'
+        using errcode='42501',
+              detail='Hoiku Color push registration is frozen during account deletion.';
+    end if;
   end if;
 
   if tg_op='DELETE' then return old; else return new; end if;
@@ -288,16 +313,18 @@ begin
     v_new_application := new.application_id;
   end if;
 
-  if hc_private.jobseeker_account_is_frozen_v1(v_actor)
-     and exists (
-       select 1
-       from public.hc_applications a
-       where a.jobseeker_clerk_user_id=v_actor
-         and a.id in (v_old_application,v_new_application)
-     ) then
-    raise exception 'HC_ACCOUNT_DELETION_IN_PROGRESS'
-      using errcode='42501',
-            detail='Candidate application documents are frozen during account deletion.';
+  if exists (
+    select 1
+    from public.hc_applications a
+    where a.jobseeker_clerk_user_id=v_actor
+      and a.id in (v_old_application,v_new_application)
+  ) then
+    perform hc_private.lock_jobseeker_account_deletion_v1(v_actor);
+    if hc_private.jobseeker_account_is_frozen_v1(v_actor) then
+      raise exception 'HC_ACCOUNT_DELETION_IN_PROGRESS'
+        using errcode='42501',
+              detail='Candidate application documents are frozen during account deletion.';
+    end if;
   end if;
 
   if tg_op='DELETE' then return old; else return new; end if;
@@ -316,7 +343,7 @@ for each row execute function hc_private.hc_candidate_application_document_accou
 create or replace function hc_private.color_application_document_object_can_write_with_deletion_freeze_v1(object_name text)
 returns boolean
 language plpgsql
-stable
+volatile
 security definer
 set search_path=''
 as $$
@@ -329,7 +356,12 @@ begin
     return false;
   end if;
 
-  if v_actor is null or not hc_private.jobseeker_account_is_frozen_v1(v_actor) then
+  if v_actor is null then
+    return true;
+  end if;
+
+  perform hc_private.lock_jobseeker_account_deletion_v1(v_actor);
+  if not hc_private.jobseeker_account_is_frozen_v1(v_actor) then
     return true;
   end if;
 
@@ -359,7 +391,7 @@ end $$;
 create or replace function hc_private.color_application_document_object_can_delete_with_deletion_freeze_v1(object_name text)
 returns boolean
 language plpgsql
-stable
+volatile
 security definer
 set search_path=''
 as $$
@@ -372,7 +404,12 @@ begin
     return false;
   end if;
 
-  if v_actor is null or not hc_private.jobseeker_account_is_frozen_v1(v_actor) then
+  if v_actor is null then
+    return true;
+  end if;
+
+  perform hc_private.lock_jobseeker_account_deletion_v1(v_actor);
+  if not hc_private.jobseeker_account_is_frozen_v1(v_actor) then
     return true;
   end if;
 
