@@ -3,12 +3,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import {
+  acceptOffer,
   getApplicationDetail,
   getApplicationDocumentHandoffState,
   listApplicationMessages,
   repairApplicationDocumentHandoff,
   respondToInterviewDurable,
   sendApplicationMessageDurable,
+  withdrawApplication,
   type ApplicationDocumentHandoffState,
   type JobseekerApplicationDetail,
   type JobseekerInterview,
@@ -136,6 +138,8 @@ export default function ApplicationDetailScreen() {
   const [messages, setMessages] = useState<JobseekerMessage[]>([]);
   const [documentState, setDocumentState] = useState<ApplicationDocumentHandoffState | null>(null);
   const [messageDraft, setMessageDraft] = useState('');
+  const [offerMessage, setOfferMessage] = useState('');
+  const [withdrawReason, setWithdrawReason] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -188,6 +192,40 @@ export default function ApplicationDetailScreen() {
       await load(true);
     } catch (sendError) {
       setError(String((sendError as { message?: unknown })?.message ?? sendError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const acceptCurrentOffer = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const pinned = await pinCandidateAction();
+      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      const next = await acceptOffer(pinned.client, applicationId, offerMessage);
+      if (!pinned.isCurrent()) return;
+      setDetail(next);
+    } catch (offerError) {
+      setError(String((offerError as { message?: unknown })?.message ?? offerError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const withdrawCurrentApplication = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const pinned = await pinCandidateAction();
+      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      const next = await withdrawApplication(pinned.client, applicationId, withdrawReason);
+      if (!pinned.isCurrent()) return;
+      setDetail(next);
+      setWithdrawReason('');
+      await load(true);
+    } catch (withdrawError) {
+      setError(String((withdrawError as { message?: unknown })?.message ?? withdrawError));
     } finally {
       setBusy(false);
     }
@@ -255,6 +293,27 @@ export default function ApplicationDetailScreen() {
             <Text style={styles.secondaryText}>提出書類を再確認・復旧</Text>
           </Pressable>
           {handoffError ? <Text style={styles.error}>{handoffError}</Text> : null}
+        </View>
+      ) : null}
+
+      {detail.application.status === 'offered' ? (
+        <View style={styles.offerCard}>
+          <Text style={styles.sectionTitle}>内定</Text>
+          {detail.application.candidate_offer_response === 'accepted' ? (
+            <>
+              <Text style={styles.offerAccepted}>内定を承諾済みです。</Text>
+              {detail.application.candidate_offer_message ? <Text>{detail.application.candidate_offer_message}</Text> : null}
+              {detail.application.candidate_offer_responded_at ? <Text style={styles.meta}>{formatDateTime(detail.application.candidate_offer_responded_at)} 回答</Text> : null}
+            </>
+          ) : (
+            <>
+              <Text style={styles.subtle}>内容を確認して、アプリから承諾できます。</Text>
+              <TextInput value={offerMessage} onChangeText={setOfferMessage} placeholder="園への連絡事項（任意）" multiline maxLength={1000} style={styles.textArea} />
+              <Pressable style={styles.primaryButton} disabled={busy} onPress={() => void acceptCurrentOffer()}>
+                <Text style={styles.primaryText}>{busy ? '確認中…' : '内定を承諾する'}</Text>
+              </Pressable>
+            </>
+          )}
         </View>
       ) : null}
 
@@ -332,6 +391,17 @@ export default function ApplicationDetailScreen() {
         </Pressable>
       </View>
 
+      {['new', 'reviewing', 'interview', 'offered'].includes(detail.application.status) ? (
+        <View style={styles.withdrawCard}>
+          <Text style={styles.sectionTitle}>{detail.application.status === 'offered' ? '内定を辞退' : '応募を辞退'}</Text>
+          <Text style={styles.subtle}>辞退すると、予定中の面接とこの応募に紐づく見学・体験もキャンセルされます。</Text>
+          <TextInput value={withdrawReason} onChangeText={setWithdrawReason} placeholder="辞退理由（任意）" multiline maxLength={1000} style={styles.textArea} />
+          <Pressable style={styles.dangerButton} disabled={busy} onPress={() => void withdrawCurrentApplication()}>
+            <Text style={styles.dangerText}>{busy ? '確認中…' : detail.application.status === 'offered' ? '内定を辞退する' : '応募を辞退する'}</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <Pressable style={styles.secondaryButton} onPress={() => router.push('/(tabs)/applications')}>
         <Text style={styles.secondaryText}>応募一覧へ戻る</Text>
       </Pressable>
@@ -350,6 +420,9 @@ const styles = StyleSheet.create({
   meta: { color: '#7a818b', fontSize: 12 },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 10 },
   warningCard: { backgroundColor: '#fff8e6', borderRadius: 16, padding: 16, gap: 10 },
+  offerCard: { backgroundColor: '#eefbf3', borderRadius: 16, padding: 16, gap: 10 },
+  withdrawCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 10 },
+  offerAccepted: { color: '#067647', fontWeight: '900' },
   focusedCard: { borderWidth: 2, borderColor: '#246bfd' },
   sectionTitle: { fontSize: 18, fontWeight: '900' },
   cardHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
@@ -363,6 +436,8 @@ const styles = StyleSheet.create({
   primaryText: { color: '#fff', fontWeight: '800' },
   secondaryButton: { minHeight: 44, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: '#fff' },
   secondaryText: { fontWeight: '800' },
+  dangerButton: { minHeight: 44, borderWidth: 1, borderColor: '#d92d20', borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: '#fff' },
+  dangerText: { color: '#b42318', fontWeight: '900' },
   error: { color: '#b42318', backgroundColor: '#fff1f0', padding: 10, borderRadius: 9 },
   focusLabel: { color: '#155eef', fontWeight: '800' },
   message: { alignSelf: 'flex-start', maxWidth: '88%', backgroundColor: '#f0f2f5', borderRadius: 12, padding: 10, gap: 4 },
