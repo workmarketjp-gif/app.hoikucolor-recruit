@@ -40,4 +40,6 @@ jobs:
         run: node qa/native-push-pipeline-rebase-contract.mjs
       - name: Guard Native push client ABI
         run: node qa/native-push-client-core-contract.mjs
+      - name: Typecheck materialized Native source against stubs
+        run: npx tsc -p native/qa/tsconfig.stub.json
       - run: npm run build
