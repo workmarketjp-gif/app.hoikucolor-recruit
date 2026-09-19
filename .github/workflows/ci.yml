@@ -32,4 +32,6 @@ jobs:
         run: npm run test:camera-document-capture
       - name: Guard candidate message safe read
         run: node qa/jobseeker-message-safe-read-contract.mjs
+      - name: Guard Native mobile foundation production rebase
+        run: node qa/native-mobile-foundation-rebase-contract.mjs
       - run: npm run build
