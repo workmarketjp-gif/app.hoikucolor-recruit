@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, hc-w03-offer-withdrawal-validate-20260920-0600]
   pull_request:
 
 jobs:
@@ -33,6 +33,8 @@ jobs:
           node qa/document-vault-contract.mjs
       - name: Guard HC-W02 saved closed-job visibility
         run: node qa/jobseeker-saved-closed-state-contract.mjs
+      - name: Guard HC-W03 offer and withdrawal flow
+        run: node qa/jobseeker-offer-withdrawal-contract.mjs
       - name: Guard Native CA-04 document camera recovery slice
         working-directory: native
         run: npm run test:camera-document-capture
