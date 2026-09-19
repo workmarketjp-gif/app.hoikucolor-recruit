@@ -40,6 +40,9 @@ jobs:
         run: node qa/jobseeker-message-safe-read-contract.mjs
       - name: Guard Native mobile foundation production rebase
         run: node qa/native-mobile-foundation-rebase-contract.mjs
+      - name: Guard Native release compatibility runtime
+        working-directory: native
+        run: node qa/native-release-compatibility-contract.mjs
       - name: Guard Native mobile idempotency production rebase
         run: node qa/native-mobile-idempotency-rebase-contract.mjs
       - name: Guard Native push pipeline production rebase

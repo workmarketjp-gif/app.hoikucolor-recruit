@@ -6,6 +6,10 @@ import { AccountDeletionBoundary, AccountDeletionProvider } from '../contexts/Ac
 import { AppLockProvider } from '../contexts/AppLockContext';
 import { DocumentPickerCacheBoundary } from '../contexts/DocumentPickerCacheBoundary';
 import { NotificationProvider } from '../contexts/NotificationContext';
+import {
+  ReleaseCompatibilityBoundary,
+  ReleaseCompatibilityProvider,
+} from '../contexts/ReleaseCompatibilityContext';
 import { SessionFreshnessProvider } from '../contexts/SessionFreshnessContext';
 import { useActiveClerkSession } from '../lib/sessionLifecycle';
 
@@ -46,19 +50,24 @@ function AuthScopedRuntime() {
   }
 
   // Key the complete private runtime by the exact Clerk session. Candidate A -> B
-  // replacement therefore tears down pending notification/deletion state before B
-  // can mount.
+  // replacement therefore tears down pending release/deletion/notification state
+  // before B can mount. The release gate must run before any Native-only backend RPC
+  // (account deletion, Push routing, etc.) so an older backend fails closed cleanly.
   return (
     <SessionFreshnessProvider key={auth.sessionId}>
-      <AppLockProvider>
-        <AccountDeletionProvider>
-          <AccountDeletionBoundary>
-            <NotificationProvider>
-              <RouterStack />
-            </NotificationProvider>
-          </AccountDeletionBoundary>
-        </AccountDeletionProvider>
-      </AppLockProvider>
+      <ReleaseCompatibilityProvider>
+        <ReleaseCompatibilityBoundary>
+          <AppLockProvider>
+            <AccountDeletionProvider>
+              <AccountDeletionBoundary>
+                <NotificationProvider>
+                  <RouterStack />
+                </NotificationProvider>
+              </AccountDeletionBoundary>
+            </AccountDeletionProvider>
+          </AppLockProvider>
+        </ReleaseCompatibilityBoundary>
+      </ReleaseCompatibilityProvider>
     </SessionFreshnessProvider>
   );
 }

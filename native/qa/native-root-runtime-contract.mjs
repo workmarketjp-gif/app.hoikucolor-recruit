@@ -26,9 +26,11 @@ check('signed-out runtime excludes Candidate-private providers', layout.includes
 check('private runtime requires an active exact Clerk session', layout.includes('if (!auth.active || !auth.sessionId)'));
 check('candidate runtime remounts on exact session handoff', layout.includes('<SessionFreshnessProvider key={auth.sessionId}>'));
 check(
-  'provider order enforces session then App Lock then deletion then notification',
+  'provider order enforces session then release compatibility then App Lock then deletion then notification',
   ordered(
     '<SessionFreshnessProvider key={auth.sessionId}>',
+    '<ReleaseCompatibilityProvider>',
+    '<ReleaseCompatibilityBoundary>',
     '<AppLockProvider>',
     '<AccountDeletionProvider>',
     '<AccountDeletionBoundary>',
@@ -36,6 +38,8 @@ check(
     '<RouterStack />',
   ),
 );
+check('release gate precedes Native-only account deletion RPC lifecycle',
+  layout.indexOf('<ReleaseCompatibilityBoundary>') < layout.indexOf('<AccountDeletionProvider>'));
 
 check('deletion state reuses canonical API helpers', deletionContext.includes('getAccountDeletionRequest') && deletionContext.includes('requestAccountDeletion') && deletionContext.includes('cancelAccountDeletion'));
 check('deletion status read/cancel work while private business gate is closed', deletionContext.includes('const pinned = await pinCandidateSession()'));
