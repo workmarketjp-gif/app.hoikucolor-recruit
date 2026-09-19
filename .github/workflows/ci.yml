@@ -50,6 +50,11 @@ jobs:
         run: node qa/native-account-deletion-shared-identity-freeze-contract.mjs
       - name: Guard Native account deletion Push quarantine
         run: node qa/native-account-deletion-push-quarantine-contract.mjs
+      - name: Guard Native account deletion client gate
+        working-directory: native
+        run: node qa/native-account-deletion-client-gate-contract.mjs
+      - name: Typecheck materialized Native source
+        run: npx tsc -p native/qa/tsconfig.stub.json
       - name: Typecheck materialized Native push client core
         run: npx tsc -p native/qa/tsconfig.push-core.json
       - run: npm run build
