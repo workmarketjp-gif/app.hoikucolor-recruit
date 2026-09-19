@@ -19,6 +19,10 @@ const visits = read('src/app/visits.tsx');
 const notifications = read('src/lib/notifications.ts');
 const canonicalApplication = read('../supabase/migrations/20260910205000_hc_jobseeker_application_idempotency_and_availability.sql');
 const nativeIdempotency = read('../supabase/migrations/20260919063000_hc_native_mobile_idempotency_v5.sql');
+const withdrawalTerminal = read('../supabase/migrations/20260918170745_hc_jobseeker_withdrawal_terminal_authority_v1.sql');
+const offerAcceptance = read('../supabase/migrations/20260918200145_hc_jobseeker_offer_acceptance_v1.sql');
+const offerGateFix = read('../supabase/migrations/20260918200231_hc_jobseeker_offer_acceptance_gate_fix_v2.sql');
+const offerActorFix = read('../supabase/migrations/20260918200329_hc_jobseeker_offer_response_actor_fix_v3.sql');
 
 expect('candidate application list uses canonical RPC', api.includes("rpc('hc_jobseeker_list_applications'"));
 expect('candidate application detail uses canonical RPC', api.includes("rpc('hc_jobseeker_get_application_detail'"));
@@ -32,6 +36,12 @@ expect('message durable key clears only after canonical read confirmation', api.
 expect('offer acceptance uses canonical candidate RPC', api.includes("rpc('hc_jobseeker_accept_offer'"));
 expect('withdrawal uses canonical candidate RPC', api.includes("rpc('hc_jobseeker_withdraw_application'"));
 expect('terminal offer/withdraw UI uses canonical journey helpers', detail.includes('acceptOffer(pinned.client, applicationId') && detail.includes('withdrawApplication(pinned.client, applicationId'));
+expect('withdrawal source is repository-reproducible', withdrawalTerminal.includes('HC_CANDIDATE_WITHDRAWAL_TERMINAL') && withdrawalTerminal.includes('HC_CANDIDATE_WITHDRAWAL_RPC_REQUIRED') && withdrawalTerminal.includes("'already_withdrawn'") && withdrawalTerminal.includes("grant execute on function public.hc_jobseeker_withdraw_application(uuid,text) to authenticated"));
+expect('withdrawal canonical source cancels pending interviews and visits', withdrawalTerminal.includes("i.status = 'scheduled'") && withdrawalTerminal.includes("r.status in ('requested', 'confirmed')"));
+expect('offer acceptance source is repository-reproducible', offerAcceptance.includes('create or replace function public.hc_jobseeker_accept_offer') && offerAcceptance.includes("'already_accepted', true") && offerAcceptance.includes("perform public.hc_send_message(v_app.id, v_sent_message)"));
+expect('offer response fields are exposed by canonical application detail', offerAcceptance.includes("'candidate_offer_response', a.candidate_offer_response") && offerAcceptance.includes("'candidate_offer_responded_at', a.candidate_offer_responded_at") && offerAcceptance.includes("'candidate_offer_message', a.candidate_offer_message"));
+expect('offer gate fix preserves accepted-before-hired authority', offerGateFix.includes('HC_CANDIDATE_OFFER_ACCEPTANCE_REQUIRED') && offerGateFix.includes("coalesce(old.candidate_offer_response, new.candidate_offer_response, '') <> 'accepted'"));
+expect('offer actor fix accepts either exact canonical actor and rejects everyone else', offerActorFix.includes('v_offer_actor is distinct from old.jobseeker_clerk_user_id') && offerActorFix.includes('v_withdraw_actor is distinct from old.jobseeker_clerk_user_id') && !offerActorFix.includes("coalesce(v_offer_actor, v_withdraw_actor, '') is distinct"));
 expect('interview response reuses canonical candidate RPC', api.includes("rpc('hc_jobseeker_respond_interview'"));
 expect('interview response is durably payload-pinned before canonical retry', api.includes("kind: 'interview'") && api.includes('candidate_response_status !== params.responseStatus'));
 expect('visit mutation uses Native idempotent wrapper', api.includes("rpc('hc_request_visit_v2'"));
