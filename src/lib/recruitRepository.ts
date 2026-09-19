@@ -356,20 +356,44 @@ export async function getRankedJob(jobId: string): Promise<Job | null> {
   return rows[0] || null;
 }
 
-export async function listSavedJobIds(): Promise<string[]> {
-  const { data, error } = await client().from('hc_saved_jobs').select('job_id').order('created_at', { ascending: false });
-  if (error) throw error;
-  return (data || []).map((row) => row.job_id as string);
+const SAVED_JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function assertSavedJobId(jobId: string) {
+  if (!SAVED_JOB_ID_PATTERN.test(jobId)) throw new Error('求人IDを確認できませんでした。');
 }
 
-export async function saveJob(jobId: string, clerkUserId: string) {
-  const { error } = await client().from('hc_saved_jobs').insert({ job_id: jobId, clerk_user_id: clerkUserId });
-  if (error && error.code !== '23505') throw error;
+export async function listSavedJobIds(): Promise<string[]> {
+  const { data, error } = await client().rpc('hc_jobseeker_list_saved_job_ids');
+  if (error) throw error;
+  if (!Array.isArray(data)) throw new Error('保存した求人を確認できませんでした。');
+  const ids: string[] = [];
+  for (const row of data) {
+    if (!row || typeof row.job_id !== 'string' || !SAVED_JOB_ID_PATTERN.test(row.job_id)) {
+      throw new Error('保存した求人を確認できませんでした。');
+    }
+    if (!ids.includes(row.job_id)) ids.push(row.job_id);
+  }
+  return ids;
+}
+
+// Keep the legacy caller signature, but derive the writing identity in the RPC.
+// A false response means the requested state already existed, not a failure.
+export async function saveJob(jobId: string, _clerkUserId: string) {
+  assertSavedJobId(jobId);
+  const { data, error } = await client().rpc('hc_jobseeker_save_job', { p_job_id: jobId });
+  if (error) throw error;
+  if (typeof data !== 'boolean' || !(await listSavedJobIds()).includes(jobId)) {
+    throw new Error('求人の保存結果を確認できませんでした。再読込して確認してください。');
+  }
 }
 
 export async function unsaveJob(jobId: string) {
-  const { error } = await client().from('hc_saved_jobs').delete().eq('job_id', jobId);
+  assertSavedJobId(jobId);
+  const { data, error } = await client().rpc('hc_jobseeker_unsave_job', { p_job_id: jobId });
   if (error) throw error;
+  if (typeof data !== 'boolean' || (await listSavedJobIds()).includes(jobId)) {
+    throw new Error('求人の保存解除を確認できませんでした。再読込して確認してください。');
+  }
 }
 
 export async function listApplications(): Promise<Application[]> {
@@ -427,22 +451,62 @@ export async function submitApplication(jobId: string, profile: JobseekerProfile
   return data;
 }
 
+function profileFromResponse(value: unknown): JobseekerProfile {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('プロフィールを確認できませんでした。');
+  const row = value as Record<string, unknown>;
+  if (typeof row.clerk_user_id !== 'string' || !row.clerk_user_id.trim()) throw new Error('プロフィールを確認できませんでした。');
+  const nullableText = (key: string): string | null => {
+    if (row[key] === null || typeof row[key] === 'string') return row[key] as string | null;
+    throw new Error('プロフィールを確認できませんでした。');
+  };
+  const stringArray = (key: string): string[] => {
+    const values = row[key];
+    if (!Array.isArray(values) || !values.every(item => typeof item === 'string')) throw new Error('プロフィールを確認できませんでした。');
+    return [...values] as string[];
+  };
+  const experience = row.years_of_experience;
+  if (experience !== null && (typeof experience !== 'number' || !Number.isFinite(experience))) {
+    throw new Error('プロフィールを確認できませんでした。');
+  }
+  return {
+    clerk_user_id: row.clerk_user_id,
+    email: nullableText('email'),
+    name: nullableText('name'),
+    name_kana: nullableText('name_kana'),
+    phone: nullableText('phone'),
+    prefecture: nullableText('prefecture'),
+    desired_positions: stringArray('desired_positions'),
+    desired_employment_types: stringArray('desired_employment_types'),
+    qualifications: stringArray('qualifications'),
+    years_of_experience: experience as number | null,
+    desired_start_date: nullableText('desired_start_date'),
+    self_intro: nullableText('self_intro'),
+  };
+}
+
 export async function getProfile(): Promise<JobseekerProfile | null> {
-  const { data, error } = await client()
-    .from('hc_jobseeker_profiles')
-    .select('clerk_user_id,email,name,name_kana,phone,prefecture,desired_positions,desired_employment_types,qualifications,years_of_experience,desired_start_date,self_intro')
-    .maybeSingle();
+  const { data, error } = await client().rpc('hc_jobseeker_get_profile');
   if (error) throw error;
-  return data as JobseekerProfile | null;
+  return data === null ? null : profileFromResponse(data);
 }
 
 export async function upsertProfile(profile: JobseekerProfile): Promise<void> {
-  const { error } = await client().from('hc_jobseeker_profiles').upsert({
-    ...profile,
-    desired_positions: profile.desired_positions || [],
-    desired_employment_types: profile.desired_employment_types || [],
-    qualifications: profile.qualifications || [],
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'clerk_user_id' });
+  // The server obtains clerk_user_id and updated_at from the authenticated
+  // request; neither caller-supplied identity nor extra object fields are sent.
+  const { data, error } = await client().rpc('hc_jobseeker_upsert_profile', {
+    p_email: profile.email,
+    p_name: profile.name,
+    p_name_kana: profile.name_kana,
+    p_phone: profile.phone,
+    p_prefecture: profile.prefecture,
+    p_desired_positions: profile.desired_positions || [],
+    p_desired_employment_types: profile.desired_employment_types || [],
+    p_qualifications: profile.qualifications || [],
+    p_years_of_experience: profile.years_of_experience,
+    p_desired_start_date: profile.desired_start_date,
+    p_self_intro: profile.self_intro,
+  });
   if (error) throw error;
+  // The RPC returns its persisted, actor-scoped row in the same transaction.
+  profileFromResponse(data);
 }

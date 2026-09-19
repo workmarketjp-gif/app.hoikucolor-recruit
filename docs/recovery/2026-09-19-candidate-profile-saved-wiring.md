@@ -1,0 +1,13 @@
+# POPPY-only candidate Commander recovery
+
+Initial baseline 7c99327360159b4c98a077f21045535823d4490e. Final baseline f18ae2d290853d2bcd242ee6b2ee52df21f45756; the intervening native-account-deletion source/CI additions are preserved. No JPH/KIWAMI change or new/reopened PR.
+
+The database already contains the September 19 Commander saved-job/profile APIs, but the actual App still called the old direct-table implementations in recruitRepository. This batch connects listSavedJobIds/saveJob/unsaveJob/getProfile/upsertProfile to those existing authorized RPCs. Closed #31/#32/#35 application/visit safe-read work was already represented and is not duplicated.
+
+Read-only production catalog checks confirmed five exact RPCs: hc_jobseeker_list_saved_job_ids(), hc_jobseeker_save_job(uuid), hc_jobseeker_unsave_job(uuid), hc_jobseeker_get_profile(), and hc_jobseeker_upsert_profile(text,text,text,text,text,text[],text[],text[],numeric,date,text). Each derives the actor from JWT sub, has a fixed empty search path, authenticated EXECUTE=true and anon EXECUTE=false. Existing direct table grants were still present, so this is a missing frontend cutover, NOT a claim that all previous saves failed. No schema, grant, user-data or notification change is performed here.
+
+Legacy caller signatures are retained, but caller-supplied Clerk identity and timestamps are never sent to write RPCs. Save/unsave false returns are legitimate idempotency results; the final saved-ID list is re-read before success. Profile responses are validated and projected to the existing twelve-field type. Missing profile remains null, unrecorded experience remains null, and unexpected responses/errors cannot be silently reported as success. Ranking, application submission, document handoff, interview and other repository functions remain unchanged.
+
+Original complete source blob 085f9248af5591d7ae059364fb99139bd62c09c0 was byte/hash verified. New blob 1cc2d0360206533a655257dacd47d2c2b00ff265 matches locally tested bytes. node qa/candidateProfileSavedRecoveryTests.cjs passes 45 actual-module isolated tests with transport mocks; the same tests fail against the original source at direct-table use. TypeScript syntax/transpilation passes. No full semantic application build, real authenticated persistence/RLS test, browser E2E or successful Cloudflare publication is asserted.
+
+Main source recovery is distinct from production acceptance. The root POPPY consent #65 backend safety blocker remains separately unresolved; this task does not bypass it or enable consent UI. Existing application/native development and historical PR equivalence checks are not globally declared finished by these two client repairs.
