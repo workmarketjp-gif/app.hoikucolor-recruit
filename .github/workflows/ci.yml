@@ -61,6 +61,9 @@ jobs:
       - name: Guard Native notification context core
         working-directory: native
         run: node qa/native-notification-context-core-contract.mjs
+      - name: Guard Native root runtime boundary
+        working-directory: native
+        run: node qa/native-root-runtime-contract.mjs
       - name: Typecheck materialized Native source
         run: npx tsc -p native/qa/tsconfig.stub.json
       - name: Typecheck Native account deletion client slice

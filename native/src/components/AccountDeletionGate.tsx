@@ -46,6 +46,22 @@ export function AccountDeletionGate({
   if (loading && !request) {
     return <View testID="account-deletion-bootstrap" style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator /></View>;
   }
+
+  // Unknown deletion state is a security boundary, not a normal network error.
+  // Do not reveal Candidate business UI until the canonical RPC has confirmed
+  // that this exact session has no active deletion hold.
+  if (!loading && !request && lastError) {
+    return (
+      <View testID="account-deletion-status-blocked" style={shell}>
+        <Text style={{ fontSize: 24, fontWeight: '700' }}>アカウント状態を確認できません</Text>
+        <Text>安全のため、応募・メッセージ・保存・書類などの個人情報を表示していません。</Text>
+        <ErrorState lastError={lastError} localPurgeError={localPurgeError} />
+        <Button title="状態を再確認" disabled={busy} onPress={() => run(onRefresh)} />
+        <Button title="ログアウト" disabled={busy} onPress={() => run(onSignOut)} />
+      </View>
+    );
+  }
+
   if (!policy.blocksBusinessUi) return <>{children}</>;
 
   if (status === 'requested') {
