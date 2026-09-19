@@ -22,7 +22,7 @@ check('direct camera CTA exists', vault.includes('document-vault-camera') && vau
 check('camera permission requested explicitly', vault.includes('requestCameraPermissionsAsync'));
 check('permanent denial offers OS settings', vault.includes('permission.canAskAgain === false') && vault.includes('Linking.openSettings()'));
 check('camera is rear/image only', vault.includes('CameraType.back') && vault.includes("mediaTypes: ['images']"));
-check('camera launch snapshots candidate doc type', vault.includes('const selectedType = documentType'));
+check('camera launch snapshots candidate doc type', vault.includes('const selectedType = replacement?.document_type ?? documentType'));
 check('camera shares temp-file generation quarantine', vault.includes('captureDocumentPickerCacheGeneration()') && vault.includes('uploadTemporaryAsset'));
 check('camera shares canonical vault uploader', vault.includes('uploadPickedJobseekerDocument') && api.includes("client.rpc('hc_register_jobseeker_document_source'"));
 check('generic asset keeps PDF/JPEG/PNG validation', api.includes('CandidateDocumentAsset') && api.includes('bytesMatchMime'));
