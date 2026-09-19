@@ -2,6 +2,7 @@ import fs from 'node:fs';
 
 const migration = fs.readFileSync('supabase/migrations/20260913100000_hc_jobseeker_search_pagination_v1.sql', 'utf8');
 const repository = fs.readFileSync('src/lib/recruitRepository.ts', 'utf8');
+const savedStatusRepository = fs.readFileSync('src/lib/savedJobStatusRepository.ts', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 
 const checks = [
@@ -30,7 +31,7 @@ const checks = [
   ['job search requests 24 rows', app.includes('limit: 24')],
   ['job search supports load-more cursor', app.includes('cursor });') && app.includes('setCursor(page.nextCursor)')],
   ['job filters no longer filter the full catalog locally', !app.includes('const filtered = jobs.filter')],
-  ['saved page has dedicated candidate-safe loader', app.includes('listSavedRankedJobs()')],
+  ['saved page has dedicated candidate-safe loader', app.includes('listSavedJobsWithStatus()') && savedStatusRepository.includes("rpc('hc_jobseeker_list_saved_jobs_with_status')")],
   ['filter facets come from server', app.includes('getJobSearchFacets()')],
 ];
 
