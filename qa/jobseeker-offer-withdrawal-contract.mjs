@@ -3,6 +3,8 @@ import fs from 'node:fs';
 const repository = fs.readFileSync('src/lib/applicationDecisionRepository.ts', 'utf8');
 const panel = fs.readFileSync('src/components/ApplicationDecisionPanel.tsx', 'utf8');
 const detail = fs.readFileSync('src/components/ApplicationDetail.tsx', 'utf8');
+const withdrawalMigration = fs.readFileSync('supabase/migrations/20260918170745_hc_jobseeker_withdrawal_terminal_authority_v1.sql', 'utf8').toLowerCase();
+const offerMigration = fs.readFileSync('supabase/migrations/20260918200145_hc_jobseeker_offer_acceptance_v1.sql', 'utf8').toLowerCase();
 
 const checks = [
   ['offer acceptance uses the shared application RPC', repository.includes("client().rpc('hc_jobseeker_accept_offer'")],
@@ -18,6 +20,13 @@ const checks = [
   ['application detail owns the decision surface', detail.includes('<ApplicationDecisionPanel applicationId={application.id}')],
   ['destructive decisions require explicit confirmation', panel.includes('window.confirm')],
   ['messages and reasons are capped at 1000 chars', panel.includes('maxLength={1000}') && repository.includes('length > 1000')],
+  ['withdrawal migration derives candidate from JWT', withdrawalMigration.includes("v_actor text := nullif(auth.jwt() ->> 'sub', '')")],
+  ['withdrawal migration only grants authenticated execute', withdrawalMigration.includes('grant execute on function public.hc_jobseeker_withdraw_application(uuid,text) to authenticated')],
+  ['withdrawal migration cancels scheduled interviews and active visits', withdrawalMigration.includes("and i.status = 'scheduled'") && withdrawalMigration.includes("and r.status in ('requested', 'confirmed')")],
+  ['offer migration requires offered status', offerMigration.includes("if v_app.status <> 'offered'") && offerMigration.includes('hc_offer_acceptance_not_allowed')],
+  ['offer migration records accepted response and shared message', offerMigration.includes("candidate_offer_response = 'accepted'") && offerMigration.includes('perform public.hc_send_message')],
+  ['offer migration only grants authenticated execute', offerMigration.includes('grant execute on function public.hc_jobseeker_accept_offer(uuid,text)') && offerMigration.includes('to authenticated')],
+  ['application detail source exposes candidate offer readback', offerMigration.includes("'candidate_offer_response', a.candidate_offer_response") && offerMigration.includes("'candidate_offer_responded_at', a.candidate_offer_responded_at") && offerMigration.includes("'candidate_offer_message', a.candidate_offer_message")],
 ];
 
 const failed = checks.filter(([, ok]) => !ok);
