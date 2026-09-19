@@ -1,0 +1,17 @@
+name: HC Message Safe Read Validate
+
+on:
+  push:
+    branches: [hc-validate-message-safe-read-20260919-1700]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: node qa/jobseeker-message-safe-read-contract.mjs
+      - run: npm run build
