@@ -27,4 +27,6 @@ jobs:
             echo 'broken public mock job detail link reintroduced' >&2
             exit 1
           fi
+      - name: Guard candidate message safe read
+        run: node qa/jobseeker-message-safe-read-contract.mjs
       - run: npm run build
