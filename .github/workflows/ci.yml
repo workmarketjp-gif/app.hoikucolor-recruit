@@ -40,6 +40,8 @@ jobs:
         run: node qa/native-push-pipeline-rebase-contract.mjs
       - name: Guard Native push client ABI
         run: node qa/native-push-client-core-contract.mjs
+      - name: Guard Native account deletion production rebase
+        run: node qa/native-account-deletion-production-rebase-contract.mjs
       - name: Typecheck materialized Native push client core
         run: npx tsc -p native/qa/tsconfig.push-core.json
       - run: npm run build
