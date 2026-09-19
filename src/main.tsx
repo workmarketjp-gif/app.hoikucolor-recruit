@@ -8,6 +8,7 @@ import { RankingDisclosureEnhancer } from './components/RankingDisclosureEnhance
 import { ScoutNavigationEnhancer } from './components/ScoutNavigationEnhancer';
 import { SpotNavigationEnhancer } from './components/SpotNavigationEnhancer';
 import { VisitNavigationEnhancer } from './components/VisitNavigationEnhancer';
+import { WebConnectivityBanner } from './components/WebConnectivityBanner';
 import './styles.css';
 import './verified-workplace.css';
 import './mobile-hardening.css';
@@ -31,6 +32,7 @@ createRoot(document.getElementById('root')!).render(
       <Suspense fallback={<div className="centered-state"><span className="loading-ring" /><strong>Hoiku Colorを読み込んでいます</strong></div>}>
         {root}
       </Suspense>
+      <WebConnectivityBanner />
       <ExternalJobReturnEnhancer />
       <MatchNavigationEnhancer />
       <CompareNavigationEnhancer />
