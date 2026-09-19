@@ -24,7 +24,11 @@ const scoutRoute = read('src/ScoutRouteRoot.tsx');
 
 const requiredRepositoryMarkers = [
   "rpc('hc_jobseeker_list_ranked_jobs')",
-  ".from('hc_saved_jobs')",
+  "rpc('hc_jobseeker_list_saved_job_ids')",
+  "rpc('hc_jobseeker_save_job'",
+  "rpc('hc_jobseeker_unsave_job'",
+  "rpc('hc_jobseeker_get_profile')",
+  "rpc('hc_jobseeker_upsert_profile'",
   "rpc('hc_jobseeker_submit_application'",
   "rpc('hc_jobseeker_list_applications'",
   "rpc('hc_jobseeker_get_application_detail'",
@@ -32,6 +36,9 @@ const requiredRepositoryMarkers = [
 ];
 for (const marker of requiredRepositoryMarkers) {
   if (!repository.includes(marker)) throw new Error(`Core journey repository contract missing: ${marker}`);
+}
+for (const forbidden of [".from('hc_saved_jobs')", ".from('hc_jobseeker_profiles')"]) {
+  if (repository.includes(forbidden)) throw new Error(`Core journey bypasses the actor-scoped RPC: ${forbidden}`);
 }
 for (const marker of ['from public.hc_jobseeker_job_feed r', 'hc_public_workplace_profiles', 'hc_public_finance_profiles']) {
   if (!rankedCatalog.includes(marker)) throw new Error(`Core journey ranked catalog contract missing: ${marker}`);
