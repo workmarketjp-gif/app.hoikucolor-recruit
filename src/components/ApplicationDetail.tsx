@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApplicationMessages } from './ApplicationMessages';
+import { ApplicationDecisionPanel } from './ApplicationDecisionPanel';
 import { Icon } from './Icon';
 import {
   getJobseekerApplicationDetail,
@@ -158,6 +159,8 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
       })}
       {terminal && <div className="selection-terminal"><strong>{statusLabel(application.status)}</strong><span>{application.status === 'withdrawn' ? '応募を辞退しました。' : '今回の選考は終了しました。'}</span></div>}
     </section>
+
+    <ApplicationDecisionPanel applicationId={application.id} onChanged={() => onRefresh(true)} />
 
     <div className="application-detail-grid">
       <section className="application-detail-card">
