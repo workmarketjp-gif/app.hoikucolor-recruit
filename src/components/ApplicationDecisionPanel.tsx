@@ -68,7 +68,13 @@ export function ApplicationDecisionPanel({ applicationId, onChanged }: Props) {
   const withdraw = async () => {
     if (!application || !WITHDRAWABLE_STATUSES.has(application.status)) return;
     const offered = application.status === 'offered';
-    if (!window.confirm(offered ? 'この内定を辞退しますか？' : 'この応募を辞退しますか？')) return;
+    const accepted = offered && application.candidate_offer_response === 'accepted';
+    const confirmation = accepted
+      ? '承諾済みの内定を取り消して辞退しますか？'
+      : offered
+        ? 'この内定を辞退しますか？'
+        : 'この応募を辞退しますか？';
+    if (!window.confirm(confirmation)) return;
     setBusy('withdraw');
     setError(null);
     setNotice(null);
@@ -99,7 +105,7 @@ export function ApplicationDecisionPanel({ applicationId, onChanged }: Props) {
       <span className="eyebrow">YOUR DECISION</span>
       <h2>{accepted ? '内定を承諾済み' : offered ? '内定への回答' : '応募を辞退する場合'}</h2>
       <p>{accepted
-        ? 'この内定は承諾済みです。以降の案内は園とのメッセージで確認してください。'
+        ? 'この内定は承諾済みです。以降の案内は園とのメッセージで確認できます。事情が変わった場合は、ここから承諾を取り消して辞退できます。'
         : offered
           ? '承諾または辞退を選ぶと、この応募の選考記録と園側の状態が同時に更新されます。'
           : '選考を続けない場合は、ここから応募を辞退できます。予定中の面接・見学・体験も同時にキャンセルされます。'}</p>
@@ -107,18 +113,18 @@ export function ApplicationDecisionPanel({ applicationId, onChanged }: Props) {
       {application.candidate_offer_message && <small className="application-decision-saved-message">連絡事項: {application.candidate_offer_message}</small>}
     </div>
 
-    {!accepted && <div className="application-decision-actions">
+    <div className="application-decision-actions">
       {(offered || withdrawOpen) && <label className="application-decision-message">
-        <span>{offered ? '園への連絡事項（任意）' : '辞退理由（任意）'}</span>
-        <textarea rows={3} maxLength={1000} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={offered ? '例：内定ありがとうございます。入職日についてご相談させてください。' : '例：一身上の都合により辞退いたします。'} />
+        <span>{accepted ? '辞退理由・園への連絡（任意）' : offered ? '園への連絡事項（任意）' : '辞退理由（任意）'}</span>
+        <textarea rows={3} maxLength={1000} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={accepted ? '例：事情が変わったため、承諾後で恐縮ですが辞退いたします。' : offered ? '例：内定ありがとうございます。入職日についてご相談させてください。' : '例：一身上の都合により辞退いたします。'} />
         <small>{message.length}/1000</small>
       </label>}
       <div className="application-decision-buttons">
-        {offered && <button className="primary-button" type="button" disabled={busy !== null} onClick={() => void acceptOffer()}>{busy === 'accept' ? '承諾中…' : '内定を承諾'}</button>}
-        {canWithdraw && <button className="secondary-button" type="button" disabled={busy !== null} onClick={() => offered || withdrawOpen ? void withdraw() : setWithdrawOpen(true)}>{busy === 'withdraw' ? '辞退処理中…' : offered ? '内定を辞退' : withdrawOpen ? '応募を辞退' : '辞退手続きを開く'}</button>}
+        {offered && !accepted && <button className="primary-button" type="button" disabled={busy !== null} onClick={() => void acceptOffer()}>{busy === 'accept' ? '承諾中…' : '内定を承諾'}</button>}
+        {canWithdraw && <button className="secondary-button" type="button" disabled={busy !== null} onClick={() => offered || withdrawOpen ? void withdraw() : setWithdrawOpen(true)}>{busy === 'withdraw' ? '辞退処理中…' : accepted ? '承諾を取り消して辞退' : offered ? '内定を辞退' : withdrawOpen ? '応募を辞退' : '辞退手続きを開く'}</button>}
         {!offered && withdrawOpen && <button className="secondary-button" type="button" disabled={busy !== null} onClick={() => { setWithdrawOpen(false); setMessage(''); setError(null); }}>閉じる</button>}
       </div>
-    </div>}
+    </div>
 
     {notice && <p className="form-success application-decision-feedback" role="status">{notice}</p>}
     {error && <p className="form-error application-decision-feedback" role="alert">{error}</p>}
