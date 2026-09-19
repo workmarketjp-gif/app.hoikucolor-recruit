@@ -29,6 +29,9 @@ expect('canonical submit is server-idempotent per job/candidate', canonicalAppli
 expect('message mutation uses Native idempotent wrapper', api.includes("rpc('hc_send_message_v2'"));
 expect('message wrapper delegates business rule to canonical send', nativeIdempotency.includes('v_message := public.hc_send_message(p_application_id, v_body)'));
 expect('message durable key clears only after canonical read confirmation', api.includes('const messages = await listApplicationMessages') && api.indexOf('const messages = await listApplicationMessages') < api.indexOf("clearDurableMutation({ userId: params.ownerId, kind: 'message'"));
+expect('offer acceptance uses canonical candidate RPC', api.includes("rpc('hc_jobseeker_accept_offer'"));
+expect('withdrawal uses canonical candidate RPC', api.includes("rpc('hc_jobseeker_withdraw_application'"));
+expect('terminal offer/withdraw UI uses canonical journey helpers', detail.includes('acceptOffer(pinned.client, applicationId') && detail.includes('withdrawApplication(pinned.client, applicationId'));
 expect('interview response reuses canonical candidate RPC', api.includes("rpc('hc_jobseeker_respond_interview'"));
 expect('interview response is durably payload-pinned before canonical retry', api.includes("kind: 'interview'") && api.includes('candidate_response_status !== params.responseStatus'));
 expect('visit mutation uses Native idempotent wrapper', api.includes("rpc('hc_request_visit_v2'"));
