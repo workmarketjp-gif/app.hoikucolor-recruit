@@ -38,4 +38,6 @@ jobs:
         run: node qa/native-mobile-idempotency-rebase-contract.mjs
       - name: Guard Native push pipeline production rebase
         run: node qa/native-push-pipeline-rebase-contract.mjs
+      - name: Guard Native push client ABI
+        run: node qa/native-push-client-core-contract.mjs
       - run: npm run build
