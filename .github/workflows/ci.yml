@@ -30,4 +30,6 @@ jobs:
       - name: Guard Native CA-04 document camera recovery slice
         working-directory: native
         run: npm run test:camera-document-capture
+      - name: Guard candidate message safe read
+        run: node qa/jobseeker-message-safe-read-contract.mjs
       - run: npm run build
