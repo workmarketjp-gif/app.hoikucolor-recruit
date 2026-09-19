@@ -27,4 +27,7 @@ jobs:
             echo 'broken public mock job detail link reintroduced' >&2
             exit 1
           fi
+      - name: Guard Native CA-04 document camera recovery slice
+        working-directory: native
+        run: npm run test:camera-document-capture
       - run: npm run build

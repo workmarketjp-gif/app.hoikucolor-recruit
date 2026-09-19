@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Hoiku Color",
+    "slug": "hoiku-color-jobseeker",
+    "version": "0.1.0",
+    "scheme": "hoikucolor",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Hoiku Colorの個人情報を保護するためFace IDを使用します。"
+        }
+      ],
+      [
+        "@clerk/expo",
+        {
+          "appleSignIn": true
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "default"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "応募書類を撮影するためカメラを使用します。",
+          "microphonePermission": false
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "jp.hoikucolor.jobseeker",
+      "buildNumber": "1",
+      "usesAppleSignIn": true
+    },
+    "android": {
+      "package": "jp.hoikucolor.jobseeker",
+      "versionCode": 1
+    },
+    "extra": {
+      "eas": {
+        "projectId": "SET_EAS_PROJECT_ID_BEFORE_BUILD"
+      }
+    }
+  }
+}
