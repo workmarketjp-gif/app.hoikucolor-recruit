@@ -1,0 +1,5 @@
+.connectivity-banner{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:1200;display:flex;align-items:center;gap:12px;max-width:min(520px,calc(100vw - 32px));padding:12px 14px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;box-shadow:0 8px 28px rgba(15,23,42,.14);font-size:13px;line-height:1.5}
+.connectivity-banner span{min-width:0;overflow-wrap:anywhere}
+.connectivity-banner button{flex:none;min-height:40px;padding:0 14px;border:0;border-radius:8px;background:#111827;color:#fff;font:inherit;font-weight:700;cursor:pointer}
+.connectivity-banner button:focus-visible{outline:3px solid rgba(251,47,82,.24);outline-offset:2px}
+@media(max-width:460px){.connectivity-banner{right:10px;bottom:calc(10px + env(safe-area-inset-bottom));left:10px;max-width:none;align-items:stretch;flex-direction:column}.connectivity-banner button{min-height:44px;width:100%}}
