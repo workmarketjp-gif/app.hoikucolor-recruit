@@ -27,6 +27,10 @@ jobs:
             echo 'broken public mock job detail link reintroduced' >&2
             exit 1
           fi
+      - name: Guard HC-W01 profile preferences and document vault UX
+        run: |
+          node qa/jobseeker-profile-matching-contract.mjs
+          node qa/document-vault-contract.mjs
       - name: Guard Native CA-04 document camera recovery slice
         working-directory: native
         run: npm run test:camera-document-capture

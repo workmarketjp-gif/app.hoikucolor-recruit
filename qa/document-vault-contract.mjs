@@ -37,9 +37,18 @@ const uiMarkers = [
   '応募書類',
   '応募時に使う',
   'すでに応募先へ提出済みのコピーは削除されません',
+  '保存した応募書類はまだありません',
+  'まずは履歴書を1件保存してください',
+  '履歴書を追加',
+  '差し替え',
+  '以前の書類は書類庫に残っています。不要なら削除できます。',
+  "chooseFile({ documentType: document.document_type, makeDefault: true, replacement: true })",
 ];
 for (const marker of uiMarkers) {
   if (!profileUi.includes(marker)) throw new Error(`Document vault profile UI contract missing: ${marker}`);
+}
+if (profileUi.includes('await deleteJobseekerDocument(document);\n      await uploadJobseekerDocument')) {
+  throw new Error('Replacement must never delete the old source before the new source is safely registered.');
 }
 if (!applicationUi.includes('attachJobseekerDocumentToApplication')) throw new Error('Saved documents are not attachable from application management.');
 if (!applicationUi.includes('この応募に提出')) throw new Error('Application document submission action is missing.');

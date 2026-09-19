@@ -22,6 +22,12 @@ const labels: Record<JobseekerDocumentType, string> = {
   other: 'その他',
 };
 
+type UploadIntent = {
+  documentType: JobseekerDocumentType;
+  makeDefault: boolean;
+  replacement: boolean;
+};
+
 function formatBytes(value: number | null) {
   if (!value) return '';
   if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
@@ -37,6 +43,19 @@ export function DocumentVaultPanel() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const uploadIntentRef = useRef<UploadIntent | null>(null);
+
+  const chooseFile = (intent?: Partial<UploadIntent> & Pick<UploadIntent, 'documentType'>) => {
+    if (busy) return;
+    const targetType = intent?.documentType ?? documentType;
+    const sameTypeExists = documents.some((item) => item.document_type === targetType);
+    uploadIntentRef.current = {
+      documentType: targetType,
+      makeDefault: intent?.makeDefault ?? !sameTypeExists,
+      replacement: intent?.replacement ?? false,
+    };
+    fileRef.current?.click();
+  };
 
   const load = async () => {
     setLoading(true);
@@ -52,14 +71,20 @@ export function DocumentVaultPanel() {
 
   useEffect(() => { void load(); }, []);
 
-  const upload = async (file: File) => {
-    if (!user?.id) return;
+  const upload = async (file: File, intent: UploadIntent) => {
+    if (!user?.id) {
+      setError('ログインユーザーを確認できませんでした。');
+      return;
+    }
     setBusy(true); setError(null); setNotice(null);
     try {
-      const sameTypeExists = documents.some((item) => item.document_type === documentType);
-      await uploadJobseekerDocument(user.id, documentType, file, { makeDefault: !sameTypeExists });
+      await uploadJobseekerDocument(user.id, intent.documentType, file, { makeDefault: intent.makeDefault });
       await load();
-      setNotice(`${labels[documentType]}を保存しました。応募時に何度でも再利用できます。`);
+      if (intent.replacement) {
+        setNotice(`${labels[intent.documentType]}を差し替えました。以前の書類は書類庫に残っています。不要なら削除できます。`);
+      } else {
+        setNotice(`${labels[intent.documentType]}を保存しました。応募時に何度でも再利用できます。`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '書類を保存できませんでした。');
     } finally {
@@ -111,8 +136,17 @@ export function DocumentVaultPanel() {
           <select value={documentType} onChange={(e) => setDocumentType(e.target.value as JobseekerDocumentType)} style={{ minHeight: 44, flex: '1 1 190px' }}>
             {Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-          <input ref={fileRef} type="file" accept="application/pdf,image/jpeg,image/png" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void upload(file); }} />
-          <button className="secondary-button" type="button" disabled={busy} onClick={() => fileRef.current?.click()}>
+          <input ref={fileRef} type="file" accept="application/pdf,image/jpeg,image/png" hidden onChange={(e) => {
+            const file = e.target.files?.[0];
+            const intent = uploadIntentRef.current ?? {
+              documentType,
+              makeDefault: !documents.some((item) => item.document_type === documentType),
+              replacement: false,
+            };
+            uploadIntentRef.current = null;
+            if (file) void upload(file, intent);
+          }} />
+          <button className="secondary-button" type="button" disabled={busy} onClick={() => chooseFile({ documentType })}>
             <Icon name="upload" size={16} /> {busy ? '処理中…' : '書類を追加'}
           </button>
         </div>
@@ -130,12 +164,20 @@ export function DocumentVaultPanel() {
                 </span>
               </button>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {!document.is_default && <button type="button" className="secondary-button" disabled={busy} onClick={() => void makeDefault(document)}>応募時に使う</button>}
+                {document.is_default
+                  ? <button type="button" className="secondary-button" disabled={busy} onClick={() => chooseFile({ documentType: document.document_type, makeDefault: true, replacement: true })}>差し替え</button>
+                  : <button type="button" className="secondary-button" disabled={busy} onClick={() => void makeDefault(document)}>応募時に使う</button>}
                 <button type="button" className="secondary-button" disabled={busy} onClick={() => void remove(document)}>削除</button>
               </div>
             </article>)}
           </div>
-        ) : <div className="empty-state"><h3>保存した応募書類はまだありません</h3><p>履歴書や保育士証をここに保存すると、応募のたびにアップロードし直す必要がなくなります。</p></div>}
+        ) : <div className="empty-state">
+          <h3>保存した応募書類はまだありません</h3>
+          <p>まずは履歴書を1件保存してください。保育士証などはあとから追加できます。</p>
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => chooseFile({ documentType: 'resume', makeDefault: true })}>
+            <Icon name="upload" size={16} /> 履歴書を追加
+          </button>
+        </div>}
       </div>
     </section>
     <ProfileMatchingPreferencesPanel />

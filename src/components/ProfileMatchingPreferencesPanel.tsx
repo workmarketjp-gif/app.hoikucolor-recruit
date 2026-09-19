@@ -1,4 +1,3 @@
-import { useUser } from '@clerk/react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   emptyJobseekerMatchingPreferences,
@@ -25,7 +24,6 @@ function ToggleGroup({ options, selected, onChange }: { options: string[]; selec
 }
 
 export function ProfileMatchingPreferencesPanel() {
-  const { user } = useUser();
   const [draft, setDraft] = useState<JobseekerMatchingPreferences>(emptyJobseekerMatchingPreferences);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -56,14 +54,14 @@ export function ProfileMatchingPreferencesPanel() {
   const update = <K extends keyof JobseekerMatchingPreferences>(key: K, value: JobseekerMatchingPreferences[K]) => setDraft((prev) => ({ ...prev, [key]: value }));
 
   const save = async () => {
-    if (!user?.id || saving) return;
+    if (saving) return;
     if (draft.available_time_from && draft.available_time_to && draft.available_time_from >= draft.available_time_to) {
       setError('勤務可能時間は、開始時刻を終了時刻より前にしてください。');
       return;
     }
     setSaving(true); setError(null); setNotice(null);
     try {
-      await saveJobseekerMatchingPreferences(user.id, draft);
+      await saveJobseekerMatchingPreferences(draft);
       setNotice('希望条件と保育観を保存しました。匿名スカウトやマッチング精度の向上に利用されます。');
     } catch (err) {
       setError(err instanceof Error ? err.message : '希望条件を保存できませんでした。');
