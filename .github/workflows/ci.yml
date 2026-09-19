@@ -53,6 +53,11 @@ jobs:
       - name: Guard Native account deletion client gate
         working-directory: native
         run: node qa/native-account-deletion-client-gate-contract.mjs
+      - name: Guard Native private session core
+        working-directory: native
+        run: node qa/native-private-session-core-contract.mjs
+      - name: Typecheck materialized Native source
+        run: npx tsc -p native/qa/tsconfig.stub.json
       - name: Typecheck Native account deletion client slice
         run: npx tsc -p native/qa/tsconfig.account-deletion-client.json
       - name: Typecheck materialized Native push client core
