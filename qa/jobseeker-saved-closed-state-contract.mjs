@@ -28,7 +28,7 @@ if (!repo.includes("rpc('hc_jobseeker_list_saved_jobs_with_status')")) {
 }
 for (const marker of [
   'listSavedJobsWithStatus()',
-  'job.is_open === false',
+  'is_open === false',
   "'募集終了'",
   '!isClosed && <VisitTrialPanel',
   'disabled={applying || isClosed}',
