@@ -165,7 +165,7 @@ begin
     v_actor
   );
 
-  v_sent_message := '内定を承諾しました。' || case when v_message is not null then E'\\n連絡事項: ' || v_message else '' end;
+  v_sent_message := '内定を承諾しました。' || case when v_message is not null then E'\n連絡事項: ' || v_message else '' end;
   perform public.hc_send_message(v_app.id, v_sent_message);
 
   return jsonb_build_object(
