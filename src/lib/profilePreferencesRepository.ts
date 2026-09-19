@@ -37,22 +37,6 @@ function client() {
   return supabase;
 }
 
-const selectFields = [
-  'desired_prefectures',
-  'desired_cities',
-  'desired_monthly_salary_min',
-  'desired_hourly_wage_min',
-  'available_weekdays',
-  'available_time_from',
-  'available_time_to',
-  'max_commute_minutes',
-  'classroom_experience',
-  'leadership_roles',
-  'preferred_child_ages',
-  'childcare_values',
-  'work_preferences',
-].join(',');
-
 function normalizeTime(value: unknown) {
   if (typeof value !== 'string' || !value) return null;
   return value.slice(0, 5);
@@ -78,28 +62,26 @@ function normalize(data: Partial<JobseekerMatchingPreferences> | null): Jobseeke
 }
 
 export async function getJobseekerMatchingPreferences(): Promise<JobseekerMatchingPreferences> {
-  const { data, error } = await client()
-    .from('hc_jobseeker_profiles')
-    .select(selectFields)
-    .maybeSingle();
+  const { data, error } = await client().rpc('hc_jobseeker_get_matching_preferences');
   if (error) throw error;
   return normalize(data as Partial<JobseekerMatchingPreferences> | null);
 }
 
-export async function saveJobseekerMatchingPreferences(clerkUserId: string, preferences: JobseekerMatchingPreferences): Promise<void> {
-  const payload = {
-    clerk_user_id: clerkUserId,
-    ...preferences,
-    desired_prefectures: preferences.desired_prefectures || [],
-    desired_cities: preferences.desired_cities || [],
-    available_weekdays: preferences.available_weekdays || [],
-    classroom_experience: preferences.classroom_experience || [],
-    leadership_roles: preferences.leadership_roles || [],
-    preferred_child_ages: preferences.preferred_child_ages || [],
-    childcare_values: preferences.childcare_values || [],
-    work_preferences: preferences.work_preferences || [],
-    updated_at: new Date().toISOString(),
-  };
-  const { error } = await client().from('hc_jobseeker_profiles').upsert(payload, { onConflict: 'clerk_user_id' });
+export async function saveJobseekerMatchingPreferences(preferences: JobseekerMatchingPreferences): Promise<void> {
+  const { error } = await client().rpc('hc_jobseeker_upsert_matching_preferences', {
+    p_desired_prefectures: preferences.desired_prefectures || [],
+    p_desired_cities: preferences.desired_cities || [],
+    p_desired_monthly_salary_min: preferences.desired_monthly_salary_min,
+    p_desired_hourly_wage_min: preferences.desired_hourly_wage_min,
+    p_available_weekdays: preferences.available_weekdays || [],
+    p_available_time_from: preferences.available_time_from,
+    p_available_time_to: preferences.available_time_to,
+    p_max_commute_minutes: preferences.max_commute_minutes,
+    p_classroom_experience: preferences.classroom_experience || [],
+    p_leadership_roles: preferences.leadership_roles || [],
+    p_preferred_child_ages: preferences.preferred_child_ages || [],
+    p_childcare_values: preferences.childcare_values || [],
+    p_work_preferences: preferences.work_preferences || [],
+  });
   if (error) throw error;
 }
