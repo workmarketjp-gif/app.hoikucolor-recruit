@@ -37,6 +37,8 @@ jobs:
         run: node qa/jobseeker-job-provenance-contract.mjs
       - name: Guard HC-W03 offer and withdrawal flow
         run: node qa/jobseeker-offer-withdrawal-contract.mjs
+      - name: Guard HC-W04 scout visit trial and SPOT matrix
+        run: node qa/jobseeker-w04-surface-matrix-contract.mjs
       - name: Guard Native CA-04 document camera recovery slice
         working-directory: native
         run: npm run test:camera-document-capture
