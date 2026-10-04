@@ -440,6 +440,13 @@ revoke all on function hc_private.color_application_document_object_can_write_wi
   from public, anon, authenticated;
 revoke all on function hc_private.color_application_document_object_can_delete_with_deletion_freeze_v1(text)
   from public, anon, authenticated;
+-- Storage RLS policies are evaluated as the requesting role, so these wrappers need
+-- the same authenticated EXECUTE as the canonical ho_private.color_application_document_object_can_*
+-- helpers they wrap. Without it every authenticated document write/delete fails.
+grant execute on function hc_private.color_application_document_object_can_write_with_deletion_freeze_v1(text)
+  to authenticated;
+grant execute on function hc_private.color_application_document_object_can_delete_with_deletion_freeze_v1(text)
+  to authenticated;
 
 drop policy if exists hc_application_documents_storage_insert on storage.objects;
 create policy hc_application_documents_storage_insert
