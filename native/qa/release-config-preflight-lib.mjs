@@ -97,7 +97,12 @@ export function validateReleaseConfig({ rootDir, env, mode = 'production' }) {
   const projectId = String(expo.extra?.eas?.projectId ?? '');
   check(UUID_RE.test(projectId) && !PLACEHOLDER_RE.test(projectId), 'EAS_PROJECT_ID', 'EAS projectId must be the real UUID; placeholders are release blockers.');
   check(eas.build?.production?.distribution === 'store', 'EAS_PRODUCTION_DISTRIBUTION', 'Production EAS profile must target store distribution.');
-  check(!Object.hasOwn(eas.build ?? {}, 'preview'), 'NO_PREVIEW_PROFILE', 'Prepared release config must not add a Preview build path; Store/Release Gates own publication.');
+  const preview = eas.build?.preview;
+  check(!preview || (preview.distribution === 'internal' && preview.developmentClient !== true), 'PREVIEW_PROFILE_INTERNAL_ONLY', 'Preview builds must stay internal-distribution release builds; Store/Release Gates own publication.');
+  check(eas.build?.development?.developmentClient === true && eas.build?.development?.distribution === 'internal', 'DEVELOPMENT_PROFILE_INTERNAL_DEV_CLIENT', 'Development builds must be internal dev-client builds.');
+  for (const [name, profile] of Object.entries(eas.build ?? {})) {
+    check(!profile?.env || !Object.keys(profile.env).some((key) => /SECRET|SERVICE_ROLE|PRIVATE/i.test(key)), `EAS_PROFILE_${name.toUpperCase()}_NO_SECRET_ENV`, `EAS profile ${name} must not inline secret environment variables.`);
+  }
 
   const requiredAppConfigEnv = [
     'EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID',

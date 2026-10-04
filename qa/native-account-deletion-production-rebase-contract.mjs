@@ -3,7 +3,7 @@ import path from 'node:path';
 
 const root = process.cwd();
 const migrationPath = path.join(root, 'supabase/migrations/20260919093000_hc_native_account_deletion_v3.sql');
-const workerPath = path.join(root, 'native/server/account-deletion-worker-v3.proposed.ts');
+const workerPath = path.join(root, 'supabase/functions/hc-native-account-deletion/index.ts');
 const sql = fs.readFileSync(migrationPath, 'utf8');
 const worker = fs.readFileSync(workerPath, 'utf8');
 
@@ -27,7 +27,9 @@ const checks = [
   ['Clerk worker uses current BAPI version', worker.includes("const CLERK_API_VERSION = '2026-05-12'")],
   ['Clerk ban happens before destructive cleanup', worker.indexOf("clerkMutation(clerkUserId, 'ban')") < worker.indexOf("'hc_jobseeker_apply_account_deletion_v2'")],
   ['Clerk delete only at terminal identity stage', worker.includes("if (identityAction === 'delete_clerk')") && worker.includes("clerkMutation(clerkUserId, 'delete')")],
-  ['worker endpoint has explicit bearer secret', worker.includes('HC_ACCOUNT_DELETION_WORKER_SECRET') && worker.includes("request.headers.get('Authorization')")],
+  ['worker endpoint has explicit Vault-backed worker secret', worker.includes("request.headers.get('x-hc-worker-secret')") && worker.includes("supabase.rpc('hc_native_worker_authorize_v1'") && worker.includes("p_worker: 'account_deletion'") && worker.indexOf("hc_native_worker_authorize_v1") < worker.indexOf("'hc_jobseeker_claim_account_deletion_v2'")],
+  ['worker uses only the Hoiku Color Clerk instance key', worker.includes("requiredEnv('CLERK_HOIKU_COLOR_SECRET_KEY')") && !worker.includes("'CLERK_SECRET_KEY'")],
+  ['Clerk instance is proven before any claim', worker.includes("throw new Error('CLERK_INSTANCE_MISMATCH')") && worker.indexOf('await assertHoikuColorClerkInstance()') < worker.indexOf("'hc_jobseeker_claim_account_deletion_v2'")],
 ];
 
 let failed = 0;

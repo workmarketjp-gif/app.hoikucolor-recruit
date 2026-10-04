@@ -3,7 +3,7 @@ import path from 'node:path';
 
 const root = process.cwd();
 const migration = fs.readFileSync(path.join(root, 'supabase/migrations/20260919073000_hc_native_push_pipeline_v4.sql'), 'utf8');
-const worker = fs.readFileSync(path.join(root, 'native/server/push-dispatch-worker-v3.proposed.ts'), 'utf8');
+const worker = fs.readFileSync(path.join(root, 'supabase/functions/hc-native-push-dispatch/index.ts'), 'utf8');
 const checks = [];
 const check = (name, ok) => {
   checks.push([name, Boolean(ok)]);
@@ -58,6 +58,7 @@ check('worker reconciles recent enqueue misses', /hc_mobile_reconcile_push_queue
 check('worker revalidates claim before provider call', /hc_mobile_validate_push_claim_v1/.test(worker));
 check('worker checks Expo receipts', /push\/getReceipts/.test(worker) && /hc_mobile_complete_push_receipt_v1/.test(worker));
 check('worker uses unique id per invocation', /crypto\.randomUUID\(\)/.test(worker));
+check('worker authenticates every invocation before queue work', worker.includes("request.headers.get('x-hc-worker-secret')") && worker.includes("p_worker: 'push'") && worker.indexOf("'hc_native_worker_authorize_v1'") < worker.indexOf('processDispatch(workerId)') && worker.includes("code: 'UNAUTHORIZED'"));
 check('migration is transactional', /^begin;/m.test(migration) && /commit;\s*$/.test(migration));
 
 console.log(`HC Native push pipeline v4 rebase contract passed (${checks.length}/${checks.length})`);
