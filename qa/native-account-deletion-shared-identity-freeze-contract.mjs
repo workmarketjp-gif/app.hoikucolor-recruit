@@ -3,7 +3,8 @@ import path from 'node:path';
 
 const root = process.cwd();
 const migrationPath = path.join(root, 'supabase/migrations/20260919103000_hc_native_account_deletion_write_freeze_v1.sql');
-const sql = fs.readFileSync(migrationPath, 'utf8');
+// Normalize CRLF so the contract behaves the same on Windows checkouts and CI.
+const sql = fs.readFileSync(migrationPath, 'utf8').replace(/\r\n/g, '\n');
 
 const checks = [
   ['requires account deletion v3', sql.includes('HC_ACCOUNT_DELETION_V3_REQUIRED') && sql.includes("to_regprocedure('hc_private.jobseeker_principal_hash_v3(text)')")],
@@ -38,7 +39,9 @@ const checks = [
   ['storage read policy intentionally untouched', !sql.includes('drop policy if exists hc_application_documents_storage_select')],
   ['no Hoiku Office/Poppy tables are frozen', !/trigger[\s\S]{0,120}\bon public\.ho_/i.test(sql) && !sql.includes('on public.hc_spot_assignments')],
   ['no shared schema privilege broadening', !/grant\s+.*\s+on\s+schema\s+(hc_private|ho_private)/i.test(sql) && !/revoke\s+all\s+on\s+schema\s+(hc_private|ho_private)/i.test(sql)],
-  ['freeze helpers not exposed to authenticated', sql.includes('revoke all on function hc_private.jobseeker_account_is_frozen_v1(text)') && sql.includes('from public, anon, authenticated')],
+  ['storage policy wrappers executable by authenticated like the canonical helpers', sql.includes('grant execute on function hc_private.color_application_document_object_can_write_with_deletion_freeze_v1(text)\n  to authenticated;') && sql.includes('grant execute on function hc_private.color_application_document_object_can_delete_with_deletion_freeze_v1(text)\n  to authenticated;')],
+  ['only the storage policy wrappers are granted to authenticated', (sql.match(/grant execute on function[^;]*to authenticated;/g) || []).length === 2],
+  ['freeze helpers not exposed to authenticated',sql.includes('revoke all on function hc_private.jobseeker_account_is_frozen_v1(text)') && sql.includes('from public, anon, authenticated')],
   ['user-visible fail-closed error is stable', sql.includes("'HC_ACCOUNT_DELETION_IN_PROGRESS'")],
 ];
 
