@@ -79,3 +79,9 @@ export function nativeAttentionMessageHref(summary: JobseekerAttentionSummary): 
   if (!applicationId || !UUID_PATTERN.test(applicationId)) return '/(tabs)/applications';
   return `/application/${applicationId}?focus=messages`;
 }
+
+export function nativeAttentionScoutHref(summary: JobseekerAttentionSummary): string {
+  const scoutId = summary.next_scout?.scout_id;
+  if (!scoutId || !UUID_PATTERN.test(scoutId)) return '/scouts';
+  return `/scouts?scoutId=${encodeURIComponent(scoutId)}`;
+}
