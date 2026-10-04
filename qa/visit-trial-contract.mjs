@@ -1,17 +1,19 @@
 import { readFileSync } from 'node:fs';
 
 const root = new URL('../', import.meta.url);
-const foundation = readFileSync(new URL('supabase/migrations/20260911030000_hc_visit_trial_booking.sql', root), 'utf8');
-const safeRead = readFileSync(new URL('supabase/migrations/20260912010256_hc_jobseeker_visit_reservation_safe_read_v1.sql', root), 'utf8');
-const safeSettings = readFileSync(new URL('supabase/migrations/20260912140000_hc_jobseeker_visit_settings_safe_read_v1.sql', root), 'utf8');
-const historyRouteSql = readFileSync(new URL('supabase/migrations/20260914040000_hc_jobseeker_visit_history_route_v1.sql', root), 'utf8');
-const repository = readFileSync(new URL('src/lib/visitRepository.ts', root), 'utf8');
-const ui = readFileSync(new URL('src/components/VisitTrialPanel.tsx', root), 'utf8');
-const route = readFileSync(new URL('src/VisitRouteRoot.tsx', root), 'utf8');
-const main = readFileSync(new URL('src/main.tsx', root), 'utf8');
-const notificationCenter = readFileSync(new URL('src/components/NotificationCenter.tsx', root), 'utf8');
-const navigation = readFileSync(new URL('src/components/VisitNavigationEnhancer.tsx', root), 'utf8');
-const app = readFileSync(new URL('src/App.tsx', root), 'utf8');
+// Normalize CRLF so the contract behaves the same on Windows checkouts and CI.
+const read = (relative) => readFileSync(new URL(relative, root), 'utf8').replace(/\r\n/g, '\n');
+const foundation = read('supabase/migrations/20260911030000_hc_visit_trial_booking.sql');
+const safeRead = read('supabase/migrations/20260912010256_hc_jobseeker_visit_reservation_safe_read_v1.sql');
+const safeSettings = read('supabase/migrations/20260912140000_hc_jobseeker_visit_settings_safe_read_v1.sql');
+const historyRouteSql = read('supabase/migrations/20260914040000_hc_jobseeker_visit_history_route_v1.sql');
+const repository = read('src/lib/visitRepository.ts');
+const ui = read('src/components/VisitTrialPanel.tsx');
+const route = read('src/VisitRouteRoot.tsx');
+const main = read('src/main.tsx');
+const notificationCenter = read('src/components/NotificationCenter.tsx');
+const navigation = read('src/components/VisitNavigationEnhancer.tsx');
+const app = read('src/App.tsx');
 
 const foundationMarkers = [
   'create table if not exists public.hc_visit_settings',
