@@ -1,5 +1,7 @@
-// PREPARED ONLY — Supabase Edge Function style worker.
-// No deployment is performed by this artifact.
+// Supabase Edge Function: hc-native-push-dispatch (deploy with verify_jwt=false).
+// Invoked only by pg_cron via hc_private.run_native_worker_cron_v1('push'), which
+// sends the Vault-held worker secret in `x-hc-worker-secret`; every request is
+// authenticated with public.hc_native_worker_authorize_v1 before any queue work.
 //
 // P0 guarantees:
 // - lock-screen content is generic and carries only notificationId;
@@ -266,7 +268,20 @@ async function processReceipts(workerId: string) {
   return results;
 }
 
-Deno.serve(async () => {
+function json(status: number, body: Record<string, unknown>) {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+Deno.serve(async (request: Request) => {
+  if (request.method !== 'POST') return json(405, { ok: false, code: 'METHOD_NOT_ALLOWED' });
+
+  const { data: authorized, error: authError } = await supabase.rpc('hc_native_worker_authorize_v1', {
+    p_worker: 'push',
+    p_secret: request.headers.get('x-hc-worker-secret') ?? '',
+  });
+  if (authError) return json(500, { ok: false, code: 'WORKER_AUTH_LOOKUP_FAILED' });
+  if (authorized !== true) return json(401, { ok: false, code: 'UNAUTHORIZED' });
+
   // Per-invocation ownership avoids concurrent requests in a warm isolate sharing
   // one claim identity.
   const workerId = `hc-native-push:${crypto.randomUUID()}`;
