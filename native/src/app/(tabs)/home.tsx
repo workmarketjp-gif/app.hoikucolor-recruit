@@ -2,6 +2,7 @@ import { useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { nativeAttentionScoutHref } from '../../lib/attentionApi';
 
 function Metric({ value, label }: { value: number; label: string }) {
   return (
@@ -39,6 +40,11 @@ export default function HomeScreen() {
           <Metric value={summary.unread_messages_count} label="未読連絡" />
           <Metric value={summary.pending_scouts_count} label="スカウト" />
         </View>
+        <Pressable style={styles.secondaryButton} onPress={() => router.push(nativeAttentionScoutHref(summary) as never)}>
+          <Text style={styles.secondaryButtonText}>
+            {summary.pending_scouts_count > 0 ? `スカウトを確認（${summary.pending_scouts_count}件）` : 'スカウトを見る'}
+          </Text>
+        </Pressable>
         {notifications.unreadCount != null ? (
           <Text style={styles.subtle}>通知センター未読 {notifications.unreadCount} 件</Text>
         ) : null}
@@ -81,6 +87,6 @@ const styles = StyleSheet.create({
   metricLabel: { fontSize: 12, color: '#606873', marginTop: 3 },
   primaryButton: { minHeight: 48, backgroundColor: '#191c20', borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
   primaryButtonText: { color: '#fff', fontWeight: '800' },
-  secondaryButton: { minHeight: 46, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
+  secondaryButton: { minHeight: 48, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
   secondaryButtonText: { fontWeight: '800' },
 });
