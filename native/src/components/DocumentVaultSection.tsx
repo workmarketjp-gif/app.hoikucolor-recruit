@@ -52,7 +52,6 @@ export function DocumentVaultSection() {
     userIdRef.current = null;
   }, []);
 
-
   const load = useCallback(async () => {
     if (!privacy.canAccessPrivateData()) return;
     const generation = ++loadGenerationRef.current;
@@ -90,6 +89,7 @@ export function DocumentVaultSection() {
     selectedType: JobseekerDocumentType,
     asset: CandidateDocumentAsset,
     pickerCacheGeneration: number,
+    replacement: JobseekerDocument | null = null,
   ) {
     try {
       await registerPendingDocumentPickerCache(pickerOwnerId, asset.uri, pickerCacheGeneration);
@@ -106,20 +106,24 @@ export function DocumentVaultSection() {
       userIdRef.current === pickerOwnerId &&
       privacy.canAccessPrivateData();
 
-    if (!pickerSessionStillValid) {
+    if (!pickerSessionStillValid || (replacement && replacement.jobseeker_clerk_user_id !== pickerOwnerId)) {
       try { await consumePendingDocumentPickerCache(pickerOwnerId, asset.uri); } catch {}
       return;
     }
 
-    setBusyId('upload');
+    setBusyId(replacement ? `replace-${replacement.id}` : 'upload');
     const pinned = await pinCandidateAction();
     if (!pinned || pinned.ownerId !== pickerOwnerId) {
       try { await consumePendingDocumentPickerCache(pickerOwnerId, asset.uri); } catch {}
       return;
     }
+
     const sameTypeExists = documents.some((item) => item.document_type === selectedType);
-    await uploadPickedJobseekerDocument(pinned.client, pickerOwnerId, selectedType, asset, {
-      makeDefault: !sameTypeExists,
+    const saved = await uploadPickedJobseekerDocument(pinned.client, pickerOwnerId, selectedType, asset, {
+      // During a replacement the old default stays authoritative until the new
+      // source is canonically visible. This prevents a failed/ambiguous upload
+      // from removing or silently replacing the last known-good default.
+      makeDefault: !replacement && !sameTypeExists,
       canStartUpload: () =>
         pinned.isCurrent() &&
         mountedRef.current &&
@@ -128,18 +132,78 @@ export function DocumentVaultSection() {
     });
 
     if (!pinned.isCurrent() || !mountedRef.current || userIdRef.current !== pickerOwnerId || !privacy.canAccessPrivateData()) return;
+
+    if (replacement) {
+      // Never delete or mutate the old document until the newly uploaded source
+      // is visible through the canonical candidate-scoped read path.
+      let canonical = await listJobseekerDocuments(pinned.client);
+      if (!pinned.isCurrent()) return;
+      let canonicalSaved = canonical.find((item) => item.id === saved.id) ?? null;
+      let canonicalOld = canonical.find((item) => item.id === replacement.id) ?? null;
+      if (!canonicalSaved || canonicalSaved.jobseeker_clerk_user_id !== pickerOwnerId || canonicalSaved.document_type !== replacement.document_type) {
+        throw new Error('新しい書類の保存結果を確認できませんでした。古い書類は変更していません。');
+      }
+
+      if (replacement.is_default && !canonicalSaved.is_default) {
+        try {
+          await setDefaultJobseekerDocument(pinned.client, canonicalSaved.id);
+        } catch (error) {
+          // A dropped response may happen after the server committed the default
+          // switch. Re-read canonical state before deciding that it failed.
+          canonical = await listJobseekerDocuments(pinned.client);
+          canonicalSaved = canonical.find((item) => item.id === saved.id) ?? null;
+          canonicalOld = canonical.find((item) => item.id === replacement.id) ?? null;
+          if (!canonicalSaved?.is_default) throw error;
+        }
+      }
+
+      if (!pinned.isCurrent() || !mountedRef.current || userIdRef.current !== pickerOwnerId || !privacy.canAccessPrivateData()) return;
+
+      if (canonicalOld) {
+        try {
+          await deleteJobseekerDocument(pinned.client, canonicalOld);
+        } catch {
+          // Deletion can also finish server-side before a network response is
+          // lost. Recover from canonical state; otherwise keep both sources so
+          // a restart can never present a false "replacement complete" state.
+        }
+      }
+
+      canonical = await listJobseekerDocuments(pinned.client);
+      if (!pinned.isCurrent()) return;
+      canonicalSaved = canonical.find((item) => item.id === saved.id) ?? null;
+      canonicalOld = canonical.find((item) => item.id === replacement.id) ?? null;
+      setDocuments(canonical);
+
+      if (!canonicalSaved) {
+        Alert.alert('差し替え結果を確認できません', '新しい書類の状態を確認できませんでした。古い書類は削除しません。一覧を再読み込みして確認してください。');
+        return;
+      }
+      if (replacement.is_default && !canonicalSaved.is_default) {
+        Alert.alert('差し替えを完了できませんでした', '新しい書類は保存されていますが、応募時に使う書類への切り替えを確認できませんでした。古い書類は残しています。');
+        return;
+      }
+      if (canonicalOld) {
+        Alert.alert('新しい書類は保存済みです', '新しい書類は保存されていますが、古い書類の削除だけ完了できませんでした。二重アップロードせず、一覧から古い書類を削除してください。');
+        return;
+      }
+
+      Alert.alert('差し替えました', `${labels[selectedType]}を新しい書類に差し替えました。提出済みの応募書類コピーは変更されません。`);
+      return;
+    }
+
     await load();
     if (mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
       Alert.alert('保存しました', `${labels[selectedType]}を応募書類として保存しました。`);
     }
   }
 
-  async function pickAndUpload() {
+  async function pickAndUpload(replacement: JobseekerDocument | null = null) {
     const pickerOwnerId = userIdRef.current;
-    const selectedType = documentType;
+    const selectedType = replacement?.document_type ?? documentType;
     if (!pickerOwnerId || busyId || !privacy.canAccessPrivateData()) return;
     const pickerCacheGeneration = captureDocumentPickerCacheGeneration();
-    setBusyId('picker');
+    setBusyId(replacement ? `replace-picker-${replacement.id}` : 'picker');
 
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -154,21 +218,21 @@ export function DocumentVaultSection() {
         name: picked.name,
         size: picked.size ?? null,
         mimeType: picked.mimeType ?? null,
-      }, pickerCacheGeneration);
+      }, pickerCacheGeneration, replacement);
     } catch (error) {
       if (mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
-        Alert.alert('書類を保存できませんでした', String((error as { message?: unknown })?.message ?? error));
+        Alert.alert(replacement ? '書類を差し替えできませんでした' : '書類を保存できませんでした', String((error as { message?: unknown })?.message ?? error));
       }
     } finally {
       if (mountedRef.current) setBusyId(null);
     }
   }
 
-  async function captureAndUpload() {
+  async function captureAndUpload(replacement: JobseekerDocument | null = null) {
     const pickerOwnerId = userIdRef.current;
-    const selectedType = documentType;
+    const selectedType = replacement?.document_type ?? documentType;
     if (!pickerOwnerId || busyId || !privacy.canAccessPrivateData()) return;
-    setBusyId('camera-permission');
+    setBusyId(replacement ? `replace-camera-permission-${replacement.id}` : 'camera-permission');
 
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -186,7 +250,7 @@ export function DocumentVaultSection() {
       }
 
       const pickerCacheGeneration = captureDocumentPickerCacheGeneration();
-      setBusyId('camera');
+      setBusyId(replacement ? `replace-camera-${replacement.id}` : 'camera');
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
         cameraType: ImagePicker.CameraType.back,
@@ -200,10 +264,10 @@ export function DocumentVaultSection() {
         name: captured.fileName || `${selectedType}-${Date.now()}.jpg`,
         size: captured.fileSize ?? null,
         mimeType: captured.mimeType || 'image/jpeg',
-      }, pickerCacheGeneration);
+      }, pickerCacheGeneration, replacement);
     } catch (error) {
       if (mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
-        Alert.alert('撮影した書類を保存できませんでした', String((error as { message?: unknown })?.message ?? error));
+        Alert.alert(replacement ? '撮影した書類を差し替えできませんでした' : '撮影した書類を保存できませんでした', String((error as { message?: unknown })?.message ?? error));
       }
     } finally {
       if (mountedRef.current) setBusyId(null);
@@ -298,6 +362,8 @@ export function DocumentVaultSection() {
       </View>
       <View style={{ gap: 8 }}>
         <Button testID={`document-vault-open-${document.id}`} title="開く" disabled={busyId !== null} onPress={() => void open(document)} />
+        <Button testID={`document-vault-replace-file-${document.id}`} title="ファイルで差し替え" disabled={busyId !== null} onPress={() => void pickAndUpload(document)} />
+        <Button testID={`document-vault-replace-camera-${document.id}`} title="撮影して差し替え" disabled={busyId !== null} onPress={() => void captureAndUpload(document)} />
         {!document.is_default ? <Button testID={`document-vault-default-${document.id}`} title="応募時に使う" disabled={busyId !== null} onPress={() => void makeDefault(document)} /> : null}
         <Button testID={`document-vault-delete-${document.id}`} title="削除" color="#9f2d2d" disabled={busyId !== null} onPress={() => confirmDelete(document)} />
       </View>

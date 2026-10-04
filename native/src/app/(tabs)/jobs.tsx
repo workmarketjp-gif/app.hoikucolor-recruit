@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
@@ -24,6 +25,7 @@ function JobCard({
   busy,
   onToggleSaved,
   onToggleCompare,
+  onOpen,
 }: {
   key?: string;
   job: JobseekerJob;
@@ -32,6 +34,7 @@ function JobCard({
   busy: boolean;
   onToggleSaved: () => void;
   onToggleCompare: () => void;
+  onOpen: () => void;
 }) {
   return (
     <View style={styles.jobCard}>
@@ -43,6 +46,9 @@ function JobCard({
         {Number(job.verified_workplace?.verified_metric_count || 0) > 0 ? <Text style={styles.badge}>HO実績</Text> : null}
         {Number(job.verified_finance?.verified_metric_count || 0) > 0 ? <Text style={styles.badge}>HF実績</Text> : null}
       </View>
+      <Pressable style={styles.primaryButton} onPress={onOpen}>
+        <Text style={styles.primaryButtonText}>詳細・応募を見る</Text>
+      </Pressable>
       <View style={styles.actions}>
         <Pressable disabled={busy} style={styles.secondaryButton} onPress={onToggleSaved}>
           <Text style={styles.secondaryButtonText}>{saved ? '保存解除' : '保存'}</Text>
@@ -56,6 +62,7 @@ function JobCard({
 }
 
 export default function JobsScreen() {
+  const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();
   const [query, setQuery] = useState('');
   const [jobs, setJobs] = useState<JobseekerJob[]>([]);
@@ -193,6 +200,7 @@ export default function JobsScreen() {
           busy={busyJobId === job.id}
           onToggleSaved={() => void toggleSaved(job.id)}
           onToggleCompare={() => toggleCompare(job.id)}
+          onOpen={() => router.push(`/job/${job.id}` as never)}
         />
       ))}
 
@@ -213,7 +221,7 @@ const styles = StyleSheet.create({
   compareTitle: { fontWeight: '800' },
   sectionTitle: { fontSize: 18, fontWeight: '800' },
   input: { borderWidth: 1, borderColor: '#d7dce2', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16 },
-  primaryButton: { minHeight: 46, borderRadius: 12, backgroundColor: '#191c20', alignItems: 'center', justifyContent: 'center' },
+  primaryButton: { minHeight: 46, borderRadius: 12, backgroundColor: '#191c20', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   primaryButtonText: { color: '#fff', fontWeight: '800' },
   jobCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 7 },
   jobTitle: { fontSize: 18, fontWeight: '800' },
@@ -222,7 +230,7 @@ const styles = StyleSheet.create({
   salary: { fontWeight: '800', marginTop: 3 },
   badges: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   badge: { backgroundColor: '#edf4ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, fontSize: 12, fontWeight: '700' },
-  actions: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  actions: { flexDirection: 'row', gap: 8, marginTop: 2 },
   secondaryButton: { flex: 1, minHeight: 42, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   selectedButton: { backgroundColor: '#eef0f3' },
   secondaryButtonWide: { minHeight: 48, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
