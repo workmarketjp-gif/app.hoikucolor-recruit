@@ -39,7 +39,10 @@
       "supportsTablet": false,
       "bundleIdentifier": "jp.hoikucolor.jobseeker",
       "buildNumber": "1",
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "jp.hoikucolor.jobseeker",

@@ -51,6 +51,8 @@ jobs:
         run: node qa/native-push-pipeline-rebase-contract.mjs
       - name: Guard Native worker runtime
         run: node qa/native-worker-runtime-contract.mjs
+      - name: Guard Native prelaunch build allowlist
+        run: node qa/native-release-prelaunch-allowlist-contract.mjs
       - name: Guard Native push client ABI
         run: node qa/native-push-client-core-contract.mjs
       - name: Guard Native account deletion production rebase
