@@ -139,19 +139,48 @@ export function AccountDeletionProvider({ children }: PropsWithChildren) {
     try {
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('ACCOUNT_DELETION_SESSION_UNAVAILABLE');
-      const next = await requestAccountDeletion(pinned.client);
+
+      let next: AccountDeletionRequest;
+      try {
+        next = await requestAccountDeletion(pinned.client);
+      } catch (requestError) {
+        if (!pinned.isCurrent()) throw new Error('CANDIDATE_SESSION_CHANGED');
+
+        // The request RPC is server-idempotent, but a transport failure can still
+        // hide a committed deletion request from this process. Do not re-send the
+        // mutation blindly. Re-read the canonical request first.
+        try {
+          const reconciled = await getAccountDeletionRequest(pinned.client);
+          if (!pinned.isCurrent()) throw new Error('CANDIDATE_SESSION_CHANGED');
+
+          if (
+            reconciled &&
+            getAccountDeletionUiPolicy(reconciled.status).quarantineCandidateDeviceState
+          ) {
+            return await applyCanonicalRequest(pinned, reconciled);
+          }
+
+          throw requestError;
+        } catch (reconcileError) {
+          if (reconcileError === requestError) throw requestError;
+          if (!pinned.isCurrent()) throw new Error('CANDIDATE_SESSION_CHANGED');
+
+          // Both the mutation result and its canonical re-read are unknown.
+          // Hide Candidate-private device state and Push presentation immediately.
+          await ensureLocalQuarantine(pinned.ownerId).catch(() => undefined);
+          throw new Error('ACCOUNT_DELETION_REQUEST_RESULT_UNKNOWN');
+        }
+      }
+
       if (!pinned.isCurrent()) throw new Error('CANDIDATE_SESSION_CHANGED');
-      setRequest(next);
-      await ensureLocalQuarantine(pinned.ownerId);
-      if (!pinned.isCurrent()) throw new Error('CANDIDATE_SESSION_CHANGED');
-      return next;
+      return await applyCanonicalRequest(pinned, next);
     } catch (error) {
       setLastError(errorMessage(error));
       throw error;
     } finally {
       setBusy(false);
     }
-  }, [ensureLocalQuarantine, pinCandidateAction]);
+  }, [applyCanonicalRequest, ensureLocalQuarantine, pinCandidateAction]);
 
   const cancelDeletion = useCallback(async () => {
     setBusy(true);
