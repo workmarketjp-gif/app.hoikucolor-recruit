@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
-const sql = fs.readFileSync(path.join(root, 'supabase/migrations/20261005090000_hc_native_release_prelaunch_allowlist_v1.sql'), 'utf8').replace(/\r\n/g, '\n');
+const sql = fs.readFileSync(path.join(root, 'supabase/migrations/20261005034946_hc_native_release_prelaunch_allowlist_v1.sql'), 'utf8').replace(/\r\n/g, '\n');
 
 const checks = [];
 const check = (name, ok) => {

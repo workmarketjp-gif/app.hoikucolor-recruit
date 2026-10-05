@@ -58,6 +58,10 @@ export type JobSearchPage = {
   nextCursor: JobSearchCursor | null;
 };
 
+export type SavedJobWithStatus = JobseekerJob & {
+  is_open: boolean;
+};
+
 export type JobseekerProfileInput = {
   email: string | null;
   name: string | null;
@@ -189,6 +193,23 @@ export async function listSavedJobs(client: SupabaseClient): Promise<JobseekerJo
   if (error) throw error;
   if (!Array.isArray(data)) throw new Error('保存した求人を確認できませんでした。');
   return data as JobseekerJob[];
+}
+
+export async function listSavedJobsWithStatus(client: SupabaseClient): Promise<SavedJobWithStatus[]> {
+  const { data, error } = await client.rpc('hc_jobseeker_list_saved_jobs_with_status');
+  if (error) throw error;
+  if (!Array.isArray(data)) throw new Error('保存した求人を確認できませんでした。');
+
+  return data.map((row) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      throw new Error('保存した求人を確認できませんでした。');
+    }
+    const job = row as Partial<SavedJobWithStatus>;
+    if (typeof job.id !== 'string' || !UUID_PATTERN.test(job.id) || typeof job.is_open !== 'boolean') {
+      throw new Error('保存した求人を確認できませんでした。');
+    }
+    return row as SavedJobWithStatus;
+  });
 }
 
 export async function saveJob(client: SupabaseClient, jobId: string): Promise<void> {
