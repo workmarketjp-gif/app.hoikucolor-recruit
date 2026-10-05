@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Hoiku Color",
-    "slug": "hoiku-color-jobseeker",
+    "slug": "hoiku-color",
     "version": "0.1.0",
     "scheme": "hoikucolor",
     "orientation": "portrait",
@@ -39,7 +39,10 @@
       "supportsTablet": false,
       "bundleIdentifier": "jp.hoikucolor.jobseeker",
       "buildNumber": "1",
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "jp.hoikucolor.jobseeker",
@@ -47,8 +50,10 @@
     },
     "extra": {
       "eas": {
-        "projectId": "SET_EAS_PROJECT_ID_BEFORE_BUILD"
-      }
-    }
+        "projectId": "507c2498-2098-4e4c-9699-75c494f00c47"
+      },
+      "router": {}
+    },
+    "owner": "workmarketjp"
   }
 }
