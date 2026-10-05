@@ -38,6 +38,12 @@ jobs:
         run: npm run test:camera-document-capture
       - name: Guard candidate message safe read
         run: node qa/jobseeker-message-safe-read-contract.mjs
+      - name: Guard Web session/auth and state handling
+        run: node qa/jobseeker-web-session-auth-contract.mjs
+      - name: Candidate mobile E2E (375/390/393/430)
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
       - name: Guard Native mobile foundation production rebase
         run: node qa/native-mobile-foundation-rebase-contract.mjs
       - name: Guard Native backend rollout bundle

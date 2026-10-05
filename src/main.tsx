@@ -1,5 +1,6 @@
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
+import { AppLoading } from './components/AppLoading';
 import { AttentionSummaryEnhancer } from './components/AttentionSummaryEnhancer';
 import { CompareNavigationEnhancer } from './components/CompareNavigationEnhancer';
 import { ExternalJobReturnEnhancer } from './components/ExternalJobReturnEnhancer';
@@ -11,6 +12,7 @@ import { VisitNavigationEnhancer } from './components/VisitNavigationEnhancer';
 import './styles.css';
 import './verified-workplace.css';
 import './mobile-hardening.css';
+import './candidate-shell.css';
 
 const AppRoot = lazy(() => import('./AppRoot').then((module) => ({ default: module.AppRoot })));
 const CompareRouteRoot = lazy(() => import('./CompareRouteRoot').then((module) => ({ default: module.CompareRouteRoot })));
@@ -28,7 +30,7 @@ const root = window.location.pathname.startsWith('/compare') ? <CompareRouteRoot
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <>
-      <Suspense fallback={<div className="centered-state"><span className="loading-ring" /><strong>Hoiku Colorを読み込んでいます</strong></div>}>
+      <Suspense fallback={<AppLoading />}>
         {root}
       </Suspense>
       <ExternalJobReturnEnhancer />

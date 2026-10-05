@@ -1,7 +1,9 @@
 import { ClerkProvider, useAuth, useClerk, useSession, useUser } from '@clerk/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
+import { AppLoading } from './components/AppLoading';
+import { CandidateShell } from './components/CandidateShell';
 import { NotificationCenter } from './components/NotificationCenter';
 import { loadHoikuColorClerkPublishableKey } from './lib/clerkConfig';
 import { getProfile, submitApplication } from './lib/recruitRepository';
@@ -36,7 +38,7 @@ export function SpotJobsRouteRoot() {
   }, []);
 
   if (error) return <SpotRouteState title="ログイン設定を読み込めませんでした" body={error} action="再読み込み" onAction={() => window.location.reload()} />;
-  if (!key) return <SpotRouteState title="Hoiku Color" body="ログイン設定を読み込んでいます" loading />;
+  if (!key) return <AppLoading />;
 
   return (
     <ClerkProvider publishableKey={key} signInUrl="/login" signUpUrl="/signup" signInFallbackRedirectUrl="/spot-jobs" signUpFallbackRedirectUrl="/spot-jobs">
@@ -50,7 +52,6 @@ function SpotRouteGate() {
   const { session } = useSession();
   const { user } = useUser();
   const { signOut } = useClerk();
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [jobs, setJobs] = useState<SpotJobListing[]>([]);
   const [assignments, setAssignments] = useState<SpotAssignment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,7 +60,7 @@ function SpotRouteGate() {
   const mountedRef = useRef(true);
   const handledAssignmentRef = useRef<string | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!session) {
       setSupabaseAccessTokenGetter(null);
       return;
@@ -145,51 +146,24 @@ function SpotRouteGate() {
     }
   };
 
-  if (!isLoaded || !isSignedIn) return <SpotRouteState title="Hoiku Color" body="ログイン状態を確認しています" loading />;
+  if (!isLoaded || !isSignedIn) return <AppLoading />;
   if (user?.unsafeMetadata?.hoikuColorAccountType === 'nursery') {
     return <SpotRouteState title="園・法人アカウントです" body="園・法人の管理画面はHoiku Poppyをご利用ください。" action="Hoiku Poppyを開く" onAction={() => window.location.assign(poppyUrl)} />;
   }
 
   const displayName = user?.fullName || user?.firstName || 'ゲスト';
-  const logout = async () => {
-    if (!window.confirm('Hoiku Colorからログアウトしますか？')) return;
-    await signOut({ redirectUrl: '/login' });
-  };
 
   return (
-    <div className="app-shell spot-route-shell">
-      <aside className={`sidebar ${mobileOpen ? 'is-open' : ''}`}>
-        <button className="mobile-close" onClick={() => setMobileOpen(false)} aria-label="メニューを閉じる"><Icon name="close" /></button>
-        <a className="sidebar-brand" href="/"><Brand /></a>
-        <span className="nav-label">MY PAGE</span>
-        <nav className="side-nav" aria-label="マイページ">
-          {navItems.map((item) => (
-            <a key={item.href} className={`nav-item ${item.href === '/spot-jobs' ? 'active' : ''}`} href={item.href}>
-              <Icon name={item.icon} size={18} /><span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-        <div className="sidebar-public">
-          <span>HOIKU COLOR</span><strong>求人サイトを見る</strong>
-          <a href={`${publicUrl}/jobs`} target="_blank" rel="noreferrer">公開サイトを開く <Icon name="external" size={14} /></a>
-        </div>
-        <div className="account-card">
-          <div className="account-avatar">{displayName.slice(0, 1)}</div>
-          <div><strong>{displayName}</strong><small>{user?.primaryEmailAddress?.emailAddress || ''}</small></div>
-          <button type="button" title="ログアウト" onClick={() => void logout()}><Icon name="logout" size={17} /></button>
-        </div>
-      </aside>
-      {mobileOpen && <button className="sidebar-scrim" onClick={() => setMobileOpen(false)} aria-label="メニューを閉じる" />}
-
-      <main className="main-column">
-        <header className="topbar">
-          <button className="mobile-menu" onClick={() => setMobileOpen(true)} aria-label="メニュー"><Icon name="menu" /></button>
-          <div className="mobile-brand"><Brand compact /></div><div className="topbar-spacer" />
-          <a className="public-link" href={`${publicUrl}/jobs`} target="_blank" rel="noreferrer">求人サイト <Icon name="external" size={14} /></a>
-          <NotificationCenter onNavigate={(target) => window.location.assign(target)} />
-        </header>
-
-        <section className="content spot-route-content">
+    <CandidateShell
+      active={'jobs'}
+      title="スポット勤務"
+      name={displayName}
+      email={user?.primaryEmailAddress?.emailAddress ?? null}
+      onSignOut={() => signOut({ redirectUrl: '/login' })}
+      notification={<NotificationCenter onNavigate={(target) => window.location.assign(target)} />}
+      className="spot-route-shell"
+    >
+        <section className="spot-route-content">
           <header className="page-heading spot-route-heading">
             <div><span className="eyebrow">ONE-DAY WORK</span><h1>スポット求人</h1><p>勤務日・時間・時給・休憩を確認して、1日単位の勤務に応募できます。通常求人とは分けて表示しています。</p></div>
             <a className="secondary-button" href="/jobs"><Icon name="search" size={15} /> 通常求人を見る</a>
@@ -218,8 +192,7 @@ function SpotRouteGate() {
             </>
           )}
         </section>
-      </main>
-    </div>
+    </CandidateShell>
   );
 }
 

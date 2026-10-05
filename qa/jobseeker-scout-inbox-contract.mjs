@@ -7,8 +7,10 @@ const routeMigration = fs.readFileSync('supabase/migrations/20260912051000_hc_jo
 const repository = fs.readFileSync('src/lib/scoutInboxRepository.ts','utf8');
 const panel = fs.readFileSync('src/components/ScoutInbox.tsx','utf8');
 const notificationCenter = fs.readFileSync('src/components/NotificationCenter.tsx','utf8');
+const homeApp = fs.readFileSync('src/App.tsx','utf8');
 const vault = fs.readFileSync('src/components/DocumentVaultPanel.tsx','utf8');
 const scoutRoute = fs.readFileSync('src/ScoutRouteRoot.tsx','utf8');
+const candidateShell = fs.readFileSync('src/components/CandidateShell.tsx','utf8');
 const main = fs.readFileSync('src/main.tsx','utf8');
 
 function expect(condition,message){ if(!condition) throw new Error(message); }
@@ -39,14 +41,17 @@ expect(panel.includes('scrollIntoView') && panel.includes('is-targeted'), 'notif
 expect(panel.includes('setInterval') && panel.includes('visibilitychange'), 'scout inbox must refresh while the signed-in app remains open');
 expect(notificationCenter.includes("item.notification_type === 'scout_received'"), 'notification center must special-case scout deep links');
 expect(notificationCenter.includes("return `/scouts${query}#scout-inbox`"), 'notification center must route scout notifications to /scouts');
-expect(notificationCenter.includes('listJobseekerScouts') && notificationCenter.includes("item.scout_status === 'pending'"), 'topbar scout shortcut must expose the pending count');
+// The header no longer carries a scout shortcut (an unexplained sparkle icon); pending
+// scouts are surfaced on Home from the authenticated attention summary instead.
+expect(!notificationCenter.includes('listJobseekerScouts') && !notificationCenter.includes('scout-shortcut'), 'the header must not poll scouts or render a scout shortcut');
+expect(homeApp.includes('pending_scouts_count') && homeApp.includes('href="/scouts"'), 'Home must surface pending scouts and link to the scout inbox');
 expect(notificationCenter.includes("target.startsWith('/scouts')"), 'notification navigation must preserve the dedicated scout deep link');
 expect(vault.includes('<ScoutInbox />'), 'scout inbox must remain reachable from the candidate profile');
 expect(main.includes("window.location.pathname.startsWith('/scouts') ? <ScoutRouteRoot /> : <AppRoot />"), 'main entry must route /scouts to the dedicated authenticated page');
 expect(scoutRoute.includes('<ScoutInbox />'), 'dedicated scout page must render the inbox');
 expect(scoutRoute.includes('<ScoutPrivacyPanel />'), 'dedicated scout page must expose privacy controls');
 expect(scoutRoute.includes('<ProfileMatchingPreferencesPanel />'), 'dedicated scout page must expose matching preferences');
-expect(scoutRoute.includes("item.href === '/scouts' ? 'active' : ''"), 'dedicated scout page navigation must identify the active section');
+expect(scoutRoute.includes('<CandidateShell') && scoutRoute.includes('title="スカウト"') && candidateShell.includes("{ href: '/scouts', label: 'スカウト' }") && candidateShell.includes("window.location.pathname.startsWith(link.href)") && candidateShell.includes("aria-current={isActive ? 'page' : undefined}"), 'dedicated scout page navigation must identify the active section');
 expect(scoutRoute.includes('setSupabaseAccessTokenGetter(() => session.getToken())'), 'dedicated scout page must use the signed-in Clerk token for Supabase');
 
 console.log('jobseeker scout inbox contract: OK');
