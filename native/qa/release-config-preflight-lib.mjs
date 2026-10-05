@@ -4,6 +4,7 @@ import path from 'node:path';
 const REQUIRED_PLUGINS = ['expo-router', 'expo-secure-store', 'expo-local-authentication', '@clerk/expo', 'expo-notifications', 'expo-image-picker'];
 const GOOGLE_ID_RE = /^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const CANONICAL_EAS_PROJECT_ID = '507c2498-2098-4e4c-9699-75c494f00c47';
 const PLACEHOLDER_RE = /(^|[_\s])(set|todo|replace|placeholder|example)([_\s]|$)|your[-_]/i;
 
 function parseDotEnv(content) {
@@ -75,7 +76,8 @@ export function validateReleaseConfig({ rootDir, env, mode = 'production' }) {
   };
 
   check(expo.name === 'Hoiku Color', 'APP_NAME', 'Store app name must remain Hoiku Color.');
-  check(expo.slug === 'hoiku-color-jobseeker', 'APP_SLUG', 'Expo slug must remain the dedicated jobseeker app slug.');
+  check(expo.slug === 'hoiku-color', 'APP_SLUG', 'Expo slug must match the EAS project @workmarketjp/hoiku-color.');
+  check(expo.owner === 'workmarketjp', 'APP_OWNER', 'Expo owner must be the workmarketjp EAS account.');
   check(expo.scheme === 'hoikucolor', 'APP_SCHEME', 'Dedicated deep-link scheme must be hoikucolor.');
   check(expo.ios?.bundleIdentifier === 'jp.hoikucolor.jobseeker', 'IOS_BUNDLE_ID', 'iOS bundle identifier must be the independent jobseeker app id.');
   check(expo.android?.package === 'jp.hoikucolor.jobseeker', 'ANDROID_PACKAGE', 'Android package must be the independent jobseeker app id.');
@@ -96,6 +98,7 @@ export function validateReleaseConfig({ rootDir, env, mode = 'production' }) {
 
   const projectId = String(expo.extra?.eas?.projectId ?? '');
   check(UUID_RE.test(projectId) && !PLACEHOLDER_RE.test(projectId), 'EAS_PROJECT_ID', 'EAS projectId must be the real UUID; placeholders are release blockers.');
+  check(projectId === CANONICAL_EAS_PROJECT_ID, 'EAS_PROJECT_ID_CANONICAL', 'EAS projectId must be the canonical @workmarketjp/hoiku-color project.');
   check(eas.build?.production?.distribution === 'store', 'EAS_PRODUCTION_DISTRIBUTION', 'Production EAS profile must target store distribution.');
   const preview = eas.build?.preview;
   check(!preview || (preview.distribution === 'internal' && preview.developmentClient !== true), 'PREVIEW_PROFILE_INTERNAL_ONLY', 'Preview builds must stay internal-distribution release builds; Store/Release Gates own publication.');
@@ -131,11 +134,16 @@ export function validateReleaseConfig({ rootDir, env, mode = 'production' }) {
   const googleIos = env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID ?? '';
   const googleAndroid = env.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID ?? '';
   const googleIosScheme = env.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME ?? '';
-  check(GOOGLE_ID_RE.test(googleWeb) && !PLACEHOLDER_RE.test(googleWeb), 'GOOGLE_WEB_CLIENT_ID', 'Google Web client ID is required for Clerk token verification.');
-  check(GOOGLE_ID_RE.test(googleIos) && !PLACEHOLDER_RE.test(googleIos), 'GOOGLE_IOS_CLIENT_ID', 'Google iOS client ID is required for native iOS sign-in.');
-  check(GOOGLE_ID_RE.test(googleAndroid) && !PLACEHOLDER_RE.test(googleAndroid), 'GOOGLE_ANDROID_CLIENT_ID', 'Google Android client ID is required for native Android sign-in.');
+  // Store releases must carry complete Google sign-in config. Development (dev-client QA)
+  // builds use email sign-in only, so Google IDs are optional there but must be valid
+  // whenever they are supplied.
+  const googleSupplied = Boolean(googleWeb || googleIos || googleAndroid || googleIosScheme);
+  const googleCheck = mode === 'production' || googleSupplied ? check : warn;
+  googleCheck(GOOGLE_ID_RE.test(googleWeb) && !PLACEHOLDER_RE.test(googleWeb), 'GOOGLE_WEB_CLIENT_ID', 'Google Web client ID is required for Clerk token verification.');
+  googleCheck(GOOGLE_ID_RE.test(googleIos) && !PLACEHOLDER_RE.test(googleIos), 'GOOGLE_IOS_CLIENT_ID', 'Google iOS client ID is required for native iOS sign-in.');
+  googleCheck(GOOGLE_ID_RE.test(googleAndroid) && !PLACEHOLDER_RE.test(googleAndroid), 'GOOGLE_ANDROID_CLIENT_ID', 'Google Android client ID is required for native Android sign-in.');
   const expectedIosScheme = expectedGoogleIosScheme(googleIos);
-  check(Boolean(expectedIosScheme) && googleIosScheme === expectedIosScheme, 'GOOGLE_IOS_URL_SCHEME', 'iOS Google URL scheme must exactly match the iOS client ID reverse scheme.');
+  googleCheck(Boolean(expectedIosScheme) && googleIosScheme === expectedIosScheme, 'GOOGLE_IOS_URL_SCHEME', 'iOS Google URL scheme must exactly match the iOS client ID reverse scheme.');
 
   if (mode === 'production') {
     for (const [key, label] of [

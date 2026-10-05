@@ -14,7 +14,7 @@ const checks = [
   ['opaque notification route resolver matches push pipeline', client.includes("hc_jobseeker_resolve_notification_route_v1") && pipeline.includes('hc_jobseeker_resolve_notification_route_v1')],
   ['client does not navigate from push payload URL', !client.includes('content.data?.url') && !client.includes('link_url as')],
   ['push registration requires physical device', client.includes('Device.isDevice') && client.includes('PHYSICAL_DEVICE_REQUIRED')],
-  ['Expo project id fails closed before signed push registration', client.includes('EAS_PROJECT_ID_REQUIRED') && appJson.includes('SET_EAS_PROJECT_ID_BEFORE_BUILD')],
+  ['Expo project id is canonical and the client still fails closed without one', client.includes('EAS_PROJECT_ID_REQUIRED') && appJson.includes('"projectId": "507c2498-2098-4e4c-9699-75c494f00c47"') && !appJson.includes('SET_EAS_PROJECT_ID_BEFORE_BUILD')],
   ['candidate installation id is cryptographic and stable', client.includes('Crypto.randomUUID()') && client.includes('INSTALLATION_ID_KEY') && !client.includes('deleteItemAsync(INSTALLATION_ID_KEY)')],
   ['token binding is quarantined across account/session boundaries', client.includes('blockPushBindingOperations') && client.includes('settlePushBindingOperations') && client.includes('PUSH_BINDING_QUARANTINED')],
   ['candidate badge writes are generation guarded', client.includes('setCandidateNotificationBadgeCount') && client.includes('pendingPresentation')],
