@@ -2,6 +2,7 @@ import { createPortal } from 'react-dom';
 import { useEffect, useState } from 'react';
 import { Icon } from './Icon';
 import { listJobseekerScouts } from '../lib/scoutInboxRepository';
+import { hasActiveSession, isAuthNotReady } from '../lib/supabase';
 import './ScoutNavigationEnhancer.css';
 
 type Targets = {
@@ -34,13 +35,21 @@ export function ScoutNavigationEnhancer() {
   useEffect(() => {
     let stopped = false;
     let retryTimer: number | null = null;
+    let failures = 0;
 
     const load = async () => {
+      if (retryTimer !== null) { window.clearTimeout(retryTimer); retryTimer = null; }
+      // Signed-out tabs (login page, expired session) must not poll the API at all.
+      if (!hasActiveSession()) return;
       try {
         const scouts = await listJobseekerScouts();
+        failures = 0;
         if (!stopped) setPendingCount(scouts.filter((scout) => scout.scout_status === 'pending').length);
-      } catch {
-        if (!stopped) retryTimer = window.setTimeout(load, 3000);
+      } catch (error) {
+        // Never hot-loop: back off 5s, 10s, 20s … capped at 5 minutes; stop on auth errors.
+        if (stopped || isAuthNotReady(error)) return;
+        failures += 1;
+        retryTimer = window.setTimeout(load, Math.min(300_000, 5_000 * 2 ** (failures - 1)));
       }
     };
 

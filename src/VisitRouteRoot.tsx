@@ -1,7 +1,9 @@
 import { ClerkProvider, useAuth, useClerk, useSession, useUser } from '@clerk/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
+import { AppLoading } from './components/AppLoading';
+import { CandidateShell } from './components/CandidateShell';
 import { NotificationCenter } from './components/NotificationCenter';
 import { loadHoikuColorClerkPublishableKey } from './lib/clerkConfig';
 import { setSupabaseAccessTokenGetter } from './lib/supabase';
@@ -75,7 +77,7 @@ export function VisitRouteRoot() {
   }, []);
 
   if (error) return <VisitRouteState title="ログイン設定を読み込めませんでした" body={error} action="再読み込み" onAction={() => window.location.reload()} />;
-  if (!key) return <VisitRouteState title="Hoiku Color" body="ログイン設定を読み込んでいます" loading />;
+  if (!key) return <AppLoading />;
 
   return (
     <ClerkProvider publishableKey={key} signInUrl="/login" signUpUrl="/signup" signInFallbackRedirectUrl="/visits" signUpFallbackRedirectUrl="/visits">
@@ -89,10 +91,9 @@ function VisitRouteGate() {
   const { session } = useSession();
   const { user } = useUser();
   const { signOut } = useClerk();
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [supabaseReady, setSupabaseReady] = useState(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setSupabaseReady(false);
     if (!session) {
       setSupabaseAccessTokenGetter(null);
@@ -107,62 +108,32 @@ function VisitRouteGate() {
     if (isLoaded && !isSignedIn) window.location.replace('/login');
   }, [isLoaded, isSignedIn]);
 
-  if (!isLoaded || !isSignedIn || !session || !supabaseReady) return <VisitRouteState title="Hoiku Color" body="ログイン状態を確認しています" loading />;
+  if (!isLoaded || !isSignedIn || !session || !supabaseReady) return <AppLoading />;
 
   if (user?.unsafeMetadata?.hoikuColorAccountType === 'nursery') {
     return <VisitRouteState title="園・法人アカウントです" body="園・法人の管理画面はHoiku Poppyをご利用ください。" action="Hoiku Poppyを開く" onAction={() => window.location.assign(poppyUrl)} />;
   }
 
   const displayName = user?.fullName || user?.firstName || 'ゲスト';
-  const logout = async () => {
-    if (!window.confirm('Hoiku Colorからログアウトしますか？')) return;
-    await signOut({ redirectUrl: '/login' });
-  };
 
   return (
-    <div className="app-shell visit-route-shell">
-      <aside className={`sidebar ${mobileOpen ? 'is-open' : ''}`}>
-        <button className="mobile-close" onClick={() => setMobileOpen(false)} aria-label="メニューを閉じる"><Icon name="close" /></button>
-        <a className="sidebar-brand" href="/"><Brand /></a>
-        <span className="nav-label">MY PAGE</span>
-        <nav className="side-nav" aria-label="マイページ">
-          {navItems.map((item) => (
-            <a key={item.href} className={`nav-item ${item.href === '/visits' ? 'active' : ''}`} href={item.href}>
-              <Icon name={item.icon} size={18} /><span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-        <div className="sidebar-public">
-          <span>HOIKU COLOR</span>
-          <strong>求人サイトを見る</strong>
-          <a href={`${publicUrl}/jobs`} target="_blank" rel="noreferrer">公開サイトを開く <Icon name="external" size={14} /></a>
-        </div>
-        <div className="account-card">
-          <div className="account-avatar">{displayName.slice(0, 1)}</div>
-          <div><strong>{displayName}</strong><small>{user?.primaryEmailAddress?.emailAddress || ''}</small></div>
-          <button type="button" title="ログアウト" onClick={() => void logout()}><Icon name="logout" size={17} /></button>
-        </div>
-      </aside>
-      {mobileOpen && <button className="sidebar-scrim" onClick={() => setMobileOpen(false)} aria-label="メニューを閉じる" />}
-
-      <main className="main-column">
-        <header className="topbar">
-          <button className="mobile-menu" onClick={() => setMobileOpen(true)} aria-label="メニュー"><Icon name="menu" /></button>
-          <div className="mobile-brand"><Brand compact /></div>
-          <div className="topbar-spacer" />
-          <a className="public-link" href={`${publicUrl}/jobs`} target="_blank" rel="noreferrer">求人サイト <Icon name="external" size={14} /></a>
-          <NotificationCenter onNavigate={(target) => window.location.assign(target)} />
-        </header>
-
-        <section className="content visit-route-content">
+    <CandidateShell
+      active={'applications'}
+      title="見学・体験"
+      name={displayName}
+      email={user?.primaryEmailAddress?.emailAddress ?? null}
+      onSignOut={() => signOut({ redirectUrl: '/login' })}
+      notification={<NotificationCenter onNavigate={(target) => window.location.assign(target)} />}
+      className="visit-route-shell"
+    >
+        <section className="visit-route-content">
           <header className="page-heading visit-route-heading">
             <div><span className="eyebrow">VISITS & TRIALS</span><h1>見学・体験</h1><p>園見学・半日体験・1日体験の予定と履歴をまとめて確認できます。</p></div>
             <a className="secondary-button" href="/jobs"><Icon name="search" size={15} /> 求人を探す</a>
           </header>
           <VisitHistory />
         </section>
-      </main>
-    </div>
+    </CandidateShell>
   );
 }
 

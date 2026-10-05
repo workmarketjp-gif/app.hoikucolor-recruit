@@ -1,4 +1,4 @@
-import { useUser } from '@clerk/react';
+import { useCandidateSession } from '../lib/candidateSession';
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
 import { ScoutPrivacyPanel } from './ScoutPrivacyPanel';
@@ -35,7 +35,8 @@ function formatBytes(value: number | null) {
 }
 
 export function DocumentVaultPanel() {
-  const { user } = useUser();
+  const { userId } = useCandidateSession();
+  const user = userId ? { id: userId } : null;
   const [documents, setDocuments] = useState<JobseekerDocument[]>([]);
   const [documentType, setDocumentType] = useState<JobseekerDocumentType>('resume');
   const [loading, setLoading] = useState(true);

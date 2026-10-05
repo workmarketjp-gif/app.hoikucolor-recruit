@@ -6,6 +6,7 @@ import {
   markJobseekerApplicationMessagesRead,
   type JobseekerAttentionSummary,
 } from '../lib/attentionRepository';
+import { hasActiveSession } from '../lib/supabase';
 import './AttentionSummaryEnhancer.css';
 
 type Targets = {
@@ -79,6 +80,7 @@ export function AttentionSummaryEnhancer() {
   const acknowledgingApplications = useRef(new Set<string>());
 
   const load = useCallback(async () => {
+    if (!hasActiveSession()) return;
     try {
       setSummary(await getJobseekerAttentionSummary());
     } catch {

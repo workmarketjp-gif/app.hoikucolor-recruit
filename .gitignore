@@ -3,3 +3,6 @@ dist
 .env
 .env.local
 .vercel
+dist-e2e
+test-results
+playwright-report

@@ -1,7 +1,9 @@
 import { ClerkProvider, useAuth, useClerk, useSession, useUser } from '@clerk/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useLayoutEffect } from 'react';
 import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
+import { AppLoading } from './components/AppLoading';
+import { CandidateShell } from './components/CandidateShell';
 import { NotificationCenter } from './components/NotificationCenter';
 import { loadHoikuColorClerkPublishableKey } from './lib/clerkConfig';
 import { matchJob, type JobMatchResult } from './lib/jobMatching';
@@ -70,7 +72,7 @@ export function CompareRouteRoot() {
   }, []);
 
   if (error) return <CompareRouteState title="ログイン設定を読み込めませんでした" body={error} action="再読み込み" onAction={() => window.location.reload()} />;
-  if (!key) return <CompareRouteState title="Hoiku Color" body="ログイン設定を読み込んでいます" loading />;
+  if (!key) return <AppLoading />;
 
   return <ClerkProvider publishableKey={key} signInUrl="/login" signUpUrl="/signup" signInFallbackRedirectUrl="/compare" signUpFallbackRedirectUrl="/compare">
     <CompareRouteGate />
@@ -87,7 +89,6 @@ function CompareRouteGate() {
   const { session } = useSession();
   const { user } = useUser();
   const { signOut } = useClerk();
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [profile, setProfile] = useState<JobseekerProfile | null>(null);
   const [preferences, setPreferences] = useState<JobseekerMatchingPreferences | null>(null);
@@ -95,7 +96,7 @@ function CompareRouteGate() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!session) {
       setSupabaseAccessTokenGetter(null);
       return;
@@ -153,40 +154,23 @@ function CompareRouteGate() {
     });
   };
 
-  if (!isLoaded || !isSignedIn) return <CompareRouteState title="Hoiku Color" body="ログイン状態を確認しています" loading />;
+  if (!isLoaded || !isSignedIn) return <AppLoading />;
   if (user?.unsafeMetadata?.hoikuColorAccountType === 'nursery') {
     return <CompareRouteState title="園・法人アカウントです" body="園・法人の管理画面はHoiku Poppyをご利用ください。" action="Hoiku Poppyを開く" onAction={() => window.location.assign(poppyUrl)} />;
   }
 
   const displayName = user?.fullName || user?.firstName || 'ゲスト';
-  const logout = async () => {
-    if (!window.confirm('Hoiku Colorからログアウトしますか？')) return;
-    await signOut({ redirectUrl: '/login' });
-  };
 
-  return <div className="app-shell compare-route-shell">
-    <aside className={`sidebar ${mobileOpen ? 'is-open' : ''}`}>
-      <button className="mobile-close" onClick={() => setMobileOpen(false)} aria-label="メニューを閉じる"><Icon name="close" /></button>
-      <a className="sidebar-brand" href="/"><Brand /></a>
-      <span className="nav-label">MY PAGE</span>
-      <nav className="side-nav" aria-label="マイページ">
-        {navItems.map((item) => <a key={item.href} className={`nav-item ${item.href === '/compare' ? 'active' : ''}`} href={item.href}><Icon name={item.icon} size={18} /><span>{item.label}</span></a>)}
-      </nav>
-      <div className="sidebar-public"><span>HOIKU COLOR</span><strong>求人サイトを見る</strong><a href={`${publicUrl}/jobs`} target="_blank" rel="noreferrer">公開サイトを開く <Icon name="external" size={14} /></a></div>
-      <div className="account-card"><div className="account-avatar">{displayName.slice(0, 1)}</div><div><strong>{displayName}</strong><small>{user?.primaryEmailAddress?.emailAddress || ''}</small></div><button type="button" title="ログアウト" onClick={() => void logout()}><Icon name="logout" size={17} /></button></div>
-    </aside>
-    {mobileOpen && <button className="sidebar-scrim" onClick={() => setMobileOpen(false)} aria-label="メニューを閉じる" />}
-
-    <main className="main-column">
-      <header className="topbar">
-        <button className="mobile-menu" onClick={() => setMobileOpen(true)} aria-label="メニュー"><Icon name="menu" /></button>
-        <div className="mobile-brand"><Brand compact /></div>
-        <div className="topbar-spacer" />
-        <a className="public-link" href={`${publicUrl}/jobs`} target="_blank" rel="noreferrer">求人サイト <Icon name="external" size={14} /></a>
-        <NotificationCenter onNavigate={(target) => window.location.assign(target)} />
-      </header>
-
-      <section className="content compare-route-content">
+  return <CandidateShell
+    active={'saved'}
+    title="園を比較"
+    name={displayName}
+    email={user?.primaryEmailAddress?.emailAddress ?? null}
+    onSignOut={() => signOut({ redirectUrl: '/login' })}
+    notification={<NotificationCenter onNavigate={(target) => window.location.assign(target)} />}
+    className="compare-route-shell"
+  >
+      <section className="compare-route-content">
         <header className="page-heading compare-route-heading"><div><span className="eyebrow">COMPARE FACILITIES</span><h1>園を横並びで比較</h1><p>最大3求人まで、園の掲載情報とHO/HF Verified実績を混ぜずに比較します。</p></div><a className="secondary-button" href="/matches"><Icon name="sparkles" size={15} /> マッチングへ戻る</a></header>
 
         <section className="compare-source-legend" aria-label="比較データの見方">
@@ -212,8 +196,7 @@ function CompareRouteGate() {
           {compared.length < 2 ? <section className="compare-guidance"><Icon name="shield" size={22} /><div><h2>2件以上選ぶと比較表を表示します</h2><p>1件だけ選択した状態でもURLに保持されます。マッチング結果から比較へ追加し、ここで2件目・3件目を選べます。</p></div></section> : <ComparisonTable compared={compared} rows={rows} onRemove={(jobId) => setSelectedIds((current) => current.filter((id) => id !== jobId))} />}
         </>}
       </section>
-    </main>
-  </div>;
+  </CandidateShell>;
 }
 
 function ComparisonTable({ compared, rows, onRemove }: { compared: ComparedJob[]; rows: ComparisonRow[]; onRemove: (jobId: string) => void }) {

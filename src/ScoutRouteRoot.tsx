@@ -1,7 +1,9 @@
 import { ClerkProvider, useAuth, useClerk, useSession, useUser } from '@clerk/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useLayoutEffect } from 'react';
 import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
+import { AppLoading } from './components/AppLoading';
+import { CandidateShell } from './components/CandidateShell';
 import { NotificationCenter } from './components/NotificationCenter';
 import { ProfileMatchingPreferencesPanel } from './components/ProfileMatchingPreferencesPanel';
 import { ScoutInbox } from './components/ScoutInbox';
@@ -35,7 +37,7 @@ export function ScoutRouteRoot() {
   }, []);
 
   if (error) return <ScoutRouteState title="ログイン設定を読み込めませんでした" body={error} action="再読み込み" onAction={() => window.location.reload()} />;
-  if (!key) return <ScoutRouteState title="Hoiku Color" body="ログイン設定を読み込んでいます" loading />;
+  if (!key) return <AppLoading />;
 
   return (
     <ClerkProvider publishableKey={key} signInUrl="/login" signUpUrl="/signup" signInFallbackRedirectUrl="/scouts" signUpFallbackRedirectUrl="/scouts">
@@ -49,9 +51,8 @@ function ScoutRouteGate() {
   const { session } = useSession();
   const { user } = useUser();
   const { signOut } = useClerk();
-  const [mobileOpen, setMobileOpen] = useState(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!session) {
       setSupabaseAccessTokenGetter(null);
       return;
@@ -64,7 +65,7 @@ function ScoutRouteGate() {
     if (isLoaded && !isSignedIn) window.location.replace('/login');
   }, [isLoaded, isSignedIn]);
 
-  if (!isLoaded || !isSignedIn) return <ScoutRouteState title="Hoiku Color" body="ログイン状態を確認しています" loading />;
+  if (!isLoaded || !isSignedIn) return <AppLoading />;
 
   if (user?.unsafeMetadata?.hoikuColorAccountType === 'nursery') {
     return <ScoutRouteState title="園・法人アカウントです" body="園・法人の管理画面はHoiku Poppyをご利用ください。" action="Hoiku Poppyを開く" onAction={() => window.location.assign(poppyUrl)} />;
@@ -72,47 +73,18 @@ function ScoutRouteGate() {
 
   const displayName = user?.fullName || user?.firstName || 'ゲスト';
   const navigateNotification = (target: string) => window.location.assign(target);
-  const logout = async () => {
-    if (!window.confirm('Hoiku Colorからログアウトしますか？')) return;
-    await signOut({ redirectUrl: '/login' });
-  };
 
   return (
-    <div className="app-shell scout-route-shell">
-      <aside className={`sidebar ${mobileOpen ? 'is-open' : ''}`}>
-        <button className="mobile-close" onClick={() => setMobileOpen(false)} aria-label="メニューを閉じる"><Icon name="close" /></button>
-        <a className="sidebar-brand" href="/"><Brand /></a>
-        <span className="nav-label">MY PAGE</span>
-        <nav className="side-nav" aria-label="マイページ">
-          {navItems.map((item) => (
-            <a key={item.href} className={`nav-item ${item.href === '/scouts' ? 'active' : ''}`} href={item.href}>
-              <Icon name={item.icon} size={18} /><span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-        <div className="sidebar-public">
-          <span>HOIKU COLOR</span>
-          <strong>求人サイトを見る</strong>
-          <a href={`${publicUrl}/jobs`} target="_blank" rel="noreferrer">公開サイトを開く <Icon name="external" size={14} /></a>
-        </div>
-        <div className="account-card">
-          <div className="account-avatar">{displayName.slice(0, 1)}</div>
-          <div><strong>{displayName}</strong><small>{user?.primaryEmailAddress?.emailAddress || ''}</small></div>
-          <button type="button" title="ログアウト" onClick={() => void logout()}><Icon name="logout" size={17} /></button>
-        </div>
-      </aside>
-      {mobileOpen && <button className="sidebar-scrim" onClick={() => setMobileOpen(false)} aria-label="メニューを閉じる" />}
-
-      <main className="main-column">
-        <header className="topbar">
-          <button className="mobile-menu" onClick={() => setMobileOpen(true)} aria-label="メニュー"><Icon name="menu" /></button>
-          <div className="mobile-brand"><Brand compact /></div>
-          <div className="topbar-spacer" />
-          <a className="public-link" href={`${publicUrl}/jobs`} target="_blank" rel="noreferrer">求人サイト <Icon name="external" size={14} /></a>
-          <NotificationCenter onNavigate={navigateNotification} />
-        </header>
-
-        <section className="content scout-route-content">
+    <CandidateShell
+      active={null}
+      title="スカウト"
+      name={displayName}
+      email={user?.primaryEmailAddress?.emailAddress ?? null}
+      onSignOut={() => signOut({ redirectUrl: '/login' })}
+      notification={<NotificationCenter onNavigate={(target) => window.location.assign(target)} />}
+      className="scout-route-shell"
+    >
+        <section className="scout-route-content">
           <header className="page-heading scout-route-heading">
             <div><span className="eyebrow">ANONYMOUS SCOUT</span><h1>スカウト</h1><p>匿名のまま園からのお誘いを確認できます。承諾するまで氏名・メール・電話番号は共有されません。</p></div>
             <a className="secondary-button" href="/jobs"><Icon name="search" size={15} /> 求人も探す</a>
@@ -126,8 +98,7 @@ function ScoutRouteGate() {
             <ProfileMatchingPreferencesPanel />
           </section>
         </section>
-      </main>
-    </div>
+    </CandidateShell>
   );
 }
 

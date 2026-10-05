@@ -1,7 +1,9 @@
 import { ClerkProvider, useAuth, useClerk, useSession, useUser } from '@clerk/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useLayoutEffect } from 'react';
 import { Brand } from './components/Brand';
 import { Icon } from './components/Icon';
+import { AppLoading } from './components/AppLoading';
+import { CandidateShell } from './components/CandidateShell';
 import { NotificationCenter } from './components/NotificationCenter';
 import { loadHoikuColorClerkPublishableKey } from './lib/clerkConfig';
 import { compareMatchedJobs, matchJob, type JobMatchResult } from './lib/jobMatching';
@@ -47,7 +49,7 @@ export function MatchRouteRoot() {
   }, []);
 
   if (error) return <MatchRouteState title="ログイン設定を読み込めませんでした" body={error} action="再読み込み" onAction={() => window.location.reload()} />;
-  if (!key) return <MatchRouteState title="Hoiku Color" body="ログイン設定を読み込んでいます" loading />;
+  if (!key) return <AppLoading />;
 
   return (
     <ClerkProvider publishableKey={key} signInUrl="/login" signUpUrl="/signup" signInFallbackRedirectUrl="/matches" signUpFallbackRedirectUrl="/matches">
@@ -61,7 +63,6 @@ function MatchRouteGate() {
   const { session } = useSession();
   const { user } = useUser();
   const { signOut } = useClerk();
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [profile, setProfile] = useState<JobseekerProfile | null>(null);
   const [preferences, setPreferences] = useState<JobseekerMatchingPreferences | null>(null);
@@ -70,7 +71,7 @@ function MatchRouteGate() {
   const [error, setError] = useState<string | null>(null);
   const [onlyStrong, setOnlyStrong] = useState(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!session) {
       setSupabaseAccessTokenGetter(null);
       return;
@@ -128,52 +129,24 @@ function MatchRouteGate() {
     }
   };
 
-  if (!isLoaded || !isSignedIn) return <MatchRouteState title="Hoiku Color" body="ログイン状態を確認しています" loading />;
+  if (!isLoaded || !isSignedIn) return <AppLoading />;
   if (user?.unsafeMetadata?.hoikuColorAccountType === 'nursery') {
     return <MatchRouteState title="園・法人アカウントです" body="園・法人の管理画面はHoiku Poppyをご利用ください。" action="Hoiku Poppyを開く" onAction={() => window.location.assign(poppyUrl)} />;
   }
 
   const displayName = user?.fullName || user?.firstName || 'ゲスト';
-  const logout = async () => {
-    if (!window.confirm('Hoiku Colorからログアウトしますか？')) return;
-    await signOut({ redirectUrl: '/login' });
-  };
 
   return (
-    <div className="app-shell match-route-shell">
-      <aside className={`sidebar ${mobileOpen ? 'is-open' : ''}`}>
-        <button className="mobile-close" onClick={() => setMobileOpen(false)} aria-label="メニューを閉じる"><Icon name="close" /></button>
-        <a className="sidebar-brand" href="/"><Brand /></a>
-        <span className="nav-label">MY PAGE</span>
-        <nav className="side-nav" aria-label="マイページ">
-          {navItems.map((item) => (
-            <a key={item.href} className={`nav-item ${item.href === '/matches' ? 'active' : ''}`} href={item.href}>
-              <Icon name={item.icon} size={18} /><span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-        <div className="sidebar-public">
-          <span>HOIKU COLOR</span><strong>求人サイトを見る</strong>
-          <a href={`${publicUrl}/jobs`} target="_blank" rel="noreferrer">公開サイトを開く <Icon name="external" size={14} /></a>
-        </div>
-        <div className="account-card">
-          <div className="account-avatar">{displayName.slice(0, 1)}</div>
-          <div><strong>{displayName}</strong><small>{user?.primaryEmailAddress?.emailAddress || ''}</small></div>
-          <button type="button" title="ログアウト" onClick={() => void logout()}><Icon name="logout" size={17} /></button>
-        </div>
-      </aside>
-      {mobileOpen && <button className="sidebar-scrim" onClick={() => setMobileOpen(false)} aria-label="メニューを閉じる" />}
-
-      <main className="main-column">
-        <header className="topbar">
-          <button className="mobile-menu" onClick={() => setMobileOpen(true)} aria-label="メニュー"><Icon name="menu" /></button>
-          <div className="mobile-brand"><Brand compact /></div>
-          <div className="topbar-spacer" />
-          <a className="public-link" href={`${publicUrl}/jobs`} target="_blank" rel="noreferrer">求人サイト <Icon name="external" size={14} /></a>
-          <NotificationCenter onNavigate={(target) => window.location.assign(target)} />
-        </header>
-
-        <section className="content match-route-content">
+    <CandidateShell
+      active={'jobs'}
+      title="マッチ度"
+      name={displayName}
+      email={user?.primaryEmailAddress?.emailAddress ?? null}
+      onSignOut={() => signOut({ redirectUrl: '/login' })}
+      notification={<NotificationCenter onNavigate={(target) => window.location.assign(target)} />}
+      className="match-route-shell"
+    >
+        <section className="match-route-content">
           <header className="page-heading match-route-heading">
             <div><span className="eyebrow">YOUR MATCH</span><h1>あなたに合う求人</h1><p>勤務地・雇用形態・給与などは通常ロジックで判定し、保育観は求人文面との一致サインを分けて表示します。</p></div>
             <a className="secondary-button" href="/scouts#scout-settings"><Icon name="user" size={15} /> 希望条件を見直す</a>
@@ -191,8 +164,7 @@ function MatchRouteGate() {
             {visible.length ? <div className="match-job-grid">{visible.map(({ job, match }) => <MatchJobCard key={job.id} job={job} match={match} saved={savedIds.includes(job.id)} profile={profile} onToggleSaved={toggleSaved} />)}</div> : <div className="match-empty"><Icon name="search" size={24} /><h2>表示できる求人がありません</h2><p>{jobs.length ? '70%以上だけ表示を解除すると、すべての求人を確認できます。' : '現在公開中の求人はありません。求人が公開されると条件に合わせて自動で並びます。'}</p></div>}
           </>}
         </section>
-      </main>
-    </div>
+    </CandidateShell>
   );
 }
 

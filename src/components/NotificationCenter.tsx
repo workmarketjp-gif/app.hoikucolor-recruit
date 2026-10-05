@@ -6,7 +6,6 @@ import {
   markJobseekerNotificationRead,
   type JobseekerNotification,
 } from '../lib/notificationRepository';
-import { listJobseekerScouts } from '../lib/scoutInboxRepository';
 import './NotificationCenter.css';
 
 type Props = {
@@ -86,7 +85,6 @@ function safeTarget(item: JobseekerNotification) {
 export function NotificationCenter({ onNavigate }: Props) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<JobseekerNotification[]>([]);
-  const [pendingScoutCount, setPendingScoutCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -109,29 +107,16 @@ export function NotificationCenter({ onNavigate }: Props) {
     }
   }, []);
 
-  const loadScoutCount = useCallback(async () => {
-    try {
-      const scouts = await listJobseekerScouts();
-      if (!mountedRef.current) return;
-      setPendingScoutCount(scouts.filter((item) => item.scout_status === 'pending').length);
-    } catch {
-      if (mountedRef.current) setPendingScoutCount(0);
-    }
-  }, []);
-
   useEffect(() => {
     mountedRef.current = true;
     void load();
-    void loadScoutCount();
     const refreshWhenVisible = () => {
       if (document.visibilityState !== 'visible') return;
       void load(true);
-      void loadScoutCount();
     };
     const intervalId = window.setInterval(refreshWhenVisible, 60_000);
     const onExternalRefresh = () => {
       void load(true);
-      void loadScoutCount();
     };
     window.addEventListener('focus', refreshWhenVisible);
     window.addEventListener('pageshow', refreshWhenVisible);
@@ -145,7 +130,7 @@ export function NotificationCenter({ onNavigate }: Props) {
       document.removeEventListener('visibilitychange', refreshWhenVisible);
       window.removeEventListener('hc:notifications-refresh', onExternalRefresh);
     };
-  }, [load, loadScoutCount]);
+  }, [load]);
 
   useEffect(() => {
     if (!open) return;
@@ -204,10 +189,6 @@ export function NotificationCenter({ onNavigate }: Props) {
 
   return (
     <div className="notification-center" ref={rootRef}>
-      <a className={`icon-button scout-shortcut ${window.location.pathname.startsWith('/scouts') ? 'is-active' : ''}`} href="/scouts" aria-label={pendingScoutCount ? `スカウト 回答待ち${pendingScoutCount}件` : 'スカウト'} title="スカウト">
-        <Icon name="sparkles" size={18} />
-        {pendingScoutCount > 0 && <span className="notification-badge" aria-hidden="true">{pendingScoutCount > 99 ? '99+' : pendingScoutCount}</span>}
-      </a>
       <button
         type="button"
         className={`icon-button notification-trigger ${open ? 'is-open' : ''}`}
@@ -219,7 +200,7 @@ export function NotificationCenter({ onNavigate }: Props) {
           if (!open) void load(true);
         }}
       >
-        <Icon name="bell" size={18} />
+        <Icon name="bell" size={22} />
         {unreadCount > 0 && <span className="notification-badge" aria-hidden="true">{unreadCount > 99 ? '99+' : unreadCount}</span>}
       </button>
 
@@ -234,7 +215,7 @@ export function NotificationCenter({ onNavigate }: Props) {
           </header>
           <div className="notification-list">
             {loading && items.length === 0 && <p className="notification-state">読み込み中…</p>}
-            {error && <p className="notification-state is-error">{error}</p>}
+            {error && <p className="notification-state is-error">通知を読み込めませんでした <button type="button" onClick={() => void load()}>もう一度</button></p>}
             {!loading && !error && items.length === 0 && <p className="notification-state">新しい通知はありません。</p>}
             {items.map((item) => (
               <button

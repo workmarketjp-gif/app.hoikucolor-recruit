@@ -1,6 +1,8 @@
 import { ClerkProvider, SignOutButton, useAuth, useClerk, useSession, useSignIn, useSignUp, useUser } from '@clerk/react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState, type FormEvent } from 'react';
 import { App } from './App';
+import { AppLoading } from './components/AppLoading';
+import { CandidateSessionProvider, type CandidateSession } from './lib/candidateSession';
 import { Brand } from './components/Brand';
 import googleMark from './logo/google-g.svg';
 import logoMark from './logo/logom_hoikucolor.png';
@@ -8,6 +10,10 @@ import { loadHoikuColorClerkPublishableKey } from './lib/clerkConfig';
 import { setSupabaseAccessTokenGetter } from './lib/supabase';
 import './auth-overrides.css';
 import './auth-custom.css';
+
+// Test-only harness. `import.meta.env.MODE` is replaced at build time, so production
+// bundles drop this branch (and the e2e module) entirely.
+const E2ERoot = import.meta.env.MODE === 'e2e' ? lazy(() => import('./e2e/E2ERoot')) : null;
 
 const publicUrl = (import.meta.env.VITE_HOIKU_COLOR_PUBLIC_URL || 'https://hoikucolor.jp').replace(/\/$/, '');
 const poppyUrl = (import.meta.env.VITE_HOIKU_POPPY_URL || 'https://app.hoikupoppy.ai').replace(/\/$/, '');
@@ -36,6 +42,11 @@ function authModeFromPath(pathname: string): 'signin' | 'signup' {
 }
 
 export function AppRoot() {
+  if (E2ERoot) return <Suspense fallback={<AppLoading />}><E2ERoot /></Suspense>;
+  return <ClerkAppRoot />;
+}
+
+function ClerkAppRoot() {
   const [key, setKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const nurseryRedirect = isNurseryAuthPath(window.location.pathname);
@@ -55,7 +66,7 @@ export function AppRoot() {
 
   if (nurseryRedirect) return <CenteredState title="Hoiku Poppyへ移動しています" body="園・法人のログイン・新規登録はHoiku Poppyをご利用ください。" loading />;
   if (error) return <CenteredState title="ログイン設定を読み込めませんでした" body={error} action="再読み込み" onAction={() => window.location.reload()} />;
-  if (!key) return <CenteredState title="Hoiku Color" body="ログイン設定を読み込んでいます" loading />;
+  if (!key) return <AppLoading />;
 
   return (
     <ClerkProvider publishableKey={key} signInUrl="/login" signUpUrl="/signup" signInFallbackRedirectUrl="/" signUpFallbackRedirectUrl="/">
@@ -68,8 +79,11 @@ function AuthGate() {
   const { isLoaded, isSignedIn } = useAuth();
   const { session } = useSession();
   const { user } = useUser();
+  const clerk = useClerk();
 
-  useEffect(() => {
+  // Layout effects run before any child passive effect, so the token getter is in
+  // place before the first candidate RPC fires (no unauthenticated first request).
+  useLayoutEffect(() => {
     if (!session) {
       setSupabaseAccessTokenGetter(null);
       return;
@@ -78,23 +92,15 @@ function AuthGate() {
     return () => setSupabaseAccessTokenGetter(null);
   }, [session]);
 
-  useEffect(() => {
-    const confirmSignOut = (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const signOutButton = target.closest('button[title="ログアウト"]');
-      if (!signOutButton) return;
-      if (window.confirm('Hoiku Colorからログアウトしますか？')) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-    };
+  const candidate = useMemo<CandidateSession | null>(() => user ? {
+    userId: user.id,
+    firstName: user.firstName ?? null,
+    fullName: user.fullName ?? null,
+    email: user.primaryEmailAddress?.emailAddress ?? null,
+    signOut: () => clerk.signOut({ redirectUrl: '/login' }),
+  } : null, [user, clerk]);
 
-    document.addEventListener('click', confirmSignOut, true);
-    return () => document.removeEventListener('click', confirmSignOut, true);
-  }, []);
-
-  if (!isLoaded) return <CenteredState title="Hoiku Color" body="ログイン状態を確認しています" loading />;
+  if (!isLoaded) return <AppLoading />;
   if (window.location.pathname.startsWith('/sso-callback')) return <OAuthCallback />;
   if (!isSignedIn) return <LoginScreen />;
 
@@ -110,7 +116,8 @@ function AuthGate() {
     );
   }
 
-  return <App />;
+  if (!candidate) return <AppLoading />;
+  return <CandidateSessionProvider value={candidate}><App /></CandidateSessionProvider>;
 }
 
 function OAuthCallback() {
@@ -125,7 +132,7 @@ function OAuthCallback() {
   }, [clerk]);
 
   if (error) return <CenteredState title="Googleログインを完了できませんでした" body={error} action="ログイン画面へ戻る" onAction={() => window.location.assign('/login')} />;
-  return <CenteredState title="Hoiku Color" body="Googleアカウントを確認しています" loading />;
+  return <AppLoading />;
 }
 
 function LoginScreen() {
