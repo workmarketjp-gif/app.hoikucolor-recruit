@@ -394,7 +394,7 @@ async function upsertNormalized(row: Normalized) {
   const { error } = await supabase
     .from('hc_external_job_sources')
     .upsert(row, { onConflict: 'source,source_job_id' });
-  if (error) throw new Error('UPSERT_FAILED');
+  if (error) throw new Error(`UPSERT_FAILED:${error.code || 'unknown'}:${String(error.message || '').slice(0, 160)}`);
 }
 
 async function importUrls(urls: string[]) {
