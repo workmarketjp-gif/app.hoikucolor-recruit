@@ -21,12 +21,12 @@ const SEARCH_URL = 'https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do';
 const DISCOVERY_PAGE_SIZE = 50;
 const DISCOVERY_CONCURRENCY = 5;
 const DISCOVERY_TARGETS = [
-  { label: '保育士', occupationCode: '06,01' },
-  { label: '保育補助', occupationCode: '06,02' },
-  { label: '幼稚園教員', occupationCode: '06,04' },
-  // 「保育教諭」はHello Workの職種分類で独立項目ではないため、
-  // exact occupation searchを補完するfree-word targetとして残す。
-  { label: '保育教諭', freeWord: '保育教諭' },
+  // Hello Work's current official occupation classification (2022 revision).
+  // 029: 保育士、幼稚園教員 / 030: 学童保育等指導員、保育補助者、家庭的保育者
+  { label: '保育士', classificationMajor: '029', classificationMinor: '01' },
+  { label: '幼稚園教員', classificationMajor: '029', classificationMinor: '02' },
+  { label: '保育教諭', classificationMajor: '029', classificationMinor: '03' },
+  { label: '保育補助者・家庭的保育者', classificationMajor: '030', classificationMinor: '03' },
 ] as const;
 const ALLOWED_POSITION = /(保育士|保育教諭|幼稚園教諭|保育補助|看護師|准看護師|栄養士|管理栄養士|調理師|調理員|園長|施設長|主任|子育て支援員)/;
 const RESTRICTED_MARKERS = [
@@ -494,14 +494,11 @@ async function discoverHelloWorkPage(
     fwListNaviDisp: String(DISCOVERY_PAGE_SIZE),
   };
 
-  if ('occupationCode' in target) {
-    // Hello Work's exact occupation selector. This avoids free-word hits where
-    // "保育士" appears only in a description for an unrelated occupation.
-    searchParams.kiboSuruSKSU1Hidden = target.occupationCode;
-  } else {
-    searchParams.freeWordRadioBtn = '0';
-    searchParams.freeWordInput = target.freeWord;
-  }
+  // Use Hello Work's official occupation-classification fields rather than a
+  // free-word or UI helper category. This keeps discovery job-scoped and avoids
+  // unrelated jobs that merely mention a childcare role in the description.
+  searchParams.sKGYBRUIJo1 = target.classificationMajor;
+  searchParams.sKGYBRUIGe1 = target.classificationMinor;
 
   const initial = await postHelloWorkForm(searchParams);
 
