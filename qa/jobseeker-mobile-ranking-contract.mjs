@@ -7,15 +7,17 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const main = read('src/main.tsx');
 const mobile = read('src/mobile-hardening.css');
 const auth = read('src/auth-custom.css');
-const ranking = read('src/components/RankingDisclosureEnhancer.tsx');
-const rankingCss = read('src/components/RankingDisclosureEnhancer.css');
+const ranking = read('src/components/RankingDisclosure.tsx');
+const rankingCss = read('src/views/views.css');
+const app = read('src/App.tsx');
+const jobCard = read('src/components/JobCard.tsx');
 const repo = read('src/lib/recruitRepository.ts');
 const rankedCatalog = read('supabase/migrations/20260913090000_hc_jobseeker_ranked_catalog_v1.sql');
 const paginatedSearch = read('supabase/migrations/20260913100000_hc_jobseeker_search_pagination_v1.sql');
 
 const checks = [
   [main.includes("import './mobile-hardening.css';"), 'global mobile hardening must be loaded after the baseline styles'],
-  [main.includes('<RankingDisclosureEnhancer />'), 'ranking disclosure enhancer must be mounted globally'],
+  [app.includes('<RankingDisclosure />') && !main.includes('Enhancer'), 'ranking disclosure must be part of job search (not a global DOM enhancer)'],
   [mobile.includes('@media(max-width:390px)'), '390px-specific mobile hardening must remain present'],
   [mobile.includes('min-height:44px'), 'primary mobile interactions must retain a 44px minimum hit target'],
   [mobile.includes('min-height:44px!important'), 'component-specific mobile controls must not override the 44px hit target'],
@@ -40,15 +42,16 @@ const checks = [
   [auth.includes('calc(28px + env(safe-area-inset-top))') && auth.includes('calc(34px + env(safe-area-inset-bottom))'), 'mobile authentication must clear device safe areas'],
   [auth.includes('.hc-code-actions button,.hc-auth-footer-links a{min-height:44px'), 'authentication secondary actions must retain accessible mobile touch targets'],
   [auth.includes('@media(max-width:390px)') && auth.includes('.hc-code-actions{flex-direction:column'), 'narrow authentication actions must stack instead of crowding at 320-390px'],
-  [ranking.includes("window.location.pathname.startsWith('/jobs')"), 'ranking disclosure must be scoped to job search'],
+  [app.includes('const labels = rankLabels(jobs.map((job) => job.id), deepLinkedJobId);') && app.includes('rankLabel={labels[index]}'), 'ranking disclosure must be scoped to job search results'],
   [ranking.includes('`表示順 ${organicPosition}`'), 'job cards must label their current organic display position'],
   [ranking.includes("'指定求人'"), 'deep-linked jobs must be distinguished from organic ranking positions'],
-  [ranking.includes('card.dataset.jobId === deepLinkedJobId'), 'specified-job disclosure must bind to canonical job UUID'],
+  [ranking.includes('deepLinkedJobId && jobId === deepLinkedJobId') && app.includes('setDeepLinkedJobId(targetJob?.id ?? null)'), 'specified-job disclosure must bind to the canonical job UUID that was actually resolved'],
+  [jobCard.includes('aria-label={rankLabel.ariaLabel}'), 'ranking position must be announced to assistive technology'],
   [ranking.includes('現在は有料の上位表示を適用していません'), 'current organic ordering must explicitly state that paid boosting is not active'],
   [ranking.includes('将来、有料枠を導入する場合は「PR」と明示'), 'future paid placements must be contractually disclosed as PR'],
   [ranking.includes('園の申告内容を Verified 実績として扱うことはありません'), 'facility claims must never be presented as Verified ranking evidence'],
-  [ranking.includes("if (badge.textContent !== label)"), 'ranking observer must avoid a self-triggering text mutation loop'],
-  [rankingCss.includes('@media(max-width:390px)'), 'ranking disclosure must retain a 390px layout'],
+  [!ranking.includes('MutationObserver') && !ranking.includes('document.'), 'ranking disclosure must be rendered by React, not by observing the DOM'],
+  [rankingCss.includes('.hc-ranking-toggle') && /\.hc-ranking-toggle \{[^}]*min-height: 48px/.test(rankingCss), 'ranking disclosure must keep a 48px touch target'],
   [repo.includes('quality_points') && repo.includes('transparency_pct') && repo.includes('publishedAtEpoch'), 'organic ranking fallback must preserve Verified quality, transparency, then freshness ordering'],
   [repo.includes("rpc('hc_jobseeker_list_ranked_jobs')"), 'legacy matching/comparison catalog must stay candidate-safe while server pagination is rolled out'],
   [rankedCatalog.includes('hc_public_workplace_profiles') && rankedCatalog.includes('hc_public_finance_profiles'), 'ranked catalog must enrich only from candidate-safe public HO/HF profiles'],

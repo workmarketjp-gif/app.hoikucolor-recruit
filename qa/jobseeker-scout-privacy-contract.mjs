@@ -9,7 +9,7 @@ const fix = fs.readFileSync(path.join(root, 'supabase', 'migrations', '202609120
 const repo = fs.readFileSync(path.join(root, 'src', 'lib', 'scoutPrivacyRepository.ts'), 'utf8')
 const panel = fs.readFileSync(path.join(root, 'src', 'components', 'ScoutPrivacyPanel.tsx'), 'utf8')
 const css = fs.readFileSync(path.join(root, 'src', 'components', 'ScoutPrivacyPanel.css'), 'utf8')
-const vault = fs.readFileSync(path.join(root, 'src', 'components', 'DocumentVaultPanel.tsx'), 'utf8')
+const scoutSettings = fs.readFileSync(path.join(root, 'src', 'views', 'ScoutsView.tsx'), 'utf8')
 
 const requireMatch = (source, expression, message) => {
   if (!expression.test(source)) throw new Error(message)
@@ -47,7 +47,7 @@ requireMatch(panel, /匿名スカウトを受け取る/, 'anonymous scout opt-in
 requireMatch(panel, /氏名・メール・電話番号・現在の勤務先を園へ公開しません/, 'candidate identity privacy explanation missing')
 requireMatch(panel, /現在の勤務先として自動ブロック/, 'automatic current employer block UI missing')
 requireMatch(panel, /手動ブロック/, 'manual organization block UI missing')
-requireMatch(vault, /<ScoutPrivacyPanel\s*\/\>/, 'scout privacy panel is not connected to candidate profile')
+requireMatch(scoutSettings, /<ScoutPrivacyPanel\s*\/\>/, 'scout privacy panel is not connected to the candidate scout settings screen')
 requireMatch(css, /@media\(max-width:620px\)/, 'scout privacy mobile layout guard missing')
 
 console.log('jobseeker scout privacy contract passed')

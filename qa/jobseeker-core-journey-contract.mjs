@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 const root = new URL('../', import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), 'utf8');
 
-const app = read('src/App.tsx');
+const app = read('src/App.tsx') + read('src/components/JobCard.tsx');
 const main = read('src/main.tsx');
 const repository = read('src/lib/recruitRepository.ts');
 const rankedCatalog = read('supabase/migrations/20260913090000_hc_jobseeker_ranked_catalog_v1.sql');
@@ -15,12 +15,11 @@ const applicationDetail = read('src/components/ApplicationDetail.tsx');
 const applicationMessages = read('src/components/ApplicationMessages.tsx');
 const expectationRepository = read('src/lib/applicationDocumentExpectationRepository.ts');
 const expectationSnapshot = read('supabase/migrations/20260913220000_hc_jobseeker_application_document_expectation_snapshot_v1.sql');
-const attention = read('src/components/AttentionSummaryEnhancer.tsx');
 const notifications = read('src/components/NotificationCenter.tsx');
-const externalReturn = read('src/components/ExternalJobReturnEnhancer.tsx');
-const matchRoute = read('src/MatchRouteRoot.tsx');
-const compareRoute = read('src/CompareRouteRoot.tsx');
-const scoutRoute = read('src/ScoutRouteRoot.tsx');
+const router = read('src/lib/router.ts');
+const matchRoute = read('src/views/MatchesView.tsx');
+const compareRoute = read('src/views/CompareView.tsx');
+const scoutRoute = read('src/views/ScoutsView.tsx');
 
 const requiredRepositoryMarkers = [
   "rpc('hc_jobseeker_list_ranked_jobs')",
@@ -111,8 +110,12 @@ for (const forbidden of [
 if (!app.includes('<VisitTrialPanel jobId={job.id} facilityId={job.facility_id} />')) {
   throw new Error('Core journey app wiring missing: VisitTrialPanel');
 }
-for (const marker of ['<ExternalJobReturnEnhancer />', '<AttentionSummaryEnhancer />']) {
-  if (!main.includes(marker)) throw new Error(`Core journey root wiring missing: ${marker}`);
+// One app root; candidate screens are regular views, never DOM enhancers.
+if (!main.includes('<AppRoot />') || main.includes('Enhancer') || main.includes('RouteRoot')) {
+  throw new Error('Core journey root wiring must be a single AppRoot without enhancers.');
+}
+for (const marker of ["{view === 'scouts' && <ScoutsView />}", "{view === 'visits' && <VisitsView />}", "{view === 'spot' && <SpotJobsView", "{view === 'matches' && <MatchesView", "{view === 'compare' && <CompareView"]) {
+  if (!app.includes(marker)) throw new Error(`Core journey view wiring missing: ${marker}`);
 }
 
 const visitMarkers = [
@@ -154,19 +157,18 @@ for (const marker of [
   'unread_messages_count',
   'pending_scouts_count',
   '#application-messages',
-  '#scout-inbox',
-  "window.addEventListener('hc:application-messages-viewed'",
+  'href="/scouts"',
 ]) {
-  if (!attention.includes(marker)) throw new Error(`Attention-summary journey missing: ${marker}`);
+  if (!app.includes(marker)) throw new Error(`Attention-summary journey missing: ${marker}`);
 }
 for (const marker of [
   "window.location.hash !== '#application-messages'",
   "load({ acknowledge: true })",
-  "new CustomEvent('hc:application-messages-viewed'",
+  'markJobseekerApplicationMessagesRead(applicationId)',
 ]) {
   if (!applicationMessages.includes(marker)) throw new Error(`Message-read journey missing: ${marker}`);
 }
-if (attention.includes('IntersectionObserver')) {
+if (applicationMessages.includes('IntersectionObserver')) {
   throw new Error('Closed communication-card visibility must not acknowledge unread facility messages.');
 }
 
@@ -176,13 +178,14 @@ for (const marker of ['application_id', 'interview_id', '/applications', '/scout
 
 for (const marker of [
   'url.origin !== window.location.origin',
-  "url.pathname.replace(/\\/$/, '') !== '/jobs'",
+  "if (!view || view === 'home') return null;",
   'sessionStorage.setItem(returnStorageKey',
-  'getRankedJob(jobId)',
-  '`.job-card[data-job-id="${jobId}"]`',
-  "detailButton?.click()",
+  'uuidPattern.test(value)',
 ]) {
-  if (!externalReturn.includes(marker)) throw new Error(`External-job return journey missing: ${marker}`);
+  if (!router.includes(marker)) throw new Error(`External-job return journey missing: ${marker}`);
+}
+if (!app.includes('initiallyExpanded={expandedJobId === job.id}') || !app.includes('restoreReturnTarget();')) {
+  throw new Error('External-job return must restore the target and open the exact job.');
 }
 if (!app.includes('targetJobId ? getRankedJob(targetJobId) : Promise.resolve(null)') || !app.includes('data-job-id={job.id}')) {
   throw new Error('Paginated job list does not preserve exact Google-job return targeting.');
@@ -194,8 +197,8 @@ for (const marker of ['compareMatchedJobs', 'matchJob', 'condition_score', '保�
 for (const marker of ['HO Verified', 'HF Verified', '園掲載']) {
   if (!compareRoute.includes(marker)) throw new Error(`Facility comparison source separation missing: ${marker}`);
 }
-for (const marker of ['ScoutInbox', '/scouts', 'NotificationCenter']) {
-  if (!scoutRoute.includes(marker)) throw new Error(`Scout journey missing: ${marker}`);
+if (!scoutRoute.includes('<ScoutInbox />') || !router.includes("scouts: '/scouts'") || !app.includes('<NotificationCenter onNavigate={navigateTo} />')) {
+  throw new Error('Scout journey missing: inbox view, /scouts route or in-app notification navigation');
 }
 
 console.log('Hoiku Color core jobseeker journey contract passed.');

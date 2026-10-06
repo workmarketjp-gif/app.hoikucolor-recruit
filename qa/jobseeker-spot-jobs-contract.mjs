@@ -5,10 +5,11 @@ const root = path.resolve(import.meta.dirname, '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const migration = read('supabase/migrations/20260913050000_hc_jobseeker_spot_jobs_v1.sql');
 const repository = read('src/lib/spotJobRepository.ts');
-const route = read('src/SpotJobsRouteRoot.tsx');
-const css = read('src/SpotJobsRouteRoot.css');
-const navigation = read('src/components/SpotNavigationEnhancer.tsx');
-const main = read('src/main.tsx');
+const route = read('src/views/SpotJobsView.tsx');
+const css = read('src/views/views.css') + read('src/candidate-shell.css');
+const app = read('src/App.tsx');
+const router = read('src/lib/router.ts');
+const shell = read('src/components/CandidateShell.tsx');
 
 const checks = [
   [/function public\.hc_jobseeker_list_spot_jobs\(\)/i.test(migration), 'candidate-safe spot list RPC must exist'],
@@ -30,9 +31,9 @@ const checks = [
   [route.includes('available_count') && route.includes('required_count'), 'spot card must expose capacity clearly'],
   [route.includes('getProfile') && route.includes('submitApplication'), 'spot card must connect to the standard candidate application flow'],
   [route.includes('application_id') && route.includes('/applications?application_id='), 'applied spot jobs must deep-link to application status'],
-  [main.includes("import('./SpotJobsRouteRoot')") && main.includes("startsWith('/spot-jobs')"), 'spot jobs must be a lazy authenticated route'],
-  [navigation.includes('href="/spot-jobs"') && navigation.includes('スポット求人'), 'main jobseeker navigation must expose spot jobs'],
-  [css.includes('@media(max-width:390px)') && css.includes('min-height:44px'), 'spot experience must retain 390px and tap-target hardening'],
+  [app.includes("import('./views/SpotJobsView')") && router.includes("spot: '/spot-jobs'") && app.includes("{view === 'spot' && <SpotJobsView"), 'spot jobs must be a lazy view of the authenticated app'],
+  [shell.includes("{ href: '/spot-jobs', label: 'スポット勤務' }") && app.includes('<a href="/spot-jobs">'), 'main jobseeker navigation must expose spot jobs'],
+  [css.includes('@media (max-width: 390px)') && /\.hc-shell \.primary-button, \.hc-shell \.secondary-button \{ min-height: 52px/.test(css), 'spot experience must retain 390px and tap-target hardening'],
 ];
 
 const failed = checks.filter(([ok]) => !ok).map(([, message]) => message);

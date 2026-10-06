@@ -22,13 +22,23 @@ const searchRows = (jobs: typeof jobA[], total = jobs.length) => jobs.map((job) 
 const application = { id: '33333333-3333-4333-8333-333333333333', job_id: jobA.id, applicant_name: '保育 みさき', status: 'reviewing', desired_start_date: null, message: null, applied_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-02T00:00:00Z', job_title: jobA.title, employment_type: '正社員', facility_name: jobA.facility_name, prefecture: '東京都', city: '世田谷区' };
 const profileComplete = { clerk_user_id: 'user_e2e_fixture', email: 'e2e@example.invalid', name: '保育 みさき', name_kana: null, phone: null, prefecture: '東京都', desired_positions: ['保育士'], desired_employment_types: ['正社員'], qualifications: ['保育士'], years_of_experience: 3, desired_start_date: null, self_intro: null };
 const attention = { unanswered_interviews_count: 1, unread_messages_count: 2, pending_scouts_count: 1, next_interview: null, next_message: null, next_scout: null };
+const interview = { id: '77777777-7777-4777-8777-777777777777', application_id: application.id, scheduled_at: '2026-10-15T01:00:00Z', duration_minutes: 60, location: '園舎1階', meeting_url: null, status: 'scheduled', updated_at: '2026-10-02T00:00:00Z', candidate_response_status: null, candidate_response_message: null, candidate_responded_at: null };
+const applicationDetail = { application, interviews: [interview], visits: [] };
+const facilityMessages = [{ id: '88888888-8888-4888-8888-888888888888', thread_id: '99999999-9999-4999-8999-999999999999', sender_role: 'facility', body: '面接日程のご案内です。', created_at: '2026-10-02T00:00:00Z' }];
+const visit = { reservation_id: '44444444-4444-4444-8444-444444444444', job_id: jobA.id, application_id: application.id, facility_name: jobA.facility_name, job_title: jobA.title, prefecture: '東京都', city: '世田谷区', address: 'テスト1-2-3', experience_type: 'visit', starts_at: '2026-10-20T01:00:00Z', ends_at: '2026-10-20T02:00:00Z', status: 'confirmed', candidate_message: null, confirmed_at: null, cancelled_at: null, completed_at: null, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z' };
+const spotJob = { job_id: '55555555-5555-4555-8555-555555555555', facility_id: jobA.facility_id, facility_name: jobA.facility_name, facility_type: null, prefecture: '東京都', city: '世田谷区', address: null, title: '1日保育補助（テスト）', description: '午前中心の保育補助です。', work_date: '2026-10-25', start_time: '09:00:00', end_time: '15:00:00', break_minutes: 45, hourly_rate: 1400, required_count: 2, confirmed_count: 0, available_count: 2, required_qualification: null, age_group_or_class: '2歳児', facility_message: null, published_at: null, closing_at: null, application_id: null, application_status: null };
+const spotAssignment = { assignment_id: '66666666-6666-4666-8666-666666666666', application_id: application.id, job_id: spotJob.job_id, facility_id: jobA.facility_id, facility_name: jobA.facility_name, facility_type: null, prefecture: '東京都', city: '世田谷区', address: null, title: '1日保育補助（確定）', work_date: '2026-10-18', start_time: '09:00:00', end_time: '15:00:00', break_minutes: 45, hourly_rate: 1400, assignment_status: 'confirmed', confirmed_at: '2026-10-02T00:00:00Z' };
 
 type Overrides = Record<string, (route: Route, body: Record<string, unknown>) => Promise<void> | void>;
 
 async function mockApi(page: Page, overrides: Overrides = {}) {
   const calls: string[] = [];
-  await page.route('**/rest/v1/rpc/**', async (route) => {
-    const name = new URL(route.request().url()).pathname.split('/').pop() || '';
+  // Every Supabase request (RPC, table reads, storage) is answered locally; nothing in
+  // this suite ever reaches a real project.
+  await page.route(/supabase\.co\//, async (route) => {
+    const url = new URL(route.request().url());
+    if (!url.pathname.startsWith('/rest/v1/rpc/')) return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    const name = url.pathname.split('/').pop() || '';
     calls.push(name);
     const body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
     if (overrides[name]) return overrides[name](route, body);
@@ -44,6 +54,15 @@ async function mockApi(page: Page, overrides: Overrides = {}) {
       case 'hc_jobseeker_list_scouts': return json([]);
       case 'hc_jobseeker_list_saved_jobs_with_status': return json([{ ...jobA, is_open: true, saved_at: '2026-10-01T00:00:00Z' }]);
       case 'hc_jobseeker_get_ranked_job': return json([jobA]);
+      case 'hc_jobseeker_list_ranked_jobs': return json([jobA, jobB]);
+      case 'hc_jobseeker_get_application_detail': return json(applicationDetail);
+      case 'hc_jobseeker_list_application_messages': return json(facilityMessages);
+      case 'hc_jobseeker_mark_application_messages_read': return json(1);
+      case 'hc_jobseeker_list_my_visits': return json([visit]);
+      case 'hc_jobseeker_list_spot_jobs': return json([spotJob]);
+      case 'hc_jobseeker_list_my_spot_assignments': return json([spotAssignment]);
+      case 'hc_jobseeker_get_matching_preferences': return json({ desired_prefectures: ['東京都'], desired_cities: [], childcare_values: [], work_preferences: [] });
+      case 'hc_jobseeker_get_scout_privacy': return json({ scout_opt_in: false, manual_blocks: [], automatic_blocks: [], identity_fields_shared_before_consent: false });
       default: return json([]);
     }
   });
@@ -212,4 +231,195 @@ test('signed-in reads always carry the session token (no tokenless first request
   await page.goto('/');
   await expect(page.locator('.hc-job-card').first()).toBeVisible();
   expect(unauthenticated).toEqual([]);
+});
+
+/* ------------------------------------------------- golden path + P1 screens */
+
+async function markDocument(page: Page) {
+  await page.evaluate(() => { (window as unknown as { __hcSameDocument?: boolean }).__hcSameDocument = true; });
+}
+
+async function expectSameDocument(page: Page) {
+  expect(await page.evaluate(() => (window as unknown as { __hcSameDocument?: boolean }).__hcSameDocument === true), 'navigation must not reload the page').toBe(true);
+}
+
+test.describe('390px golden path and P1 screens', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('home → jobs → detail → save → apply → application detail → messages → back → reload', async ({ page }) => {
+    const saved: string[] = [];
+    const calls = await mockApi(page, {
+      hc_jobseeker_list_saved_job_ids: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(saved.map((job_id) => ({ job_id, saved_at: '2026-10-06T00:00:00Z' }))) }),
+      hc_jobseeker_save_job: (route, body) => {
+        saved.push(String(body.p_job_id));
+        return route.fulfill({ status: 200, contentType: 'application/json', body: 'true' });
+      },
+      hc_jobseeker_submit_application: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(application.id) }),
+    });
+    await page.goto('/');
+    await expect(page.getByRole('heading', { level: 1, name: 'ホーム' })).toBeVisible();
+    await markDocument(page);
+
+    await page.locator('.hc-tabbar a', { hasText: '求人' }).click();
+    await expect(page).toHaveURL(/\/jobs$/);
+    await expect(page.getByRole('heading', { level: 1, name: '求人を探す' })).toBeVisible();
+    await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/求人/);
+
+    const card = page.locator(`[data-job-id="${jobA.id}"]`);
+    await expect(card.locator('.hc-rank-label')).toHaveText('表示順 1');
+    await card.getByRole('button', { name: '詳しく見る' }).click();
+    await expect(card.getByText('仕事内容・保育観')).toBeVisible();
+
+    await card.getByRole('button', { name: '気になるに保存' }).click();
+    await expect(page.locator('.hc-toast')).toContainText('気になるに保存しました');
+    await expect(card.getByRole('button', { name: '気になるから外す' })).toHaveAttribute('aria-pressed', 'true');
+    expect(calls).toContain('hc_jobseeker_save_job');
+
+    await card.getByRole('button', { name: '応募する' }).click();
+    await expect(page).toHaveURL(new RegExp(`/applications\\?application_id=${application.id}`));
+    await expect(page.getByRole('heading', { level: 1, name: '応募の詳細' })).toBeVisible();
+    await expect(page.locator('.application-detail-hero')).toContainText(jobA.facility_name);
+    await expect(page.locator(`#interview-${interview.id}`)).toContainText('この日時でOK');
+    expect(calls).toContain('hc_jobseeker_submit_application');
+    await expectSameDocument(page);
+
+    expect(calls).not.toContain('hc_jobseeker_mark_application_messages_read');
+    await page.getByRole('button', { name: '園とのメッセージ・書類を開く' }).click();
+    await expect(page.locator('.hc-message.is-facility')).toContainText('面接日程のご案内です。');
+    await expect.poll(() => calls.includes('hc_jobseeker_mark_application_messages_read')).toBe(true);
+    await expectMinHeight(page, '.interview-response-actions button', 48);
+    await expectNoHorizontalOverflow(page);
+
+    await page.getByRole('button', { name: '戻る' }).click();
+    await expect(page).toHaveURL(/\/jobs$/);
+    await page.goForward();
+    await expect(page).toHaveURL(new RegExp(`application_id=${application.id}`));
+    await page.locator('.hc-tabbar a', { hasText: '応募' }).click();
+    await expect(page).toHaveURL(/\/applications$/);
+    await expect(page.locator('.hc-application-row')).toHaveCount(1);
+
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1, name: '応募' })).toBeVisible();
+    await expect(page.locator('.hc-application-row')).toHaveCount(1);
+    await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/応募/);
+  });
+
+  test('a deep-linked job is pinned, labelled 指定求人 and opened', async ({ page }) => {
+    await mockApi(page, { hc_jobseeker_get_ranked_job: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([jobB]) }) });
+    await page.goto(`/jobs?job_id=${jobB.id}`);
+    const first = page.locator('.hc-job-card').first();
+    await expect(first).toHaveAttribute('data-job-id', jobB.id);
+    await expect(first.locator('.hc-rank-label')).toHaveText('指定求人');
+    await expect(first.getByRole('button', { name: '閉じる' })).toBeVisible();
+    await expect(page.locator(`[data-job-id="${jobA.id}"] .hc-rank-label`)).toHaveText('表示順 1');
+  });
+
+  test('a deep link to a job that is no longer published fails safely', async ({ page }) => {
+    await mockApi(page, { hc_jobseeker_get_ranked_job: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }) });
+    await page.goto('/jobs?job_id=12121212-1212-4212-8212-121212121212');
+    await expect(page.getByText('この求人は公開を終了したか、現在は表示できません。')).toBeVisible();
+    await expect(page.locator('.hc-job-card')).toHaveCount(2);
+  });
+
+  test('my page menu opens P1 screens inside the same app, with back navigation', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/profile');
+    await expect(page.getByRole('heading', { level: 1, name: 'マイページ' })).toBeVisible();
+    await markDocument(page);
+
+    for (const [label, path, heading] of [
+      ['スカウト', '/scouts', 'スカウト'],
+      ['見学・体験の予約', '/visits', '見学・体験'],
+      ['スポット勤務', '/spot-jobs', 'スポット勤務'],
+      ['マッチ度を見る', '/matches', 'マッチ度'],
+      ['園を比較する', '/compare', '園を比較'],
+    ] as const) {
+      await page.locator('.hc-menu a', { hasText: label }).click();
+      await expect(page).toHaveURL(new RegExp(`${path}$`));
+      await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
+      await expect(page.locator('.hc-tabbar a')).toHaveCount(5);
+      await expect(page.locator('.error-banner')).toHaveCount(0);
+      await expectNoHorizontalOverflow(page);
+      await page.getByRole('button', { name: '戻る' }).click();
+      await expect(page).toHaveURL(/\/profile$/);
+    }
+    await expectSameDocument(page);
+  });
+
+  test('scouts: inbox empty state, consent copy and settings on one screen', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/scouts');
+    await expect(page.getByText('スカウトはまだ届いていません')).toBeVisible();
+    await expect(page.getByText('本人情報の共有はあなたが決めます')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'スカウト設定' })).toBeVisible();
+    await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/マイページ/);
+    await expectNoHorizontalOverflow(page);
+  });
+
+  test('visits: history card links back to the application; failures are errors, not empty', async ({ page }) => {
+    let fail = true;
+    await mockApi(page, { hc_jobseeker_list_my_visits: (route) => fail ? serverError(route) : route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([visit]) }) });
+    await page.goto('/visits');
+    const error = page.locator('.hc-inline-error');
+    await expect(error).toBeVisible();
+    await expect(page.getByText('見学・体験の予定はまだありません')).toHaveCount(0);
+    fail = false;
+    await error.getByRole('button', { name: 'もう一度' }).click();
+    const card = page.locator(`#visit-${visit.reservation_id}`);
+    await expect(card).toContainText('園見学');
+    await expect(card).toContainText('確定');
+    await markDocument(page);
+    await card.getByRole('link', { name: '応募状況を見る' }).click();
+    await expect(page).toHaveURL(new RegExp(`/applications\\?application_id=${application.id}`));
+    await expect(page.getByRole('heading', { level: 1, name: '応募の詳細' })).toBeVisible();
+    await expectSameDocument(page);
+  });
+
+  test('spot work: confirmed shift and open slot with date, hours, rate and break', async ({ page }) => {
+    await mockApi(page);
+    await page.goto(`/spot-jobs?assignment_id=${spotAssignment.assignment_id}`);
+    const assignment = page.locator(`#spot-assignment-${spotAssignment.assignment_id}`);
+    await expect(assignment).toContainText('勤務確定');
+    await expect(assignment).toContainText('Hoiku Office シフト連携済み');
+    const open = page.locator('.spot-job-card');
+    await expect(open).toContainText('09:00〜15:00');
+    await expect(open).toContainText('¥1,400');
+    await expect(open).toContainText('45分');
+    await expectMinHeight(page, '.spot-job-card .primary-button', 48);
+    await expectNoHorizontalOverflow(page);
+  });
+
+  test('matching: evidence-backed scores reuse the shared job card', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/matches');
+    await expect(page.locator('.hc-job-card')).toHaveCount(2);
+    await expect(page.locator('.hc-match-evidence').first()).toContainText('条件マッチ');
+    await page.getByRole('button', { name: '70%以上だけ表示' }).click();
+    await expect(page.getByRole('button', { name: '70%以上だけ表示' })).toHaveAttribute('aria-pressed', 'true');
+    await expectNoHorizontalOverflow(page);
+  });
+
+  test('compare: two jobs side by side, table scrolls inside its own box', async ({ page }) => {
+    await mockApi(page);
+    await page.goto(`/compare?job_id=${jobA.id}&job_id=${jobB.id}`);
+    await expect(page.locator('.compare-table thead th')).toHaveCount(3);
+    await expect(page.locator('.compare-table')).toContainText('園掲載');
+    await expect(page).toHaveURL(new RegExp(`job_id=${jobA.id}.*job_id=${jobB.id}`));
+    const scrollable = await page.locator('.compare-table-scroll').evaluate((el) => el.scrollWidth > el.clientWidth);
+    expect(scrollable).toBe(true);
+    await expectNoHorizontalOverflow(page);
+  });
+
+  test('P1 screens send only authenticated candidate RPCs', async ({ page }) => {
+    const unauthenticated: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/rest/v1/rpc/hc_jobseeker_') && !/Bearer e2e-fixture-token/.test(request.headers()['authorization'] || '')) unauthenticated.push(request.url());
+    });
+    await mockApi(page);
+    for (const path of ['/scouts', '/visits', '/spot-jobs', '/matches', `/compare?job_id=${jobA.id}&job_id=${jobB.id}`, `/applications?application_id=${application.id}`]) {
+      await page.goto(path);
+      await expect(page.locator('.hc-skeleton-card')).toHaveCount(0, { timeout: 10_000 });
+    }
+    expect(unauthenticated).toEqual([]);
+  });
 });

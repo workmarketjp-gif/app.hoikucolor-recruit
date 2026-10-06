@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from './Icon';
+import { EmptyState, InlineError, SkeletonList } from './StateViews';
+import { errorMessage } from '../lib/useResource';
 import { listJobseekerScouts, respondToJobseekerScout, type JobseekerScout } from '../lib/scoutInboxRepository';
 import './ScoutInbox.css';
 
@@ -31,6 +33,7 @@ function requestedScoutId() {
 export function ScoutInbox() {
   const [items, setItems] = useState<JobseekerScout[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -45,10 +48,12 @@ export function ScoutInbox() {
       const next = await listJobseekerScouts();
       if (!mountedRef.current) return;
       setItems(next);
+      setLoaded(true);
       setError(null);
     } catch (err) {
-      if (!mountedRef.current) return;
-      setError(err instanceof Error ? err.message : 'スカウトを読み込めませんでした。');
+      // A failed background refresh keeps the last good list instead of flashing an error.
+      if (!mountedRef.current || quiet) return;
+      setError(errorMessage(err, 'スカウトを読み込めませんでした。'));
     } finally {
       if (mountedRef.current && !quiet) setLoading(false);
     }
@@ -95,24 +100,23 @@ export function ScoutInbox() {
       setItems((prev) => prev.map((row) => row.scout_id === item.scout_id ? { ...row, scout_status: status, responded_at: new Date().toISOString() } : row));
       setNotice(status === 'accepted' ? `${item.facility_name}からのスカウトを承諾しました。` : `${item.facility_name}からのスカウトを辞退しました。`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'スカウトへ回答できませんでした。');
+      setError(errorMessage(err, 'スカウトへ回答できませんでした。'));
       await load();
     } finally {
       setBusyId(null);
     }
   };
 
-  return <section className="form-section scout-inbox" id="scout-inbox" tabIndex={-1} aria-labelledby="scout-inbox-heading">
-    <div className="form-section-head scout-inbox-head">
-      <div><h3 id="scout-inbox-heading">届いた匿名スカウト</h3><p>園には匿名プロフィールだけが共有されています。承諾するまで氏名・メール・電話番号は開示されません。</p></div>
-      <span className="scout-inbox-count">回答待ち {pendingCount}件</span>
+  return <section className="hc-section scout-inbox" id="scout-inbox" tabIndex={-1} aria-labelledby="scout-inbox-heading">
+    <div className="hc-section-head">
+      <h2 id="scout-inbox-heading">届いた匿名スカウト</h2>
+      {loaded && <span className="hc-count">回答待ち {pendingCount}件</span>}
     </div>
+    <div className="scout-consent-note"><Icon name="shield" size={17} /><div><strong>本人情報の共有はあなたが決めます</strong><p>承諾するまで氏名・メール・電話番号は開示されません。</p></div></div>
 
-    <div className="scout-consent-note"><Icon name="shield" size={17} /><div><strong>本人情報の共有はあなたが決めます</strong><p>承諾したスカウトだけ、今後の連絡に必要な本人情報を園が確認できる状態になります。辞退・期限切れでは本人情報を共有しません。</p></div></div>
-
-    {error && <span className="form-error">{error}</span>}
-    {notice && <span className="form-success">{notice}</span>}
-    {loading ? <div className="empty-state"><p>スカウトを読み込んでいます。</p></div> : items.length === 0 ? <div className="empty-state"><h3>スカウトはまだ届いていません</h3><p>「匿名スカウトを受け取る」をONにすると、希望条件や保育観を見た園からお誘いが届くことがあります。</p></div> : <div className="scout-inbox-list">
+    {error && <InlineError message={error} onRetry={() => void load()} />}
+    {notice && <p className="form-success" role="status">{notice}</p>}
+    {loading && !loaded ? <SkeletonList rows={2} /> : !loaded ? null : items.length === 0 ? <EmptyState title="スカウトはまだ届いていません" body="下の「スカウト設定」で匿名スカウトを受け取るをONにすると、希望条件や保育観を見た園からお誘いが届くことがあります。" /> : <div className="scout-inbox-list">
       {items.map((item) => <article id={`scout-${item.scout_id}`} tabIndex={-1} className={`scout-inbox-card status-${item.scout_status} ${targetScoutId === item.scout_id ? 'is-targeted' : ''}`} key={item.scout_id}>
         <div className="scout-inbox-card-head"><div><span className={`scout-status status-${item.scout_status}`}>{statusLabels[item.scout_status]}</span><h4>{item.facility_name}</h4><p>{item.organization_name}</p></div><small>{formatDateTime(item.sent_at)}</small></div>
         {(item.job_title || item.employment_type) && <div className="scout-job-line"><Icon name="briefcase" size={15} /><span>{item.job_title || '募集職種'}{item.employment_type ? ` ・ ${item.employment_type}` : ''}</span></div>}

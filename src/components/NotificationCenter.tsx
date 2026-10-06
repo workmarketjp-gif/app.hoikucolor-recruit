@@ -12,7 +12,7 @@ type Props = {
   onNavigate: (target: string) => void;
 };
 
-const ALLOWED_PATHS = new Set(['/', '/jobs', '/saved', '/applications', '/profile', '/scouts', '/spot-jobs', '/visits']);
+const ALLOWED_PATHS = new Set(['/', '/jobs', '/saved', '/applications', '/profile', '/scouts', '/spot-jobs', '/visits', '/matches', '/compare']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const INTERVIEW_NOTIFICATION_TYPES = new Set(['interview_scheduled', 'interview_cancelled']);
 const SPOT_NOTIFICATION_TYPES = new Set(['spot_confirmed', 'spot_cancelled', 'spot_completed', 'spot_no_show']);
@@ -166,10 +166,9 @@ export function NotificationCenter({ onNavigate }: Props) {
       }
     }
     setOpen(false);
-    if (target.startsWith('/scouts') || target.startsWith('/applications?') || target.startsWith('/spot-jobs?') || target === '/spot-jobs' || target.startsWith('/visits')) {
-      window.location.assign(target);
-      return;
-    }
+    // Every target is a validated in-app path (query + anchor included). The app routes
+    // it inside the same session, so deep links to /scouts, /visits, /spot-jobs and
+    // /applications?application_id=… open their exact item without a full reload.
     onNavigate(target);
   };
 

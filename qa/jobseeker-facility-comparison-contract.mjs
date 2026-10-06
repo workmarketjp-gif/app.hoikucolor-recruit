@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 
-const route = fs.readFileSync('src/CompareRouteRoot.tsx', 'utf8');
-const css = fs.readFileSync('src/CompareRouteRoot.css', 'utf8');
-const enhancer = fs.readFileSync('src/components/CompareNavigationEnhancer.tsx', 'utf8');
-const main = fs.readFileSync('src/main.tsx', 'utf8');
+const route = fs.readFileSync('src/views/CompareView.tsx', 'utf8');
+const css = fs.readFileSync('src/views/views.css', 'utf8');
+const app = fs.readFileSync('src/App.tsx', 'utf8');
+const router = fs.readFileSync('src/lib/router.ts', 'utf8');
+const shell = fs.readFileSync('src/components/CandidateShell.tsx', 'utf8');
 const repository = fs.readFileSync('src/lib/recruitRepository.ts', 'utf8');
 const rankedCatalog = fs.readFileSync('supabase/migrations/20260913090000_hc_jobseeker_ranked_catalog_v1.sql', 'utf8');
 
@@ -30,8 +31,8 @@ assert(repository.includes("window.location.pathname.startsWith('/compare')") &&
 assert(repository.includes('missingIds.map((jobId) => getRankedJob(jobId))') && repository.includes("rpc('hc_jobseeker_get_ranked_job'"), 'comparison must exact-hydrate jobs that fall outside the bounded shortlist');
 assert(repository.includes("`compare:${requestedJobIds.join(',')}`") && repository.includes("key: cacheKey"), 'comparison exact hydration must not be masked by the default shortlist cache');
 assert(rankedCatalog.includes('create or replace function public.hc_jobseeker_get_ranked_job') && rankedCatalog.includes('where r.id = p_job_id'), 'exact comparison hydration must remain candidate-safe and job-scoped');
-assert(main.includes("startsWith('/compare')") && main.includes('CompareRouteRoot') && main.includes('CompareNavigationEnhancer'), 'comparison route is not wired into the lazy app root');
-assert(enhancer.includes('href="/compare"') && enhancer.includes('2〜3園を、申告値と実績値を分けて比較'), 'candidate navigation must expose the comparison flow');
-assert(css.includes('@media(max-width:620px)') && css.includes('overflow:auto') && css.includes('position:sticky'), 'mobile comparison must retain horizontal scroll and row labels');
+assert(router.includes("compare: '/compare'") && app.includes("{view === 'compare' && <CompareView userKey={userKey} />}"), 'comparison must be a regular view of the candidate app');
+assert(shell.includes("{ href: '/compare', label: '園を比較' }") && app.includes('<a href="/compare">園を比較する') && app.includes('`/compare?${saved.data.slice(0, 3)'), 'candidate navigation must expose the comparison flow (sidebar, My page, saved jobs)');
+assert(/\.compare-table-scroll \{[^}]*overflow: auto/.test(css) && /\.compare-row-label \{[^}]*position: sticky/.test(css) && /\.compare-table thead th \{[^}]*position: sticky/.test(css), 'mobile comparison must retain horizontal scroll and sticky row labels');
 
 console.log('jobseeker facility comparison contract: PASS');

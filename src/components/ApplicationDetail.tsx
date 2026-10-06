@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApplicationMessages } from './ApplicationMessages';
 import { Icon } from './Icon';
+import { EmptyState, InlineError, SkeletonList } from './StateViews';
+import { errorMessage } from '../lib/useResource';
 import {
   getJobseekerApplicationDetail,
   respondToInterview,
@@ -55,7 +57,7 @@ export function ApplicationDetail({ applicationId, onBack }: Props) {
       setError(null);
     } catch (err) {
       if (!mountedRef.current || quiet) return;
-      setError(err instanceof Error ? err.message : '応募情報を読み込めませんでした。');
+      setError(errorMessage(err, '応募情報を読み込めませんでした。'));
     } finally {
       if (mountedRef.current && !quiet) setLoading(false);
     }
@@ -85,19 +87,23 @@ export function ApplicationDetail({ applicationId, onBack }: Props) {
     };
   }, [load]);
 
-  if (loading) {
-    return <section className="application-detail-state" aria-live="polite"><span className="loading-ring" /><strong>応募情報を読み込んでいます</strong></section>;
-  }
+  if (loading && !detail) return <SkeletonList rows={3} />;
 
-  if (error) {
-    return <section className="application-detail-state is-error"><strong>応募情報を読み込めませんでした</strong><p>{error}</p><div><button className="secondary-button" type="button" onClick={onBack}>応募一覧へ戻る</button><button className="primary-button" type="button" onClick={() => void load(false)}>再読み込み</button></div></section>;
+  if (error && !detail) {
+    return <>
+      <InlineError message={error} onRetry={() => void load(false)} />
+      <button className="hc-link-button" type="button" onClick={onBack}>応募一覧へ戻る</button>
+    </>;
   }
 
   if (!detail) {
-    return <section className="application-detail-state"><strong>応募情報を確認できません</strong><p>この応募は存在しないか、現在のアカウントでは閲覧できません。</p><button className="primary-button" type="button" onClick={onBack}>応募一覧へ戻る</button></section>;
+    return <EmptyState title="応募情報を確認できません" body="この応募は存在しないか、現在のアカウントでは閲覧できません。" action="応募一覧へ戻る" onAction={onBack} />;
   }
 
-  return <ApplicationDetailBody detail={detail} onBack={onBack} onRefresh={load} />;
+  return <>
+    {error && <InlineError message={error} onRetry={() => void load(false)} />}
+    <ApplicationDetailBody detail={detail} onBack={onBack} onRefresh={load} />
+  </>;
 }
 
 function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: JobseekerApplicationDetail; onBack: () => void; onRefresh: (quiet?: boolean) => Promise<void> }) {
@@ -134,7 +140,7 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
   return <>
     <header className="application-detail-heading">
       <button className="application-back" type="button" onClick={onBack}><span aria-hidden="true">←</span> 応募一覧へ</button>
-      <button className="secondary-button application-refresh" type="button" onClick={() => void onRefresh(false)}>更新</button>
+      <button className="hc-link-button application-refresh" type="button" onClick={() => void onRefresh(false)}>最新の状態に更新</button>
     </header>
 
     <section className="application-detail-hero">
@@ -181,7 +187,6 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
 
       <section id="application-messages" tabIndex={-1} className="application-detail-card application-communication-card">
         <div className="application-card-head"><div><span className="eyebrow">COMMUNICATION</span><h2>園とのやり取り・提出書類</h2></div></div>
-        <p className="application-card-intro">メッセージの確認、履歴書・保育士証などの提出をこの応募ごとに管理できます。</p>
         <ApplicationMessages applicationId={application.id} />
       </section>
     </div>
@@ -210,7 +215,7 @@ function InterviewCard({ interview, onRespond }: { interview: JobseekerInterview
       window.dispatchEvent(new CustomEvent('hc:attention-refresh'));
       window.dispatchEvent(new CustomEvent('hc:notifications-refresh'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : '面接日時への回答を送信できませんでした。');
+      setError(errorMessage(err, '面接日時への回答を送信できませんでした。'));
     } finally {
       setBusy(false);
     }

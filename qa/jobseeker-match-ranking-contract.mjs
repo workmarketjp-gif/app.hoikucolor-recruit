@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 
 const matching = fs.readFileSync('src/lib/jobMatching.ts', 'utf8');
-const route = fs.readFileSync('src/MatchRouteRoot.tsx', 'utf8');
-const enhancer = fs.readFileSync('src/components/MatchNavigationEnhancer.tsx', 'utf8');
-const main = fs.readFileSync('src/main.tsx', 'utf8');
+const route = fs.readFileSync('src/views/MatchesView.tsx', 'utf8');
+const jobCard = fs.readFileSync('src/components/JobCard.tsx', 'utf8');
+const app = fs.readFileSync('src/App.tsx', 'utf8');
+const router = fs.readFileSync('src/lib/router.ts', 'utf8');
 
 function assert(condition, message) {
   if (!condition) {
@@ -22,8 +23,8 @@ assert(route.includes('勤務地・雇用形態・給与などは通常ロジッ
 assert(route.includes('保育観は現在、求人文面に明示された表現だけ'), 'UI must not claim unsupported AI childcare-value inference');
 assert(route.includes('園の申告値と混ぜません'), 'Verified evidence separation disclosure is missing');
 assert(route.includes('70%以上だけ表示'), 'high-match filter is missing');
-assert(route.includes('submitApplication') && route.includes('saveJob') && route.includes('unsaveJob'), 'match results must support core candidate actions');
-assert(enhancer.includes('href="/matches"') && enhancer.includes('おすすめを見る'), 'main app navigation to matching is missing');
-assert(main.includes("startsWith('/matches')") && main.includes('MatchRouteRoot') && main.includes('MatchNavigationEnhancer'), 'match route is not wired into the app root');
+assert(route.includes('<JobCard') && route.includes('onToggleSaved={onToggleSaved}') && jobCard.includes('submitApplication(job.id, profile)') && app.includes('saveJob(jobId, session.userId)') && app.includes('unsaveJob(jobId)'), 'match results must support core candidate actions through the shared job card');
+assert(app.includes('<a href="/matches">') && app.includes('href="/matches">マッチ度順で見る'), 'main app navigation to matching is missing');
+assert(router.includes("matches: '/matches'") && app.includes("{view === 'matches' && <MatchesView"), 'matching must be a regular view of the candidate app');
 
 console.log('jobseeker-match-ranking-contract: PASS');

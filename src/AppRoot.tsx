@@ -7,6 +7,7 @@ import { Brand } from './components/Brand';
 import googleMark from './logo/google-g.svg';
 import logoMark from './logo/logom_hoikucolor.png';
 import { loadHoikuColorClerkPublishableKey } from './lib/clerkConfig';
+import { rememberReturnTarget } from './lib/router';
 import { setSupabaseAccessTokenGetter } from './lib/supabase';
 import './auth-overrides.css';
 import './auth-custom.css';
@@ -144,6 +145,10 @@ function LoginScreen() {
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [error, setError] = useState<string | null>(null);
   const busy = signInFetchStatus === 'fetching' || signUpFetchStatus === 'fetching';
+
+  // A signed-out visit to a candidate deep link (e.g. a Google job posting) returns
+  // to that exact screen after login; App validates the target again before using it.
+  useEffect(() => { rememberReturnTarget(); }, []);
 
   const finalizeSignIn = async () => {
     await signIn.finalize({

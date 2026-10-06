@@ -15,7 +15,7 @@ export const shellTabs: { id: ShellTab; label: string; href: string; icon: Param
 ];
 
 /** Secondary destinations: desktop sidebar only; on mobile they live on Home / My page. */
-const secondaryLinks = [
+export const secondaryLinks = [
   { href: '/scouts', label: 'スカウト' },
   { href: '/visits', label: '見学・体験' },
   { href: '/spot-jobs', label: 'スポット勤務' },
@@ -31,12 +31,14 @@ type Props = {
   notification: ReactNode;
   badges?: Partial<Record<ShellTab, number>>;
   onNavigate?: (tab: ShellTab) => void;
+  /** Screens below a tab (details, secondary screens) show a back button in the header. */
+  onBack?: () => void;
   onSignOut: () => void | Promise<void>;
   className?: string;
   children: ReactNode;
 };
 
-export function CandidateShell({ active, title, name, email, notification, badges = {}, onNavigate, onSignOut, className, children }: Props) {
+export function CandidateShell({ active, title, name, email, notification, badges = {}, onNavigate, onBack, onSignOut, className, children }: Props) {
   const [accountOpen, setAccountOpen] = useState(false);
 
   const go = (tab: ShellTab) => (event: React.MouseEvent<HTMLAnchorElement>) => {
@@ -78,7 +80,9 @@ export function CandidateShell({ active, title, name, email, notification, badge
 
       <main className="main-column">
         <header className="hc-app-header">
-          <a className="hc-header-brand" href="/" onClick={go('home')} aria-label="ホームへ"><Brand compact /></a>
+          {onBack
+            ? <button type="button" className="icon-button hc-header-back" onClick={onBack} aria-label="戻る"><Icon name="chevron" size={22} /></button>
+            : <a className="hc-header-brand" href="/" onClick={go('home')} aria-label="ホームへ"><Brand compact /></a>}
           <h1 className="hc-header-title">{title}</h1>
           <div className="hc-header-actions">
             {notification}
@@ -113,9 +117,9 @@ function AccountSheet({ name, email, onClose, onSignOut }: { name: string; email
           <strong id="hc-account-title">{name}</strong>
           {email && <span>{email}</span>}
         </div>
-        <a className="hc-sheet-item" href="/profile">マイページ</a>
-        <a className="hc-sheet-item" href="/scouts">スカウト</a>
-        <a className="hc-sheet-item" href="/visits">見学・体験の予約</a>
+        <a className="hc-sheet-item" href="/profile" onClick={onClose}>マイページ</a>
+        <a className="hc-sheet-item" href="/scouts" onClick={onClose}>スカウト</a>
+        <a className="hc-sheet-item" href="/visits" onClick={onClose}>見学・体験の予約</a>
         <button
           type="button"
           className="hc-sheet-item is-danger"

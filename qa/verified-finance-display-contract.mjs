@@ -3,7 +3,8 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
-const app = read('src/App.tsx');
+// Job cards and their details are rendered by the shared JobCard component.
+const app = read('src/App.tsx') + read('src/components/JobCard.tsx');
 const summary = read('src/components/VerifiedFinanceSummary.tsx');
 const css = read('src/components/VerifiedFinanceSummary.css');
 const repository = read('src/lib/recruitRepository.ts');

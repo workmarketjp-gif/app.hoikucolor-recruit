@@ -9,11 +9,13 @@ const safeSettings = read('supabase/migrations/20260912140000_hc_jobseeker_visit
 const historyRouteSql = read('supabase/migrations/20260914040000_hc_jobseeker_visit_history_route_v1.sql');
 const repository = read('src/lib/visitRepository.ts');
 const ui = read('src/components/VisitTrialPanel.tsx');
-const route = read('src/VisitRouteRoot.tsx');
-const main = read('src/main.tsx');
+const route = read('src/views/VisitsView.tsx');
+const router = read('src/lib/router.ts');
 const notificationCenter = read('src/components/NotificationCenter.tsx');
-const navigation = read('src/components/VisitNavigationEnhancer.tsx');
-const app = read('src/App.tsx');
+const navigation = read('src/components/CandidateShell.tsx');
+const appShell = read('src/App.tsx');
+// The expanded job details (where visits are booked) are rendered by the shared JobCard.
+const app = appShell + read('src/components/JobCard.tsx');
 
 const foundationMarkers = [
   'create table if not exists public.hc_visit_settings',
@@ -184,12 +186,11 @@ if (!route.includes('setMissingTarget(false);\n      setError(')) {
 if (!route.includes('}, [error, loading, visitId, visits]);')) {
   throw new Error('Visit deep-link recovery must react when a failed history request later succeeds.');
 }
-if (!main.includes("window.location.pathname.startsWith('/visits') ? <VisitRouteRoot />")) throw new Error('Dedicated /visits route is not wired in main.tsx.');
-if (!main.includes('<VisitNavigationEnhancer />')) throw new Error('Visit history navigation enhancer is not mounted globally.');
-if (!navigation.includes('href="/visits"') || !navigation.includes('見学・体験')) throw new Error('Visit history navigation entry is missing.');
+if (!router.includes("visits: '/visits'") || !appShell.includes("{view === 'visits' && <VisitsView />}")) throw new Error('Dedicated /visits view is not wired into the candidate app.');
+if (!navigation.includes("{ href: '/visits', label: '見学・体験' }") || !appShell.includes('<a href="/visits">')) throw new Error('Visit history navigation entry is missing.');
 if (!notificationCenter.includes("'/visits'")) throw new Error('Notification safe-path allow-list must include /visits.');
 if (!notificationCenter.includes('VISIT_NOTIFICATION_TYPES')) throw new Error('Visit lifecycle notifications are not recognized by NotificationCenter.');
 if (!notificationCenter.includes("parsed.searchParams.get('visit_id')")) throw new Error('Visit notification deep link must validate visit_id.');
-if (!notificationCenter.includes("target.startsWith('/visits')")) throw new Error('Visit notification must perform a real route navigation.');
+if (!notificationCenter.includes('onNavigate(target)') || !appShell.includes('window.history.pushState({ hcDepth: historyDepth() + 1 }')) throw new Error('Visit notification must perform a real route navigation.');
 
 console.log('Hoiku Color visit/trial candidate privacy contract passed.');

@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { InlineError } from './StateViews';
+import { markJobseekerApplicationMessagesRead } from '../lib/attentionRepository';
+import { errorMessage } from '../lib/useResource';
 import { listApplicationMessages, sendApplicationMessage, type Message } from '../lib/messageRepository';
 import {
   attachJobseekerDocumentToApplication,
@@ -54,10 +57,26 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
   );
   const unavailableMissingCount = missingExpectedDocuments.length - repairableMissingDocuments.length;
 
-  const announceMessagesViewed = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('hc:application-messages-viewed', {
-      detail: { applicationId },
-    }));
+  // Facility messages become read only after the candidate opened this panel and the
+  // messages actually loaded. Re-acknowledge only when a newer facility message arrives.
+  const acknowledgedMessageRef = useRef<string | null>(null);
+  const acknowledgingRef = useRef(false);
+  const acknowledgeMessages = useCallback(async (loaded: Message[]) => {
+    const newestFacilityMessage = [...loaded].reverse().find((message) => message.sender_role === 'facility');
+    if (!newestFacilityMessage || acknowledgedMessageRef.current === newestFacilityMessage.id || acknowledgingRef.current) return;
+    acknowledgingRef.current = true;
+    try {
+      const updated = await markJobseekerApplicationMessagesRead(applicationId);
+      acknowledgedMessageRef.current = newestFacilityMessage.id;
+      if (updated > 0) {
+        window.dispatchEvent(new CustomEvent('hc:attention-refresh'));
+        window.dispatchEvent(new CustomEvent('hc:notifications-refresh'));
+      }
+    } catch {
+      // The server's unread state stays the source of truth; the next load retries.
+    } finally {
+      acknowledgingRef.current = false;
+    }
   }, [applicationId]);
 
   const load = useCallback(async ({ acknowledge = false, quiet = false }: LoadMessageOptions = {}) => {
@@ -69,14 +88,14 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
       const next = await listApplicationMessages(applicationId);
       if (!mountedRef.current) return;
       setMessages(next);
-      if (acknowledge) announceMessagesViewed();
+      if (acknowledge) void acknowledgeMessages(next);
     } catch (err) {
       if (!mountedRef.current || quiet) return;
-      setError(err instanceof Error ? err.message : 'メッセージを読み込めませんでした。');
+      setError(errorMessage(err, 'メッセージを読み込めませんでした。'));
     } finally {
       if (mountedRef.current && !quiet) setLoading(false);
     }
-  }, [applicationId, announceMessagesViewed]);
+  }, [applicationId, acknowledgeMessages]);
 
   const loadDocuments = useCallback(async (quiet = false) => {
     try {
@@ -104,7 +123,7 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
       setMissingExpectedDocuments(missingExpectations);
     } catch (err) {
       if (!mountedRef.current || quiet) return;
-      setError(err instanceof Error ? err.message : '応募書類を読み込めませんでした。');
+      setError(errorMessage(err, '応募書類を読み込めませんでした。'));
     }
   }, [applicationId]);
 
@@ -161,7 +180,7 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
       setMessages((current) => [...current, message]);
       setDraft('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'メッセージを送信できませんでした。');
+      setError(errorMessage(err, 'メッセージを送信できませんでした。'));
     } finally {
       setSending(false);
     }
@@ -177,7 +196,7 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
       await loadDocuments();
       setDocumentNotice(`${documentLabels[document.document_type] || '書類'}をこの応募先へ提出しました。`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '応募書類を提出できませんでした。');
+      setError(errorMessage(err, '応募書類を提出できませんでした。'));
     } finally {
       setDocumentBusyId(null);
     }
@@ -200,7 +219,7 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
         setDocumentNotice(`応募時に選ばれていた未提出書類${repairableMissingDocuments.length}件をこの応募先へ提出しました。`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '応募時書類を提出できませんでした。');
+      setError(errorMessage(err, '応募時書類を提出できませんでした。'));
     } finally {
       setRepairingDefaults(false);
     }
@@ -212,78 +231,80 @@ export function ApplicationMessages({ applicationId }: { applicationId: string }
       const url = await createAttachedApplicationDocumentSignedUrl(document);
       window.open(url, '_blank', 'noopener,noreferrer');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '提出済み書類を開けませんでした。');
+      setError(errorMessage(err, '提出済み書類を開けませんでした。'));
     }
   };
 
-  return <div style={{ width: '100%', marginTop: 8 }}>
-    <button className="secondary-button" type="button" onClick={toggle} aria-expanded={open}>
-      {open ? 'メッセージ・書類を閉じる' : '園とメッセージ・書類'}
+  const reloadAll = () => void Promise.allSettled([load({ acknowledge: true }), loadDocuments()]);
+
+  return <div className="hc-messages">
+    <button className="secondary-button hc-messages-toggle" type="button" onClick={toggle} aria-expanded={open}>
+      {open ? 'メッセージ・書類を閉じる' : '園とのメッセージ・書類を開く'}
     </button>
-    {open && <div className="panel" data-application-messages-panel={applicationId} style={{ marginTop: 10, padding: 14, minWidth: 0 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-        <strong>園とのメッセージ</strong>
-        <button type="button" className="secondary-button" onClick={() => void Promise.allSettled([load({ acknowledge: true }), loadDocuments()])} disabled={loading}>{loading ? '更新中…' : '更新'}</button>
+    {open && <div className="hc-messages-panel" data-application-messages-panel={applicationId}>
+      <div className="hc-messages-head">
+        <h3>園とのメッセージ</h3>
+        <button type="button" className="hc-link-button" onClick={reloadAll} disabled={loading}>{loading ? '更新中…' : '更新'}</button>
       </div>
-      {error && <p className="form-error">{error}</p>}
-      <div aria-live="polite" style={{ display: 'grid', gap: 8, maxHeight: 280, overflowY: 'auto', marginBottom: 12 }}>
-        {loading && !messages.length ? <small>読み込んでいます…</small> : null}
-        {!loading && !messages.length ? <small>まだメッセージはありません。ここから園へ連絡できます。</small> : null}
-        {messages.map((message) => <div key={message.id} style={{ padding: '10px 12px', borderRadius: 12, background: message.sender_role === 'jobseeker' ? 'var(--surface-soft, #f7f7f8)' : 'var(--surface, #fff)', border: '1px solid var(--border, #e7e7ea)' }}>
+      {error && <InlineError message={error} onRetry={reloadAll} />}
+      <div className="hc-message-list" aria-live="polite">
+        {loading && !messages.length ? <p className="hc-note">読み込んでいます…</p> : null}
+        {!loading && !error && !messages.length ? <p className="hc-note">まだメッセージはありません。ここから園へ連絡できます。</p> : null}
+        {messages.map((message) => <div key={message.id} className={`hc-message ${message.sender_role === 'jobseeker' ? 'is-mine' : 'is-facility'}`}>
           <small>{message.sender_role === 'jobseeker' ? 'あなた' : '園'} ・ {formatDateTime(message.created_at)}</small>
-          <p style={{ margin: '4px 0 0', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{message.body}</p>
+          <p>{message.body}</p>
         </div>)}
       </div>
 
-      <section style={{ margin: '4px 0 14px', padding: '12px 0', borderTop: '1px solid var(--border, #e7e7ea)', borderBottom: '1px solid var(--border, #e7e7ea)' }} aria-label="この応募に提出する書類">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 9 }}>
-          <strong style={{ fontSize: 13 }}>応募書類</strong>
-          <a href="/profile" style={{ fontSize: 12 }}>書類庫を管理</a>
+      <label className="hc-field hc-message-compose">
+        <span>メッセージ</span>
+        <textarea rows={3} maxLength={4000} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="園への質問や日程の相談など" />
+      </label>
+      <div className="hc-message-send">
+        <small>{draft.length}/4000</small>
+        <button className="primary-button" type="button" onClick={send} disabled={sending || !draft.trim()}>{sending ? '送信中…' : '送信する'}</button>
+      </div>
+
+      <section className="hc-documents" aria-label="この応募に提出する書類">
+        <div className="hc-messages-head">
+          <h3>応募書類</h3>
+          <a className="hc-link-button" href="/profile">書類庫を管理</a>
         </div>
-        {missingExpectedDocuments.length > 0 && <div className="form-error" role="alert" style={{ display: 'grid', gap: 8, marginBottom: 8 }}>
-          <span>応募した時点で「応募時に使用」に設定されていた書類のうち、{missingExpectedDocuments.length}件がこの応募にはまだ提出されていません。</span>
-          {repairableMissingDocuments.length > 0 && <button className="secondary-button" type="button" onClick={() => void attachMissingExpectedDocuments()} disabled={repairingDefaults || documentBusyId !== null} style={{ justifySelf: 'start' }}>
+        {missingExpectedDocuments.length > 0 && <div className="hc-document-alert" role="alert">
+          <p>応募した時点で「応募時に使用」に設定されていた書類のうち、{missingExpectedDocuments.length}件がこの応募にはまだ提出されていません。</p>
+          {repairableMissingDocuments.length > 0 && <button className="secondary-button" type="button" onClick={() => void attachMissingExpectedDocuments()} disabled={repairingDefaults || documentBusyId !== null}>
             {repairingDefaults ? '応募時書類を提出中…' : '未提出の応募時書類をまとめて提出'}
           </button>}
           {unavailableMissingCount > 0 && <small>応募時に選ばれていた書類のうち{unavailableMissingCount}件は現在の書類庫にありません。必要な場合は、下の現在の書類をこの応募へ提出してください。</small>}
         </div>}
-        {documentNotice && <p className="form-success" style={{ margin: '0 0 8px' }}>{documentNotice}</p>}
-        {documents.length ? <div style={{ display: 'grid', gap: 8 }}>
+        {documentNotice && <p className="form-success" role="status">{documentNotice}</p>}
+        {documents.length ? <div className="hc-document-list">
           {documents.map((document) => {
             const attached = attachedIds.includes(document.id);
-            return <div key={document.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
-              <span style={{ display: 'grid', minWidth: 0, flex: '1 1 190px' }}>
-                <strong style={{ fontSize: 12 }}>{documentLabels[document.document_type] || '書類'}{document.is_default ? ' ・応募時に使用' : ''}</strong>
-                <small style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{document.title}</small>
+            return <div key={document.id} className="hc-document-row">
+              <span className="hc-document-name">
+                <strong>{documentLabels[document.document_type] || '書類'}{document.is_default ? ' ・応募時に使用' : ''}</strong>
+                <small>{document.title}</small>
               </span>
               <button className="secondary-button" type="button" disabled={attached || repairingDefaults || documentBusyId !== null} onClick={() => void attachDocument(document)}>
                 {attached ? '提出済み' : documentBusyId === document.id ? '提出中…' : 'この応募に提出'}
               </button>
             </div>;
           })}
-        </div> : <small>保存済みの書類はありません。プロフィールの「応募書類」から履歴書や保育士証を一度保存すると、次の応募でも再利用できます。</small>}
+        </div> : <p className="hc-note">保存済みの書類はありません。マイページの「応募書類」から履歴書や保育士証を一度保存すると、次の応募でも再利用できます。</p>}
 
-        {submittedDocuments.length ? <div style={{ display: 'grid', gap: 8, marginTop: 14, paddingTop: 12, borderTop: '1px dashed var(--border, #e7e7ea)' }}>
-          <strong style={{ fontSize: 12 }}>この応募へ提出済み</strong>
-          {submittedDocuments.map((document) => <div key={document.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
-            <span style={{ display: 'grid', minWidth: 0, flex: '1 1 190px' }}>
-              <strong style={{ fontSize: 12 }}>{documentLabels[document.document_type] || '書類'}</strong>
-              <small style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{document.title}</small>
+        {submittedDocuments.length ? <div className="hc-document-list is-submitted">
+          <strong>この応募へ提出済み</strong>
+          {submittedDocuments.map((document) => <div key={document.id} className="hc-document-row">
+            <span className="hc-document-name">
+              <strong>{documentLabels[document.document_type] || '書類'}</strong>
+              <small>{document.title}</small>
             </span>
             <button className="secondary-button" type="button" onClick={() => void openSubmittedDocument(document)}>開く</button>
           </div>)}
           <small>提出済みコピーは書類庫の元ファイルを削除しても、この応募の記録として保持されます。</small>
         </div> : null}
       </section>
-
-      <label style={{ display: 'grid', gap: 6 }}>
-        <span style={{ fontSize: 13, fontWeight: 700 }}>メッセージ</span>
-        <textarea rows={3} maxLength={4000} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="園への質問や日程の相談など" style={{ width: '100%', resize: 'vertical' }} />
-      </label>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginTop: 8 }}>
-        <small>{draft.length}/4000</small>
-        <button className="primary-button" type="button" onClick={send} disabled={sending || !draft.trim()}>{sending ? '送信中…' : '送信する'}</button>
-      </div>
     </div>}
   </div>;
 }

@@ -6,8 +6,8 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
 const migration = read('supabase/migrations/20260913110000_hc_jobseeker_match_shortlist_v1.sql');
 const repo = read('src/lib/recruitRepository.ts');
-const matchRoute = read('src/MatchRouteRoot.tsx');
-const compareRoute = read('src/CompareRouteRoot.tsx');
+const matchRoute = read('src/views/MatchesView.tsx');
+const compareRoute = read('src/views/CompareView.tsx');
 
 const checks = [
   [migration.includes('create or replace function public.hc_jobseeker_list_ranked_jobs()'), 'bounded shortlist must replace the legacy all-job catalog RPC'],
@@ -27,7 +27,7 @@ const checks = [
   [migration.includes('revoke all on function public.hc_jobseeker_list_ranked_jobs() from public, anon'), 'anonymous shortlist execution must be revoked'],
   [migration.includes('grant execute on function public.hc_jobseeker_list_ranked_jobs() to authenticated, service_role'), 'authenticated shortlist execution must remain explicit'],
   [repo.includes("rpc('hc_jobseeker_list_ranked_jobs')"), 'client listJobs must use the bounded shortlist RPC'],
-  [matchRoute.includes('Promise.all([listJobs(), getProfile(), getJobseekerMatchingPreferences(), listSavedJobIds()])'), 'matching route must consume the bounded shortlist instead of a separate all-job query'],
+  [matchRoute.includes('Promise.all([listJobs(), getProfile(), getJobseekerMatchingPreferences()])'), 'matching view must consume the bounded shortlist instead of a separate all-job query'],
   [compareRoute.includes('Promise.all([listJobs(), getProfile(), getJobseekerMatchingPreferences()])'), 'comparison picker must consume the bounded shortlist instead of loading all jobs'],
 ];
 
