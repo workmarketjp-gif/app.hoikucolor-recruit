@@ -143,12 +143,23 @@ function VerifiedWorkplaceSummary({ job, expanded }: { job: Job; expanded: boole
   </section>;
 }
 
-export function salaryLabel(job: Job) {
-  if (job.salary_note) return job.salary_note;
+/** 「時給 1,250円」「月給 240,000〜290,000円」. A single amount is never shown as a range. */
+function salaryRange(job: Job) {
+  if (!job.salary_min) return null;
   const prefix = job.salary_type === 'hourly' ? '時給' : '月給';
-  if (job.salary_min && job.salary_max) return `${prefix} ${job.salary_min.toLocaleString()}〜${job.salary_max.toLocaleString()}円`;
-  if (job.salary_min) return `${prefix} ${job.salary_min.toLocaleString()}円〜`;
-  return '給与は詳細をご確認ください';
+  const min = job.salary_min.toLocaleString();
+  if (!job.salary_max) return `${prefix} ${min}円〜`;
+  if (job.salary_max === job.salary_min) return `${prefix} ${min}円`;
+  return `${prefix} ${min}〜${job.salary_max.toLocaleString()}円`;
+}
+
+export function salaryLabel(job: Job) {
+  const range = salaryRange(job);
+  // Imported postings copy the raw amount into salary_note (e.g. 「1,250円〜1,250円」,
+  // no unit), so they use the structured amount. Our own postings keep the nursery's wording.
+  if (job.is_external && range) return range;
+  if (job.salary_note) return job.salary_note;
+  return range ?? '給与は詳細をご確認ください';
 }
 
 function formatSourceDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`; }

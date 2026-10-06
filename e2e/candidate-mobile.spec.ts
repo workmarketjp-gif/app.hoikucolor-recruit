@@ -639,3 +639,11 @@ test('no internal abbreviations or developer terms are visible to job seekers', 
 
   expect([...new Set(violations)]).toEqual([]);
 });
+
+test('salary reads naturally: unit shown, a single amount is not a range', async ({ page }) => {
+  const imported = { ...jobB, id: '15151515-1515-4515-8515-151515151515', is_external: true, can_apply_direct: false, source_kind: 'hellowork', source_name: 'ハローワーク', source_url: 'https://www.hellowork.mhlw.go.jp/', salary_type: 'hourly', salary_min: 1250, salary_max: 1250, salary_note: '1,250円〜1,250円' };
+  await mockApi(page, { hc_jobseeker_search_jobs_v2: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(searchRows([jobA, imported as typeof jobA])) }), hc_jobseeker_search_jobs: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(searchRows([jobA, imported as typeof jobA])) }) });
+  await page.goto('/jobs');
+  await expect(page.locator(`[data-job-id="${imported.id}"] .hc-job-salary`)).toHaveText('時給 1,250円');
+  await expect(page.locator(`[data-job-id="${jobA.id}"] .hc-job-salary`)).toHaveText('月給 240,000〜290,000円');
+});
