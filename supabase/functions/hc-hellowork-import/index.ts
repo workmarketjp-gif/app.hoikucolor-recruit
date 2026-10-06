@@ -33,7 +33,7 @@ const RESTRICTED_MARKERS = [
   '掲載はお断り',
 ];
 
-type ImportBody = { urls?: string[]; refresh?: boolean; discover?: boolean };
+type ImportBody = { urls?: string[]; refresh?: boolean; discover?: boolean; debug_url?: string };
 
 type Normalized = {
   source: typeof SOURCE;
@@ -538,6 +538,26 @@ Deno.serve(async (request: Request) => {
   if (!(await requireAuthorizedSync(request))) return json(403, { ok: false, code: 'SYNC_AUTH_REQUIRED' });
 
   const body = await request.json().catch(() => ({})) as ImportBody;
+
+  if (body.debug_url) {
+    const debugUrl = officialHelloWorkUrl(body.debug_url);
+    if (!debugUrl) return json(400, { ok: false, code: 'INVALID_DEBUG_URL' });
+    const response = await fetch(debugUrl, {
+      headers: {
+        Accept: 'text/html,application/xhtml+xml',
+        'User-Agent': 'HoikuColorJobSync/1.0 (+https://hoikucolor.jp)',
+      },
+      redirect: 'follow',
+    });
+    const text = htmlToText(await response.text());
+    return json(200, {
+      ok: true,
+      debug: {
+        status: response.status,
+        text: text.slice(0, 16000),
+      },
+    });
+  }
 
   if (body.discover) {
     try {
