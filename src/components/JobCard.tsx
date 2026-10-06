@@ -115,12 +115,12 @@ export function JobCard({ job, saved, onToggleSaved, onStartApplication, onAppli
       {applyError && <p className="form-error" role="alert">{applyError}</p>}
       <div className="hc-job-actions">
         <button className="secondary-button" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>{expanded ? '閉じる' : expandLabel}</button>
-        {isExternal ? (
+        {!canApplyDirect ? (
           <a className="primary-button hc-external-job-link" href={job.source_url || '#'} target="_blank" rel="noopener noreferrer" aria-disabled={!job.source_url}>
             求人の詳細を見る
           </a>
         ) : (
-          <button className="primary-button" type="button" onClick={apply} disabled={applying || isClosed || !canApplyDirect}>{isClosed ? '募集終了' : applying ? '応募中…' : '応募する'}</button>
+          <button className="primary-button" type="button" onClick={apply} disabled={applying || isClosed}>{isClosed ? '募集終了' : applying ? '応募中…' : '応募する'}</button>
         )}
       </div>
     </article>
