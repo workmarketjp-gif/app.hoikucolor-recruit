@@ -4,6 +4,7 @@ const migration = fs.readFileSync('supabase/migrations/20261006213000_hc_externa
 const repository = fs.readFileSync('src/lib/recruitRepository.ts', 'utf8');
 const card = fs.readFileSync('src/components/JobCard.tsx', 'utf8');
 const css = fs.readFileSync('src/candidate-shell.css', 'utf8');
+const importer = fs.readFileSync('supabase/functions/hc-hellowork-import/index.ts', 'utf8');
 
 const checks = [
   ['external source has its own table', migration.includes('create table if not exists public.hc_external_job_sources')],
@@ -25,6 +26,12 @@ const checks = [
   ['external card links to source instead of HC application', card.includes('hc-external-job-link') && card.includes('canApplyDirect')],
   ['source attribution is in the detail footer', card.includes('hc-job-source-footer') && card.includes('出典：')],
   ['source footer is visually secondary', css.includes('.hc-job-source-footer') && css.includes('font-size: 14px')],
+  ['importer accepts only official Hello Work detail URLs', importer.includes("url.hostname !== 'www.hellowork.mhlw.go.jp'") && importer.includes("action') !== 'dispDetailBtn'")],
+  ['importer requires service role', importer.includes("payload?.role === 'service_role'") && importer.includes('SERVICE_ROLE_REQUIRED')],
+  ['registered-jobseeker-only pages are blocked', importer.includes('ハローワークに求職登録した方のみを対象') && importer.includes('事業所の意向により公開していません')],
+  ['importer is childcare-position scoped', importer.includes('ALLOWED_POSITION') && importer.includes('保育士') && importer.includes('幼稚園教諭')],
+  ['importer defaults unsafe pages to non-public', importer.includes("status: Normalized['source_status']") && importer.includes('public_republication_allowed: allowed')],
+  ['refresh mode re-verifies existing rows', importer.includes('async function refreshUrls()') && importer.includes('body.refresh')],
 ];
 
 const failed = checks.filter(([, ok]) => !ok);
