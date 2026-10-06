@@ -47,13 +47,16 @@ async function mockApi(page: Page, overrides: Overrides = {}) {
       case 'hc_jobseeker_list_saved_job_ids': return json([{ job_id: jobA.id, saved_at: '2026-10-01T00:00:00Z' }]);
       case 'hc_jobseeker_list_applications': return json([application]);
       case 'hc_jobseeker_get_profile': return json(profileComplete);
-      case 'hc_jobseeker_search_jobs': return json(searchRows([jobA, jobB]));
-      case 'hc_jobseeker_job_search_facets': return json([{ prefectures: ['東京都', '神奈川県'], employment_types: ['正社員', 'パート・アルバイト'] }]);
+      case 'hc_jobseeker_search_jobs':
+      case 'hc_jobseeker_search_jobs_v2': return json(searchRows([jobA, jobB]));
+      case 'hc_jobseeker_job_search_facets':
+      case 'hc_jobseeker_job_search_facets_v2': return json([{ prefectures: ['東京都', '神奈川県'], employment_types: ['正社員', 'パート・アルバイト'] }]);
       case 'hc_jobseeker_attention_summary': return json(attention);
       case 'hc_jobseeker_list_notifications': return json([]);
       case 'hc_jobseeker_list_scouts': return json([]);
       case 'hc_jobseeker_list_saved_jobs_with_status': return json([{ ...jobA, is_open: true, saved_at: '2026-10-01T00:00:00Z' }]);
       case 'hc_jobseeker_get_ranked_job': return json([jobA]);
+      case 'hc_jobseeker_get_job_v2': return json([jobA]);
       case 'hc_jobseeker_list_ranked_jobs': return json([jobA, jobB]);
       case 'hc_jobseeker_get_application_detail': return json(applicationDetail);
       case 'hc_jobseeker_list_application_messages': return json(facilityMessages);
@@ -132,7 +135,7 @@ for (const width of [375, 390, 393, 430]) {
 
 test('search failure shows a local retryable error, never a false empty, and nav stays', async ({ page }) => {
   let fail = true;
-  await mockApi(page, { hc_jobseeker_search_jobs: (route) => fail ? serverError(route) : route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(searchRows([jobA])) }) });
+  await mockApi(page, { hc_jobseeker_search_jobs_v2: (route) => fail ? serverError(route) : route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(searchRows([jobA])) }) });
   await page.goto('/jobs');
   const error = page.locator('.hc-inline-error').filter({ hasText: '求人を検索できませんでした' });
   await expect(error).toBeVisible();
@@ -147,7 +150,7 @@ test('search failure shows a local retryable error, never a false empty, and nav
 });
 
 test('real zero results show the empty state (not an error)', async ({ page }) => {
-  await mockApi(page, { hc_jobseeker_search_jobs: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }) });
+  await mockApi(page, { hc_jobseeker_search_jobs_v2: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }) });
   await page.goto('/jobs');
   await expect(page.getByText('条件に合う求人はありません')).toBeVisible();
   await expect(page.locator('.hc-inline-error')).toHaveCount(0);
@@ -155,7 +158,7 @@ test('real zero results show the empty state (not an error)', async ({ page }) =
 });
 
 test('home sections fail independently; other sections still render', async ({ page }) => {
-  await mockApi(page, { hc_jobseeker_list_applications: serverError, hc_jobseeker_search_jobs: serverError });
+  await mockApi(page, { hc_jobseeker_list_applications: serverError, hc_jobseeker_search_jobs_v2: serverError });
   await page.goto('/');
   await expect(page.locator('.hc-stat-row').filter({ hasText: '応募中' })).toContainText('読み込めませんでした');
   await expect(page.locator('.hc-stat-row').filter({ hasText: '気になる園' })).toContainText('1');
@@ -174,7 +177,7 @@ test('applications failure is an error, not "no applications"', async ({ page })
 
 test('loading never hangs: slow reads resolve and the skeleton disappears', async ({ page }) => {
   await mockApi(page, {
-    hc_jobseeker_search_jobs: async (route) => {
+    hc_jobseeker_search_jobs_v2: async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 1200));
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(searchRows([jobA])) });
     },
@@ -305,7 +308,7 @@ test.describe('390px golden path and P1 screens', () => {
   });
 
   test('a deep-linked job is pinned, labelled 指定求人 and opened', async ({ page }) => {
-    await mockApi(page, { hc_jobseeker_get_ranked_job: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([jobB]) }) });
+    await mockApi(page, { hc_jobseeker_get_job_v2: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([jobB]) }) });
     await page.goto(`/jobs?job_id=${jobB.id}`);
     const first = page.locator('.hc-job-card').first();
     await expect(first).toHaveAttribute('data-job-id', jobB.id);
@@ -315,7 +318,7 @@ test.describe('390px golden path and P1 screens', () => {
   });
 
   test('a deep link to a job that is no longer published fails safely', async ({ page }) => {
-    await mockApi(page, { hc_jobseeker_get_ranked_job: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }) });
+    await mockApi(page, { hc_jobseeker_get_job_v2: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }) });
     await page.goto('/jobs?job_id=12121212-1212-4212-8212-121212121212');
     await expect(page.getByText('この求人は公開を終了したか、現在は表示できません。')).toBeVisible();
     await expect(page.locator('.hc-job-card')).toHaveCount(2);
