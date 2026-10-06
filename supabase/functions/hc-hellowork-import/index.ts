@@ -471,7 +471,9 @@ async function discoverBatch() {
 
   const results = await importUrls(urls);
   const published = results.filter((item) => item.published === true).length;
-  const errors = results.filter((item) => item.status === 'error').length;
+  const errorRows = results.filter((item) => item.status === 'error');
+  const errors = errorRows.length;
+  const errorCodes = [...new Set(errorRows.map((item) => String(item.code || 'IMPORT_FAILED')))].slice(0, 5);
 
   const lastPage = urls.length < DISCOVERY_PAGE_SIZE;
   let nextPrefecture = prefecture;
@@ -498,7 +500,7 @@ async function discoverBatch() {
       last_batch_discovered: urls.length,
       last_batch_imported: results.length - errors,
       last_batch_published: published,
-      last_error: errors ? `${errors}_IMPORT_ERRORS` : null,
+      last_error: errors ? `${errors}_IMPORT_ERRORS:${errorCodes.join(',')}` : null,
       updated_at: now,
     })
     .eq('source', SOURCE);
@@ -512,6 +514,7 @@ async function discoverBatch() {
     imported: results.length - errors,
     published,
     errors,
+    error_codes: errorCodes,
     next_prefecture: nextPrefecture,
     next_page: nextPage,
     completed_cycles: completedCycles,
