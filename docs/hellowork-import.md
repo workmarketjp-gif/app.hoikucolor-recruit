@@ -4,7 +4,7 @@
 
 Hoiku Color can show real public Hello Work childcare jobs without creating fake Hoiku Poppy organizations or facilities.
 
-Unclaimed external jobs are stored in `hc_external_job_sources`. Canonical facility-owned jobs remain in `hc_jobs`.
+Unmanagement verificationed external jobs are stored in `hc_external_job_sources`. Canonical facility-owned jobs remain in `hc_jobs`.
 
 ## Publication rules
 
@@ -16,7 +16,7 @@ The importer is deliberately fail-closed.
 - Only `public_republication_allowed=true` rows can enter the candidate feed.
 - Candidate visibility requires source verification within the last 36 hours.
 - Closing/expiry removes the row automatically.
-- If an external posting is claimed and linked to a canonical `hc_jobs` row, the external copy disappears to avoid duplication.
+- If an external posting is verified for facility management and linked to a canonical `hc_jobs` row, the external copy disappears to avoid duplication.
 - `source_payload` is private; browsers cannot select the raw source table.
 
 ## Candidate UI
@@ -27,7 +27,7 @@ The expanded job detail ends with a small footer:
 
 `出典：ハローワーク（求人番号 ...）`
 
-Unclaimed external jobs do not expose Hoiku Color direct application, save, visit/trial, HO Verified or HF Verified actions. The main action opens the original job page.
+Unmanagement verificationed external jobs do not expose Hoiku Color direct application, save, visit/trial, HO Verified or HF Verified actions. The main action opens the original job page.
 
 ## Import function
 
