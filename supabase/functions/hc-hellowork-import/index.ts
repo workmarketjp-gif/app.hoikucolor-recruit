@@ -15,8 +15,13 @@ const supabase = createClient(
 );
 
 const SOURCE = 'hellowork';
-const PARSER_VERSION = 'hellowork-public-v1';
+const PARSER_VERSION = 'hellowork-public-v2';
 const MAX_URLS = 50;
+const SEARCH_URL = 'https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do';
+const HELLOWORK_JOB_CLASS_MAJOR = '163';
+const HELLOWORK_JOB_CLASS_MINOR = '01';
+const DISCOVERY_PAGE_SIZE = 50;
+const DISCOVERY_CONCURRENCY = 5;
 const ALLOWED_POSITION = /(保育士|保育教諭|幼稚園教諭|保育補助|看護師|准看護師|栄養士|管理栄養士|調理師|調理員|園長|施設長|主任|子育て支援員)/;
 const RESTRICTED_MARKERS = [
   'ハローワークに求職登録した方のみを対象',
@@ -28,7 +33,7 @@ const RESTRICTED_MARKERS = [
   '掲載はお断り',
 ];
 
-type ImportBody = { urls?: string[]; refresh?: boolean };
+type ImportBody = { urls?: string[]; refresh?: boolean; discover?: boolean };
 
 type Normalized = {
   source: typeof SOURCE;
@@ -84,9 +89,32 @@ function decodeJwtPayload(request: Request): Record<string, unknown> | null {
   }
 }
 
-function requireServiceRole(request: Request) {
+async function equalSecret(left: string, right: string) {
+  const encode = async (value: string) => new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)),
+  );
+  const [a, b] = await Promise.all([encode(left), encode(right)]);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let index = 0; index < a.length; index += 1) diff |= a[index] ^ b[index];
+  return diff === 0;
+}
+
+async function requireAuthorizedSync(request: Request) {
   const payload = decodeJwtPayload(request);
-  return payload?.role === 'service_role';
+  if (payload?.role === 'service_role') return true;
+
+  const supplied = request.headers.get('x-hc-sync-secret') || '';
+  if (!supplied) return false;
+
+  const { data, error } = await supabase
+    .from('hc_external_source_sync_control')
+    .select('sync_secret,enabled')
+    .eq('source', SOURCE)
+    .maybeSingle();
+  if (error || !data?.enabled || typeof data.sync_secret !== 'string') return false;
+
+  return equalSecret(supplied, data.sync_secret);
 }
 
 function officialHelloWorkUrl(input: string): URL | null {
@@ -283,6 +311,202 @@ async function normalize(url: URL): Promise<Normalized> {
   };
 }
 
+function cookieHeaderFromResponse(response: Response) {
+  const setCookie = response.headers.get('set-cookie');
+  if (!setCookie) return '';
+  return setCookie
+    .split(/,(?=[^;,]+=)/)
+    .map((part) => part.split(';')[0]?.trim())
+    .filter(Boolean)
+    .join('; ');
+}
+
+async function postHelloWorkForm(params: Record<string, string>, cookie = '') {
+  const response = await fetch(SEARCH_URL, {
+    method: 'POST',
+    headers: {
+      Accept: 'text/html,application/xhtml+xml',
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      'User-Agent': 'HoikuColorJobSync/1.0 (+https://hoikucolor.jp)',
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
+    body: new URLSearchParams(params),
+    redirect: 'follow',
+  });
+  if (!response.ok) throw new Error(`HELLOWORK_SEARCH_HTTP_${response.status}`);
+  return {
+    html: await response.text(),
+    cookie: cookie || cookieHeaderFromResponse(response),
+  };
+}
+
+function detailUrlsFromSearchHtml(html: string) {
+  const urls = new Set<string>();
+  for (const match of html.matchAll(/<a\b[^>]*\bid=(?:"ID_dispDetailBtn"|'ID_dispDetailBtn')[^>]*>/gi)) {
+    const tag = match[0];
+    const href = tag.match(/\bhref=(?:"([^"]+)"|'([^']+)')/i);
+    const raw = decodeHtml(href?.[1] || href?.[2] || '');
+    if (!raw) continue;
+    try {
+      const url = new URL(raw, SEARCH_URL);
+      if (officialHelloWorkUrl(url.toString())) urls.add(url.toString());
+    } catch {
+      // Ignore malformed result links. A fully malformed page is caught by zero-result safety below.
+    }
+  }
+  return [...urls];
+}
+
+async function discoverHelloWorkPage(prefecture: number, page: number) {
+  const pref = String(prefecture).padStart(2, '0');
+  const initial = await postHelloWorkForm({
+    kjKbnRadioBtn: '1',
+    tDFK1CmbBox: pref,
+    sKGYBRUIJo1: HELLOWORK_JOB_CLASS_MAJOR,
+    sKGYBRUIGe1: HELLOWORK_JOB_CLASS_MINOR,
+    searchBtn: '',
+    screenId: 'GECA110010',
+    maba_vrbs: 'searchBtn',
+    fwListNaviDispTop: String(DISCOVERY_PAGE_SIZE),
+    fwListNaviDisp: String(DISCOVERY_PAGE_SIZE),
+  });
+
+  if (page <= 1) return detailUrlsFromSearchHtml(initial.html);
+
+  const paged = await postHelloWorkForm({
+    fwListNaviBtn1: '',
+    fwListNowPage: '1',
+    fwListLeftPage: String(page),
+    fwListNaviCount: '7',
+    fwListNaviDisp: String(DISCOVERY_PAGE_SIZE),
+    screenId: 'GECA110010',
+    maba_vrbs: '',
+  }, initial.cookie);
+
+  return detailUrlsFromSearchHtml(paged.html);
+}
+
+async function upsertNormalized(row: Normalized) {
+  const { error } = await supabase
+    .from('hc_external_job_sources')
+    .upsert(row, { onConflict: 'source,source_job_id' });
+  if (error) throw new Error('UPSERT_FAILED');
+}
+
+async function importUrls(urls: string[]) {
+  const results: Array<Record<string, unknown>> = [];
+  for (let offset = 0; offset < urls.length; offset += DISCOVERY_CONCURRENCY) {
+    const slice = urls.slice(offset, offset + DISCOVERY_CONCURRENCY);
+    const batch = await Promise.all(slice.map(async (value) => {
+      try {
+        const row = await normalize(new URL(value));
+        await upsertNormalized(row);
+        return {
+          source_job_id: row.source_job_id,
+          status: row.source_status,
+          published: row.public_republication_allowed,
+        } as Record<string, unknown>;
+      } catch (error) {
+        return {
+          url: value,
+          status: 'error',
+          code: String((error as Error)?.message || 'IMPORT_FAILED').slice(0, 120),
+        } as Record<string, unknown>;
+      }
+    }));
+    results.push(...batch);
+  }
+  return results;
+}
+
+async function discoveryState() {
+  const { data, error } = await supabase
+    .from('hc_external_source_sync_control')
+    .select('prefecture_cursor,page_cursor,enabled,completed_cycles')
+    .eq('source', SOURCE)
+    .maybeSingle();
+  if (error || !data) throw new Error('DISCOVERY_STATE_MISSING');
+  return data as {
+    prefecture_cursor: number;
+    page_cursor: number;
+    enabled: boolean;
+    completed_cycles: number;
+  };
+}
+
+async function discoverBatch() {
+  const state = await discoveryState();
+  if (!state.enabled) return { skipped: true, reason: 'SYNC_DISABLED' };
+
+  const prefecture = Math.min(47, Math.max(1, Number(state.prefecture_cursor || 1)));
+  const page = Math.max(1, Number(state.page_cursor || 1));
+  const urls = await discoverHelloWorkPage(prefecture, page);
+
+  // Fail closed if the first page unexpectedly parses as empty. This protects us
+  // against silently walking all 47 prefectures after a Hello Work markup change.
+  if (page === 1 && urls.length === 0) {
+    await supabase
+      .from('hc_external_source_sync_control')
+      .update({
+        last_scan_at: new Date().toISOString(),
+        last_batch_discovered: 0,
+        last_batch_imported: 0,
+        last_error: `HELLOWORK_SEARCH_PARSE_EMPTY_PREF_${String(prefecture).padStart(2, '0')}`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('source', SOURCE);
+    throw new Error('HELLOWORK_SEARCH_PARSE_EMPTY');
+  }
+
+  const results = await importUrls(urls);
+  const published = results.filter((item) => item.published === true).length;
+  const errors = results.filter((item) => item.status === 'error').length;
+
+  const lastPage = urls.length < DISCOVERY_PAGE_SIZE;
+  let nextPrefecture = prefecture;
+  let nextPage = page + 1;
+  let completedCycles = Number(state.completed_cycles || 0);
+
+  if (lastPage) {
+    nextPrefecture += 1;
+    nextPage = 1;
+    if (nextPrefecture > 47) {
+      nextPrefecture = 1;
+      completedCycles += 1;
+    }
+  }
+
+  const now = new Date().toISOString();
+  const { error: stateError } = await supabase
+    .from('hc_external_source_sync_control')
+    .update({
+      prefecture_cursor: nextPrefecture,
+      page_cursor: nextPage,
+      completed_cycles: completedCycles,
+      last_scan_at: now,
+      last_batch_discovered: urls.length,
+      last_batch_imported: results.length - errors,
+      last_batch_published: published,
+      last_error: errors ? `${errors}_IMPORT_ERRORS` : null,
+      updated_at: now,
+    })
+    .eq('source', SOURCE);
+  if (stateError) throw new Error('DISCOVERY_STATE_UPDATE_FAILED');
+
+  return {
+    skipped: false,
+    prefecture,
+    page,
+    discovered: urls.length,
+    imported: results.length - errors,
+    published,
+    errors,
+    next_prefecture: nextPrefecture,
+    next_page: nextPage,
+    completed_cycles: completedCycles,
+  };
+}
+
 async function refreshUrls() {
   const { data, error } = await supabase
     .from('hc_external_job_sources')
@@ -297,36 +521,27 @@ async function refreshUrls() {
 
 Deno.serve(async (request: Request) => {
   if (request.method !== 'POST') return json(405, { ok: false, code: 'METHOD_NOT_ALLOWED' });
-  if (!requireServiceRole(request)) return json(403, { ok: false, code: 'SERVICE_ROLE_REQUIRED' });
+  if (!(await requireAuthorizedSync(request))) return json(403, { ok: false, code: 'SYNC_AUTH_REQUIRED' });
 
   const body = await request.json().catch(() => ({})) as ImportBody;
+
+  if (body.discover) {
+    try {
+      return json(200, { ok: true, discovery: await discoverBatch() });
+    } catch (error) {
+      return json(502, {
+        ok: false,
+        code: String((error as Error)?.message || 'DISCOVERY_FAILED').slice(0, 120),
+      });
+    }
+  }
+
   const requested = Array.isArray(body.urls) ? body.urls.slice(0, MAX_URLS) : [];
   const candidates = body.refresh && requested.length === 0 ? await refreshUrls() : requested;
   const urls = [...new Set(candidates.map((value) => officialHelloWorkUrl(value)?.toString()).filter((value): value is string => Boolean(value)))];
 
   if (!urls.length) return json(400, { ok: false, code: 'NO_VALID_HELLOWORK_URLS' });
 
-  const results: Array<Record<string, unknown>> = [];
-  for (const value of urls) {
-    try {
-      const row = await normalize(new URL(value));
-      const { error } = await supabase
-        .from('hc_external_job_sources')
-        .upsert(row, { onConflict: 'source,source_job_id' });
-      if (error) throw new Error('UPSERT_FAILED');
-      results.push({
-        source_job_id: row.source_job_id,
-        status: row.source_status,
-        published: row.public_republication_allowed,
-      });
-    } catch (error) {
-      results.push({
-        url: value,
-        status: 'error',
-        code: String((error as Error)?.message || 'IMPORT_FAILED').slice(0, 120),
-      });
-    }
-  }
-
+  const results = await importUrls(urls);
   return json(200, { ok: true, count: results.length, results });
 });
