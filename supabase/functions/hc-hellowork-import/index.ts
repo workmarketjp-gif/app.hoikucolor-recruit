@@ -15,11 +15,9 @@ const supabase = createClient(
 );
 
 const SOURCE = 'hellowork';
-const PARSER_VERSION = 'hellowork-public-v2';
+const PARSER_VERSION = 'hellowork-public-v3';
 const MAX_URLS = 50;
 const SEARCH_URL = 'https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do';
-const HELLOWORK_JOB_CLASS_MAJOR = '163';
-const HELLOWORK_JOB_CLASS_MINOR = '01';
 const DISCOVERY_PAGE_SIZE = 50;
 const DISCOVERY_CONCURRENCY = 5;
 const ALLOWED_POSITION = /(保育士|保育教諭|幼稚園教諭|保育補助|看護師|准看護師|栄養士|管理栄養士|調理師|調理員|園長|施設長|主任|子育て支援員)/;
@@ -33,7 +31,7 @@ const RESTRICTED_MARKERS = [
   '掲載はお断り',
 ];
 
-type ImportBody = { urls?: string[]; refresh?: boolean; discover?: boolean; debug_url?: string };
+type ImportBody = { urls?: string[]; refresh?: boolean; discover?: boolean };
 
 type Normalized = {
   source: typeof SOURCE;
@@ -655,26 +653,6 @@ Deno.serve(async (request: Request) => {
   if (!(await requireAuthorizedSync(request))) return json(403, { ok: false, code: 'SYNC_AUTH_REQUIRED' });
 
   const body = await request.json().catch(() => ({})) as ImportBody;
-
-  if (body.debug_url) {
-    const debugUrl = officialHelloWorkUrl(body.debug_url);
-    if (!debugUrl) return json(400, { ok: false, code: 'INVALID_DEBUG_URL' });
-    const response = await fetch(debugUrl, {
-      headers: {
-        Accept: 'text/html,application/xhtml+xml',
-        'User-Agent': 'HoikuColorJobSync/1.0 (+https://hoikucolor.jp)',
-      },
-      redirect: 'follow',
-    });
-    const text = htmlToText(await response.text());
-    return json(200, {
-      ok: true,
-      debug: {
-        status: response.status,
-        text: text.slice(0, 16000),
-      },
-    });
-  }
 
   if (body.discover) {
     try {
