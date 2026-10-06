@@ -114,7 +114,7 @@ export function ScoutPrivacyPanel() {
 
       <div className="scout-safety-note">
         <Icon name="shield" size={17} />
-        <div><strong>本人情報は承認前に共有しません</strong><p>匿名プロフィールには氏名・フリガナ・メール・電話番号・Clerk ID・自己紹介文を含めません。現在の勤務先はHoiku Officeの在籍情報から自動でブロックします。</p></div>
+        <div><strong>本人情報は承認前に共有しません</strong><p>匿名プロフィールには氏名・フリガナ・メール・電話番号・ログインID・自己紹介文を含めません。いま勤めている園には自動で表示されません。</p></div>
       </div>
 
       <div className="scout-block-section">

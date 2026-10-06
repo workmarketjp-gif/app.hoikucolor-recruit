@@ -154,7 +154,7 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
           <span><Icon name="clock" size={14} /> 応募日 {formatDate(application.applied_at)}</span>
         </div>
       </div>
-      {upcomingInterview && <div className="next-action-card"><span>NEXT</span><strong>次回の面接</strong><p>{formatDateTime(upcomingInterview.scheduled_at)}</p>{upcomingInterview.location && <small>{upcomingInterview.location}</small>}{!upcomingInterview.candidate_response_status && <small className="next-action-alert">日時を確認して回答してください</small>}</div>}
+      {upcomingInterview && <div className="next-action-card"><strong>次回の面接</strong><p>{formatDateTime(upcomingInterview.scheduled_at)}</p>{upcomingInterview.location && <small>{upcomingInterview.location}</small>}{!upcomingInterview.candidate_response_status && <small className="next-action-alert">日時を確認して回答してください</small>}</div>}
     </section>
 
     <section className={`selection-timeline ${terminal ? 'is-terminal' : ''}`} aria-label="選考状況">
@@ -167,7 +167,7 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
 
     <div className="application-detail-grid">
       <section className="application-detail-card">
-        <div className="application-card-head"><div><span className="eyebrow">APPLICATION</span><h2>応募内容</h2></div></div>
+        <div className="application-card-head"><div><h2>応募内容</h2></div></div>
         <dl className="application-facts">
           <div><dt>応募日</dt><dd>{formatDate(application.applied_at)}</dd></div>
           <div><dt>入職希望日</dt><dd>{application.desired_start_date ? formatDateOnly(application.desired_start_date) : '未設定'}</dd></div>
@@ -176,17 +176,17 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
       </section>
 
       <section className="application-detail-card">
-        <div className="application-card-head"><div><span className="eyebrow">INTERVIEW</span><h2>面接予定</h2></div><span className="application-count">{interviews.length}件</span></div>
+        <div className="application-card-head"><div><h2>面接予定</h2></div><span className="application-count">{interviews.length}件</span></div>
         {interviews.length ? <div className="application-event-list">{interviews.map((interview) => <InterviewCard interview={interview} onRespond={onRefresh} key={interview.id} />)}</div> : <p className="application-empty-copy">面接予定はまだ登録されていません。日程が決まるとここに表示されます。</p>}
       </section>
 
       <section className="application-detail-card">
-        <div className="application-card-head"><div><span className="eyebrow">VISIT & TRIAL</span><h2>見学・体験</h2></div><span className="application-count">{visits.length}件</span></div>
+        <div className="application-card-head"><div><h2>見学・体験</h2></div><span className="application-count">{visits.length}件</span></div>
         {visits.length ? <div className="application-event-list">{visits.map((visit) => <VisitCard visit={visit} key={visit.id} />)}</div> : <p className="application-empty-copy">この求人に関連する見学・体験予約はありません。</p>}
       </section>
 
       <section id="application-messages" tabIndex={-1} className="application-detail-card application-communication-card">
-        <div className="application-card-head"><div><span className="eyebrow">COMMUNICATION</span><h2>園とのやり取り・提出書類</h2></div></div>
+        <div className="application-card-head"><div><h2>園とのやり取り・提出書類</h2></div></div>
         <ApplicationMessages applicationId={application.id} />
       </section>
     </div>

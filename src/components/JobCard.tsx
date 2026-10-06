@@ -72,8 +72,8 @@ export function JobCard({ job, saved, onToggleSaved, onStartApplication, onAppli
       <p className="hc-job-meta"><Icon name="map" size={16} /> {location}{job.employment_type ? ` ・ ${job.employment_type}` : ''}</p>
       <div className="hc-job-tags">
         {isClosed && <span className="status-badge status-rejected">募集終了</span>}
-        {job.verified_workplace?.verified_metric_count ? <span className="verified-tag">✓ Hoiku Office 実績</span> : null}
-        {job.verified_finance?.verified_metric_count ? <span className="finance-verified-tag">✓ Hoiku Finance 実績</span> : null}
+        {job.verified_workplace?.verified_metric_count ? <span className="verified-tag">✓ 勤務実績あり</span> : null}
+        {job.verified_finance?.verified_metric_count ? <span className="finance-verified-tag">✓ 会計実績あり</span> : null}
       </div>
 
       {children}
@@ -122,10 +122,10 @@ function VerifiedWorkplaceSummary({ job, expanded }: { job: Job; expanded: boole
       .slice(0, expanded ? 10 : 4)
     : [], [profile, expanded]);
   if (!profile?.verified_metric_count || !entries.length) return null;
-  return <section className="verified-workplace" aria-label="Hoiku Office実績データ">
-    <div className="verified-workplace-head"><strong>✓ Hoiku Office 実績</strong><span>情報公開率 {Math.round(Number(profile.transparency_pct || 0))}%</span></div>
-    <div className="verified-metric-grid">{entries.map(([key, metric]) => <div className="verified-metric" key={key}><span>{metric.label}</span><strong>{formatVerifiedMetric(metric)}</strong><small>実績 n={metric.sample_size}</small></div>)}</div>
-    <small className="verified-period">集計期間 {formatMonth(profile.period_start)}〜{formatMonth(profile.period_end)} ・ 園の申告値ではなくHoiku Office実績から自動集計</small>
+  return <section className="verified-workplace" aria-label="勤務実績">
+    <div className="verified-workplace-head"><strong>✓ 勤務実績</strong><span>情報公開率 {Math.round(Number(profile.transparency_pct || 0))}%</span></div>
+    <div className="verified-metric-grid">{entries.map(([key, metric]) => <div className="verified-metric" key={key}><span>{metric.label}</span><strong>{formatVerifiedMetric(metric)}</strong><small>{metric.sample_size}件の記録</small></div>)}</div>
+    <small className="verified-period">集計期間 {formatMonth(profile.period_start)}〜{formatMonth(profile.period_end)} ・ 園の申告ではなく実際の勤務記録から集計</small>
   </section>;
 }
 

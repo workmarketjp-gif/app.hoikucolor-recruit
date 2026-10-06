@@ -32,20 +32,20 @@ export function VerifiedFinanceSummary({ job, expanded }: { job: Job; expanded: 
 
   if (!entries.length) return null;
 
-  return <section className="verified-finance" aria-label="Hoiku Finance実績データ">
+  return <section className="verified-finance" aria-label="会計実績">
     <div className="verified-finance-head">
-      <strong>✓ Hoiku Finance 実績</strong>
+      <strong>✓ 会計実績</strong>
       <span>情報公開率 {Math.round(Number(profile.transparency_pct || 0))}%</span>
     </div>
     <div className="verified-finance-grid">
       {entries.map(([key, metric]) => <div className="verified-finance-metric" key={key}>
         <span>{metric.label}</span>
         <strong>{formatMetric(metric)}</strong>
-        <small>実績 n={metric.sample_size}か月</small>
+        <small>{metric.sample_size}か月分の記録</small>
       </div>)}
     </div>
     <small className="verified-finance-period">
-      集計期間 {formatMonth(profile.period_start)}〜{formatMonth(profile.period_end)} ・ 園の申告値ではなくHoiku Financeの確定済み実績から自動集計
+      集計期間 {formatMonth(profile.period_start)}〜{formatMonth(profile.period_end)} ・ 園の申告ではなく確定した会計記録から集計
     </small>
     {entries.some(([key]) => key === 'finance_monthly_result_stability') && <small className="verified-finance-note">
       「月次収支安定性」は月次収支の推移を示す指標で、法人全体の信用力・支払能力・将来の経営継続を保証するものではありません。

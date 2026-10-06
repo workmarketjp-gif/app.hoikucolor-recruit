@@ -49,7 +49,7 @@ const checks = [
   [jobCard.includes('aria-label={rankLabel.ariaLabel}'), 'ranking position must be announced to assistive technology'],
   [ranking.includes('現在は有料の上位表示を適用していません'), 'current organic ordering must explicitly state that paid boosting is not active'],
   [ranking.includes('将来、有料枠を導入する場合は「PR」と明示'), 'future paid placements must be contractually disclosed as PR'],
-  [ranking.includes('園の申告内容を Verified 実績として扱うことはありません'), 'facility claims must never be presented as Verified ranking evidence'],
+  [ranking.includes('園の申告内容を確認済みの実績として扱うことはありません'), 'facility claims must never be presented as Verified ranking evidence'],
   [!ranking.includes('MutationObserver') && !ranking.includes('document.'), 'ranking disclosure must be rendered by React, not by observing the DOM'],
   [rankingCss.includes('.hc-ranking-toggle') && /\.hc-ranking-toggle \{[^}]*min-height: 48px/.test(rankingCss), 'ranking disclosure must keep a 48px touch target'],
   [repo.includes('quality_points') && repo.includes('transparency_pct') && repo.includes('publishedAtEpoch'), 'organic ranking fallback must preserve Verified quality, transparency, then freshness ordering'],

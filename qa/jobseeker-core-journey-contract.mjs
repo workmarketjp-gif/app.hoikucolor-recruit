@@ -137,7 +137,7 @@ if (!visitUi.includes('getVisitSettings(jobId)') || !visitUi.includes("settingRo
 if (!transparencyRepository.includes("rpc('hc_jobseeker_get_job_transparency'")) {
   throw new Error('Interview-transparency journey is not using the candidate-safe RPC.');
 }
-for (const marker of ['園の公開回答', 'HO Verified']) {
+for (const marker of ['園の公開回答', '勤務実績']) {
   if (!transparencyUi.includes(marker)) throw new Error(`Transparency source separation missing: ${marker}`);
 }
 
@@ -194,7 +194,7 @@ if (!app.includes('targetJobId ? getRankedJob(targetJobId) : Promise.resolve(nul
 for (const marker of ['compareMatchedJobs', 'matchJob', 'condition_score', '保育観']) {
   if (!matchRoute.includes(marker)) throw new Error(`Matching journey missing: ${marker}`);
 }
-for (const marker of ['HO Verified', 'HF Verified', '園掲載']) {
+for (const marker of ['勤務実績', '会計実績', '園掲載']) {
   if (!compareRoute.includes(marker)) throw new Error(`Facility comparison source separation missing: ${marker}`);
 }
 if (!scoutRoute.includes('<ScoutInbox />') || !router.includes("scouts: '/scouts'") || !app.includes('<NotificationCenter onNavigate={navigateTo} />')) {

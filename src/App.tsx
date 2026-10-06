@@ -464,8 +464,8 @@ function JobsView({ savedIds, ...jobActions }: { savedIds: string[] } & JobActio
             {(facets.data?.employmentTypes ?? []).map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         </label>
-        <button type="button" className={`hc-chip ${verifiedOnly ? 'is-active' : ''}`} aria-pressed={verifiedOnly} onClick={() => setVerifiedOnly((v) => !v)}>HO実績データあり</button>
-        <button type="button" className={`hc-chip ${financeVerifiedOnly ? 'is-active' : ''}`} aria-pressed={financeVerifiedOnly} onClick={() => setFinanceVerifiedOnly((v) => !v)}>HF実績データあり</button>
+        <button type="button" className={`hc-chip ${verifiedOnly ? 'is-active' : ''}`} aria-pressed={verifiedOnly} onClick={() => setVerifiedOnly((v) => !v)}>勤務実績データあり</button>
+        <button type="button" className={`hc-chip ${financeVerifiedOnly ? 'is-active' : ''}`} aria-pressed={financeVerifiedOnly} onClick={() => setFinanceVerifiedOnly((v) => !v)}>会計実績データあり</button>
       </div>
       {facets.status === 'error' && <InlineError message={facets.error} onRetry={facets.reload} compact />}
 

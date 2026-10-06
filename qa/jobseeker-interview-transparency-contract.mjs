@@ -31,19 +31,19 @@ requireText(repository, ".from('hc_public_workplace_profiles')", 'public HO Veri
 
 requireText(panel, '面接で聞きづらいことを、応募前に確認', 'candidate transparency heading');
 requireText(panel, '園の公開回答（申告）', 'facility claim source label');
-requireText(panel, 'HO Verified（実績）', 'verified source label');
+requireText(panel, '<span className="verified-source">勤務実績</span>', 'verified source label');
 requireText(panel, "metric(verified, 'average_monthly_overtime_hours')", 'verified overtime source');
 requireText(panel, "metric(verified, 'paid_leave_usage_rate_pct')", 'verified paid leave source');
 requireText(panel, "facilityValue: normalized(claims.overtime)", 'facility overtime kept separate');
 requireText(panel, "facilityValue: normalized(claims.take_home_work)", 'facility take-home-work claim');
 requireText(panel, '公開回答なし', 'missing facility value stays missing');
-requireText(panel, 'HO実績指標は未提供', 'unsupported Verified metric stays missing');
-requireText(panel, '公開されていない値を別ソースで補完したり、推測値として表示したりしません', 'no-imputation disclosure');
+requireText(panel, "verifiedUnavailableLabel: '勤務実績なし'", 'unsupported work-record metric stays missing');
+requireText(panel, '公開されていない値を推測で補うことはしません', 'no-imputation disclosure');
 
 requireText(visitPanel, '<InterviewTransparencyPanel jobId={jobId} facilityId={facilityId} />', 'job-detail integration');
 requireText(visitPanel, 'if (!settings || enabledTypes(settings).length === 0) return transparencyPanel;', 'transparency independent of visit availability');
 requireText(panelCss, '@media (max-width: 620px)', 'mobile layout');
 requireText(panelCss, "content: '園の公開回答（申告）'", 'mobile source label');
-requireText(panelCss, "content: 'HO Verified（実績）'", 'mobile verified label');
+requireText(panelCss, "content: '勤務実績'", 'mobile verified label');
 
 console.log('jobseeker interview transparency contract: OK');

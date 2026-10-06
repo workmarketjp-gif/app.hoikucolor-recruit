@@ -148,7 +148,7 @@ export function DocumentVaultPanel() {
             <Icon name="upload" size={16} /> {busy ? '処理中…' : '書類を追加'}
           </button>
         </div>
-        <small>PDF・画像（JPEG / PNG）、1ファイル10MBまで。Hoiku Officeへの採用書類連携に対応する形式だけを保存できます。各種類の「応募時に使う」を1件選べます。</small>
+        <small>PDF・画像（JPEG / PNG）、1ファイル10MBまで。各種類の「応募時に使う」を1件選べます。</small>
         {error && <span className="form-error">{error}</span>}
         {notice && <span className="form-success">{notice}</span>}
         {loading ? <div className="empty-state"><p>応募書類を読み込んでいます。</p></div> : documents.length ? (
