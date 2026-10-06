@@ -9,7 +9,8 @@ if (!migrationName) throw new Error('HC-W02 saved closed-status migration source
 
 const migration = read(`supabase/migrations/${migrationName}`);
 const repo = read('src/lib/savedJobStatusRepository.ts');
-const app = read('src/App.tsx');
+// Job cards (saved, search, home, matching) are one component: JobCard.
+const app = read('src/App.tsx') + read('src/components/JobCard.tsx');
 
 for (const marker of [
   'hc_jobseeker_list_saved_jobs_with_status()',

@@ -5,9 +5,10 @@ const root = path.resolve(import.meta.dirname, '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const migration = read('supabase/migrations/20260913160000_hc_jobseeker_confirmed_spot_work_v1.sql');
 const repository = read('src/lib/spotJobRepository.ts');
-const route = read('src/SpotJobsRouteRoot.tsx');
+const route = read('src/views/SpotJobsView.tsx');
+const app = read('src/App.tsx');
 const notifications = read('src/components/NotificationCenter.tsx');
-const css = read('src/SpotJobsRouteRoot.css');
+const css = read('src/views/views.css');
 
 const checks = [
   [/function public\.hc_jobseeker_list_my_spot_assignments\(\)/i.test(migration), 'candidate confirmed-work RPC must exist'],
@@ -27,8 +28,8 @@ const checks = [
   [route.includes('assignment.break_minutes') && route.includes('assignment.hourly_rate') && route.includes('assignment.work_date'), 'confirmed-work card must preserve canonical date, rate and break'],
   [notifications.includes("'/spot-jobs'"), 'notification navigation allow-list must include the spot route'],
   [/SPOT_NOTIFICATION_TYPES\.has\(item\.notification_type\)/.test(notifications) && /UUID_PATTERN\.test\(assignmentId\)/.test(notifications), 'spot notification assignment id must be UUID-validated for confirmed and later lifecycle notifications'],
-  [notifications.includes("target.startsWith('/spot-jobs?')"), 'spot confirmation deep-links must preserve assignment query/hash navigation'],
-  [css.includes('.spot-assignment-card:focus') && css.includes('@media(max-width:390px)'), 'confirmed-work cards must retain focus and 390px mobile hardening'],
+  [notifications.includes('onNavigate(target)') && app.includes('`${url.pathname}${url.search}${url.hash}`'), 'spot confirmation deep-links must preserve assignment query/hash navigation'],
+  [css.includes('.spot-assignment-card:focus') && css.includes('@media (max-width: 390px)'), 'confirmed-work cards must retain focus and 390px mobile hardening'],
 ];
 
 const failed = checks.filter(([ok]) => !ok).map(([, message]) => message);

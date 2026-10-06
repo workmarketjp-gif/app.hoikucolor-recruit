@@ -1,71 +1,96 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from './components/Icon';
 import { ApplicationDetail } from './components/ApplicationDetail';
 import { CandidateShell, type ShellTab } from './components/CandidateShell';
 import { DocumentVaultPanel } from './components/DocumentVaultPanel';
+import { JobCard } from './components/JobCard';
+import { RankingDisclosure, rankLabels } from './components/RankingDisclosure';
 import { EmptyState, InlineError, SectionHeader, SkeletonList, Toast } from './components/StateViews';
-import { VisitTrialPanel } from './components/VisitTrialPanel';
-import { VerifiedFinanceSummary } from './components/VerifiedFinanceSummary';
 import { NotificationCenter } from './components/NotificationCenter';
 import { getJobseekerAttentionSummary } from './lib/attentionRepository';
 import { useCandidateSession } from './lib/candidateSession';
 import {
   getJobSearchFacets, getProfile, getRankedJob, listApplications, listFeaturedJobs, listSavedJobIds,
-  saveJob, searchJobs, submitApplication, unsaveJob, upsertProfile,
-  type Application, type Job, type JobSearchCursor, type JobseekerProfile, type VerifiedWorkplaceMetric,
+  saveJob, searchJobs, unsaveJob, upsertProfile,
+  type Application, type Job, type JobSearchCursor, type JobseekerProfile,
 } from './lib/recruitRepository';
+import { pathToView, restoreReturnTarget, useInAppLinks, uuidParam, uuidPattern, viewPaths, type View } from './lib/router';
 import { listSavedJobsWithStatus, type SavedJobWithStatus } from './lib/savedJobStatusRepository';
 import { errorMessage, useResource } from './lib/useResource';
+import './views/views.css';
 
-type View = ShellTab;
-const applicationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// Secondary screens load on first visit so Home / search stay light.
+const CompareView = lazy(() => import('./views/CompareView').then((module) => ({ default: module.CompareView })));
+const MatchesView = lazy(() => import('./views/MatchesView').then((module) => ({ default: module.MatchesView })));
+const ScoutsView = lazy(() => import('./views/ScoutsView').then((module) => ({ default: module.ScoutsView })));
+const SpotJobsView = lazy(() => import('./views/SpotJobsView').then((module) => ({ default: module.SpotJobsView })));
+const VisitsView = lazy(() => import('./views/VisitsView').then((module) => ({ default: module.VisitsView })));
 
-const viewPaths: Record<View, string> = { home: '/', jobs: '/jobs', saved: '/saved', applications: '/applications', profile: '/profile' };
-const viewTitles: Record<View, string> = { home: 'ホーム', jobs: '求人を探す', saved: '気になる', applications: '応募', profile: 'マイページ' };
+const viewTitles: Record<View, string> = {
+  home: 'ホーム',
+  jobs: '求人を探す',
+  saved: '気になる',
+  applications: '応募',
+  profile: 'マイページ',
+  scouts: 'スカウト',
+  visits: '見学・体験',
+  spot: 'スポット勤務',
+  matches: 'マッチ度',
+  compare: '園を比較',
+};
+
+/** Which bottom tab a screen belongs to. Secondary screens keep their parent tab lit. */
+const parentTab: Record<View, ShellTab> = {
+  home: 'home',
+  jobs: 'jobs',
+  saved: 'saved',
+  applications: 'applications',
+  profile: 'profile',
+  scouts: 'profile',
+  visits: 'profile',
+  spot: 'jobs',
+  matches: 'jobs',
+  compare: 'saved',
+};
+
+const secondaryViews = new Set<View>(['scouts', 'visits', 'spot', 'matches', 'compare']);
 const closedApplicationStatuses = ['rejected', 'withdrawn', 'hired'];
 
-const verifiedPriority = [
-  'average_monthly_overtime_hours',
-  'paid_leave_usage_rate_pct',
-  'average_tenure_years',
-  'average_monthly_saturday_shift_count',
-  'nursery_teacher_ratio_pct',
-  'average_experience_years',
-  'average_monthly_early_shift_count',
-  'average_monthly_late_shift_count',
-  'full_time_ratio_pct',
-  'average_age_years',
-];
+type Route = { view: View; applicationId: string | null; key: number };
 
-function pathToView(pathname: string): View {
-  const match = (Object.entries(viewPaths) as [View, string][]).find(([, path]) => path !== '/' && pathname.startsWith(path));
-  return match?.[0] || 'home';
-}
-
-function applicationIdFromLocation() {
-  if (!window.location.pathname.startsWith('/applications')) return null;
-  const value = new URLSearchParams(window.location.search).get('application_id');
-  return value && applicationIdPattern.test(value) ? value : null;
+function readRoute(key: number): Route {
+  return {
+    view: pathToView(window.location.pathname) ?? 'home',
+    applicationId: uuidParam('applications', 'application_id'),
+    key,
+  };
 }
 
 function jobIdFromLocation() {
   if (window.location.pathname.replace(/\/$/, '') !== '/jobs') return null;
-  const value = new URLSearchParams(window.location.search).get('job_id');
-  return value && applicationIdPattern.test(value) ? value : null;
+  return uuidParam('jobs', 'job_id');
 }
 
 function returnJobIdFromLocation() {
-  if (!window.location.pathname.startsWith('/profile')) return null;
-  const value = new URLSearchParams(window.location.search).get('return_job');
-  return value && applicationIdPattern.test(value) ? value : null;
+  return uuidParam('profile', 'return_job');
+}
+
+function historyDepth() {
+  const state = window.history.state as { hcDepth?: number } | null;
+  return typeof state?.hcDepth === 'number' ? state.hcDepth : 0;
 }
 
 export function App() {
   const session = useCandidateSession();
-  const [view, setView] = useState<View>(() => pathToView(window.location.pathname));
-  const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(() => applicationIdFromLocation());
+  const [route, setRoute] = useState<Route>(() => {
+    // A deep link opened while signed out comes back here after login.
+    restoreReturnTarget();
+    if (!pathToView(window.location.pathname)) window.history.replaceState(window.history.state, '', '/');
+    return readRoute(0);
+  });
   const [toast, setToast] = useState<{ message: string; tone: 'info' | 'error' } | null>(null);
   const closeToast = useCallback(() => setToast(null), []);
+  const { view, applicationId: selectedApplicationId } = route;
 
   const userKey = session.userId;
   const savedIds = useResource(`saved-ids:${userKey}`, listSavedJobIds, '気になる求人を読み込めませんでした。');
@@ -80,14 +105,40 @@ export function App() {
     }
   }, [applications.setData]);
 
+  /** Navigate to any in-app URL (path + query + anchor). Other URLs leave the app. */
+  const navigateTo = useCallback((target: string) => {
+    let url: URL;
+    try {
+      url = new URL(target, window.location.origin);
+    } catch {
+      return;
+    }
+    if (url.origin !== window.location.origin || !pathToView(url.pathname)) {
+      window.location.assign(url.href);
+      return;
+    }
+    window.history.pushState({ hcDepth: historyDepth() + 1 }, '', `${url.pathname}${url.search}${url.hash}`);
+    setRoute((current) => readRoute(current.key + 1));
+    if (!url.hash) window.scrollTo({ top: 0 });
+  }, []);
+
+  const navigate = useCallback((next: View, search = '') => navigateTo(`${viewPaths[next]}${search}`), [navigateTo]);
+  useInAppLinks(navigateTo);
+
   useEffect(() => {
-    const onPop = () => {
-      setView(pathToView(window.location.pathname));
-      setSelectedApplicationId(applicationIdFromLocation());
-    };
+    const onPop = () => setRoute((current) => readRoute(current.key + 1));
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
+
+  // Plain in-page anchors (e.g. /scouts#scout-settings). Screens with data-dependent
+  // targets (messages, interviews, scouts, visits, spot shifts) focus those themselves.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id || !/^[a-z0-9-]+$/i.test(id)) return;
+    const timer = window.setTimeout(() => document.getElementById(id)?.scrollIntoView({ block: 'start' }), 0);
+    return () => window.clearTimeout(timer);
+  }, [route.key]);
 
   useEffect(() => {
     const refreshWhenVisible = () => {
@@ -111,36 +162,16 @@ export function App() {
     void refreshApplications(true);
   }, [view, selectedApplicationId, refreshApplications]);
 
-  const navigate = useCallback((next: View, search = '') => {
-    window.history.pushState({}, '', `${viewPaths[next]}${search}`);
-    setView(next); setSelectedApplicationId(null); window.scrollTo({ top: 0 });
-  }, []);
+  const openApplication = (applicationId: string) => navigate('applications', `?application_id=${encodeURIComponent(applicationId)}`);
 
-  const openApplication = (applicationId: string) => {
-    if (!applicationIdPattern.test(applicationId)) return;
-    window.history.pushState({}, '', `/applications?application_id=${encodeURIComponent(applicationId)}`);
-    setView('applications'); setSelectedApplicationId(applicationId); window.scrollTo({ top: 0 });
-  };
-
-  const closeApplication = () => {
-    window.history.pushState({}, '', '/applications');
-    setView('applications'); setSelectedApplicationId(null); window.scrollTo({ top: 0 });
-  };
-
-  const navigateTarget = (target: string) => {
-    try {
-      const url = new URL(target, window.location.origin);
-      if (url.origin !== window.location.origin) return navigate('applications');
-      const nextView = pathToView(url.pathname);
-      if (nextView === 'applications') {
-        const applicationId = url.searchParams.get('application_id');
-        if (applicationId && applicationIdPattern.test(applicationId)) return openApplication(applicationId);
-      }
-      navigate(nextView);
-    } catch {
-      navigate('applications');
+  /** Back within the app when there is in-app history, otherwise to the parent screen. */
+  const goBack = useCallback(() => {
+    if (historyDepth() > 0) {
+      window.history.back();
+      return;
     }
-  };
+    navigate(view === 'applications' ? 'applications' : view === 'compare' ? 'saved' : 'home');
+  }, [navigate, view]);
 
   const savedIdList = savedIds.data ?? [];
   const toggleSaved = async (jobId: string) => {
@@ -158,51 +189,71 @@ export function App() {
 
   const startApplication = (jobId: string) => navigate('profile', `?return_job=${encodeURIComponent(jobId)}`);
 
+  const applied = (applicationId: string) => {
+    setToast({ message: '応募しました。園からの連絡をお待ちください。', tone: 'info' });
+    void refreshApplications(false);
+    openApplication(applicationId);
+  };
+
+  const jobActions: JobActions = { onToggleSaved: toggleSaved, onStartApplication: startApplication, onApplied: applied };
+
   const displayName = profile.data?.name || session.firstName || session.fullName || 'ゲスト';
   const activeApplications = (applications.data ?? []).filter((a) => !closedApplicationStatuses.includes(a.status)).length;
-  const title = view === 'applications' && selectedApplicationId ? '応募の詳細' : viewTitles[view];
+  const isDetail = view === 'applications' && Boolean(selectedApplicationId);
+  const title = isDetail ? '応募の詳細' : viewTitles[view];
 
   return (
     <CandidateShell
-      active={view}
+      active={parentTab[view]}
       title={title}
       name={displayName}
       email={session.email}
       badges={{ saved: savedIdList.length, applications: activeApplications }}
       onNavigate={(tab) => navigate(tab)}
+      onBack={isDetail || secondaryViews.has(view) ? goBack : undefined}
       onSignOut={session.signOut}
-      notification={<NotificationCenter onNavigate={navigateTarget} />}
+      notification={<NotificationCenter onNavigate={navigateTo} />}
     >
-      {view === 'home' && (
-        <HomeView
-          name={displayName}
-          savedCount={savedIds}
-          applications={applications}
-          savedIds={savedIdList}
-          onNavigate={navigate}
-          onToggleSaved={toggleSaved}
-          onStartApplication={startApplication}
-        />
-      )}
-      {view === 'jobs' && <JobsView savedIds={savedIdList} onToggleSaved={toggleSaved} onStartApplication={startApplication} />}
-      {view === 'saved' && <SavedView onToggleSaved={toggleSaved} onStartApplication={startApplication} onNavigate={navigate} />}
-      {view === 'applications' && (selectedApplicationId
-        ? <ApplicationDetail applicationId={selectedApplicationId} onBack={closeApplication} />
-        : <ApplicationsView applications={applications} onOpen={openApplication} onNavigate={navigate} />)}
-      {view === 'profile' && (
-        <ProfileView
-          profileResource={profile}
-          fallback={{ userId: session.userId, email: session.email, name: session.fullName }}
-          onSaved={(next) => {
-            profile.setData(next);
-            const returnJob = returnJobIdFromLocation();
-            if (returnJob) {
-              setToast({ message: 'プロフィールを保存しました。求人に戻ります。', tone: 'info' });
-              navigate('jobs', `?job_id=${encodeURIComponent(returnJob)}`);
-            }
-          }}
-        />
-      )}
+      <div className="hc-route" key={route.key}>
+        {view === 'home' && (
+          <HomeView
+            name={displayName}
+            savedCount={savedIds}
+            applications={applications}
+            savedIds={savedIdList}
+            onNavigate={navigate}
+            {...jobActions}
+          />
+        )}
+        {view === 'jobs' && <JobsView savedIds={savedIdList} {...jobActions} />}
+        {view === 'saved' && <SavedView onNavigate={navigate} {...jobActions} />}
+        {view === 'applications' && (selectedApplicationId
+          ? <ApplicationDetail applicationId={selectedApplicationId} onBack={goBack} />
+          : <ApplicationsView applications={applications} onOpen={openApplication} onNavigate={navigate} />)}
+        {view === 'profile' && (
+          <ProfileView
+            profileResource={profile}
+            fallback={{ userId: session.userId, email: session.email, name: session.fullName }}
+            onSaved={(next) => {
+              profile.setData(next);
+              const returnJob = returnJobIdFromLocation();
+              if (returnJob) {
+                setToast({ message: 'プロフィールを保存しました。求人に戻ります。', tone: 'info' });
+                navigate('jobs', `?job_id=${encodeURIComponent(returnJob)}`);
+              }
+            }}
+          />
+        )}
+        {secondaryViews.has(view) && (
+          <Suspense fallback={<SkeletonList rows={2} />}>
+            {view === 'scouts' && <ScoutsView />}
+            {view === 'visits' && <VisitsView />}
+            {view === 'spot' && <SpotJobsView onStartApplication={() => navigate('profile')} />}
+            {view === 'matches' && <MatchesView userKey={userKey} savedIds={savedIdList} {...jobActions} />}
+            {view === 'compare' && <CompareView userKey={userKey} />}
+          </Suspense>
+        )}
+      </div>
       <Toast message={toast?.message ?? null} tone={toast?.tone} onClose={closeToast} />
     </CandidateShell>
   );
@@ -212,15 +263,19 @@ export function App() {
 
 type ResourceLike<T> = ReturnType<typeof useResource<T>>;
 
-function HomeView({ name, savedCount, applications, savedIds, onNavigate, onToggleSaved, onStartApplication }: {
+type JobActions = {
+  onToggleSaved: (id: string) => void;
+  onStartApplication: (jobId: string) => void;
+  onApplied: (applicationId: string) => void;
+};
+
+function HomeView({ name, savedCount, applications, savedIds, onNavigate, ...jobActions }: {
   name: string;
   savedCount: ResourceLike<string[]>;
   applications: ResourceLike<Application[]>;
   savedIds: string[];
   onNavigate: (v: View, search?: string) => void;
-  onToggleSaved: (id: string) => void;
-  onStartApplication: (jobId: string) => void;
-}) {
+} & JobActions) {
   const featured = useResource('featured', () => listFeaturedJobs(3), 'おすすめ求人を読み込めませんでした。');
   const attention = useResource('attention', getJobseekerAttentionSummary, '新着メッセージを読み込めませんでした。');
 
@@ -233,6 +288,10 @@ function HomeView({ name, savedCount, applications, savedIds, onNavigate, onTogg
   const inProgress = applications.data ? applications.data.filter((a) => !closedApplicationStatuses.includes(a.status)).length : null;
   const pendingInterviews = attention.data?.unanswered_interviews_count ?? 0;
   const pendingScouts = attention.data?.pending_scouts_count ?? 0;
+  const nextInterview = attention.data?.next_interview;
+  const interviewHref = nextInterview && uuidPattern.test(nextInterview.application_id) && uuidPattern.test(nextInterview.interview_id)
+    ? `/applications?application_id=${encodeURIComponent(nextInterview.application_id)}&interview_id=${encodeURIComponent(nextInterview.interview_id)}#interview-${nextInterview.interview_id}`
+    : '/applications';
 
   return (
     <div className="hc-home">
@@ -244,12 +303,12 @@ function HomeView({ name, savedCount, applications, savedIds, onNavigate, onTogg
       <div className="hc-stat-list">
         <StatRow label="気になる園" icon="heart" resource={savedCount} value={savedCount.data?.length ?? null} onOpen={() => onNavigate('saved')} />
         <StatRow label="応募中" icon="briefcase" resource={applications} value={inProgress} onOpen={() => onNavigate('applications')} />
-        <StatRow label="新着メッセージ" icon="bell" resource={attention} value={attention.data?.unread_messages_count ?? null} href={attention.data?.next_message ? `/applications?application_id=${encodeURIComponent(attention.data.next_message.application_id)}#application-messages` : undefined} onOpen={() => onNavigate('applications')} />
+        <StatRow label="新着メッセージ" icon="bell" resource={attention} value={attention.data?.unread_messages_count ?? null} href={attention.data?.next_message && uuidPattern.test(attention.data.next_message.application_id) ? `/applications?application_id=${encodeURIComponent(attention.data.next_message.application_id)}#application-messages` : undefined} onOpen={() => onNavigate('applications')} />
       </div>
 
       {(pendingInterviews > 0 || pendingScouts > 0) && (
         <div className="hc-todo">
-          {pendingInterviews > 0 && <a className="hc-todo-item" href="/applications">面接の回答待ち <strong>{pendingInterviews}件</strong><Icon name="chevron" size={16} /></a>}
+          {pendingInterviews > 0 && <a className="hc-todo-item" href={interviewHref}>面接の回答待ち <strong>{pendingInterviews}件</strong><Icon name="chevron" size={16} /></a>}
           {pendingScouts > 0 && <a className="hc-todo-item" href="/scouts">届いたスカウト <strong>{pendingScouts}件</strong><Icon name="chevron" size={16} /></a>}
         </div>
       )}
@@ -259,9 +318,15 @@ function HomeView({ name, savedCount, applications, savedIds, onNavigate, onTogg
         {featured.status === 'error' && <InlineError message={featured.error} onRetry={featured.reload} />}
         {featured.status === 'loading' && !featured.data && <SkeletonList rows={2} />}
         {featured.data && (featured.data.jobs.length
-          ? <div className="hc-job-list">{featured.data.jobs.map((job) => <JobCard key={job.id} job={job} saved={savedIds.includes(job.id)} onToggleSaved={onToggleSaved} onStartApplication={onStartApplication} />)}</div>
+          ? <div className="hc-job-list">{featured.data.jobs.map((job) => <JobCard key={job.id} job={job} saved={savedIds.includes(job.id)} {...jobActions} />)}</div>
           : <EmptyState title="公開中の求人はまだありません" body="園から求人が公開されると、ここに表示されます。" />)}
       </section>
+
+      <nav className="hc-menu hc-home-more" aria-label="ほかの探し方">
+        <a href="/matches">希望条件に合う順で見る<Icon name="chevron" size={16} /></a>
+        <a href="/spot-jobs">1日だけのスポット勤務<Icon name="chevron" size={16} /></a>
+        <a href="/visits">見学・体験の予定<Icon name="chevron" size={16} /></a>
+      </nav>
     </div>
   );
 }
@@ -293,7 +358,7 @@ function StatRow({ label, icon, resource, value, href, onOpen }: {
 
 /* ---------------------------------- Jobs ---------------------------------- */
 
-function JobsView({ savedIds, onToggleSaved, onStartApplication }: { savedIds: string[]; onToggleSaved: (id: string) => void; onStartApplication: (jobId: string) => void }) {
+function JobsView({ savedIds, ...jobActions }: { savedIds: string[] } & JobActions) {
   const [keyword, setKeyword] = useState('');
   const [prefecture, setPrefecture] = useState('');
   const [employment, setEmployment] = useState('');
@@ -308,6 +373,9 @@ function JobsView({ savedIds, onToggleSaved, onStartApplication }: { savedIds: s
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [deepLinkedJobId, setDeepLinkedJobId] = useState<string | null>(null);
+  const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);
+  const focusedJobRef = useRef<string | null>(null);
   const facets = useResource('job-facets', () => getJobSearchFacets(), '絞り込み条件を読み込めませんでした。');
 
   useEffect(() => {
@@ -323,8 +391,11 @@ function JobsView({ savedIds, onToggleSaved, onStartApplication }: { savedIds: s
       ])
         .then(([page, targetJob]) => {
           if (!active) return;
-          const pageJobs = targetJob && !page.jobs.some((job) => job.id === targetJob.id) ? [targetJob, ...page.jobs] : page.jobs;
+          // An exact deep link (Google求人, notifications) is pinned first and labelled 「指定求人」.
+          const pageJobs = targetJob ? [targetJob, ...page.jobs.filter((job) => job.id !== targetJob.id)] : page.jobs;
           setJobs(pageJobs);
+          setDeepLinkedJobId(targetJob?.id ?? null);
+          setDeepLinkNotice(targetJobId && !targetJob ? 'この求人は公開を終了したか、現在は表示できません。求人一覧から最新の募集をご確認ください。' : null);
           setTotalCount(page.totalCount);
           setHasMore(page.hasMore);
           setCursor(page.nextCursor);
@@ -338,6 +409,16 @@ function JobsView({ savedIds, onToggleSaved, onStartApplication }: { savedIds: s
     }, keyword.trim() ? 250 : 0);
     return () => { active = false; window.clearTimeout(timer); };
   }, [keyword, prefecture, employment, verifiedOnly, financeVerifiedOnly, attempt]);
+
+  // Bring the deep-linked job into view once, after it has rendered.
+  useEffect(() => {
+    if (!deepLinkedJobId || focusedJobRef.current === deepLinkedJobId) return;
+    const card = document.getElementById(`job-${deepLinkedJobId}`);
+    if (!card) return;
+    focusedJobRef.current = deepLinkedJobId;
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.setTimeout(() => card.focus({ preventScroll: true }), 350);
+  }, [deepLinkedJobId, jobs]);
 
   const loadMore = async () => {
     if (!cursor || loadingMore) return;
@@ -358,6 +439,8 @@ function JobsView({ savedIds, onToggleSaved, onStartApplication }: { savedIds: s
 
   const hasFilters = Boolean(keyword.trim() || prefecture || employment || verifiedOnly || financeVerifiedOnly);
   const clearFilters = () => { setKeyword(''); setPrefecture(''); setEmployment(''); setVerifiedOnly(false); setFinanceVerifiedOnly(false); };
+  const labels = rankLabels(jobs.map((job) => job.id), deepLinkedJobId);
+  const expandedJobId = jobIdFromLocation();
 
   return (
     <div className="hc-jobs">
@@ -388,15 +471,19 @@ function JobsView({ savedIds, onToggleSaved, onStartApplication }: { savedIds: s
 
       <div className="hc-result-bar">
         <strong aria-live="polite">{status === 'success' ? `${totalCount}件` : status === 'loading' ? '検索中…' : ''}</strong>
-        {hasFilters && <button type="button" className="hc-link-button" onClick={clearFilters}>条件をクリア</button>}
+        {hasFilters
+          ? <button type="button" className="hc-link-button" onClick={clearFilters}>条件をクリア</button>
+          : <a className="hc-link-button" href="/matches">マッチ度順で見る</a>}
       </div>
+      <RankingDisclosure />
+      {deepLinkNotice && <p className="hc-notice" role="status">{deepLinkNotice}</p>}
 
       {status === 'error' && <InlineError message={searchError || '求人を検索できませんでした。'} onRetry={() => setAttempt((v) => v + 1)} />}
       {status === 'loading' && !jobs.length && <SkeletonList rows={3} />}
       {status === 'success' && !jobs.length && <EmptyState title="条件に合う求人はありません" body="条件を変えて、もう一度探してみてください。" action={hasFilters ? '条件をクリア' : undefined} onAction={hasFilters ? clearFilters : undefined} />}
       {jobs.length > 0 && status !== 'error' && (
         <div className="hc-job-list" aria-busy={status === 'loading'}>
-          {jobs.map((job) => <JobCard key={job.id} job={job} saved={savedIds.includes(job.id)} onToggleSaved={onToggleSaved} onStartApplication={onStartApplication} />)}
+          {jobs.map((job, index) => <JobCard key={job.id} job={job} saved={savedIds.includes(job.id)} initiallyExpanded={expandedJobId === job.id} rankLabel={labels[index]} {...jobActions} />)}
         </div>
       )}
       {loadMoreError && <InlineError message={loadMoreError} onRetry={loadMore} />}
@@ -411,7 +498,7 @@ function JobsView({ savedIds, onToggleSaved, onStartApplication }: { savedIds: s
 
 /* ---------------------------------- Saved --------------------------------- */
 
-function SavedView({ onToggleSaved, onStartApplication, onNavigate }: { onToggleSaved: (id: string) => void; onStartApplication: (jobId: string) => void; onNavigate: (v: View) => void }) {
+function SavedView({ onNavigate, ...jobActions }: { onNavigate: (v: View) => void } & JobActions) {
   const saved = useResource<SavedJobWithStatus[]>('saved-jobs', () => listSavedJobsWithStatus(), '気になる求人を読み込めませんでした。');
   useEffect(() => {
     const onRefresh = () => saved.reload();
@@ -426,7 +513,7 @@ function SavedView({ onToggleSaved, onStartApplication, onNavigate }: { onToggle
       {saved.data && (saved.data.length
         ? <>
             <div className="hc-result-bar"><strong>{saved.data.length}件</strong>{saved.data.length >= 2 && <a className="hc-link-button" href={`/compare?${saved.data.slice(0, 3).map((job) => `job_id=${encodeURIComponent(job.id)}`).join('&')}`}>園を比較する</a>}</div>
-            <div className="hc-job-list">{saved.data.map((job) => <JobCard key={job.id} job={job} saved onToggleSaved={onToggleSaved} onStartApplication={onStartApplication} />)}</div>
+            <div className="hc-job-list">{saved.data.map((job) => <JobCard key={job.id} job={job} saved {...jobActions} />)}</div>
           </>
         : <EmptyState title="気になる求人はまだありません" body="求人の♡を押すと、ここに保存されます。" action="求人を探す" onAction={() => onNavigate('jobs')} />)}
     </div>
@@ -453,6 +540,7 @@ function ApplicationsView({ applications, onOpen, onNavigate }: { applications: 
             ))}
           </div>
         : <EmptyState title="応募はまだありません" body="気になる園を見つけたら、求人から応募できます。" action="求人を探す" onAction={() => onNavigate('jobs')} />)}
+      <a className="hc-link-button hc-block-link" href="/visits">見学・体験の予定を見る</a>
     </div>
   );
 }
@@ -564,103 +652,8 @@ function ChipGroup({ label, options, values, onChange }: { label: string; option
   );
 }
 
-/* --------------------------------- Job card ------------------------------- */
-
-function JobCard({ job, saved, onToggleSaved, onStartApplication }: { job: Job; saved: boolean; onToggleSaved: (id: string) => void; onStartApplication: (jobId: string) => void }) {
-  const [expanded, setExpanded] = useState(() => jobIdFromLocation() === job.id);
-  const [applying, setApplying] = useState(false);
-  const [applyError, setApplyError] = useState<string | null>(null);
-  const isClosed = (job as Partial<SavedJobWithStatus>).is_open === false || Boolean(job.closing_at && new Date(job.closing_at).getTime() < Date.now());
-  const location = [job.prefecture, job.city].filter(Boolean).join(' ') || '勤務地は詳細をご確認ください';
-
-  const apply = async () => {
-    if (isClosed) { setApplyError('この求人は募集を終了しています。'); return; }
-    setApplying(true); setApplyError(null);
-    try {
-      const profile = await getProfile();
-      if (!profile?.name?.trim()) { onStartApplication(job.id); return; }
-      await submitApplication(job.id, profile);
-      window.location.assign('/applications');
-    } catch (err) {
-      setApplyError(errorMessage(err, '応募を送信できませんでした。'));
-    } finally {
-      setApplying(false);
-    }
-  };
-
-  return (
-    <article className={`hc-job-card ${expanded ? 'is-expanded' : ''}`} data-job-id={job.id}>
-      <header className="hc-job-head">
-        <div className="hc-job-identity">
-          <span className="hc-job-facility">{job.facility_name}</span>
-          <h3>{job.title}</h3>
-        </div>
-        <button type="button" className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)} aria-label={saved ? '気になるから外す' : '気になるに保存'} aria-pressed={saved}><Icon name="heart" size={22} /></button>
-      </header>
-      <p className="hc-job-salary">{salaryLabel(job)}</p>
-      <p className="hc-job-meta"><Icon name="map" size={16} /> {location}{job.employment_type ? ` ・ ${job.employment_type}` : ''}</p>
-      <div className="hc-job-tags">
-        {isClosed && <span className="status-badge status-rejected">募集終了</span>}
-        {job.verified_workplace?.verified_metric_count ? <span className="verified-tag">✓ Hoiku Office 実績</span> : null}
-        {job.verified_finance?.verified_metric_count ? <span className="finance-verified-tag">✓ Hoiku Finance 実績</span> : null}
-      </div>
-
-      {expanded && (
-        <div className="hc-job-detail">
-          <section><h4>園</h4><p>{job.facility_name}{job.facility_type ? `（${job.facility_type}）` : ''}</p><p>{job.address || location}</p></section>
-          <section><h4>条件</h4>
-            <dl>
-              <dt>給与</dt><dd>{salaryLabel(job)}</dd>
-              {job.employment_type && <><dt>雇用形態</dt><dd>{job.employment_type}</dd></>}
-              {job.working_hours && <><dt>勤務時間</dt><dd>{job.working_hours}</dd></>}
-              {job.holidays && <><dt>休日</dt><dd>{job.holidays}</dd></>}
-              {job.required_qualification && <><dt>応募資格</dt><dd>{job.required_qualification}</dd></>}
-              {job.benefits && <><dt>待遇</dt><dd>{job.benefits}</dd></>}
-              <dt>募集人数</dt><dd>{job.number_of_positions}名</dd>
-            </dl>
-          </section>
-          {(job.verified_workplace || job.verified_finance) && (
-            <section><h4>実際の働き方</h4>
-              {job.verified_workplace && <VerifiedWorkplaceSummary job={job} expanded={expanded} />}
-              {job.verified_finance && <VerifiedFinanceSummary job={job} expanded={expanded} />}
-            </section>
-          )}
-          {job.description && <section><h4>仕事内容・保育観</h4><p className="hc-job-description">{job.description}</p></section>}
-          {!isClosed && <VisitTrialPanel jobId={job.id} facilityId={job.facility_id} />}
-          {isClosed && <p className="form-error">募集は終了しています。保存履歴として求人内容を確認できます。</p>}
-        </div>
-      )}
-
-      {applyError && <p className="form-error" role="alert">{applyError}</p>}
-      <div className="hc-job-actions">
-        <button className="secondary-button" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>{expanded ? '閉じる' : '詳しく見る'}</button>
-        <button className="primary-button" type="button" onClick={apply} disabled={applying || isClosed}>{isClosed ? '募集終了' : applying ? '応募中…' : '応募する'}</button>
-      </div>
-    </article>
-  );
-}
-
-function VerifiedWorkplaceSummary({ job, expanded }: { job: Job; expanded: boolean }) {
-  const profile = job.verified_workplace;
-  const entries = useMemo(() => profile?.verified_metric_count
-    ? verifiedPriority
-      .map((key) => [key, profile.verified_metrics[key]] as const)
-      .filter((entry): entry is readonly [string, VerifiedWorkplaceMetric] => Boolean(entry[1]?.value !== null && entry[1]?.value !== undefined))
-      .slice(0, expanded ? 10 : 4)
-    : [], [profile, expanded]);
-  if (!profile?.verified_metric_count || !entries.length) return null;
-  return <section className="verified-workplace" aria-label="Hoiku Office実績データ">
-    <div className="verified-workplace-head"><strong>✓ Hoiku Office 実績</strong><span>情報公開率 {Math.round(Number(profile.transparency_pct || 0))}%</span></div>
-    <div className="verified-metric-grid">{entries.map(([key, metric]) => <div className="verified-metric" key={key}><span>{metric.label}</span><strong>{formatVerifiedMetric(metric)}</strong><small>実績 n={metric.sample_size}</small></div>)}</div>
-    <small className="verified-period">集計期間 {formatMonth(profile.period_start)}〜{formatMonth(profile.period_end)} ・ 園の申告値ではなくHoiku Office実績から自動集計</small>
-  </section>;
-}
-
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return <label className="hc-field"><span>{label}{required && <em className="hc-required">必須</em>}</span>{children}</label>;
 }
 function formatDate(value: string) { return new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(value)); }
-function formatMonth(value: string) { const date = new Date(`${value}T00:00:00`); return Number.isNaN(date.getTime()) ? value : `${date.getFullYear()}年${date.getMonth() + 1}月`; }
-function formatVerifiedMetric(metric: VerifiedWorkplaceMetric) { const value = typeof metric.value === 'number' ? Number(metric.value.toFixed(1)) : metric.value; return `${value}${metric.unit || ''}`; }
 function statusLabel(status: string) { return ({ new: '応募済み', applied: '応募済み', reviewing: '書類確認中', screening: '書類確認中', review: '確認中', interview: '面接予定', offered: '内定', offer: '内定', hired: '採用', rejected: '選考終了', withdrawn: '辞退' } as Record<string, string>)[status] || status; }
-function salaryLabel(job: Job) { if (job.salary_note) return job.salary_note; if (job.salary_min && job.salary_max) return `${job.salary_type === 'hourly' ? '時給' : '月給'} ${job.salary_min.toLocaleString()}〜${job.salary_max.toLocaleString()}円`; if (job.salary_min) return `${job.salary_type === 'hourly' ? '時給' : '月給'} ${job.salary_min.toLocaleString()}円〜`; return '給与は詳細をご確認ください'; }

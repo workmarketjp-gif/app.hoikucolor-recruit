@@ -6,7 +6,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const migration = read('supabase/migrations/20260913170000_hc_jobseeker_spot_assignment_lifecycle_notifications_v1.sql');
 const confirmedMigration = read('supabase/migrations/20260913160000_hc_jobseeker_confirmed_spot_work_v1.sql');
 const notifications = read('src/components/NotificationCenter.tsx');
-const route = read('src/SpotJobsRouteRoot.tsx');
+const route = read('src/views/SpotJobsView.tsx');
 const repository = read('src/lib/spotJobRepository.ts');
 
 const checks = [

@@ -1,23 +1,28 @@
 import fs from 'node:fs';
 
+// Scouts are reached from regular navigation (sidebar, My page, Home "to do", account
+// sheet, notifications). No enhancer injects links or polls scouts in the background.
 const read = (path) => fs.readFileSync(path, 'utf8');
-const component = read('src/components/ScoutNavigationEnhancer.tsx');
-const css = read('src/components/ScoutNavigationEnhancer.css');
+const app = read('src/App.tsx');
+const shell = read('src/components/CandidateShell.tsx');
 const notification = read('src/components/NotificationCenter.tsx');
 const main = read('src/main.tsx');
+const inbox = read('src/components/ScoutInbox.tsx');
 const repository = read('src/lib/scoutInboxRepository.ts');
+const sources = [
+  'src/App.tsx', 'src/AppRoot.tsx', 'src/main.tsx', 'src/components/CandidateShell.tsx', 'src/components/NotificationCenter.tsx',
+  'src/components/DocumentVaultPanel.tsx', 'src/views/MatchesView.tsx', 'src/views/CompareView.tsx', 'src/views/SpotJobsView.tsx', 'src/views/VisitsView.tsx',
+].map(read);
 
 const checks = [
-  ['main mounts the scout navigation enhancer', main.includes('<ScoutNavigationEnhancer />')],
-  ['pending count uses the candidate-safe scout RPC repository', component.includes('listJobseekerScouts') && repository.includes("rpc('hc_jobseeker_list_scouts')")],
-  ['only pending invitations contribute to the badge', component.includes("scout.scout_status === 'pending'")],
-  ['sidebar exposes the dedicated scouts route', component.includes('href="/scouts"') && component.includes('data-scout-navigation="true"')],
-  ['dashboard exposes a scouts callout', component.includes('scout-dashboard-callout') && component.includes('回答待ちのスカウト')],
-  ['header carries no scout shortcut; scouts are reached from Home and My page', !notification.includes('scout-shortcut') && !component.includes('scout-topbar-link') && !component.includes("ensureHost(topbar, 'topbar'")],
-  ['scout polling never hot-loops and skips signed-out tabs', component.includes('hasActiveSession()') && component.includes('isAuthNotReady(error)') && component.includes('Math.min(300_000') && !component.includes('setTimeout(load, 3000)')],
-  ['pending state refreshes while the app remains open', component.includes('60000') && component.includes('visibilitychange')],
-  ['existing scouts nav gets a pending badge instead of a duplicate link', component.includes('existingScoutNav') && component.includes('scout-existing-nav-badge')],
-  ['mobile dashboard layout is explicitly constrained', css.includes('@media(max-width:760px)') && css.includes('grid-template-columns:38px minmax(0,1fr)')],
+  ['no navigation enhancer is mounted', !main.includes('Enhancer') && !fs.existsSync('src/components/ScoutNavigationEnhancer.tsx')],
+  ['the inbox reads through the candidate-safe scout RPC repository', inbox.includes('listJobseekerScouts') && repository.includes("rpc('hc_jobseeker_list_scouts')")],
+  ['scouts are only listed by the scout inbox (no background scout polling elsewhere)', sources.every((source) => !source.includes('listJobseekerScouts'))],
+  ['sidebar exposes the dedicated scouts route', shell.includes("{ href: '/scouts', label: 'スカウト' }")],
+  ['My page and the account sheet expose the scouts route', app.includes('<a href="/scouts">スカウト') && shell.includes('href="/scouts" onClick={onClose}')],
+  ['Home surfaces pending scouts from the attention summary', app.includes('pending_scouts_count') && app.includes('href="/scouts">届いたスカウト')],
+  ['header carries no scout shortcut', !notification.includes('scout-shortcut') && !shell.includes('scout-topbar-link')],
+  ['pending state refreshes only while the inbox is open and visible', inbox.includes('window.setInterval') && inbox.includes("document.visibilityState === 'visible'") && inbox.includes('visibilitychange')],
 ];
 
 const failures = checks.filter(([, ok]) => !ok);

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 
 const notification = fs.readFileSync(new URL('../src/components/NotificationCenter.tsx', import.meta.url), 'utf8');
 const detail = fs.readFileSync(new URL('../src/components/ApplicationDetail.tsx', import.meta.url), 'utf8');
+const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
 const migration = fs.readFileSync(new URL('../supabase/migrations/20260912120500_hc_jobseeker_selection_deep_links_v1.sql', import.meta.url), 'utf8');
 
 const checks = [
@@ -13,7 +14,7 @@ const checks = [
   [notification.includes("UUID_PATTERN.test(item.application_id)"), 'application deep links must validate application UUIDs'],
   [notification.includes("UUID_PATTERN.test(interviewId)"), 'interview deep links must validate interview UUIDs'],
   [notification.includes("hash = '#application-messages'"), 'message notification navigation must use the safe message anchor'],
-  [notification.includes("target.startsWith('/applications?')"), 'selection deep links must preserve query/hash navigation'],
+  [notification.includes('onNavigate(target)') && app.includes('<NotificationCenter onNavigate={navigateTo} />') && app.includes('`${url.pathname}${url.search}${url.hash}`'), 'selection deep links must preserve query/hash navigation'],
   [detail.includes('interviews.some((item) => item.id === interviewId)'), 'application detail must reject interview IDs not belonging to the loaded application'],
   [detail.includes('focusedTargetRef.current === targetId'), 'application deep links must not repeatedly steal focus after background refreshes'],
   [detail.includes('focusedTargetRef.current = null;'), 'application deep links must remain retryable if the target DOM is not available yet'],

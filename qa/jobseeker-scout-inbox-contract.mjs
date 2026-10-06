@@ -8,8 +8,8 @@ const repository = fs.readFileSync('src/lib/scoutInboxRepository.ts','utf8');
 const panel = fs.readFileSync('src/components/ScoutInbox.tsx','utf8');
 const notificationCenter = fs.readFileSync('src/components/NotificationCenter.tsx','utf8');
 const homeApp = fs.readFileSync('src/App.tsx','utf8');
-const vault = fs.readFileSync('src/components/DocumentVaultPanel.tsx','utf8');
-const scoutRoute = fs.readFileSync('src/ScoutRouteRoot.tsx','utf8');
+const scoutRoute = fs.readFileSync('src/views/ScoutsView.tsx','utf8');
+const router = fs.readFileSync('src/lib/router.ts','utf8');
 const candidateShell = fs.readFileSync('src/components/CandidateShell.tsx','utf8');
 const main = fs.readFileSync('src/main.tsx','utf8');
 
@@ -45,13 +45,13 @@ expect(notificationCenter.includes("return `/scouts${query}#scout-inbox`"), 'not
 // scouts are surfaced on Home from the authenticated attention summary instead.
 expect(!notificationCenter.includes('listJobseekerScouts') && !notificationCenter.includes('scout-shortcut'), 'the header must not poll scouts or render a scout shortcut');
 expect(homeApp.includes('pending_scouts_count') && homeApp.includes('href="/scouts"'), 'Home must surface pending scouts and link to the scout inbox');
-expect(notificationCenter.includes("target.startsWith('/scouts')"), 'notification navigation must preserve the dedicated scout deep link');
-expect(vault.includes('<ScoutInbox />'), 'scout inbox must remain reachable from the candidate profile');
-expect(main.includes("window.location.pathname.startsWith('/scouts') ? <ScoutRouteRoot /> : <AppRoot />"), 'main entry must route /scouts to the dedicated authenticated page');
+expect(notificationCenter.includes('onNavigate(target)') && homeApp.includes('`${url.pathname}${url.search}${url.hash}`'), 'notification navigation must preserve the dedicated scout deep link (query + #scout-inbox)');
+expect(homeApp.includes('<a href="/scouts">スカウト'), 'scout inbox must remain reachable from the candidate profile (My page menu)');
+expect(router.includes("scouts: '/scouts'") && homeApp.includes("{view === 'scouts' && <ScoutsView />}") && main.includes('<AppRoot />') && !main.includes('RouteRoot'), 'the signed-in app must route /scouts to the scout screen');
 expect(scoutRoute.includes('<ScoutInbox />'), 'dedicated scout page must render the inbox');
 expect(scoutRoute.includes('<ScoutPrivacyPanel />'), 'dedicated scout page must expose privacy controls');
 expect(scoutRoute.includes('<ProfileMatchingPreferencesPanel />'), 'dedicated scout page must expose matching preferences');
-expect(scoutRoute.includes('<CandidateShell') && scoutRoute.includes('title="スカウト"') && candidateShell.includes("{ href: '/scouts', label: 'スカウト' }") && candidateShell.includes("window.location.pathname.startsWith(link.href)") && candidateShell.includes("aria-current={isActive ? 'page' : undefined}"), 'dedicated scout page navigation must identify the active section');
-expect(scoutRoute.includes('setSupabaseAccessTokenGetter(() => session.getToken())'), 'dedicated scout page must use the signed-in Clerk token for Supabase');
+expect(homeApp.includes("scouts: 'スカウト'") && candidateShell.includes("{ href: '/scouts', label: 'スカウト' }") && candidateShell.includes("window.location.pathname.startsWith(link.href)") && candidateShell.includes("aria-current={isActive ? 'page' : undefined}"), 'dedicated scout page navigation must identify the active section');
+expect(!scoutRoute.includes('ClerkProvider') && !scoutRoute.includes('setSupabaseAccessTokenGetter'), 'the scout screen must use the one app session (no second Clerk provider / token getter)');
 
 console.log('jobseeker scout inbox contract: OK');

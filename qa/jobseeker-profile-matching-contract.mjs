@@ -4,7 +4,7 @@ const migration = fs.readFileSync('supabase/migrations/20260912030000_hc_jobseek
 const rpcBoundary = fs.readFileSync('supabase/migrations/20260919020215_hc_jobseeker_profile_rpc_boundary_v1.sql', 'utf8');
 const repository = fs.readFileSync('src/lib/profilePreferencesRepository.ts', 'utf8');
 const panel = fs.readFileSync('src/components/ProfileMatchingPreferencesPanel.tsx', 'utf8');
-const vault = fs.readFileSync('src/components/DocumentVaultPanel.tsx', 'utf8');
+const scoutSettings = fs.readFileSync('src/views/ScoutsView.tsx', 'utf8');
 
 function expect(condition, message) {
   if (!condition) throw new Error(message);
@@ -42,6 +42,6 @@ expect(!repository.includes(".from('hc_jobseeker_profiles')"), 'matching prefere
 expect(!repository.includes('clerk_user_id'), 'matching-preference browser repository must not expose or submit Clerk identity');
 expect(!panel.includes("from '@clerk/react'"), 'matching-preference panel must not depend on Clerk identity');
 expect(panel.includes('saveJobseekerMatchingPreferences(draft)'), 'matching-preference save must not pass Candidate ID');
-expect(vault.includes('<ProfileMatchingPreferencesPanel />'), 'profile preferences must be connected to the jobseeker profile screen');
+expect(scoutSettings.includes('<ProfileMatchingPreferencesPanel />'), 'matching preferences must be connected to the candidate scout settings screen');
 
 console.log('jobseeker profile matching contract: OK');

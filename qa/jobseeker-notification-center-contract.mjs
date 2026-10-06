@@ -69,7 +69,9 @@ requireMatch(component, /deferReadToMessagePanel\s*=\s*item\.notification_type\s
 requireMatch(component, /!item\.read_at\s*&&\s*!deferReadToMessagePanel/, 'message notification click must not mark read before message content loads')
 requireMatch(component, /target\.endsWith\('#application-messages'\)/, 'deferred message read must be limited to the owned application-message deep-link')
 requireMatch(messages, /load\(\{ acknowledge: true \}\)/, 'message panel must acknowledge only after loading message content')
-requireMatch(messages, /hc:application-messages-viewed/, 'message panel must emit explicit viewed event after successful load')
+requireMatch(messages, /if \(acknowledge\) void acknowledgeMessages\(next\)/, 'message panel must acknowledge only after message content loaded')
+requireMatch(messages, /markJobseekerApplicationMessagesRead\(applicationId\)/, 'message acknowledgement must use the ownership-checked RPC for this application')
+requireMatch(messages, /new CustomEvent\('hc:notifications-refresh'\)/, 'message acknowledgement must refresh the notification center')
 requireMatch(css, /@media\(max-width:760px\)[\s\S]*\.notification-popover\{position:fixed/, 'mobile notification layout guard missing')
 requireMatch(app, /<NotificationCenter\s+onNavigate=/, 'notification center is not connected to the header')
 
