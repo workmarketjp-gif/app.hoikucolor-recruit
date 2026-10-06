@@ -41,7 +41,7 @@ const checks = [
   ['importer is childcare-position scoped', importer.includes('ALLOWED_POSITION') && importer.includes('保育士') && importer.includes('幼稚園教諭')],
   ['importer defaults unsafe pages to non-public', importer.includes("status: Normalized['source_status']") && importer.includes('public_republication_allowed: allowed')],
   ['online self-apply status is captured', importer.includes('オンライン自主応募の受付') && importer.includes('online_self_apply_allowed')],
-  ['nationwide discovery cycles explicit core childcare terms', importer.includes("const SEARCH_TERMS = ['保育士', '保育教諭', '幼稚園教諭', '保育補助']") && roleCycleMigration.includes('query_cursor')],
+  ['nationwide discovery cycles exact core childcare occupations', importer.includes("occupationCode: '06,01'") && importer.includes("occupationCode: '06,02'") && importer.includes("occupationCode: '06,04'") && importer.includes("freeWord: '保育教諭'") && importer.includes('kiboSuruSKSU1Hidden') && roleCycleMigration.includes('query_cursor')],
   ['discovery is prefecture paginated and bounded', importer.includes('prefecture_cursor') && importer.includes('DISCOVERY_PAGE_SIZE = 50') && importer.includes('DISCOVERY_CONCURRENCY = 5')],
   ['refresh mode re-verifies existing rows', importer.includes('async function refreshUrls()') && importer.includes('body.refresh')],
   ['current parser uses exact section labels', importer.includes("const PARSER_VERSION = 'hellowork-public-v4'") && importer.includes('normalizedLines') && importer.includes('exactIndex')],
