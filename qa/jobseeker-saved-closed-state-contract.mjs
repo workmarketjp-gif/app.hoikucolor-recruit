@@ -8,6 +8,7 @@ const migrationName = migrations.find((name) => name.endsWith('_hc_jobseeker_sav
 if (!migrationName) throw new Error('HC-W02 saved closed-status migration source is missing');
 
 const migration = read(`supabase/migrations/${migrationName}`);
+const externalSaveMigration = read('supabase/migrations/20261007084500_hc_saved_external_jobs_v1.sql');
 const repo = read('src/lib/savedJobStatusRepository.ts');
 // Job cards (saved, search, home, matching) are one component: JobCard.
 const app = read('src/App.tsx') + read('src/components/JobCard.tsx');
@@ -24,8 +25,16 @@ for (const marker of [
 }
 if (migration.includes('public.hc_jobs j')) throw new Error('Saved closed-state read must not bypass the canonical published cache');
 
-if (!repo.includes("rpc('hc_jobseeker_list_saved_jobs_with_status')")) {
-  throw new Error('Saved jobs must use the deadline-aware Candidate RPC');
+if (!repo.includes("rpc('hc_jobseeker_list_saved_jobs_with_status_v2'")) {
+  throw new Error('Saved jobs must use the combined deadline-aware Candidate RPC');
+}
+for (const marker of [
+  'hc_jobseeker_list_saved_jobs_with_status_v2()',
+  'join public.hc_external_job_public_feed e on e.id = s.external_job_id',
+  'true as is_external',
+  'false as can_apply_direct',
+]) {
+  if (!externalSaveMigration.includes(marker)) throw new Error(`HC-W02 external saved-job marker missing: ${marker}`);
 }
 for (const marker of [
   'listSavedJobsWithStatus()',

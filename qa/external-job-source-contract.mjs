@@ -9,6 +9,8 @@ const repository = fs.readFileSync('src/lib/recruitRepository.ts', 'utf8');
 const card = fs.readFileSync('src/components/JobCard.tsx', 'utf8');
 const css = fs.readFileSync('src/candidate-shell.css', 'utf8');
 const importer = fs.readFileSync('supabase/functions/hc-hellowork-import/index.ts', 'utf8');
+const savedExternalMigration = fs.readFileSync('supabase/migrations/20261007084500_hc_saved_external_jobs_v1.sql', 'utf8');
+const savedRepository = fs.readFileSync('src/lib/savedJobStatusRepository.ts', 'utf8');
 
 const publicView = baseMigration.match(
   /create or replace view public\.hc_external_job_public_feed[\s\S]*?revoke all on public\.hc_external_job_public_feed/
@@ -29,7 +31,12 @@ const checks = [
   ['candidate exact lookup can resolve external job', repository.includes("rpc('hc_jobseeker_get_job_v2'")],
   ['facets include external jobs', repository.includes("rpc('hc_jobseeker_job_search_facets_v2'")],
   ['Job type carries source metadata', repository.includes('source_name?: string | null') && repository.includes('is_external?: boolean')],
-  ['external card hides saved control', card.includes('!isExternal && <button') && card.includes('気になるに保存')],
+  ['external card can be saved by signed-in candidates', card.includes('気になるに保存') && !card.includes('!isExternal && <button type="button" className={\`heart-button')],
+  ['external saves use a separate private table', savedExternalMigration.includes('create table if not exists public.hc_saved_external_jobs') && savedExternalMigration.includes('references public.hc_external_job_sources(id)')],
+  ['external saved table is not browser-readable', savedExternalMigration.includes('revoke all on public.hc_saved_external_jobs from public, anon, authenticated')],
+  ['save RPC accepts only currently public external jobs', savedExternalMigration.includes('from public.hc_external_job_public_feed e') && savedExternalMigration.includes('insert into public.hc_saved_external_jobs')],
+  ['saved IDs include currently public external jobs', savedExternalMigration.includes('join public.hc_external_job_public_feed e on e.id = s.external_job_id')],
+  ['saved page uses combined v2 read model', savedRepository.includes("rpc('hc_jobseeker_list_saved_jobs_with_status_v2'")],
   ['external card does not render visit/trial', card.includes('!isExternal && !isClosed && <VisitTrialPanel')],
   ['external card links to source instead of HC application', card.includes('hc-external-job-link') && card.includes('canApplyDirect')],
   ['source attribution is in the detail footer', card.includes('hc-job-source-footer') && card.includes('出典：')],

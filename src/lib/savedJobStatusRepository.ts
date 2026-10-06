@@ -9,7 +9,7 @@ function client() {
 }
 
 export async function listSavedJobsWithStatus(): Promise<SavedJobWithStatus[]> {
-  const { data, error } = await client().rpc('hc_jobseeker_list_saved_jobs_with_status');
+  const { data, error } = await client().rpc('hc_jobseeker_list_saved_jobs_with_status_v2');
   if (error) throw error;
   return (data || []) as SavedJobWithStatus[];
 }
