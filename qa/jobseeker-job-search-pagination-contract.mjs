@@ -31,7 +31,7 @@ const checks = [
   ['job search requests 24 rows', app.includes('limit: 24')],
   ['job search supports load-more cursor', app.includes('cursor });') && app.includes('setCursor(page.nextCursor)')],
   ['job filters no longer filter the full catalog locally', !app.includes('const filtered = jobs.filter')],
-  ['saved page has dedicated candidate-safe loader', app.includes('listSavedJobsWithStatus()') && savedStatusRepository.includes("rpc('hc_jobseeker_list_saved_jobs_with_status')")],
+  ['saved page has dedicated candidate-safe loader', app.includes('listSavedJobsWithStatus()') && savedStatusRepository.includes("rpc('hc_jobseeker_list_saved_jobs_with_status_v2')")],
   ['filter facets come from server', app.includes('getJobSearchFacets()')],
 ];
 
