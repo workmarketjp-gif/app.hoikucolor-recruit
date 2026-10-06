@@ -18,7 +18,7 @@ const SOURCE = 'hellowork';
 const PARSER_VERSION = 'hellowork-public-v4';
 const MAX_URLS = 50;
 const SEARCH_URL = 'https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do';
-const DISCOVERY_PAGE_SIZE = 50;
+const DISCOVERY_PAGE_SIZE = 30;
 const DISCOVERY_CONCURRENCY = 5;
 const DISCOVERY_TARGETS = [
   // Hello Work's current official occupation classification (2022 revision).
@@ -550,117 +550,157 @@ async function importUrls(urls: string[]) {
   return results;
 }
 
-async function discoveryState() {
+async function acquireDiscoveryLease() {
+  const now = new Date();
+  const leaseToken = crypto.randomUUID();
+  const leaseUntil = new Date(now.getTime() + 5 * 60 * 1000).toISOString();
+
   const { data, error } = await supabase
     .from('hc_external_source_sync_control')
-    .select('query_cursor,prefecture_cursor,page_cursor,enabled,completed_cycles')
+    .update({
+      sync_lease_token: leaseToken,
+      sync_lease_until: leaseUntil,
+      updated_at: now.toISOString(),
+    })
     .eq('source', SOURCE)
+    .eq('enabled', true)
+    .or(`sync_lease_until.is.null,sync_lease_until.lt.${now.toISOString()}`)
+    .select('query_cursor,prefecture_cursor,page_cursor,enabled,completed_cycles,sync_lease_token')
     .maybeSingle();
-  if (error || !data) throw new Error('DISCOVERY_STATE_MISSING');
+
+  if (error) throw new Error('DISCOVERY_LEASE_ACQUIRE_FAILED');
+  if (!data) return null;
+
   return data as {
     query_cursor: number;
     prefecture_cursor: number;
     page_cursor: number;
     enabled: boolean;
     completed_cycles: number;
+    sync_lease_token: string;
   };
 }
 
-async function discoverBatch() {
-  const state = await discoveryState();
-  if (!state.enabled) return { skipped: true, reason: 'SYNC_DISABLED' };
-
-  const queryCursor = Math.min(DISCOVERY_TARGETS.length - 1, Math.max(0, Number(state.query_cursor || 0)));
-  const target = DISCOVERY_TARGETS[queryCursor];
-  const queryTerm = target.label;
-  const prefecture = Math.min(47, Math.max(1, Number(state.prefecture_cursor || 1)));
-  const page = Math.max(1, Number(state.page_cursor || 1));
-  const urls = await discoverHelloWorkPage(prefecture, page, target);
-
-  // Fail closed if the first page unexpectedly parses as empty. This protects us
-  // against silently walking all 47 prefectures after a Hello Work markup change.
-  if (page === 1 && urls.length === 0) {
-    console.log(JSON.stringify({
-      event: 'hellowork-search-diagnostic',
-      prefecture,
-      page,
-      query_term: queryTerm,
-      parser_version: PARSER_VERSION,
-      note: 'zero detail links parsed from search response',
-    }));
-    await supabase
-      .from('hc_external_source_sync_control')
-      .update({
-        last_scan_at: new Date().toISOString(),
-        last_batch_discovered: 0,
-        last_batch_imported: 0,
-        last_error: `HELLOWORK_SEARCH_PARSE_EMPTY_${queryTerm}_PREF_${String(prefecture).padStart(2, '0')}`,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('source', SOURCE);
-    throw new Error('HELLOWORK_SEARCH_PARSE_EMPTY');
-  }
-
-  const results = await importUrls(urls);
-  const published = results.filter((item) => item.published === true).length;
-  const errorRows = results.filter((item) => item.status === 'error');
-  const errors = errorRows.length;
-  const errorCodes = [...new Set(errorRows.map((item) => String(item.code || 'IMPORT_FAILED')))].slice(0, 5);
-
-  const lastPage = urls.length < DISCOVERY_PAGE_SIZE;
-  let nextQueryCursor = queryCursor;
-  let nextPrefecture = prefecture;
-  let nextPage = page + 1;
-  let completedCycles = Number(state.completed_cycles || 0);
-
-  if (lastPage) {
-    nextPrefecture += 1;
-    nextPage = 1;
-    if (nextPrefecture > 47) {
-      nextPrefecture = 1;
-      nextQueryCursor += 1;
-      if (nextQueryCursor >= DISCOVERY_TARGETS.length) {
-        nextQueryCursor = 0;
-        completedCycles += 1;
-      }
-    }
-  }
-
-  const now = new Date().toISOString();
-  const { error: stateError } = await supabase
+async function releaseDiscoveryLease(leaseToken: string) {
+  await supabase
     .from('hc_external_source_sync_control')
     .update({
-      query_cursor: nextQueryCursor,
-      prefecture_cursor: nextPrefecture,
-      page_cursor: nextPage,
-      completed_cycles: completedCycles,
-      last_scan_at: now,
-      last_batch_discovered: urls.length,
-      last_batch_imported: results.length - errors,
-      last_batch_published: published,
-      last_error: errors ? `${errors}_IMPORT_ERRORS:${errorCodes.join(',')}` : null,
-      updated_at: now,
+      sync_lease_token: null,
+      sync_lease_until: null,
+      updated_at: new Date().toISOString(),
     })
-    .eq('source', SOURCE);
-  if (stateError) throw new Error('DISCOVERY_STATE_UPDATE_FAILED');
+    .eq('source', SOURCE)
+    .eq('sync_lease_token', leaseToken);
+}
 
-  return {
-    skipped: false,
-    query_cursor: queryCursor,
-    query_term: queryTerm,
-    prefecture,
-    page,
-    discovered: urls.length,
-    imported: results.length - errors,
-    published,
-    errors,
-    error_codes: errorCodes,
-    next_query_cursor: nextQueryCursor,
-    next_query_term: DISCOVERY_TARGETS[nextQueryCursor].label,
-    next_prefecture: nextPrefecture,
-    next_page: nextPage,
-    completed_cycles: completedCycles,
-  };
+async function discoverBatch() {
+  const state = await acquireDiscoveryLease();
+  if (!state) return { skipped: true, reason: 'SYNC_BUSY_OR_DISABLED' };
+
+  const leaseToken = state.sync_lease_token;
+
+  try {
+    const queryCursor = Math.min(DISCOVERY_TARGETS.length - 1, Math.max(0, Number(state.query_cursor || 0)));
+    const target = DISCOVERY_TARGETS[queryCursor];
+    const queryTerm = target.label;
+    const prefecture = Math.min(47, Math.max(1, Number(state.prefecture_cursor || 1)));
+    const page = Math.max(1, Number(state.page_cursor || 1));
+    const urls = await discoverHelloWorkPage(prefecture, page, target);
+
+    // Fail closed if the first page unexpectedly parses as empty. This protects us
+    // against silently walking all 47 prefectures after a Hello Work markup change.
+    if (page === 1 && urls.length === 0) {
+      console.log(JSON.stringify({
+        event: 'hellowork-search-diagnostic',
+        prefecture,
+        page,
+        query_term: queryTerm,
+        parser_version: PARSER_VERSION,
+        note: 'zero detail links parsed from search response',
+      }));
+      await supabase
+        .from('hc_external_source_sync_control')
+        .update({
+          last_scan_at: new Date().toISOString(),
+          last_batch_discovered: 0,
+          last_batch_imported: 0,
+          last_error: `HELLOWORK_SEARCH_PARSE_EMPTY_${queryTerm}_PREF_${String(prefecture).padStart(2, '0')}`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('source', SOURCE)
+        .eq('sync_lease_token', leaseToken);
+      throw new Error('HELLOWORK_SEARCH_PARSE_EMPTY');
+    }
+
+    const results = await importUrls(urls);
+    const published = results.filter((item) => item.published === true).length;
+    const errorRows = results.filter((item) => item.status === 'error');
+    const errors = errorRows.length;
+    const errorCodes = [...new Set(errorRows.map((item) => String(item.code || 'IMPORT_FAILED')))].slice(0, 5);
+
+    const lastPage = urls.length < DISCOVERY_PAGE_SIZE;
+    let nextQueryCursor = queryCursor;
+    let nextPrefecture = prefecture;
+    let nextPage = page + 1;
+    let completedCycles = Number(state.completed_cycles || 0);
+
+    if (lastPage) {
+      nextPrefecture += 1;
+      nextPage = 1;
+      if (nextPrefecture > 47) {
+        nextPrefecture = 1;
+        nextQueryCursor += 1;
+        if (nextQueryCursor >= DISCOVERY_TARGETS.length) {
+          nextQueryCursor = 0;
+          completedCycles += 1;
+        }
+      }
+    }
+
+    const now = new Date().toISOString();
+    const { data: updatedState, error: stateError } = await supabase
+      .from('hc_external_source_sync_control')
+      .update({
+        query_cursor: nextQueryCursor,
+        prefecture_cursor: nextPrefecture,
+        page_cursor: nextPage,
+        completed_cycles: completedCycles,
+        last_scan_at: now,
+        last_batch_discovered: urls.length,
+        last_batch_imported: results.length - errors,
+        last_batch_published: published,
+        last_error: errors ? `${errors}_IMPORT_ERRORS:${errorCodes.join(',')}` : null,
+        sync_lease_token: null,
+        sync_lease_until: null,
+        updated_at: now,
+      })
+      .eq('source', SOURCE)
+      .eq('sync_lease_token', leaseToken)
+      .select('source')
+      .maybeSingle();
+
+    if (stateError || !updatedState) throw new Error('DISCOVERY_STATE_UPDATE_FAILED');
+
+    return {
+      skipped: false,
+      query_cursor: queryCursor,
+      query_term: queryTerm,
+      prefecture,
+      page,
+      discovered: urls.length,
+      imported: results.length - errors,
+      published,
+      errors,
+      error_codes: errorCodes,
+      next_query_cursor: nextQueryCursor,
+      next_query_term: DISCOVERY_TARGETS[nextQueryCursor].label,
+      next_prefecture: nextPrefecture,
+      next_page: nextPage,
+      completed_cycles: completedCycles,
+    };
+  } finally {
+    await releaseDiscoveryLease(leaseToken);
+  }
 }
 
 async function refreshUrls() {
