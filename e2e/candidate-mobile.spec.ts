@@ -436,6 +436,7 @@ type LayoutReport = {
   tabbar: { visible: boolean; count: number; wrapped: string[] };
   titleClipped: boolean;
   outside: string[];
+  tinyText: string[];
 };
 
 async function measureLayout(page: Page): Promise<LayoutReport> {
@@ -466,6 +467,11 @@ async function measureLayout(page: Page): Promise<LayoutReport> {
       },
       titleClipped: Boolean(title && title.scrollWidth > title.clientWidth + 1),
       outside,
+      // Readable type floor: no visible text below 12px anywhere in the candidate shell.
+      tinyText: [...document.querySelectorAll('.hc-shell *')]
+        .filter((el) => visible(el) && [...el.childNodes].some((node) => node.nodeType === 3 && (node.textContent || '').trim()))
+        .filter((el) => parseFloat(getComputedStyle(el).fontSize) < 12)
+        .map((el) => `${(el.textContent || '').trim().slice(0, 16)}@${getComputedStyle(el).fontSize}`),
     };
   });
 }
@@ -475,6 +481,7 @@ for (const [width, height] of [[1280, 800], [1440, 900], [1536, 864]] as const) 
     test.setTimeout(120_000);
     await page.setViewportSize({ width, height });
     await mockApi(page);
+    const tiny: string[] = [];
     for (const route of layoutRoutes) {
       await page.goto(route);
       await expect(page.locator('.hc-header-title')).toBeVisible();
@@ -494,7 +501,9 @@ for (const [width, height] of [[1280, 800], [1440, 900], [1536, 864]] as const) 
       expect(report.tabbar.visible, `${route} bottom nav hidden on desktop`).toBe(false);
       expect(report.titleClipped, `${route} header title clipped`).toBe(false);
       expect(report.outside, `${route} elements outside viewport`).toEqual([]);
+      tiny.push(...report.tinyText.map((text) => `${route} ${text}`));
     }
+    expect([...new Set(tiny)], 'text below 12px').toEqual([]);
     await page.goto('/');
     await expect(page.locator('.hc-job-card').first()).toBeVisible();
     await page.screenshot({ path: `test-results/layout/desktop-${width}.png`, fullPage: false });
@@ -506,6 +515,7 @@ for (const [width, height] of [[375, 812], [390, 844], [393, 852], [430, 932]] a
     test.setTimeout(120_000);
     await page.setViewportSize({ width, height });
     await mockApi(page);
+    const tiny: string[] = [];
     for (const route of layoutRoutes) {
       await page.goto(route);
       await expect(page.locator('.hc-header-title')).toBeVisible();
@@ -520,7 +530,9 @@ for (const [width, height] of [[375, 812], [390, 844], [393, 852], [430, 932]] a
       expect(report.main.right).toBeLessThanOrEqual(width + 1);
       expect(report.titleClipped, `${route} header title clipped`).toBe(false);
       expect(report.outside, `${route} elements outside viewport`).toEqual([]);
+      tiny.push(...report.tinyText.map((text) => `${route} ${text}`));
     }
+    expect([...new Set(tiny)], 'text below 12px').toEqual([]);
     await page.goto('/');
     await expect(page.locator('.hc-job-card').first()).toBeVisible();
     await page.screenshot({ path: `test-results/layout/mobile-${width}.png`, fullPage: false });
