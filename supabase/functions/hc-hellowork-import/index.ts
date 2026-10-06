@@ -18,7 +18,7 @@ const SOURCE = 'hellowork';
 const PARSER_VERSION = 'hellowork-public-v4';
 const MAX_URLS = 50;
 const SEARCH_URL = 'https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do';
-const DISCOVERY_PAGE_SIZE = 50;
+const DISCOVERY_PAGE_SIZE = 30;
 const DISCOVERY_CONCURRENCY = 5;
 const DISCOVERY_TARGETS = [
   // Hello Work's current official occupation classification (2022 revision).
