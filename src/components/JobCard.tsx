@@ -41,6 +41,8 @@ export function JobCard({ job, saved, onToggleSaved, onStartApplication, onAppli
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
   const isClosed = (job as Partial<SavedJobWithStatus>).is_open === false || Boolean(job.closing_at && new Date(job.closing_at).getTime() < Date.now());
+  const isExternal = job.is_external === true;
+  const canApplyDirect = job.can_apply_direct !== false && !isExternal;
   const location = [job.prefecture, job.city].filter(Boolean).join(' ') || '勤務地は詳細をご確認ください';
 
   const apply = async () => {
@@ -66,7 +68,7 @@ export function JobCard({ job, saved, onToggleSaved, onStartApplication, onAppli
           <span className="hc-job-facility">{job.facility_name}</span>
           <h3>{job.title}</h3>
         </div>
-        <button type="button" className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)} aria-label={saved ? '気になるから外す' : '気になるに保存'} aria-pressed={saved}><Icon name="heart" size={22} /></button>
+        {!isExternal && <button type="button" className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)} aria-label={saved ? '気になるから外す' : '気になるに保存'} aria-pressed={saved}><Icon name="heart" size={22} /></button>}
       </header>
       <p className="hc-job-salary">{salaryLabel(job)}</p>
       <p className="hc-job-meta"><Icon name="map" size={16} /> {location}{job.employment_type ? ` ・ ${job.employment_type}` : ''}</p>
@@ -99,15 +101,27 @@ export function JobCard({ job, saved, onToggleSaved, onStartApplication, onAppli
             </section>
           )}
           {job.description && <section><h4>仕事内容・保育観</h4><p className="hc-job-description">{job.description}</p></section>}
-          {!isClosed && <VisitTrialPanel jobId={job.id} facilityId={job.facility_id} />}
+          {!isExternal && !isClosed && <VisitTrialPanel jobId={job.id} facilityId={job.facility_id} />}
           {isClosed && <p className="form-error">募集は終了しています。保存履歴として求人内容を確認できます。</p>}
+          {isExternal && job.source_name && (
+            <footer className="hc-job-source-footer">
+              <span>出典：{job.source_name}{job.source_job_id ? `（求人番号 ${job.source_job_id}）` : ''}</span>
+              {job.source_last_verified_at && <span>最終確認 {formatSourceDate(job.source_last_verified_at)}</span>}
+            </footer>
+          )}
         </div>
       )}
 
       {applyError && <p className="form-error" role="alert">{applyError}</p>}
       <div className="hc-job-actions">
         <button className="secondary-button" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>{expanded ? '閉じる' : expandLabel}</button>
-        <button className="primary-button" type="button" onClick={apply} disabled={applying || isClosed}>{isClosed ? '募集終了' : applying ? '応募中…' : '応募する'}</button>
+        {!canApplyDirect ? (
+          <a className="primary-button hc-external-job-link" href={job.source_url || '#'} target="_blank" rel="noopener noreferrer" aria-disabled={!job.source_url}>
+            求人の詳細を見る
+          </a>
+        ) : (
+          <button className="primary-button" type="button" onClick={apply} disabled={applying || isClosed}>{isClosed ? '募集終了' : applying ? '応募中…' : '応募する'}</button>
+        )}
       </div>
     </article>
   );
@@ -137,5 +151,7 @@ export function salaryLabel(job: Job) {
   return '給与は詳細をご確認ください';
 }
 
+function formatSourceDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`; }
 function formatMonth(value: string) { const date = new Date(`${value}T00:00:00`); return Number.isNaN(date.getTime()) ? value : `${date.getFullYear()}年${date.getMonth() + 1}月`; }
 function formatVerifiedMetric(metric: VerifiedWorkplaceMetric) { const value = typeof metric.value === 'number' ? Number(metric.value.toFixed(1)) : metric.value; return `${value}${metric.unit || ''}`; }
+

@@ -24,7 +24,7 @@ const checks = [
   ['search runs as invoker', migration.includes('security invoker')],
   ['active facets are derived from candidate feed', migration.includes('hc_jobseeker_job_search_facets') && migration.includes('from public.hc_jobseeker_job_feed r')],
   ['saved jobs use candidate-safe feed and saved-job RLS', migration.includes('hc_jobseeker_list_saved_ranked_jobs') && migration.includes('from public.hc_saved_jobs s')],
-  ['repository sends all server filters', repository.includes("rpc('hc_jobseeker_search_jobs'") && repository.includes('p_prefecture:') && repository.includes('p_employment_type:') && repository.includes('p_ho_verified:') && repository.includes('p_hf_verified:')],
+  ['repository sends all server filters', repository.includes("rpc('hc_jobseeker_search_jobs_v2'") && repository.includes('p_prefecture:') && repository.includes('p_employment_type:') && repository.includes('p_ho_verified:') && repository.includes('p_hf_verified:')],
   ['repository forwards composite cursor', repository.includes('p_after_quality: cursor?.quality') && repository.includes('p_after_id: cursor?.id')],
   ['dashboard requests only three jobs', app.includes('listFeaturedJobs(3)')],
   ['primary app no longer imports full catalog listJobs', !app.match(/\blistJobs\b/)],

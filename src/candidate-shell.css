@@ -235,6 +235,12 @@ body { background: var(--hc-bg); color: var(--hc-ink); font-size: 16px; line-hei
 .hc-job-detail dt { color: var(--hc-muted); }
 .hc-job-detail dd { margin: 0; overflow-wrap: anywhere; }
 .hc-job-description { white-space: pre-wrap; }
+.hc-external-job-link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.hc-job-source-footer {
+  display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center;
+  margin-top: 2px; padding-top: 12px; border-top: 1px solid var(--hc-line);
+  font-size: 14px; color: var(--hc-muted);
+}
 
 /* ---------- Applications ---------- */
 .hc-application-list { display: grid; gap: 10px; }

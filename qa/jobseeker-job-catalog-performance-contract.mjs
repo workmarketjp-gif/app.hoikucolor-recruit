@@ -22,7 +22,7 @@ const checks = [
   [repo.includes("rpc('hc_jobseeker_list_ranked_jobs')"), 'client must load jobs through one ranked catalog RPC'],
   [!repo.includes(".in('facility_id', facilityIds)"), 'client must not fan out giant facility-id IN queries'],
   [repo.includes('JOB_CATALOG_CACHE_MS = 30_000'), 'catalog must deduplicate near-simultaneous app/deep-link loads'],
-  [repo.includes("rpc('hc_jobseeker_get_ranked_job'"), 'client must expose an exact active-job lookup for deep-link migration'],
+  [repo.includes("rpc('hc_jobseeker_get_job_v2'"), 'client must expose an exact candidate-safe lookup for deep-link migration'],
 ];
 
 const failed = checks.filter(([ok]) => !ok).map(([, message]) => message);
