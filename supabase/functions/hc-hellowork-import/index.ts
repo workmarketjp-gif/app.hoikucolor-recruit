@@ -259,16 +259,10 @@ function salaryFields(note: string | null, salaryForm: string | null, employment
   const values = [...normalized.matchAll(/([0-9]{3,7})\s*円/g)]
     .map((match) => Number(match[1]))
     .filter(Number.isFinite);
-  const form = salaryForm || '';
-  const salaryType = /時給|時間給/.test(form)
-    ? 'hourly'
-    : /日給/.test(form)
-      ? 'daily'
-      : /年俸|年収/.test(form)
-        ? 'annual'
-        : /月給/.test(form) || !/パート/.test(employment || '')
-          ? 'monthly'
-          : 'hourly';
+  // Hello Work's search/detail display normalizes full-time jobs to a monthly
+  // equivalent and part-time jobs to an hourly equivalent, even when the
+  // underlying wage form is daily/annual. Preserve that visible unit in HC.
+  const salaryType = /パート/.test(employment || '') ? 'hourly' : 'monthly';
   return {
     salary_type: salaryType,
     salary_min: values.length ? values[0] : null,
