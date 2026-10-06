@@ -51,7 +51,7 @@ expect(router.includes("scouts: '/scouts'") && homeApp.includes("{view === 'scou
 expect(scoutRoute.includes('<ScoutInbox />'), 'dedicated scout page must render the inbox');
 expect(scoutRoute.includes('<ScoutPrivacyPanel />'), 'dedicated scout page must expose privacy controls');
 expect(scoutRoute.includes('<ProfileMatchingPreferencesPanel />'), 'dedicated scout page must expose matching preferences');
-expect(homeApp.includes("scouts: 'スカウト'") && candidateShell.includes("{ href: '/scouts', label: 'スカウト' }") && candidateShell.includes("window.location.pathname.startsWith(link.href)") && candidateShell.includes("aria-current={isActive ? 'page' : undefined}"), 'dedicated scout page navigation must identify the active section');
+expect(homeApp.includes("scouts: 'スカウト'") && candidateShell.includes("{ href: '/scouts', label: 'スカウト', icon: 'sparkles' }") && candidateShell.includes("window.location.pathname.startsWith(link.href)") && candidateShell.includes("aria-current={isActive ? 'page' : undefined}"), 'dedicated scout page navigation must identify the active section');
 expect(!scoutRoute.includes('ClerkProvider') && !scoutRoute.includes('setSupabaseAccessTokenGetter'), 'the scout screen must use the one app session (no second Clerk provider / token getter)');
 
 console.log('jobseeker scout inbox contract: OK');

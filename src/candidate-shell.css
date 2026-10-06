@@ -34,58 +34,82 @@ body { background: var(--hc-bg); color: var(--hc-ink); font-size: 16px; line-hei
 @keyframes hc-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .hc-spinner { animation-duration: 2s; } }
 
-/* ---------- Shell ---------- */
-.hc-shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; min-height: 100dvh; background: var(--hc-bg); }
-.hc-shell .main-column { min-width: 0; display: flex; flex-direction: column; }
-.hc-sidebar { position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto; }
-.hc-sidebar .nav-item { min-height: 48px; font-size: 16px; }
-.hc-nav-secondary { font-size: 15px !important; color: var(--hc-ink-soft); }
+/* ---------- Shell ----------
+ * Mobile first. Breakpoint contract (also asserted by e2e/layout.spec.ts):
+ *   < 900px   header + content + fixed 5-tab bottom nav. Sidebar is not rendered.
+ *   >= 900px  240px sidebar + fluid main (min-width 0). Bottom nav is not rendered.
+ * Only hc-* classes are used, so legacy dashboard rules cannot apply to the shell. */
+.hc-shell { min-height: 100vh; min-height: 100dvh; background: var(--hc-bg); }
+.hc-main { min-width: 0; display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
+
+.hc-sidebar { display: none; }
 
 .hc-app-header {
   position: sticky; top: 0; z-index: 30;
   display: flex; align-items: center; gap: 12px;
   min-height: var(--hc-header-h);
-  padding: calc(8px + env(safe-area-inset-top)) 20px 8px;
+  padding: calc(8px + env(safe-area-inset-top)) 16px 8px;
   background: rgba(251, 247, 246, .92);
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--hc-line);
 }
 .hc-header-brand { display: none; }
-.hc-header-title { flex: 1; min-width: 0; margin: 0; font-size: 28px; font-weight: 800; line-height: 1.25; letter-spacing: .01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hc-header-actions { display: flex; align-items: center; gap: 4px; }
+.hc-header-title { flex: 1; min-width: 0; margin: 0; font-size: 24px; font-weight: 800; line-height: 1.25; letter-spacing: .01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hc-header-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 .hc-header-actions .icon-button,
 .hc-header-actions .notification-trigger { min-width: 48px; min-height: 48px; display: inline-flex; align-items: center; justify-content: center; border-radius: 14px; }
 .hc-app-header .notification-center { position: relative; display: flex; gap: 4px; }
 
-.hc-content { width: 100%; max-width: 760px; margin: 0 auto; padding: 20px 20px 40px; }
+.hc-content { display: block; width: 100%; max-width: 760px; margin: 0 auto; padding: 16px 16px calc(var(--hc-tabbar-h) + 28px + env(safe-area-inset-bottom)); box-sizing: border-box; min-width: 0; }
 
-.hc-tabbar { display: none; }
-
-/* ---------- Mobile (bottom navigation) ---------- */
-@media (max-width: 900px) {
-  .hc-shell { display: block; }
-  .hc-sidebar, .sidebar-scrim, .mobile-menu { display: none !important; }
-  .hc-content { padding: 16px 16px calc(var(--hc-tabbar-h) + 28px + env(safe-area-inset-bottom)); }
-  .hc-tabbar {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
-    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
-    padding: 4px 4px env(safe-area-inset-bottom);
-    background: rgba(255, 255, 255, .96);
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    border-top: 1px solid var(--hc-line);
-    box-shadow: 0 -8px 24px rgba(31, 42, 59, .06);
-  }
+.hc-tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+  padding: 4px 4px env(safe-area-inset-bottom);
+  background: #fff;
+  border-top: 1px solid var(--hc-line);
+  box-shadow: 0 -8px 24px rgba(31, 42, 59, .06);
 }
 .hc-tab {
-  position: relative;
+  position: relative; min-width: 0;
   min-height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  color: var(--hc-muted); text-decoration: none; font-size: 13px; font-weight: 700; border-radius: 14px;
+  color: var(--hc-muted); text-decoration: none; font-size: 13px; font-weight: 700; border-radius: 14px; white-space: nowrap;
 }
 .hc-tab.is-active { color: var(--hc-accent); background: linear-gradient(180deg, var(--hc-accent-soft), rgba(255, 240, 243, 0)); }
 .hc-tab-badge {
   position: absolute; top: 6px; left: calc(50% + 6px);
   min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
   background: var(--hc-accent); color: #fff; font-size: 12px; font-style: normal; font-weight: 800; line-height: 18px; text-align: center;
+}
+
+/* ---------- Desktop (>= 900px): sidebar layout ---------- */
+@media (min-width: 900px) {
+  .hc-shell { display: grid; grid-template-columns: 240px minmax(0, 1fr); }
+  .hc-sidebar {
+    display: flex; flex-direction: column; gap: 8px;
+    position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto;
+    width: 240px; min-width: 240px; box-sizing: border-box; padding: 20px 12px;
+    background: #fff; border-right: 1px solid var(--hc-line);
+  }
+  .hc-sidebar-brand { display: flex; align-items: center; min-height: 48px; padding: 0 12px 12px; }
+  .hc-sidebar-brand .brand-logo-image { width: 132px; height: auto; display: block; }
+  .hc-sidenav { display: flex; flex-direction: column; gap: 2px; }
+  .hc-sidenav-item {
+    display: flex; align-items: center; gap: 12px;
+    min-height: 48px; padding: 10px 12px; border-radius: 12px;
+    color: var(--hc-ink-soft); text-decoration: none; font-size: 15px; font-weight: 700; line-height: 1.35;
+  }
+  .hc-sidenav-item svg { flex: none; }
+  .hc-sidenav-label { flex: 1 1 auto; min-width: 0; overflow-wrap: break-word; word-break: keep-all; }
+  .hc-sidenav-item:hover { background: #faf6f5; color: var(--hc-ink); }
+  .hc-sidenav-item.is-active { background: var(--hc-accent-soft); color: var(--hc-accent-dark); }
+  .hc-sidenav-badge { flex: none; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--hc-accent); color: #fff; font-size: 12px; font-style: normal; font-weight: 800; line-height: 22px; text-align: center; }
+  .hc-sidenav-divider { display: block; height: 1px; margin: 8px 12px; background: var(--hc-line); }
+
+  .hc-app-header { padding: 8px 32px; }
+  .hc-header-title { font-size: 28px; }
+  .hc-content { padding: 24px 32px 48px; }
+  .hc-tabbar { display: none; }
 }
 
 /* ---------- Account sheet ---------- */
@@ -131,7 +155,7 @@ body { background: var(--hc-bg); color: var(--hc-ink); font-size: 16px; line-hei
 }
 .hc-toast.is-error { background: #8a1d32; }
 .hc-toast button { min-width: 44px; min-height: 44px; border: 0; background: transparent; color: #fff; display: inline-flex; align-items: center; justify-content: center; }
-@media (min-width: 901px) { .hc-toast { bottom: 24px; } }
+@media (min-width: 900px) { .hc-toast { bottom: 24px; } }
 
 .hc-section { margin-top: 28px; }
 .hc-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
@@ -228,20 +252,10 @@ body { background: var(--hc-bg); color: var(--hc-ink); font-size: 16px; line-hei
 .hc-menu a:first-child { border-top: 0; }
 .hc-profile .form-section[aria-labelledby="document-vault-heading"] { margin-top: 20px; }
 
-/* ---------- Route roots inside the shared shell ---------- */
-.hc-shell .page-heading .eyebrow { display: none; }
-.hc-shell .page-heading h1 { font-size: 28px; }
-.hc-shell .error-banner { position: static; border-radius: 14px; font-size: 15px; }
-
 /* ---------- Narrow phones ---------- */
-@media (max-width: 900px) {
-  .hc-header-title { font-size: 26px; }
-  .hc-shell .page-heading p { font-size: 15px; }
-}
 @media (max-width: 390px) {
-  .hc-header-title { font-size: 24px; }
-  .hc-app-header { padding-left: 16px; padding-right: 12px; }
-  .hc-tab { font-size: 13px; }
+  .hc-header-title { font-size: 22px; }
+  .hc-app-header { padding-left: 12px; padding-right: 8px; gap: 8px; }
 }
 @media (max-width: 360px) {
   .hc-job-actions { grid-template-columns: 1fr; }

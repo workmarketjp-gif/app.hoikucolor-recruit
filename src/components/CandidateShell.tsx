@@ -15,13 +15,21 @@ export const shellTabs: { id: ShellTab; label: string; href: string; icon: Param
 ];
 
 /** Secondary destinations: desktop sidebar only; on mobile they live on Home / My page. */
-export const secondaryLinks = [
-  { href: '/scouts', label: 'スカウト' },
-  { href: '/visits', label: '見学・体験' },
-  { href: '/spot-jobs', label: 'スポット勤務' },
-  { href: '/matches', label: 'マッチ度' },
-  { href: '/compare', label: '園を比較' },
+export const secondaryLinks: { href: string; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
+  { href: '/scouts', label: 'スカウト', icon: 'sparkles' },
+  { href: '/visits', label: '見学・体験', icon: 'map' },
+  { href: '/spot-jobs', label: 'スポット勤務', icon: 'clock' },
+  { href: '/matches', label: 'マッチ度', icon: 'shield' },
+  { href: '/compare', label: '園を比較', icon: 'file' },
 ];
+
+/*
+ * Layout contract (candidate-shell.css):
+ *   < 900px   header + content + fixed 5-tab bottom nav; no sidebar.
+ *   >= 900px  240px sidebar (icon + label rows, every destination) + fluid main; no bottom nav.
+ * The shell uses only hc-* classes so legacy dashboard rules (.sidebar, .nav-item,
+ * .main-column, .content) can never leak into it.
+ */
 
 type Props = {
   active: ShellTab | null;
@@ -47,38 +55,43 @@ export function CandidateShell({ active, title, name, email, notification, badge
     onNavigate(tab);
   };
 
-  const tabLink = (tab: (typeof shellTabs)[number], variant: 'side' | 'bottom') => {
+  const secondaryActive = secondaryLinks.find((link) => window.location.pathname.startsWith(link.href)) ?? null;
+
+  const sideLink = (key: string, href: string, label: string, icon: Parameters<typeof Icon>[0]['name'], isActive: boolean, count = 0, onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void) => (
+    <a key={key} href={href} className={`hc-sidenav-item ${isActive ? 'is-active' : ''}`} aria-current={isActive ? 'page' : undefined} onClick={onClick}>
+      <Icon name={icon} size={20} />
+      <span className="hc-sidenav-label">{label}</span>
+      {count > 0 && <em className="hc-sidenav-badge" aria-label={`${count}件`}>{count > 99 ? '99+' : count}</em>}
+    </a>
+  );
+
+  const bottomTab = (tab: (typeof shellTabs)[number]) => {
     const count = badges[tab.id] ?? 0;
     const isActive = active === tab.id;
     return (
-      <a
-        key={tab.id}
-        href={tab.href}
-        className={variant === 'side' ? `nav-item ${isActive ? 'active' : ''}` : `hc-tab ${isActive ? 'is-active' : ''}`}
-        aria-current={isActive ? 'page' : undefined}
-        onClick={go(tab.id)}
-      >
-        <Icon name={tab.icon} size={variant === 'side' ? 18 : 22} />
+      <a key={tab.id} href={tab.href} className={`hc-tab ${isActive ? 'is-active' : ''}`} aria-current={isActive ? 'page' : undefined} onClick={go(tab.id)}>
+        <Icon name={tab.icon} size={22} />
         <span>{tab.label}</span>
-        {count > 0 && (variant === 'side' ? <em>{count}</em> : <i className="hc-tab-badge" aria-label={`${count}件`}>{count > 99 ? '99+' : count}</i>)}
+        {count > 0 && <i className="hc-tab-badge" aria-label={`${count}件`}>{count > 99 ? '99+' : count}</i>}
       </a>
     );
   };
 
   return (
-    <div className={`app-shell hc-shell ${className ?? ''}`}>
-      <aside className="sidebar hc-sidebar">
-        <a className="sidebar-brand" href="/" onClick={go('home')}><Brand /></a>
-        <nav className="side-nav" aria-label="マイページ">
-          {shellTabs.map((tab) => tabLink(tab, 'side'))}
+    <div className={`hc-shell ${className ?? ''}`}>
+      <aside className="hc-sidebar" aria-label="メニュー">
+        <a className="hc-sidebar-brand" href="/" onClick={go('home')}><Brand /></a>
+        <nav className="hc-sidenav" aria-label="マイページ">
+          {shellTabs.map((tab) => sideLink(tab.id, tab.href, tab.label, tab.icon, !secondaryActive && active === tab.id, badges[tab.id] ?? 0, go(tab.id)))}
+          <span className="hc-sidenav-divider" role="separator" />
           {secondaryLinks.map((link) => {
             const isActive = window.location.pathname.startsWith(link.href);
-            return <a key={link.href} className={`nav-item hc-nav-secondary ${isActive ? 'active' : ''}`} aria-current={isActive ? 'page' : undefined} href={link.href}><span>{link.label}</span></a>;
+            return sideLink(link.href, link.href, link.label, link.icon, isActive);
           })}
         </nav>
       </aside>
 
-      <main className="main-column">
+      <div className="hc-main">
         <header className="hc-app-header">
           {onBack
             ? <button type="button" className="icon-button hc-header-back" onClick={onBack} aria-label="戻る"><Icon name="chevron" size={22} /></button>
@@ -91,11 +104,11 @@ export function CandidateShell({ active, title, name, email, notification, badge
             </button>
           </div>
         </header>
-        <section className="content hc-content">{children}</section>
-      </main>
+        <main className="hc-content">{children}</main>
+      </div>
 
       <nav className="hc-tabbar" aria-label="メインメニュー">
-        {shellTabs.map((tab) => tabLink(tab, 'bottom'))}
+        {shellTabs.map(bottomTab)}
       </nav>
 
       {accountOpen && <AccountSheet name={name} email={email} onClose={() => setAccountOpen(false)} onSignOut={onSignOut} />}

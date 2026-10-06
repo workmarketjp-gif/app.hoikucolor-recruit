@@ -32,7 +32,7 @@ assert(repository.includes('missingIds.map((jobId) => getRankedJob(jobId))') && 
 assert(repository.includes("`compare:${requestedJobIds.join(',')}`") && repository.includes("key: cacheKey"), 'comparison exact hydration must not be masked by the default shortlist cache');
 assert(rankedCatalog.includes('create or replace function public.hc_jobseeker_get_ranked_job') && rankedCatalog.includes('where r.id = p_job_id'), 'exact comparison hydration must remain candidate-safe and job-scoped');
 assert(router.includes("compare: '/compare'") && app.includes("{view === 'compare' && <CompareView userKey={userKey} />}"), 'comparison must be a regular view of the candidate app');
-assert(shell.includes("{ href: '/compare', label: '園を比較' }") && app.includes('<a href="/compare">園を比較する') && app.includes('`/compare?${saved.data.slice(0, 3)'), 'candidate navigation must expose the comparison flow (sidebar, My page, saved jobs)');
+assert(shell.includes("{ href: '/compare', label: '園を比較', icon: 'file' }") && app.includes('<a href="/compare">園を比較する') && app.includes('`/compare?${saved.data.slice(0, 3)'), 'candidate navigation must expose the comparison flow (sidebar, My page, saved jobs)');
 assert(/\.compare-table-scroll \{[^}]*overflow: auto/.test(css) && /\.compare-row-label \{[^}]*position: sticky/.test(css) && /\.compare-table thead th \{[^}]*position: sticky/.test(css), 'mobile comparison must retain horizontal scroll and sticky row labels');
 
 console.log('jobseeker facility comparison contract: PASS');

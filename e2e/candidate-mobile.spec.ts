@@ -423,3 +423,106 @@ test.describe('390px golden path and P1 screens', () => {
     expect(unauthenticated).toEqual([]);
   });
 });
+
+/* ------------------------------------------------------------ layout contract */
+
+const layoutRoutes = ['/', '/jobs', '/saved', '/applications', `/applications?application_id=${application.id}`, '/profile', '/scouts', '/visits', '/spot-jobs', '/matches', `/compare?job_id=${jobA.id}&job_id=${jobB.id}`];
+
+type LayoutReport = {
+  overflowX: number;
+  sidebar: { visible: boolean; width: number; right: number };
+  labels: { text: string; width: number; height: number; lineHeight: number }[];
+  main: { left: number; right: number };
+  tabbar: { visible: boolean; count: number; wrapped: string[] };
+  titleClipped: boolean;
+  outside: string[];
+};
+
+async function measureLayout(page: Page): Promise<LayoutReport> {
+  return page.evaluate(() => {
+    const visible = (el: Element | null) => Boolean(el && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden' && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0);
+    const sidebar = document.querySelector('.hc-sidebar');
+    const sideRect = sidebar?.getBoundingClientRect();
+    const main = document.querySelector('.hc-main')!.getBoundingClientRect();
+    const tabs = [...document.querySelectorAll('.hc-tabbar .hc-tab')];
+    const title = document.querySelector('.hc-header-title') as HTMLElement | null;
+    const vw = document.documentElement.clientWidth;
+    const outside = [...document.querySelectorAll('.hc-job-card, .hc-card, .hc-cta, .hc-stat-list, .hc-search, .application-detail-hero, .hc-empty, .hc-inline-error, .primary-button')]
+      .filter((el) => visible(el))
+      .filter((el) => { const r = el.getBoundingClientRect(); return r.left < -1 || r.right > vw + 1; })
+      .map((el) => el.className.toString());
+    return {
+      overflowX: document.documentElement.scrollWidth - vw,
+      sidebar: { visible: visible(sidebar), width: sideRect?.width ?? 0, right: sideRect?.right ?? 0 },
+      labels: [...document.querySelectorAll('.hc-sidenav-label')].filter((el) => visible(el)).map((el) => {
+        const r = el.getBoundingClientRect();
+        return { text: el.textContent || '', width: r.width, height: r.height, lineHeight: parseFloat(getComputedStyle(el).lineHeight) };
+      }),
+      main: { left: main.left, right: main.right },
+      tabbar: {
+        visible: visible(document.querySelector('.hc-tabbar')),
+        count: tabs.length,
+        wrapped: tabs.map((tab) => tab.querySelector('span')!).filter((span) => span.getBoundingClientRect().height > parseFloat(getComputedStyle(span).lineHeight) * 1.5).map((span) => span.textContent || ''),
+      },
+      titleClipped: Boolean(title && title.scrollWidth > title.clientWidth + 1),
+      outside,
+    };
+  });
+}
+
+for (const [width, height] of [[1280, 800], [1440, 900], [1536, 864]] as const) {
+  test(`layout desktop ${width}x${height}: sidebar + main, no wrapping or overflow`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width, height });
+    await mockApi(page);
+    for (const route of layoutRoutes) {
+      await page.goto(route);
+      await expect(page.locator('.hc-header-title')).toBeVisible();
+      await expect(page.locator('.hc-skeleton-card')).toHaveCount(0, { timeout: 10_000 });
+      const report = await measureLayout(page);
+      expect(report.overflowX, `${route} horizontal overflow`).toBeLessThanOrEqual(0);
+      expect(report.sidebar.visible, `${route} sidebar visible`).toBe(true);
+      expect(report.sidebar.width, `${route} sidebar width`).toBeGreaterThanOrEqual(220);
+      expect(report.labels).toHaveLength(10);
+      for (const label of report.labels) {
+        expect(label.width, `${route} "${label.text}" label width`).toBeGreaterThanOrEqual(48);
+        expect(label.height, `${route} "${label.text}" wraps beyond 2 lines`).toBeLessThanOrEqual(label.lineHeight * 2 + 1);
+      }
+      expect(report.main.left, `${route} main starts after the sidebar`).toBeGreaterThanOrEqual(report.sidebar.right - 1);
+      expect(report.main.right, `${route} main inside viewport`).toBeLessThanOrEqual(width + 1);
+      expect(report.main.right - report.main.left, `${route} main width`).toBeGreaterThanOrEqual(width - 260);
+      expect(report.tabbar.visible, `${route} bottom nav hidden on desktop`).toBe(false);
+      expect(report.titleClipped, `${route} header title clipped`).toBe(false);
+      expect(report.outside, `${route} elements outside viewport`).toEqual([]);
+    }
+    await page.goto('/');
+    await expect(page.locator('.hc-job-card').first()).toBeVisible();
+    await page.screenshot({ path: `test-results/layout/desktop-${width}.png`, fullPage: false });
+  });
+}
+
+for (const [width, height] of [[375, 812], [390, 844], [393, 852], [430, 932]] as const) {
+  test(`layout mobile ${width}x${height}: bottom nav only, no overflow`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width, height });
+    await mockApi(page);
+    for (const route of layoutRoutes) {
+      await page.goto(route);
+      await expect(page.locator('.hc-header-title')).toBeVisible();
+      await expect(page.locator('.hc-skeleton-card')).toHaveCount(0, { timeout: 10_000 });
+      const report = await measureLayout(page);
+      expect(report.overflowX, `${route} horizontal overflow`).toBeLessThanOrEqual(0);
+      expect(report.sidebar.visible, `${route} sidebar hidden on mobile`).toBe(false);
+      expect(report.tabbar.visible, `${route} bottom nav visible`).toBe(true);
+      expect(report.tabbar.count, `${route} bottom nav items`).toBe(5);
+      expect(report.tabbar.wrapped, `${route} bottom nav labels wrap`).toEqual([]);
+      expect(report.main.left).toBeGreaterThanOrEqual(-1);
+      expect(report.main.right).toBeLessThanOrEqual(width + 1);
+      expect(report.titleClipped, `${route} header title clipped`).toBe(false);
+      expect(report.outside, `${route} elements outside viewport`).toEqual([]);
+    }
+    await page.goto('/');
+    await expect(page.locator('.hc-job-card').first()).toBeVisible();
+    await page.screenshot({ path: `test-results/layout/mobile-${width}.png`, fullPage: false });
+  });
+}
