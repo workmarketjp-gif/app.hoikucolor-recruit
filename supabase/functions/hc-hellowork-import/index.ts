@@ -15,7 +15,7 @@ const supabase = createClient(
 );
 
 const SOURCE = 'hellowork';
-const PARSER_VERSION = 'hellowork-public-v3';
+const PARSER_VERSION = 'hellowork-public-v4';
 const MAX_URLS = 50;
 const SEARCH_URL = 'https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do';
 const DISCOVERY_PAGE_SIZE = 50;
