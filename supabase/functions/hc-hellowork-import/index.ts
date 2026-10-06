@@ -64,6 +64,7 @@ type Normalized = {
   expires_at: string | null;
   fetched_at: string;
   last_verified_at: string;
+  online_self_apply_allowed: boolean | null;
   source_payload: Record<string, unknown>;
   updated_at: string;
 };
@@ -240,6 +241,7 @@ async function normalize(url: URL): Promise<Normalized> {
   if (!sourceJobId) throw new Error('HELLOWORK_JOB_NUMBER_NOT_FOUND');
 
   const restricted = RESTRICTED_MARKERS.some((marker) => text.includes(marker));
+  const onlineSelfApplyAllowed = /オンライン自主応募\s*可/.test(text);
   const title = section(text, '職種', ['仕事内容', '雇用形態', '求人番号'])?.replace(/^職種解説\s*/, '') || '求人';
   const location = section(text, '就業場所', ['職種', '仕事内容', '雇用形態', '受動喫煙対策']);
   const { prefecture, city, address } = locationParts(location);
@@ -299,6 +301,7 @@ async function normalize(url: URL): Promise<Normalized> {
     expires_at: closingAt,
     fetched_at: fetchedAt,
     last_verified_at: fetchedAt,
+    online_self_apply_allowed: onlineSelfApplyAllowed,
     source_payload: {
       parser_version: PARSER_VERSION,
       http_status: response.status,
@@ -306,6 +309,7 @@ async function normalize(url: URL): Promise<Normalized> {
       restricted,
       hidden_employer: hiddenEmployer,
       relevant_position: relevant,
+      online_self_apply_allowed: onlineSelfApplyAllowed,
     },
     updated_at: fetchedAt,
   };
