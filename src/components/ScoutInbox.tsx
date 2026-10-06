@@ -112,9 +112,7 @@ export function ScoutInbox() {
       <h2 id="scout-inbox-heading">届いた匿名スカウト</h2>
       {loaded && <span className="hc-count">回答待ち {pendingCount}件</span>}
     </div>
-    <p className="hc-note">園には匿名プロフィールだけが共有されています。承諾するまで氏名・メール・電話番号は開示されません。</p>
-
-    <div className="scout-consent-note"><Icon name="shield" size={17} /><div><strong>本人情報の共有はあなたが決めます</strong><p>承諾したスカウトだけ、今後の連絡に必要な本人情報を園が確認できる状態になります。辞退・期限切れでは本人情報を共有しません。</p></div></div>
+    <div className="scout-consent-note"><Icon name="shield" size={17} /><div><strong>本人情報の共有はあなたが決めます</strong><p>承諾するまで氏名・メール・電話番号は開示されません。</p></div></div>
 
     {error && <InlineError message={error} onRetry={() => void load()} />}
     {notice && <p className="form-success" role="status">{notice}</p>}

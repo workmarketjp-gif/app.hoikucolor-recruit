@@ -95,7 +95,7 @@ export function SpotJobsView({ onStartApplication }: { onStartApplication: () =>
 
   return (
     <div className="hc-view hc-spot">
-      <p className="hc-lead">勤務日・時間・時給・休憩を確認して、1日単位の勤務に応募できます。通常求人とは分けて表示しています。</p>
+      <p className="hc-lead">1日単位で働ける勤務です。通常求人とは分けて表示しています。</p>
 
       {error && <InlineError message={error} onRetry={() => void refresh(false)} />}
       {loading && !loaded && <SkeletonList rows={2} />}
@@ -106,14 +106,12 @@ export function SpotJobsView({ onStartApplication }: { onStartApplication: () =>
           {assignments.length > 0 && (
             <section className="hc-section" aria-labelledby="spot-assignment-heading">
               <div className="hc-section-head"><h2 id="spot-assignment-heading">あなたのスポット勤務</h2></div>
-              <p className="hc-note">園が勤務を確定した後も、募集枠が満員・募集終了になってもここから勤務日時を確認できます。</p>
               <div className="hc-card-list">{assignments.map((assignment) => <SpotAssignmentCard key={assignment.assignment_id} assignment={assignment} />)}</div>
             </section>
           )}
 
           <section className="hc-section" aria-labelledby="spot-open-heading">
             <div className="hc-section-head"><h2 id="spot-open-heading">募集中のスポット勤務</h2></div>
-            <p className="hc-note">園が勤務を確定すると、Hoiku Officeのシフトへ連携されます。</p>
             {jobs.length
               ? <div className="hc-card-list">{jobs.map((job) => <SpotJobCard key={job.job_id} job={job} applying={applyingId === job.job_id} onApply={() => void apply(job)} />)}</div>
               : <EmptyState

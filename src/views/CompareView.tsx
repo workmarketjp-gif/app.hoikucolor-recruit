@@ -94,7 +94,7 @@ export function CompareView({ userKey }: { userKey: string }) {
 
   return (
     <div className="hc-view hc-compare">
-      <p className="hc-lead">最大3求人まで、園の掲載情報とHO/HF Verified実績を混ぜずに比較します。</p>
+      <p className="hc-lead">最大3件を並べて比較できます。</p>
       <ul className="hc-source-legend" aria-label="比較データの見方">
         <li><span className="source-pill source-facility">園掲載</span>求人票・園が公開した情報</li>
         <li><span className="source-pill source-ho">HO Verified</span>Hoiku Officeの確定実績から自動集計</li>
@@ -122,7 +122,7 @@ export function CompareView({ userKey }: { userKey: string }) {
           </section>
 
           {jobs.length > 0 && (compared.length < 2
-            ? <p className="hc-notice">2件以上選ぶと比較表を表示します。気になる求人から「園を比較する」で開くこともできます。</p>
+            ? <p className="hc-notice">2件以上選ぶと比較表が出ます。</p>
             : <ComparisonTable compared={compared} rows={rows} onRemove={(jobId) => setSelectedIds((current) => current.filter((id) => id !== jobId))} />)}
         </>
       )}

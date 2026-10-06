@@ -103,7 +103,6 @@ export function VisitsView() {
 
   return (
     <div className="hc-view hc-visits">
-      <p className="hc-lead">園見学・半日体験・1日体験の予定と履歴をまとめて確認できます。</p>
       {error && <InlineError message={error} onRetry={() => void load()} />}
       {loading && !loaded && <SkeletonList rows={2} />}
       {missingTarget && <p className="hc-notice">指定された見学・体験は見つかりませんでした。現在の予約・履歴のみ表示しています。</p>}

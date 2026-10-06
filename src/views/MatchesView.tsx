@@ -46,10 +46,10 @@ export function MatchesView({ userKey, savedIds, onToggleSaved, onStartApplicati
 
   return (
     <div className="hc-view hc-matches">
-      <p className="hc-lead">勤務地・雇用形態・給与などは通常ロジックで判定し、保育観は求人文面との一致サインを分けて表示します。</p>
+      <p className="hc-lead">あなたの希望条件に合う順です。</p>
       <details className="hc-explain">
-        <summary>点数の根拠を隠しません</summary>
-        <p>条件マッチは登録した希望条件だけで計算します。HO/HF Verifiedは求人の実績確認と同点時の並び順に使い、園の申告値と混ぜません。保育観は現在、求人文面に明示された表現だけを参考サインとして表示します。氏名・メール・電話番号は点数に使いません。</p>
+        <summary>点数の決め方</summary>
+        <p>勤務地・雇用形態・給与などは通常ロジックで判定し、保育観は求人文面との一致サインを分けて表示します。条件マッチは登録した希望条件だけで計算します。HO/HF Verifiedは求人の実績確認と同点時の並び順に使い、園の申告値と混ぜません。保育観は現在、求人文面に明示された表現だけを参考サインとして表示します。氏名・メール・電話番号は点数に使いません。</p>
       </details>
 
       {data.status === 'error' && <InlineError message={data.error} onRetry={data.reload} />}
