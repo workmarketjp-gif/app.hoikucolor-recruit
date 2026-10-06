@@ -366,8 +366,8 @@ async function discoverHelloWorkPage(prefecture: number, page: number) {
   const initial = await postHelloWorkForm({
     kjKbnRadioBtn: '1',
     tDFK1CmbBox: pref,
-    sKGYBRUIJo1: HELLOWORK_JOB_CLASS_MAJOR,
-    sKGYBRUIGe1: HELLOWORK_JOB_CLASS_MINOR,
+    freeWordRadioBtn: '0',
+    freeWordInput: '保育士',
     searchBtn: '',
     screenId: 'GECA110010',
     maba_vrbs: 'searchBtn',
@@ -449,6 +449,13 @@ async function discoverBatch() {
   // Fail closed if the first page unexpectedly parses as empty. This protects us
   // against silently walking all 47 prefectures after a Hello Work markup change.
   if (page === 1 && urls.length === 0) {
+    console.log(JSON.stringify({
+      event: 'hellowork-search-diagnostic',
+      prefecture,
+      page,
+      parser_version: PARSER_VERSION,
+      note: 'zero detail links parsed from search response',
+    }));
     await supabase
       .from('hc_external_source_sync_control')
       .update({
