@@ -21,6 +21,11 @@ const ALLOWED_POSITION = /(保育士|保育教諭|幼稚園教諭|保育補助|�
 const RESTRICTED_MARKERS = [
   'ハローワークに求職登録した方のみを対象',
   '事業所の意向により公開していません',
+  // Some employers use the free-text notes to opt out of secondary publication
+  // even when the Hello Work page itself is public. Fail closed on any such wording.
+  '無断転載',
+  '転載禁止',
+  '掲載はお断り',
 ];
 
 type ImportBody = { urls?: string[]; refresh?: boolean };
