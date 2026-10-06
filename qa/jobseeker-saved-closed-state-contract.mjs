@@ -49,4 +49,16 @@ if (!app.includes("isClosed ? '募集終了' : applying ? '応募中…' : '応�
   throw new Error('Closed saved jobs must not present an active apply action');
 }
 
+// The newest definition of the saved-jobs read model must return exactly its declared
+// columns: an inner sort key leaking through `select *` made every call fail (42804).
+const savedV2Definitions = migrations
+  .filter((name) => read(`supabase/migrations/${name}`).includes('create or replace function public.hc_jobseeker_list_saved_jobs_with_status_v2()'))
+  .sort();
+if (savedV2Definitions.length) {
+  const latest = read(`supabase/migrations/${savedV2Definitions.at(-1)}`);
+  const body = latest.slice(latest.indexOf('create or replace function public.hc_jobseeker_list_saved_jobs_with_status_v2()'));
+  if (/return query\s+select \*/.test(body)) throw new Error('hc_jobseeker_list_saved_jobs_with_status_v2 must list its declared columns, not select *');
+  if (!body.includes('q.is_open') || !body.includes('order by q.saved_at desc')) throw new Error('saved-jobs v2 must project declared columns and sort by saved_at only');
+}
+
 console.log('HC-W02 saved closed-state contract passed');
