@@ -32,7 +32,7 @@ const checks = [
   [route.includes('getProfile') && route.includes('submitApplication'), 'spot card must connect to the standard candidate application flow'],
   [route.includes('application_id') && route.includes('/applications?application_id='), 'applied spot jobs must deep-link to application status'],
   [app.includes("import('./views/SpotJobsView')") && router.includes("spot: '/spot-jobs'") && app.includes("{view === 'spot' && <SpotJobsView"), 'spot jobs must be a lazy view of the authenticated app'],
-  [shell.includes("{ href: '/spot-jobs', label: 'スポット勤務' }") && app.includes('<a href="/spot-jobs">'), 'main jobseeker navigation must expose spot jobs'],
+  [shell.includes("{ href: '/spot-jobs', label: 'スポット勤務', icon: 'clock' }") && app.includes('<a href="/spot-jobs">'), 'main jobseeker navigation must expose spot jobs'],
   [css.includes('@media (max-width: 390px)') && /\.hc-shell \.primary-button, \.hc-shell \.secondary-button \{ min-height: 52px/.test(css), 'spot experience must retain 390px and tap-target hardening'],
 ];
 

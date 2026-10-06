@@ -18,7 +18,7 @@ const checks = [
   ['no navigation enhancer is mounted', !main.includes('Enhancer') && !fs.existsSync('src/components/ScoutNavigationEnhancer.tsx')],
   ['the inbox reads through the candidate-safe scout RPC repository', inbox.includes('listJobseekerScouts') && repository.includes("rpc('hc_jobseeker_list_scouts')")],
   ['scouts are only listed by the scout inbox (no background scout polling elsewhere)', sources.every((source) => !source.includes('listJobseekerScouts'))],
-  ['sidebar exposes the dedicated scouts route', shell.includes("{ href: '/scouts', label: 'スカウト' }")],
+  ['sidebar exposes the dedicated scouts route', shell.includes("{ href: '/scouts', label: 'スカウト', icon: 'sparkles' }")],
   ['My page and the account sheet expose the scouts route', app.includes('<a href="/scouts">スカウト') && shell.includes('href="/scouts" onClick={onClose}')],
   ['Home surfaces pending scouts from the attention summary', app.includes('pending_scouts_count') && app.includes('href="/scouts">届いたスカウト')],
   ['header carries no scout shortcut', !notification.includes('scout-shortcut') && !shell.includes('scout-topbar-link')],

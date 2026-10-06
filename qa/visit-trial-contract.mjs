@@ -187,7 +187,7 @@ if (!route.includes('}, [error, loading, visitId, visits]);')) {
   throw new Error('Visit deep-link recovery must react when a failed history request later succeeds.');
 }
 if (!router.includes("visits: '/visits'") || !appShell.includes("{view === 'visits' && <VisitsView />}")) throw new Error('Dedicated /visits view is not wired into the candidate app.');
-if (!navigation.includes("{ href: '/visits', label: '見学・体験' }") || !appShell.includes('<a href="/visits">')) throw new Error('Visit history navigation entry is missing.');
+if (!navigation.includes("{ href: '/visits', label: '見学・体験', icon: 'map' }") || !appShell.includes('<a href="/visits">')) throw new Error('Visit history navigation entry is missing.');
 if (!notificationCenter.includes("'/visits'")) throw new Error('Notification safe-path allow-list must include /visits.');
 if (!notificationCenter.includes('VISIT_NOTIFICATION_TYPES')) throw new Error('Visit lifecycle notifications are not recognized by NotificationCenter.');
 if (!notificationCenter.includes("parsed.searchParams.get('visit_id')")) throw new Error('Visit notification deep link must validate visit_id.');
