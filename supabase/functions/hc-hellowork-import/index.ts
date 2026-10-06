@@ -165,6 +165,44 @@ function clean(value: string | null | undefined) {
   return v || null;
 }
 
+function normalizedLines(text: string) {
+  return text
+    .split('\n')
+    .map((line) => clean(line))
+    .filter((line): line is string => Boolean(line));
+}
+
+function exactIndex(lines: string[], label: string, start = 0) {
+  for (let index = Math.max(0, start); index < lines.length; index += 1) {
+    if (lines[index] === label) return index;
+  }
+  return -1;
+}
+
+function previousExactIndex(lines: string[], label: string, before: number) {
+  for (let index = Math.min(before - 1, lines.length - 1); index >= 0; index -= 1) {
+    if (lines[index] === label) return index;
+  }
+  return -1;
+}
+
+function nextValue(lines: string[], label: string, start = 0) {
+  const index = exactIndex(lines, label, start);
+  return index >= 0 ? clean(lines[index + 1]) : null;
+}
+
+function sliceUntilExact(lines: string[], fromExclusive: number, labels: string[]) {
+  if (fromExclusive < 0) return null;
+  let end = lines.length;
+  for (let index = fromExclusive + 1; index < lines.length; index += 1) {
+    if (labels.includes(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return clean(lines.slice(fromExclusive + 1, end).join('\n'));
+}
+
 function section(text: string, label: string, nextLabels: string[]) {
   const start = text.indexOf(label);
   if (start < 0) return null;
@@ -198,23 +236,44 @@ function jobNumberFrom(text: string, url: URL) {
 }
 
 function locationParts(value: string | null) {
-  const cleaned = clean(value)?.replace(/就業場所に関する特記事項[\s\S]*$/, '').trim() || null;
+  let cleaned = clean(value)?.replace(/就業場所に関する特記事項[\s\S]*$/, '').trim() || null;
   if (!cleaned) return { prefecture: null, city: null, address: null };
-  const prefecture = firstMatch(cleaned, /^(.+?[都道府県])/);
-  const city = prefecture
-    ? firstMatch(cleaned.slice(prefecture.length), /^(.+?(?:市|区|町|村))/)
-    : null;
+
+  cleaned = cleaned
+    .replace(/^就業場所\n?/, '')
+    .replace(/^事業所所在地と同じ\n?/, '')
+    .replace(/^〒\d{3}-\d{4}\s*/, '')
+    .replace(/\n地図表示[\s\S]*$/, '')
+    .trim();
+
+  const prefMatch = cleaned.match(/(北海道|東京都|(?:京都|大阪)府|.{2,3}県)/);
+  const prefecture = prefMatch?.[1] || null;
+  const afterPrefecture = prefecture
+    ? cleaned.slice((prefMatch?.index || 0) + prefecture.length).replace(/^\s+/, '')
+    : '';
+  const city = prefecture ? firstMatch(afterPrefecture, /^(.+?(?:市|区|町|村))/) : null;
   return { prefecture, city, address: cleaned };
 }
 
-function salaryFields(note: string | null, employment: string | null) {
+function salaryFields(note: string | null, salaryForm: string | null, employment: string | null) {
   const normalized = note?.replace(/,/g, '') || '';
-  const values = [...normalized.matchAll(/([0-9]{3,7})\s*円/g)].map((m) => Number(m[1])).filter(Number.isFinite);
-  const salaryType = /時給/.test(normalized) || /パート/.test(employment || '') ? 'hourly' : 'monthly';
+  const values = [...normalized.matchAll(/([0-9]{3,7})\s*円/g)]
+    .map((match) => Number(match[1]))
+    .filter(Number.isFinite);
+  const form = salaryForm || '';
+  const salaryType = /時給|時間給/.test(form)
+    ? 'hourly'
+    : /日給/.test(form)
+      ? 'daily'
+      : /年俸|年収/.test(form)
+        ? 'annual'
+        : /月給/.test(form) || !/パート/.test(employment || '')
+          ? 'monthly'
+          : 'hourly';
   return {
     salary_type: salaryType,
-    salary_min: values.length ? Math.min(...values) : null,
-    salary_max: values.length > 1 ? Math.max(...values) : null,
+    salary_min: values.length ? values[0] : null,
+    salary_max: values.length > 1 ? values[1] : null,
     salary_note: note,
   };
 }
@@ -241,28 +300,86 @@ async function normalize(url: URL): Promise<Normalized> {
   if (!sourceJobId) throw new Error('HELLOWORK_JOB_NUMBER_NOT_FOUND');
 
   const restricted = RESTRICTED_MARKERS.some((marker) => text.includes(marker));
-  const onlineSelfApplyAllowed = /オンライン自主応募\s*可/.test(text);
-  const title = section(text, '職種', ['仕事内容', '雇用形態', '求人番号'])?.replace(/^職種解説\s*/, '') || '求人';
-  const location = section(text, '就業場所', ['職種', '仕事内容', '雇用形態', '受動喫煙対策']);
+  const lines = normalizedLines(text);
+
+  const employmentIndex = exactIndex(lines, '雇用形態');
+  const detailedDescriptionIndex = previousExactIndex(lines, '仕事内容', employmentIndex);
+  const detailedTitleIndex = previousExactIndex(lines, '職種', detailedDescriptionIndex);
+
+  const title = detailedTitleIndex >= 0
+    ? (clean(lines.slice(detailedTitleIndex + 1, detailedDescriptionIndex).filter((line) => line !== '職種解説').join('\n')) || '求人')
+    : (nextValue(lines, '職種') || '求人');
+  const description = detailedDescriptionIndex >= 0
+    ? (clean(lines.slice(detailedDescriptionIndex + 1, employmentIndex).join('\n')) || '')
+    : '';
+
+  const employment = employmentIndex >= 0 ? clean(lines[employmentIndex + 1]) : null;
+
+  const detailedLocationIndex = exactIndex(lines, '就業場所', employmentIndex + 1);
+  const location = detailedLocationIndex >= 0
+    ? sliceUntilExact(lines, detailedLocationIndex, ['受動喫煙対策', 'マイカー通勤', '年齢'])
+    : null;
   const { prefecture, city, address } = locationParts(location);
-  const employer = section(text, '事業所名', ['就業場所', '職種', '仕事内容']);
+
+  const employer = nextValue(lines, '事業所名');
   const hiddenEmployer = !employer || employer.includes('公開していません');
 
-  const description = section(text, '仕事内容', ['雇用形態', '雇用期間', '就業場所']) || '';
-  const employment = section(text, '雇用形態', ['雇用期間', '就業場所', '年齢']);
-  const salaryNote = section(text, '賃金（手当等を含む）', ['給与の内訳', '賃金形態等', '通勤手当'])
-    || section(text, '賃金', ['給与の内訳', '賃金形態等', '通勤手当']);
-  const salary = salaryFields(salaryNote, employment);
-  const workingHours = section(text, '就業時間', ['時間外労働時間', '休憩時間', '年間休日数', '休日等']);
-  const holidays = section(text, '休日等', ['その他の労働条件等', '加入保険等', '企業年金']);
-  const qualification = section(text, '必要な免許・資格', ['試用期間', '賃金・手当', '賃金']);
-  const benefits = section(text, '加入保険等', ['企業年金', '退職金共済', '退職金制度', '定年制']);
-  const closingText = section(text, '紹介期限日', ['受理安定所', '求人区分']);
-  const receivedText = section(text, '受付年月日', ['紹介期限日', '受理安定所']);
-  const closingAt = parseDate(closingText);
-  const sourcePublishedAt = parseDate(receivedText);
-  const positionsText = section(text, '募集人数', ['募集理由', '選考方法', '選考結果通知']);
-  const positions = Number(firstMatch(positionsText || '', /(\d+)/)) || 1;
+  const onlineIndex = exactIndex(lines, 'オンライン自主応募の受付');
+  const onlineSelfApplyAllowed = onlineIndex >= 0
+    ? /^可(?:$|\s)/.test(lines[onlineIndex + 1] || '')
+    : false;
+
+  const salarySectionIndex = exactIndex(lines, '賃金・手当');
+  let salaryNote: string | null = null;
+  if (salarySectionIndex >= 0) {
+    for (let index = salarySectionIndex + 1; index < Math.min(lines.length, salarySectionIndex + 20); index += 1) {
+      if (/\d[\d,]*円(?:\s*[〜～-]\s*\d[\d,]*円)?/.test(lines[index])) {
+        salaryNote = lines[index];
+        break;
+      }
+    }
+  }
+  const salaryFormIndex = exactIndex(lines, '賃金形態等', salarySectionIndex + 1);
+  const salaryForm = salaryFormIndex >= 0 ? clean(lines[salaryFormIndex + 1]) : null;
+  const salary = salaryFields(salaryNote, salaryForm, employment);
+
+  const laborIndex = exactIndex(lines, '労働時間');
+  const workingHoursIndex = exactIndex(lines, '就業時間', laborIndex + 1);
+  const workingHours = workingHoursIndex >= 0
+    ? sliceUntilExact(lines, workingHoursIndex, ['時間外労働時間'])
+    : null;
+
+  const holidaysIndex = exactIndex(lines, '休日等', laborIndex + 1);
+  const holidays = holidaysIndex >= 0
+    ? sliceUntilExact(lines, holidaysIndex, ['その他の労働条件等'])
+    : null;
+
+  const qualificationIndex = exactIndex(lines, '必要な免許・資格');
+  const qualification = qualificationIndex >= 0
+    ? sliceUntilExact(lines, qualificationIndex, ['試用期間'])
+    : null;
+
+  const conditionsIndex = exactIndex(lines, 'その他の労働条件等');
+  const benefits = conditionsIndex >= 0
+    ? sliceUntilExact(lines, conditionsIndex, ['会社の情報'])
+    : null;
+
+  const closingAt = parseDate(nextValue(lines, '紹介期限日'));
+  const sourcePublishedAt = parseDate(nextValue(lines, '受付年月日'));
+
+  const positionsIndex = exactIndex(lines, '採用人数');
+  const positions = Number(firstMatch(positionsIndex >= 0 ? lines[positionsIndex + 1] || '' : '', /(\d+)/)) || 1;
+
+  const facilityContext = `${employer || ''}\n${title}\n${description}`;
+  const facilityType = /認定こども園/.test(facilityContext)
+    ? '認定こども園'
+    : /小規模保育/.test(facilityContext)
+      ? '小規模保育園'
+      : /幼稚園/.test(facilityContext) && !/保育園|保育所/.test(facilityContext)
+        ? '幼稚園'
+        : /保育園|保育所/.test(facilityContext)
+          ? '保育園'
+          : null;
 
   const expired = Boolean(closingAt && new Date(closingAt).getTime() < Date.now());
   const relevant = ALLOWED_POSITION.test(title);
@@ -283,7 +400,7 @@ async function normalize(url: URL): Promise<Normalized> {
     public_republication_allowed: allowed,
     organization_name: hiddenEmployer ? null : employer,
     facility_name: hiddenEmployer ? '非公開求人' : employer!,
-    facility_type: null,
+    facility_type: facilityType,
     prefecture,
     city,
     address,
