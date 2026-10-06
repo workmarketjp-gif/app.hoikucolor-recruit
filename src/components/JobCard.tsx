@@ -68,7 +68,7 @@ export function JobCard({ job, saved, onToggleSaved, onStartApplication, onAppli
           <span className="hc-job-facility">{job.facility_name}</span>
           <h3>{job.title}</h3>
         </div>
-        {!isExternal && <button type="button" className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)} aria-label={saved ? '気になるから外す' : '気になるに保存'} aria-pressed={saved}><Icon name="heart" size={22} /></button>}
+        <button type="button" className={`heart-button ${saved ? 'saved' : ''}`} onClick={() => onToggleSaved(job.id)} aria-label={saved ? '気になるから外す' : '気になるに保存'} aria-pressed={saved}><Icon name="heart" size={22} /></button>
       </header>
       <p className="hc-job-salary">{salaryLabel(job)}</p>
       <p className="hc-job-meta"><Icon name="map" size={16} /> {location}{job.employment_type ? ` ・ ${job.employment_type}` : ''}</p>
@@ -117,7 +117,7 @@ export function JobCard({ job, saved, onToggleSaved, onStartApplication, onAppli
         <button className="secondary-button" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>{expanded ? '閉じる' : expandLabel}</button>
         {!canApplyDirect ? (
           <a className="primary-button hc-external-job-link" href={job.source_url || '#'} target="_blank" rel="noopener noreferrer" aria-disabled={!job.source_url}>
-            求人の詳細を見る
+            {job.source_kind === 'hellowork' ? 'ハローワークで応募方法を確認' : '掲載元で応募方法を確認'}
           </a>
         ) : (
           <button className="primary-button" type="button" onClick={apply} disabled={applying || isClosed}>{isClosed ? '募集終了' : applying ? '応募中…' : '応募する'}</button>
