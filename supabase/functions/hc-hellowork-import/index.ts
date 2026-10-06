@@ -367,7 +367,7 @@ async function discoverHelloWorkPage(prefecture: number, page: number) {
     kjKbnRadioBtn: '1',
     tDFK1CmbBox: pref,
     freeWordRadioBtn: '0',
-    freeWordInput: '保育士',
+    freeWordInput: '保育士 保育教諭 幼稚園教諭 保育補助',
     searchBtn: '',
     screenId: 'GECA110010',
     maba_vrbs: 'searchBtn',
