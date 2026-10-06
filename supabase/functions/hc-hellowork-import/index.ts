@@ -20,7 +20,14 @@ const MAX_URLS = 50;
 const SEARCH_URL = 'https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do';
 const DISCOVERY_PAGE_SIZE = 50;
 const DISCOVERY_CONCURRENCY = 5;
-const SEARCH_TERMS = ['保育士', '保育教諭', '幼稚園教諭', '保育補助'] as const;
+const DISCOVERY_TARGETS = [
+  { label: '保育士', occupationCode: '06,01' },
+  { label: '保育補助', occupationCode: '06,02' },
+  { label: '幼稚園教員', occupationCode: '06,04' },
+  // 「保育教諭」はHello Workの職種分類で独立項目ではないため、
+  // exact occupation searchを補完するfree-word targetとして残す。
+  { label: '保育教諭', freeWord: '保育教諭' },
+] as const;
 const ALLOWED_POSITION = /(保育士|保育教諭|幼稚園教諭|保育補助|看護師|准看護師|栄養士|管理栄養士|調理師|調理員|園長|施設長|主任|子育て支援員)/;
 const RESTRICTED_MARKERS = [
   'ハローワークに求職登録した方のみを対象',
@@ -471,19 +478,32 @@ function detailUrlsFromSearchHtml(html: string) {
   return [...urls];
 }
 
-async function discoverHelloWorkPage(prefecture: number, page: number, queryTerm: string) {
+async function discoverHelloWorkPage(
+  prefecture: number,
+  page: number,
+  target: (typeof DISCOVERY_TARGETS)[number],
+) {
   const pref = String(prefecture).padStart(2, '0');
-  const initial = await postHelloWorkForm({
+  const searchParams: Record<string, string> = {
     kjKbnRadioBtn: '1',
     tDFK1CmbBox: pref,
-    freeWordRadioBtn: '0',
-    freeWordInput: queryTerm,
     searchBtn: '',
     screenId: 'GECA110010',
     maba_vrbs: 'searchBtn',
     fwListNaviDispTop: String(DISCOVERY_PAGE_SIZE),
     fwListNaviDisp: String(DISCOVERY_PAGE_SIZE),
-  });
+  };
+
+  if ('occupationCode' in target) {
+    // Hello Work's exact occupation selector. This avoids free-word hits where
+    // "保育士" appears only in a description for an unrelated occupation.
+    searchParams.kiboSuruSKSU1Hidden = target.occupationCode;
+  } else {
+    searchParams.freeWordRadioBtn = '0';
+    searchParams.freeWordInput = target.freeWord;
+  }
+
+  const initial = await postHelloWorkForm(searchParams);
 
   if (page <= 1) return detailUrlsFromSearchHtml(initial.html);
 
@@ -553,11 +573,12 @@ async function discoverBatch() {
   const state = await discoveryState();
   if (!state.enabled) return { skipped: true, reason: 'SYNC_DISABLED' };
 
-  const queryCursor = Math.min(SEARCH_TERMS.length - 1, Math.max(0, Number(state.query_cursor || 0)));
-  const queryTerm = SEARCH_TERMS[queryCursor];
+  const queryCursor = Math.min(DISCOVERY_TARGETS.length - 1, Math.max(0, Number(state.query_cursor || 0)));
+  const target = DISCOVERY_TARGETS[queryCursor];
+  const queryTerm = target.label;
   const prefecture = Math.min(47, Math.max(1, Number(state.prefecture_cursor || 1)));
   const page = Math.max(1, Number(state.page_cursor || 1));
-  const urls = await discoverHelloWorkPage(prefecture, page, queryTerm);
+  const urls = await discoverHelloWorkPage(prefecture, page, target);
 
   // Fail closed if the first page unexpectedly parses as empty. This protects us
   // against silently walking all 47 prefectures after a Hello Work markup change.
@@ -601,7 +622,7 @@ async function discoverBatch() {
     if (nextPrefecture > 47) {
       nextPrefecture = 1;
       nextQueryCursor += 1;
-      if (nextQueryCursor >= SEARCH_TERMS.length) {
+      if (nextQueryCursor >= DISCOVERY_TARGETS.length) {
         nextQueryCursor = 0;
         completedCycles += 1;
       }
@@ -638,7 +659,7 @@ async function discoverBatch() {
     errors,
     error_codes: errorCodes,
     next_query_cursor: nextQueryCursor,
-    next_query_term: SEARCH_TERMS[nextQueryCursor],
+    next_query_term: DISCOVERY_TARGETS[nextQueryCursor].label,
     next_prefecture: nextPrefecture,
     next_page: nextPage,
     completed_cycles: completedCycles,
