@@ -19,7 +19,7 @@ function assert(condition, message) {
 assert(route.includes('maxComparedJobs = 3'), 'comparison must remain limited to three jobs');
 assert(route.includes('compared.length < 2'), 'comparison table must require at least two selected jobs');
 assert(route.includes("source: 'facility'") && route.includes("source: 'ho_verified'") && route.includes("source: 'hf_verified'"), 'facility-reported and Verified sources must remain distinct');
-assert(route.includes('園掲載') && route.includes('HO Verified') && route.includes('HF Verified'), 'comparison UI must visibly label data provenance');
+assert(route.includes('園掲載') && route.includes("return '勤務実績'") && route.includes("return '会計実績'") && !/(HO|HF) Verified/.test(route), 'comparison UI must visibly label data provenance in plain Japanese (no internal abbreviations)');
 assert(route.includes('園の掲載値で補完しません'), 'missing Verified data must not be silently replaced by facility claims');
 assert(route.includes("'average_monthly_overtime_hours'") && route.includes("'paid_leave_usage_rate_pct'"), 'core HO Verified workplace evidence is missing');
 assert(route.includes("'finance_monthly_result_stability'") && route.includes("'finance_closed_months_12m'"), 'core HF Verified evidence is missing');

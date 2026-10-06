@@ -23,7 +23,7 @@ const checks = [
   [repository.includes("rpc('hc_jobseeker_list_my_spot_assignments')"), 'client must use candidate-safe confirmed-work RPC'],
   [!repository.includes("from('hc_spot_assignments')"), 'candidate client must not query canonical spot assignments directly'],
   [/Promise\.all\(\[listSpotJobs\(\), listMySpotAssignments\(\)\]\)/.test(route), 'spot route must load open jobs and confirmed work together'],
-  [route.includes('あなたのスポット勤務') && route.includes('Hoiku Office シフト連携済み'), 'confirmed shifts must remain clearly visible after the listing closes'],
+  [route.includes('あなたのスポット勤務') && route.includes('勤務シフトに登録済み'), 'confirmed shifts must remain clearly visible after the listing closes'],
   [/assignment_id/.test(route) && /UUID_PATTERN/.test(route) && /spot-assignment-\$\{assignmentId\}/.test(route), 'spot notification deep-link must validate and focus an owned assignment'],
   [route.includes('assignment.break_minutes') && route.includes('assignment.hourly_rate') && route.includes('assignment.work_date'), 'confirmed-work card must preserve canonical date, rate and break'],
   [notifications.includes("'/spot-jobs'"), 'notification navigation allow-list must include the spot route'],

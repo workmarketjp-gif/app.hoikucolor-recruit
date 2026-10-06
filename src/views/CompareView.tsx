@@ -97,8 +97,8 @@ export function CompareView({ userKey }: { userKey: string }) {
       <p className="hc-lead">最大3件を並べて比較できます。</p>
       <ul className="hc-source-legend" aria-label="比較データの見方">
         <li><span className="source-pill source-facility">園掲載</span>求人票・園が公開した情報</li>
-        <li><span className="source-pill source-ho">HO Verified</span>Hoiku Officeの確定実績から自動集計</li>
-        <li><span className="source-pill source-hf">HF Verified</span>Hoiku Financeの確定済み会計実績から自動集計</li>
+        <li><span className="source-pill source-ho">勤務実績</span>実際の勤務記録から集計</li>
+        <li><span className="source-pill source-hf">会計実績</span>確定した会計記録から集計</li>
       </ul>
 
       {data.status === 'error' && <InlineError message={data.error} onRetry={data.reload} />}
@@ -139,7 +139,7 @@ function ComparisonTable({ compared, rows, onRemove }: { compared: ComparedJob[]
         <tbody>{rows.map((row) => <tr key={row.key}><th className="compare-row-label"><span className={`source-pill source-${row.source === 'ho_verified' ? 'ho' : row.source === 'hf_verified' ? 'hf' : row.source === 'match' ? 'match' : 'facility'}`}>{sourceLabel(row.source)}</span><strong>{row.label}</strong>{row.note && <small>{row.note}</small>}</th>{row.values.map((value, index) => <td key={`${row.key}-${compared[index]?.job.id || index}`}>{value}</td>)}</tr>)}</tbody>
       </table>
     </div>
-    <p className="compare-disclaimer">Verifiedは各サービスの確定実績から取得できた項目だけを表示します。未取得は「実績未公開」とし、園の掲載値で補完しません。</p>
+    <p className="compare-disclaimer">勤務実績・会計実績は、確定した記録から取得できた項目だけを表示します。未取得は「実績未公開」とし、園の掲載値で補完しません。</p>
   </section>;
 }
 
@@ -162,14 +162,14 @@ function buildComparisonRows(compared: ComparedJob[]): ComparisonRow[] {
     key: `ho-${metricKey}`,
     label: metricLabel(compared, 'workplace', metricKey),
     source: 'ho_verified',
-    values: compared.map(({ job }) => verifiedMetricNode(job.verified_workplace?.verified_metrics?.[metricKey] || null, 'HO')),
+    values: compared.map(({ job }) => verifiedMetricNode(job.verified_workplace?.verified_metrics?.[metricKey] || null)),
   }));
 
   const financeRows = financePriority.map((metricKey): ComparisonRow => ({
     key: `hf-${metricKey}`,
     label: metricLabel(compared, 'finance', metricKey),
     source: 'hf_verified',
-    values: compared.map(({ job }) => verifiedMetricNode(job.verified_finance?.verified_metrics?.[metricKey] || null, 'HF')),
+    values: compared.map(({ job }) => verifiedMetricNode(job.verified_finance?.verified_metrics?.[metricKey] || null)),
   }));
 
   return [...facilityRows, ...workplaceRows, ...financeRows].filter((row) => row.source === 'facility' || row.source === 'match' || row.values.some((value) => value !== null));
@@ -186,10 +186,10 @@ function metricLabel(compared: ComparedJob[], kind: 'workplace' | 'finance', key
   return fallback[key] || key;
 }
 
-function verifiedMetricNode(metric: VerifiedWorkplaceMetric | VerifiedFinanceMetric | null, source: 'HO' | 'HF'): ReactNode {
+function verifiedMetricNode(metric: VerifiedWorkplaceMetric | VerifiedFinanceMetric | null): ReactNode {
   if (!metric || metric.value === null || metric.value === undefined) return <span className="compare-missing">実績未公開</span>;
   const value = typeof metric.value === 'number' ? Number(metric.value.toFixed(1)) : metric.value;
-  return <div className="compare-verified-value"><strong>{value}{metric.unit || ''}</strong><small>{source} Verified ・ n={metric.sample_size}</small></div>;
+  return <div className="compare-verified-value"><strong>{value}{metric.unit || ''}</strong><small>{metric.sample_size}件の記録から集計</small></div>;
 }
 
 function textNode(value: string): ReactNode {
@@ -217,8 +217,8 @@ function salaryLabel(job: Job) {
 }
 
 function sourceLabel(source: ComparisonRow['source']) {
-  if (source === 'ho_verified') return 'HO Verified';
-  if (source === 'hf_verified') return 'HF Verified';
+  if (source === 'ho_verified') return '勤務実績';
+  if (source === 'hf_verified') return '会計実績';
   if (source === 'match') return 'マッチング';
   return '園掲載';
 }

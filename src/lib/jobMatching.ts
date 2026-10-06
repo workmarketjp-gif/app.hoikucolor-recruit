@@ -205,7 +205,7 @@ export function matchJob({ job, profile, preferences }: MatchInput): JobMatchRes
     matched: workMatches.length > 0,
     weight: 10,
     reason: workMatches.length ? `働き方の希望「${workMatches.slice(0, 2).join('・')}」を確認できました` : undefined,
-    gap: preferences.work_preferences.length > 0 && !workMatches.length ? '希望する働き方は求人情報・HO実績だけでは確認できません' : undefined,
+    gap: preferences.work_preferences.length > 0 && !workMatches.length ? '希望する働き方は求人情報・勤務実績だけでは確認できません' : undefined,
   });
 
   const activeChecks = checks.filter((check) => check.active);

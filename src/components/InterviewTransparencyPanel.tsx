@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { errorMessage } from '../lib/useResource';
 import {
   getJobTransparency,
   getPublicWorkplaceProfile,
@@ -62,7 +63,7 @@ export function InterviewTransparencyPanel({ jobId, facilityId }: { jobId: strin
       })
       .catch((err) => {
         if (!active) return;
-        setError(err instanceof Error ? err.message : '働き方情報を読み込めませんでした。');
+        setError(errorMessage(err, '働き方情報を読み込めませんでした。'));
       })
       .finally(() => active && setLoading(false));
     return () => { active = false; };
@@ -81,13 +82,13 @@ export function InterviewTransparencyPanel({ jobId, facilityId }: { jobId: strin
         label: '持ち帰り仕事',
         facilityValue: normalized(claims.take_home_work) || findFaqAnswer(faqs, ['持ち帰り']),
         verifiedMetric: null,
-        verifiedUnavailableLabel: 'HO実績指標は未提供',
+        verifiedUnavailableLabel: '勤務実績なし',
       },
       {
         label: '休憩',
         facilityValue: normalized(claims.break_time) || findFaqAnswer(faqs, ['休憩']),
         verifiedMetric: null,
-        verifiedUnavailableLabel: 'HO実績指標は未提供',
+        verifiedUnavailableLabel: '勤務実績なし',
       },
       {
         label: '有休取得',
@@ -98,13 +99,13 @@ export function InterviewTransparencyPanel({ jobId, facilityId }: { jobId: strin
         label: '年間休日',
         facilityValue: normalized(claims.annual_holidays),
         verifiedMetric: null,
-        verifiedUnavailableLabel: 'HO実績指標は未提供',
+        verifiedUnavailableLabel: '勤務実績なし',
       },
       {
         label: 'ブランク・経験',
         facilityValue: normalized(claims.experience_requirement) || findFaqAnswer(faqs, ['ブランク']),
         verifiedMetric: null,
-        verifiedUnavailableLabel: 'HO実績指標は未提供',
+        verifiedUnavailableLabel: '勤務実績なし',
       },
     ];
   }, [transparency, verified]);
@@ -119,26 +120,25 @@ export function InterviewTransparencyPanel({ jobId, facilityId }: { jobId: strin
 
   return <section className="interview-transparency" aria-label="面接で聞きづらい項目">
     <div className="interview-transparency-head">
-      <div><span>BEFORE INTERVIEW</span><strong>面接で聞きづらいことを、応募前に確認</strong></div>
-      <p>園の公開回答とHoiku Officeの実績値は、別の情報源として並べています。</p>
+      <div><strong>面接で聞きづらいことを、応募前に確認</strong></div>
     </div>
 
     <div className="interview-source-legend" aria-label="情報源">
       <span className="facility-source">園の公開回答（申告）</span>
-      <span className="verified-source">HO Verified（実績）</span>
+      <span className="verified-source">勤務実績</span>
     </div>
 
-    <div className="interview-comparison" role="table" aria-label="園申告とHoiku Office実績の比較">
+    <div className="interview-comparison" role="table" aria-label="園の回答と勤務実績の比較">
       <div className="interview-comparison-row is-head" role="row">
         <strong role="columnheader">確認項目</strong>
         <strong role="columnheader">園の公開回答（申告）</strong>
-        <strong role="columnheader">HO Verified（実績）</strong>
+        <strong role="columnheader">勤務実績</strong>
       </div>
       {rows.map((row) => <div className="interview-comparison-row" role="row" key={row.label}>
         <strong role="rowheader">{row.label}</strong>
         <div role="cell" className={row.facilityValue ? '' : 'is-missing'}>{row.facilityValue || '公開回答なし'}</div>
         <div role="cell" className={row.verifiedMetric ? 'verified-value' : 'is-missing'}>
-          {row.verifiedMetric ? <><strong>{formatMetric(row.verifiedMetric)}</strong><small>実績 n={row.verifiedMetric.sample_size}</small></> : (row.verifiedUnavailableLabel || '実績未公開')}
+          {row.verifiedMetric ? <><strong>{formatMetric(row.verifiedMetric)}</strong><small>{row.verifiedMetric.sample_size}件の記録</small></> : (row.verifiedUnavailableLabel || '実績未公開')}
         </div>
       </div>)}
     </div>
@@ -152,7 +152,7 @@ export function InterviewTransparencyPanel({ jobId, facilityId }: { jobId: strin
     </div>}
 
     <p className="interview-transparency-note">
-      「園の公開回答」は園が公開した申告情報です。「HO Verified」はHoiku Officeの運用実績から自動集計された値です。公開されていない値を別ソースで補完したり、推測値として表示したりしません。
+      「勤務実績」は実際の勤務記録から集計した値です。公開されていない値を推測で補うことはしません。
     </p>
   </section>;
 }

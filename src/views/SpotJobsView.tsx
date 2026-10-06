@@ -144,7 +144,7 @@ function SpotAssignmentCard({ assignment }: { assignment: SpotAssignment }) {
   return <article id={`spot-assignment-${assignment.assignment_id}`} className={`hc-card spot-assignment-card ${active ? 'is-confirmed' : ''}`} tabIndex={-1}>
     <div className="hc-card-badges">
       <span className={`status-badge spot-status-${assignment.assignment_status}`}>{spotAssignmentStatusLabel(assignment.assignment_status)}</span>
-      {active && <span className="hc-tag">Hoiku Office シフト連携済み</span>}
+      {active && <span className="hc-tag">勤務シフトに登録済み</span>}
     </div>
     <span className="hc-card-overline">{assignment.facility_name}</span>
     <h3>{assignment.title}</h3>

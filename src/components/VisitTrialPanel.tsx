@@ -194,7 +194,7 @@ export function VisitTrialPanel({ jobId, facilityId }: { jobId: string; facility
     {transparencyPanel}
     <section className="visit-trial-panel" aria-label="見学・体験予約">
       <div className="visit-trial-head">
-        <div><span>VISIT / EXPERIENCE</span><strong>応募前に、園を見てみる</strong></div>
+        <div><strong>応募前に、園を見てみる</strong></div>
         <em>受付中</em>
       </div>
 

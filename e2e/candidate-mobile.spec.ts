@@ -122,8 +122,8 @@ for (const width of [375, 390, 393, 430]) {
       const search = page.getByRole('searchbox', { name: 'キーワード検索' });
       await expect(search).toBeVisible();
       expect(await search.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
-      await expect(page.getByRole('button', { name: 'HO実績データあり' })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'HF実績データあり' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '勤務実績データあり' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '会計実績データあり' })).toBeVisible();
       await expect(page.locator('.hc-result-bar')).toContainText('2件');
       await expect(page.locator('.hc-job-card')).toHaveCount(2);
       await expectMinHeight(page, '.hc-job-actions button', 48);
@@ -383,7 +383,7 @@ test.describe('390px golden path and P1 screens', () => {
     await page.goto(`/spot-jobs?assignment_id=${spotAssignment.assignment_id}`);
     const assignment = page.locator(`#spot-assignment-${spotAssignment.assignment_id}`);
     await expect(assignment).toContainText('勤務確定');
-    await expect(assignment).toContainText('Hoiku Office シフト連携済み');
+    await expect(assignment).toContainText('勤務シフトに登録済み');
     const open = page.locator('.spot-job-card');
     await expect(open).toContainText('09:00〜15:00');
     await expect(open).toContainText('¥1,400');
@@ -541,3 +541,101 @@ for (const [width, height] of [[375, 812], [390, 844], [393, 852], [430, 932]] a
     await page.screenshot({ path: `test-results/layout/mobile-${width}.png`, fullPage: false });
   });
 }
+
+/* ---------------------------------------------- user-facing wording contract */
+
+// Job seekers are not developers: no internal product abbreviations, no English
+// developer terms, no statistics notation anywhere they can see or hear it.
+const forbiddenWording: [RegExp, string][] = [
+  [/(^|[^A-Za-z])(HO|HM|HF|HC)(?![A-Za-z])/, 'internal product abbreviation'],
+  [/Verified|Ranking|Match ?Score|\bRPC\b|Contract|Candidate|Facility|External|\bSource\b|\bStatus\b/i, 'developer term'],
+  [/\b(NEXT|APPLICATION|INTERVIEW|COMMUNICATION|VISIT|EXPERIENCE|BEFORE|FOR JOB SEEKERS|YOUR MATCH|COMPARE|SELECT|HISTORY|UPCOMING)\b/, 'English label'],
+  [/\bn\s*=\s*\d/, 'statistics notation'],
+];
+
+const verifiedJob = {
+  ...jobA,
+  verified_workplace: {
+    facility_id: jobA.facility_id, generated_at: '2026-10-01T00:00:00Z', period_start: '2026-04-01', period_end: '2026-09-30', methodology_version: 'v1',
+    verified_metrics: {
+      average_monthly_overtime_hours: { value: 4.2, label: '平均残業時間', unit: '時間/月', source: 'ho_verified', sample_size: 12 },
+      paid_leave_usage_rate_pct: { value: 82, label: '有休取得率', unit: '%', source: 'ho_verified', sample_size: 12 },
+    },
+    verified_metric_count: 2, quality_points: 4, transparency_pct: 80, updated_at: '2026-10-01T00:00:00Z',
+  },
+  verified_finance: {
+    facility_id: jobA.facility_id, generated_at: '2026-10-01T00:00:00Z', period_start: '2025-10-01', period_end: '2026-09-30', methodology_version: 'v1',
+    verified_metrics: {
+      finance_closed_months_12m: { value: 12, label: '月次締め実績', unit: 'か月', source: 'hf_verified', sample_size: 12 },
+    },
+    verified_metric_count: 1, quality_points: 2, transparency_pct: 70, updated_at: '2026-10-01T00:00:00Z',
+  },
+};
+
+async function collectUserText(page: Page) {
+  return page.evaluate(() => {
+    const parts: string[] = [document.title, document.body.innerText];
+    document.querySelectorAll('[aria-label], [title], [placeholder], img[alt]').forEach((el) => {
+      for (const attr of ['aria-label', 'title', 'placeholder', 'alt']) {
+        const value = el.getAttribute(attr);
+        if (value) parts.push(value);
+      }
+    });
+    return parts.join('\n');
+  });
+}
+
+function wordingViolations(text: string) {
+  const found: string[] = [];
+  for (const line of text.split('\n')) {
+    for (const [pattern, kind] of forbiddenWording) {
+      if (pattern.test(line)) found.push(`${kind}: ${line.trim().slice(0, 60)}`);
+    }
+  }
+  return found;
+}
+
+test('no internal abbreviations or developer terms are visible to job seekers', async ({ page }) => {
+  test.setTimeout(120_000);
+  const rows = (jobs: unknown[]) => JSON.stringify(jobs);
+  await mockApi(page, {
+    hc_jobseeker_search_jobs: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: rows(searchRows([verifiedJob as typeof jobA, jobB])) }),
+    hc_jobseeker_list_ranked_jobs: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: rows([verifiedJob, jobB]) }),
+    hc_jobseeker_list_saved_jobs_with_status: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: rows([{ ...verifiedJob, is_open: true, saved_at: '2026-10-01T00:00:00Z' }]) }),
+    hc_jobseeker_get_job_transparency: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ job_id: jobA.id, facility_claims: { overtime: '月5時間程度', take_home_work: 'なし' }, published_faqs: [{ question: '残業はありますか？', answer: '月5時間程度です。' }] }) }),
+    hc_jobseeker_list_notifications: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: '13131313-1313-4313-8313-131313131313', application_id: application.id, notification_type: 'message_received', title: '園からメッセージが届きました', body: '面接日程のご案内です。', link_url: `/applications?application_id=${application.id}`, read_at: null, created_at: '2026-10-02T00:00:00Z' }]) }),
+    hc_jobseeker_list_scouts: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ scout_id: '14141414-1414-4414-8414-141414141414', organization_name: 'テスト法人', facility_name: jobA.facility_name, job_id: jobA.id, job_title: jobA.title, employment_type: '正社員', invitation_message: 'ぜひ一度見学にいらしてください。', scout_status: 'pending', sent_at: '2026-10-01T00:00:00Z', expires_at: '2026-10-31T00:00:00Z', responded_at: null }]) }),
+  });
+
+  const violations: string[] = [];
+  const scan = async (label: string) => {
+    for (const violation of wordingViolations(await collectUserText(page))) violations.push(`${label} → ${violation}`);
+  };
+
+  for (const route of ['/', '/jobs', '/saved', '/applications', '/profile', '/scouts', '/visits', '/spot-jobs', '/matches', `/compare?job_id=${jobA.id}&job_id=${jobB.id}`]) {
+    await page.goto(route);
+    await expect(page.locator('.hc-header-title')).toBeVisible();
+    await expect(page.locator('.hc-skeleton-card')).toHaveCount(0, { timeout: 10_000 });
+    const firstCard = page.locator('.hc-job-card').first();
+    if (await firstCard.count()) {
+      const expand = firstCard.getByRole('button', { name: /詳しく見る|根拠・詳細を見る/ });
+      if (await expand.count()) { await expand.click(); await page.waitForTimeout(400); }
+    }
+    await scan(route);
+  }
+
+  await page.goto(`/applications?application_id=${application.id}`);
+  await expect(page.locator('.application-detail-hero')).toBeVisible();
+  await page.getByRole('button', { name: '園とのメッセージ・書類を開く' }).click();
+  await expect(page.locator('.hc-message').first()).toBeVisible();
+  await scan('application detail + messages');
+
+  await page.locator('.notification-trigger').first().click();
+  await page.waitForTimeout(400);
+  await scan('notifications');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'アカウント' }).click();
+  await scan('account sheet');
+
+  expect([...new Set(violations)]).toEqual([]);
+});

@@ -272,7 +272,6 @@ function LoginScreen() {
         <aside className="hc-auth-story">
           <a className="hc-auth-logo" href={publicUrl}><Brand /></a>
           <div className="hc-auth-story-copy">
-            <span className="hc-auth-eyebrow">FOR JOB SEEKERS</span>
             <h1>自分に合う保育園と、<br />もっと自然につながる。</h1>
             <p>求人の保存、応募、見学・体験勤務まで。あなたの転職活動をHoiku Colorでまとめて管理できます。</p>
             <div className="hc-auth-pills"><span>求人検索</span><span>気になる保存</span><span>応募管理</span></div>

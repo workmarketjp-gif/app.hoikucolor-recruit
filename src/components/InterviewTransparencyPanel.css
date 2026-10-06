@@ -252,6 +252,6 @@
   }
 
   .interview-comparison-row [role="cell"]:nth-child(3)::before {
-    content: 'HO Verified（実績）';
+    content: '勤務実績';
   }
 }
