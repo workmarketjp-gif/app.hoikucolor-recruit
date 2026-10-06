@@ -42,7 +42,7 @@ const checks = [
   ['importer defaults unsafe pages to non-public', importer.includes("status: Normalized['source_status']") && importer.includes('public_republication_allowed: allowed')],
   ['online self-apply status is captured', importer.includes('オンライン自主応募の受付') && importer.includes('online_self_apply_allowed')],
   ['nationwide discovery cycles official childcare classifications', importer.includes("classificationMajor: '029', classificationMinor: '01'") && importer.includes("classificationMajor: '029', classificationMinor: '02'") && importer.includes("classificationMajor: '029', classificationMinor: '03'") && importer.includes("classificationMajor: '030', classificationMinor: '03'") && importer.includes('sKGYBRUIJo1') && importer.includes('sKGYBRUIGe1') && roleCycleMigration.includes('query_cursor')],
-  ['discovery is prefecture paginated and bounded', importer.includes('prefecture_cursor') && importer.includes('DISCOVERY_PAGE_SIZE = 50') && importer.includes('DISCOVERY_CONCURRENCY = 5')],
+  ['discovery is prefecture paginated and bounded', importer.includes('prefecture_cursor') && importer.includes('DISCOVERY_PAGE_SIZE = 30') && importer.includes('DISCOVERY_CONCURRENCY = 5')],
   ['refresh mode re-verifies existing rows', importer.includes('async function refreshUrls()') && importer.includes('body.refresh')],
   ['current parser uses exact section labels', importer.includes("const PARSER_VERSION = 'hellowork-public-v4'") && importer.includes('normalizedLines') && importer.includes('exactIndex')],
 ];
