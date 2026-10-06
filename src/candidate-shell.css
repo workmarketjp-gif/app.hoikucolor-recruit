@@ -127,6 +127,20 @@ body { background: var(--hc-bg); color: var(--hc-ink); font-size: 16px; line-hei
 .hc-sheet-item.is-subtle { background: transparent; justify-content: center; color: var(--hc-muted); }
 
 /* ---------- Common states ---------- */
+/* Legacy form messages (10px in styles.css) on the candidate scale. */
+.hc-shell .form-error, .hc-shell .form-success { display: block; font-size: 15px; line-height: 1.6; }
+/* Legacy panels (Document Vault, scout privacy, preferences) on the candidate scale. */
+.hc-shell .form-section { grid-template-columns: 1fr; gap: 14px; padding: 18px 16px; border-color: var(--hc-line); border-radius: var(--hc-radius); }
+.hc-shell .form-section-head h3 { font-size: 18px; }
+.hc-shell .form-section-head p { font-size: 14px; line-height: 1.7; color: var(--hc-ink-soft); }
+.hc-shell .form-section small { font-size: 13px; line-height: 1.6; }
+.hc-shell .form-section strong { font-size: 15px; }
+.hc-shell .form-section select, .hc-shell .form-section input:not([type="checkbox"]):not([type="radio"]) { min-height: 48px; font-size: 16px; }
+.hc-shell .empty-state h3 { font-size: 17px; }
+.hc-shell .empty-state p { font-size: 14px; line-height: 1.7; }
+/* Legacy badges/tags (8-10px in styles.css) on the candidate scale. */
+.hc-shell .status-badge, .hc-shell .verified-tag, .hc-shell .finance-verified-tag { display: inline-flex; align-items: center; min-height: 24px; padding: 0 10px; border-radius: 12px; font-size: 13px; font-weight: 800; line-height: 1.3; }
+
 .hc-inline-error {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 12px 14px; margin: 8px 0 16px; border-radius: 14px;
