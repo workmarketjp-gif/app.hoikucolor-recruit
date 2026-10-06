@@ -66,6 +66,13 @@ export type Job = {
   published_at: string | null;
   closing_at: string | null;
   spot_break_minutes?: number | null;
+  source_kind?: string | null;
+  source_name?: string | null;
+  source_job_id?: string | null;
+  source_url?: string | null;
+  source_last_verified_at?: string | null;
+  is_external?: boolean;
+  can_apply_direct?: boolean;
   verified_workplace: VerifiedWorkplaceProfile | null;
   verified_finance: VerifiedFinanceProfile | null;
 };
@@ -298,7 +305,7 @@ export async function listJobs(): Promise<Job[]> {
 export async function searchJobs(filters: JobSearchFilters = {}): Promise<JobSearchPage> {
   const cursor = filters.cursor || null;
   const limit = Math.max(1, Math.min(filters.limit || 24, 50));
-  const { data, error } = await client().rpc('hc_jobseeker_search_jobs', {
+  const { data, error } = await client().rpc('hc_jobseeker_search_jobs_v2', {
     p_query: filters.keyword?.trim() || null,
     p_prefecture: filters.prefecture?.trim() || null,
     p_employment_type: filters.employmentType?.trim() || null,
@@ -334,7 +341,7 @@ export async function listFeaturedJobs(limit = 3): Promise<JobSearchPage> {
 }
 
 export async function getJobSearchFacets(): Promise<JobSearchFacets> {
-  const { data, error } = await client().rpc('hc_jobseeker_job_search_facets');
+  const { data, error } = await client().rpc('hc_jobseeker_job_search_facets_v2');
   if (error) throw error;
   const row = (data || [])[0] as { prefectures?: string[] | null; employment_types?: string[] | null } | undefined;
   return {
@@ -350,7 +357,7 @@ export async function listSavedRankedJobs(): Promise<Job[]> {
 }
 
 export async function getRankedJob(jobId: string): Promise<Job | null> {
-  const { data, error } = await client().rpc('hc_jobseeker_get_ranked_job', { p_job_id: jobId });
+  const { data, error } = await client().rpc('hc_jobseeker_get_job_v2', { p_job_id: jobId });
   if (error) throw error;
   const rows = (data || []) as Job[];
   return rows[0] || null;
