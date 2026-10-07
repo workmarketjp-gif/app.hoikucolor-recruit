@@ -92,6 +92,7 @@ function ComparisonRow({
   source,
   values,
 }: {
+  key?: string;
   label: string;
   source: ComparisonSource;
   values: string[];

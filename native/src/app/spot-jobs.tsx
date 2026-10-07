@@ -175,7 +175,7 @@ export default function SpotJobsScreen() {
   );
 }
 
-function AssignmentCard({ assignment, onOpen }: { assignment: SpotAssignment; onOpen: () => void }) {
+function AssignmentCard({ assignment, onOpen }: { key?: string; assignment: SpotAssignment; onOpen: () => void }) {
   const workedMinutes = useMemo(
     () => Math.max(0, timeToMinutes(assignment.end_time) - timeToMinutes(assignment.start_time) - assignment.break_minutes),
     [assignment],
@@ -210,6 +210,7 @@ function SpotCard({
   onApply,
   onOpenApplication,
 }: {
+  key?: string;
   job: SpotJobListing;
   busy: boolean;
   onApply: () => void;
