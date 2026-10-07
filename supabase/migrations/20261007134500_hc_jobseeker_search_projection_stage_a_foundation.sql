@@ -33,6 +33,7 @@ create table if not exists hc_feed_private.jobseeker_search_projection (
   source_last_verified_at timestamptz,
   search_valid_until timestamptz,
   source_content_hash text,
+  source_parser_version text,
   is_external boolean not null,
   can_apply_direct boolean not null,
   ho_verified boolean not null default false,
@@ -87,6 +88,7 @@ select
   null::timestamptz as source_last_verified_at,
   r.closing_at as search_valid_until,
   null::text as source_content_hash,
+  null::text as source_parser_version,
   false as is_external,
   true as can_apply_direct,
   coalesce(w.verified_metric_count, 0) > 0 as ho_verified,
@@ -145,6 +147,7 @@ select
     else least(e.closing_at, e.expires_at)
   end as search_valid_until,
   e.source_payload->>'content_sha256' as source_content_hash,
+  e.source_payload->>'parser_version' as source_parser_version,
   true as is_external,
   false as can_apply_direct,
   false as ho_verified,
