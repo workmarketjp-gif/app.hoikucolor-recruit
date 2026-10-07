@@ -7,7 +7,7 @@ export type VerifiedProfile = {
   verified_metric_count?: number;
   quality_points?: number;
   transparency_pct?: number;
-  verified_metrics?: Record<string, unknown>;
+  verified_metrics?: Record<string, { value?: string | number | null; label?: string; unit?: string; sample_size?: number }>;
 };
 
 export type JobseekerJob = {
