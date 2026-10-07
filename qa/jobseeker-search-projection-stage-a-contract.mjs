@@ -12,7 +12,11 @@ const helpers = fs.readFileSync(
   'supabase/migrations/20261007134700_hc_jobseeker_search_projection_stage_a_helpers.sql',
   'utf8',
 );
-const all = [foundation, sync, helpers].join('\n');
+const narrowV2 = fs.readFileSync(
+  'supabase/migrations/20261007134800_hc_jobseeker_search_projection_stage_a_narrow_v2.sql',
+  'utf8',
+);
+const all = [foundation, sync, helpers, narrowV2].join('\n');
 
 const checks = [
   ['projection is private', foundation.includes('hc_feed_private.jobseeker_search_projection')],
@@ -29,6 +33,10 @@ const checks = [
   ['canonical sync trigger exists', sync.includes('hc_jobseeker_search_projection_sync_canonical')],
   ['HO/HF profile sync triggers exist', sync.includes('sync_workplace') && sync.includes('sync_finance')],
   ['unchanged external refresh has freshness-only fast path', sync.includes('source_content_hash') && sync.includes('source_parser_version') && sync.includes('source_last_verified_at = s.source_last_verified_at')],
+  ['V2 separates narrow keys from page payload', narrowV2.includes('jobseeker_search_keys_v2') && narrowV2.includes('hc_jobseeker_hydrate_search_key_v2')],
+  ['V2 page selects before hydration', narrowV2.indexOf('page_keys as') < narrowV2.indexOf('cross join lateral hc_feed_private.hc_jobseeker_hydrate_search_key_v2')],
+  ['V2 stops syncing the wide V1 table', narrowV2.includes('stop maintaining the wide V1 table') && narrowV2.includes('hc_refresh_jobseeker_search_keys_v2')],
+  ['V2 keeps exact-count work on narrow keys', narrowV2.includes('select count(*)::bigint as total_count') && narrowV2.includes('jobseeker_search_keys_visible_v2')],
   ['Stage A does not replace production search RPC', !all.match(/create\s+or\s+replace\s+function\s+public\.hc_jobseeker_search_jobs_v2/i)],
   ['Stage A does not replace production facets RPC', !all.match(/create\s+or\s+replace\s+function\s+public\.hc_jobseeker_job_search_facets_v2/i)],
 ];
