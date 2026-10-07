@@ -35,6 +35,17 @@ export type JobseekerJob = {
   spot_break_minutes?: number | null;
   verified_workplace: VerifiedProfile | null;
   verified_finance: VerifiedProfile | null;
+  source_kind?: string | null;
+  source_name?: string | null;
+  source_job_id?: string | null;
+  source_url?: string | null;
+  source_last_verified_at?: string | null;
+  is_external?: boolean;
+  can_apply_direct?: boolean;
+};
+
+export type SavedJobseekerJob = JobseekerJob & {
+  is_open: boolean;
 };
 
 type SearchRpcRow = JobseekerJob & {
@@ -126,7 +137,7 @@ export async function searchJobseekerJobs(
 ): Promise<JobSearchPage> {
   const limit = Math.max(1, Math.min(options.limit ?? 20, 50));
   const cursor = options.cursor ?? null;
-  const { data, error } = await client.rpc('hc_jobseeker_search_jobs', {
+  const { data, error } = await client.rpc('hc_jobseeker_search_jobs_v2', {
     p_query: options.keyword?.trim() || null,
     p_prefecture: null,
     p_employment_type: null,
@@ -184,10 +195,17 @@ export async function listSavedJobIds(client: SupabaseClient): Promise<string[]>
   return ids;
 }
 
-export async function listSavedJobs(client: SupabaseClient): Promise<JobseekerJob[]> {
-  const { data, error } = await client.rpc('hc_jobseeker_list_saved_ranked_jobs');
+export async function listSavedJobs(client: SupabaseClient): Promise<SavedJobseekerJob[]> {
+  const { data, error } = await client.rpc('hc_jobseeker_list_saved_jobs_with_status_v2');
   if (error) throw error;
-  if (!Array.isArray(data)) throw new Error('保存した求人を確認できませんでした。');
+  if (!Array.isArray(data)) throw new Error('気になる求人を確認できませんでした。');
+  return data as SavedJobseekerJob[];
+}
+
+export async function listRankedJobs(client: SupabaseClient): Promise<JobseekerJob[]> {
+  const { data, error } = await client.rpc('hc_jobseeker_list_ranked_jobs');
+  if (error) throw error;
+  if (!Array.isArray(data)) throw new Error('求人を確認できませんでした。');
   return data as JobseekerJob[];
 }
 
