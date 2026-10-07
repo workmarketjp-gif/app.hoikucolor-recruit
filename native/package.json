@@ -72,7 +72,8 @@
     "test:push-presentation-session-race": "node qa/native-push-presentation-session-race-contract.mjs",
     "test:clerk-session-identity-atomicity": "node qa/native-clerk-session-identity-atomicity-contract.mjs",
     "test:release-gate-session-atomicity": "node qa/native-release-gate-session-atomicity-contract.mjs",
-    "test:camera-document-capture": "node qa/native-camera-document-capture-contract.mjs"
+    "test:camera-document-capture": "node qa/native-camera-document-capture-contract.mjs",
+    "test:web-parity": "node qa/native-web-parity-contract.mjs"
   },
   "dependencies": {
     "@clerk/expo": "^3.1.12",
