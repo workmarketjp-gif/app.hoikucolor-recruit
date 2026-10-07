@@ -477,7 +477,6 @@ const styles = StyleSheet.create({
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   actionRow: { flexDirection: 'row', gap: 8 },
   status: { fontSize: 14, fontWeight: '800', backgroundColor: '#f2f4f7', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 6, overflow: 'hidden' },
-  itemTitle: { fontSize: 16, fontWeight: '800' },
   quote: { fontSize: 16, lineHeight: 23, backgroundColor: '#f7f8fa', padding: 12, borderRadius: 10 },
   infoBox: { backgroundColor: '#f5f8ff', borderRadius: 12, padding: 12, gap: 4 },
   infoStrong: { fontSize: 16, fontWeight: '900' },
