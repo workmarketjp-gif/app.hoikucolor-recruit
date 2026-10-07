@@ -1,4 +1,5 @@
 import { useUser } from '@clerk/expo';
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { DocumentVaultSection } from '../../components/DocumentVaultSection';
@@ -11,6 +12,10 @@ import {
   upsertJobseekerProfile,
   type JobseekerProfileInput,
 } from '../../lib/jobseekerCoreApi';
+
+const positionOptions = ['保育士', '保育教諭', '幼稚園教諭', '保育補助', '看護師', '栄養士', '調理師', '児童指導員', '子育て支援員'];
+const employmentOptions = ['正社員', '契約社員', 'パート・アルバイト', '派遣'];
+const qualificationOptions = ['保育士', '幼稚園教諭', '保育教諭', '看護師', '准看護師', '栄養士', '管理栄養士', '調理師', '子育て支援員'];
 
 const emptyProfile: JobseekerProfileInput = {
   email: null,
@@ -26,14 +31,6 @@ const emptyProfile: JobseekerProfileInput = {
   self_intro: null,
 };
 
-function listText(values: string[]) {
-  return values.join('、');
-}
-
-function parseList(value: string) {
-  return [...new Set(value.split(/[、,\n]/).map((part) => part.trim()).filter(Boolean))];
-}
-
 function nullable(value: string) {
   const trimmed = value.trim();
   return trimmed || null;
@@ -48,16 +45,49 @@ function Field({ label, value, onChangeText, ...props }: { label: string; value:
   );
 }
 
+function ChipGroup({
+  label,
+  options,
+  values,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  values: string[];
+  onChange: (values: string[]) => void;
+}) {
+  const all = [...new Set([...options, ...values])];
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.chipGrid}>
+        {all.map((option) => {
+          const active = values.includes(option);
+          return (
+            <Pressable
+              key={option}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              style={[styles.chip, active && styles.chipActive]}
+              onPress={() => onChange(active ? values.filter((value) => value !== option) : [...values, option])}
+            >
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>{option}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 export default function ProfileScreen() {
   const { user } = useUser();
+  const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();
   const appLock = useAppLock();
   const notifications = useNotifications();
   const deletion = useAccountDeletion();
   const [profile, setProfile] = useState<JobseekerProfileInput>(emptyProfile);
-  const [desiredPositionsText, setDesiredPositionsText] = useState('');
-  const [desiredEmploymentText, setDesiredEmploymentText] = useState('');
-  const [qualificationsText, setQualificationsText] = useState('');
   const [experienceText, setExperienceText] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -67,9 +97,6 @@ export default function ProfileScreen() {
 
   const hydrate = (next: JobseekerProfileInput) => {
     setProfile(next);
-    setDesiredPositionsText(listText(next.desired_positions));
-    setDesiredEmploymentText(listText(next.desired_employment_types));
-    setQualificationsText(listText(next.qualifications));
     setExperienceText(next.years_of_experience == null ? '' : String(next.years_of_experience));
   };
 
@@ -112,9 +139,9 @@ export default function ProfileScreen() {
         name_kana: nullable(profile.name_kana ?? ''),
         phone: nullable(profile.phone ?? ''),
         prefecture: nullable(profile.prefecture ?? ''),
-        desired_positions: parseList(desiredPositionsText),
-        desired_employment_types: parseList(desiredEmploymentText),
-        qualifications: parseList(qualificationsText),
+        desired_positions: profile.desired_positions,
+        desired_employment_types: profile.desired_employment_types,
+        qualifications: profile.qualifications,
         years_of_experience: years,
         desired_start_date: nullable(profile.desired_start_date ?? ''),
         self_intro: nullable(profile.self_intro ?? ''),
@@ -153,6 +180,15 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+      <View style={styles.menuCard}>
+        <Text style={styles.sectionTitle}>お仕事探しメニュー</Text>
+        <Pressable style={styles.menuButton} onPress={() => router.push('/scouts' as never)}><Text style={styles.menuText}>スカウト</Text><Text style={styles.menuChevron}>›</Text></Pressable>
+        <Pressable style={styles.menuButton} onPress={() => router.push('/visits' as never)}><Text style={styles.menuText}>見学・体験の予約</Text><Text style={styles.menuChevron}>›</Text></Pressable>
+        <Pressable style={styles.menuButton} onPress={() => router.push('/spot-jobs' as never)}><Text style={styles.menuText}>スポット勤務</Text><Text style={styles.menuChevron}>›</Text></Pressable>
+        <Pressable style={styles.menuButton} onPress={() => router.push('/matches' as never)}><Text style={styles.menuText}>マッチ度を見る</Text><Text style={styles.menuChevron}>›</Text></Pressable>
+        <Pressable style={styles.menuButton} onPress={() => router.push('/compare' as never)}><Text style={styles.menuText}>園を比較する</Text><Text style={styles.menuChevron}>›</Text></Pressable>
+      </View>
+
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>基本プロフィール</Text>
         <Field label="氏名" value={profile.name ?? ''} onChangeText={(value) => setProfile((current) => ({ ...current, name: value }))} placeholder="例：保育 花子" />
@@ -160,9 +196,9 @@ export default function ProfileScreen() {
         <Field label="メール" value={profile.email ?? ''} onChangeText={(value) => setProfile((current) => ({ ...current, email: value }))} keyboardType="email-address" autoCapitalize="none" />
         <Field label="電話番号" value={profile.phone ?? ''} onChangeText={(value) => setProfile((current) => ({ ...current, phone: value }))} keyboardType="phone-pad" />
         <Field label="希望都道府県" value={profile.prefecture ?? ''} onChangeText={(value) => setProfile((current) => ({ ...current, prefecture: value }))} placeholder="例：東京都" />
-        <Field label="希望職種（、区切り）" value={desiredPositionsText} onChangeText={setDesiredPositionsText} placeholder="保育士、主任" />
-        <Field label="希望雇用形態（、区切り）" value={desiredEmploymentText} onChangeText={setDesiredEmploymentText} placeholder="正社員、パート" />
-        <Field label="資格（、区切り）" value={qualificationsText} onChangeText={setQualificationsText} placeholder="保育士、幼稚園教諭" />
+        <ChipGroup label="希望職種" options={positionOptions} values={profile.desired_positions} onChange={(values) => setProfile((current) => ({ ...current, desired_positions: values }))} />
+        <ChipGroup label="希望雇用形態" options={employmentOptions} values={profile.desired_employment_types} onChange={(values) => setProfile((current) => ({ ...current, desired_employment_types: values }))} />
+        <ChipGroup label="資格" options={qualificationOptions} values={profile.qualifications} onChange={(values) => setProfile((current) => ({ ...current, qualifications: values }))} />
         <Field label="保育経験年数" value={experienceText} onChangeText={setExperienceText} keyboardType="numeric" placeholder="例：5" />
         <Field label="希望入職日" value={profile.desired_start_date ?? ''} onChangeText={(value) => setProfile((current) => ({ ...current, desired_start_date: value }))} placeholder="YYYY-MM-DD" />
         <Field label="自己紹介" value={profile.self_intro ?? ''} onChangeText={(value) => setProfile((current) => ({ ...current, self_intro: value }))} multiline placeholder="経験や大切にしている保育観など" />
@@ -224,12 +260,21 @@ const styles = StyleSheet.create({
   page: { padding: 16, gap: 14, backgroundColor: '#f7f8fa' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   card: { backgroundColor: '#fff', borderRadius: 18, padding: 18, gap: 12 },
+  menuCard: { backgroundColor: '#fff', borderRadius: 18, padding: 16, gap: 2 },
+  menuButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#eef0f2', paddingHorizontal: 4 },
+  menuText: { flex: 1, fontSize: 16, fontWeight: '800' },
+  menuChevron: { fontSize: 24, color: '#8a909b' },
+  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { minHeight: 48, justifyContent: 'center', borderWidth: 1, borderColor: '#d7dce2', borderRadius: 12, paddingHorizontal: 13, paddingVertical: 8, backgroundColor: '#fff' },
+  chipActive: { borderColor: '#e8445a', backgroundColor: '#fff0f3' },
+  chipText: { fontSize: 15, fontWeight: '700' },
+  chipTextActive: { color: '#b4233e' },
   sectionTitle: { fontSize: 19, fontWeight: '800' },
   field: { gap: 6 },
-  label: { fontSize: 13, fontWeight: '700', color: '#47505b' },
+  label: { fontSize: 14, fontWeight: '700', color: '#47505b' },
   input: { borderWidth: 1, borderColor: '#d7dce2', borderRadius: 11, paddingHorizontal: 13, paddingVertical: 12, fontSize: 16, minHeight: 46 },
   primaryButton: { minHeight: 48, backgroundColor: '#191c20', borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
-  primaryButtonText: { color: '#fff', fontWeight: '800' },
+  primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   secondaryButton: { minHeight: 46, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
   secondaryButtonText: { fontWeight: '800' },
   dangerButton: { minHeight: 46, borderWidth: 1, borderColor: '#e6a4a0', borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },

@@ -22,7 +22,7 @@ export default function HomeScreen() {
   return (
     <ScrollView contentContainerStyle={styles.page}>
       <View>
-        <Text style={styles.eyebrow}>JOBSEEKER</Text>
+        <Text style={styles.eyebrow}>保育のお仕事探し</Text>
         <Text style={styles.title}>{name}さん</Text>
         <Text style={styles.subtle}>求人探しから応募後の連絡まで、ここから進められます。</Text>
       </View>
@@ -52,6 +52,17 @@ export default function HomeScreen() {
         </Pressable>
         <Pressable style={styles.secondaryButton} onPress={() => router.push('/(tabs)/saved')}>
           <Text style={styles.secondaryButtonText}>保存した求人を見る</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>あなたに合う園を探す</Text>
+        <Text style={styles.subtle}>希望条件や保育観から探したり、1日単位のスポット勤務を確認できます。</Text>
+        <Pressable style={styles.secondaryButton} onPress={() => router.push('/matches' as never)}>
+          <Text style={styles.secondaryButtonText}>マッチ度順で見る</Text>
+        </Pressable>
+        <Pressable style={styles.secondaryButton} onPress={() => router.push('/spot-jobs' as never)}>
+          <Text style={styles.secondaryButtonText}>スポット勤務を見る</Text>
         </Pressable>
       </View>
 

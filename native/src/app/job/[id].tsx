@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { getJobseekerProfile, type JobseekerJob, type JobseekerProfile } from '../../lib/jobseekerCoreApi';
 import { getCandidateJob, listApplications, submitApplication } from '../../lib/applicationJourneyApi';
@@ -10,10 +10,16 @@ function firstParam(value: string | string[] | undefined) {
 }
 
 function salary(job: JobseekerJob) {
-  if (job.salary_note) return job.salary_note;
-  if (job.salary_min != null && job.salary_max != null) return `${job.salary_min.toLocaleString()}〜${job.salary_max.toLocaleString()}円`;
-  if (job.salary_min != null) return `${job.salary_min.toLocaleString()}円〜`;
-  return '給与は求人情報をご確認ください';
+  const prefix = job.salary_type === 'hourly' ? '時給' : job.salary_type === 'annual' ? '年収' : '月給';
+  const range = job.salary_min == null
+    ? null
+    : job.salary_max == null
+      ? `${prefix} ${job.salary_min.toLocaleString('ja-JP')}円〜`
+      : job.salary_max === job.salary_min
+        ? `${prefix} ${job.salary_min.toLocaleString('ja-JP')}円`
+        : `${prefix} ${job.salary_min.toLocaleString('ja-JP')}〜${job.salary_max.toLocaleString('ja-JP')}円`;
+  if (job.is_external && range) return range;
+  return job.salary_note || range || '給与は求人情報をご確認ください';
 }
 
 export default function JobDetailScreen() {
@@ -133,7 +139,17 @@ export default function JobDetailScreen() {
         <Text style={styles.body}>待遇・福利厚生: {job.benefits || '未掲載'}</Text>
       </View>
 
-      {existingApplicationId ? (
+      {job.is_external ? (
+        <View style={styles.externalCard}>
+          <Text style={styles.sectionTitle}>{job.source_name || '外部求人'}</Text>
+          <Text style={styles.subtle}>この求人はHoiku Colorから直接応募しません。掲載元で最新情報を確認して手続きを進めてください。</Text>
+          {job.source_url ? (
+            <Pressable style={styles.primary} onPress={() => void Linking.openURL(job.source_url!)}>
+              <Text style={styles.primaryText}>掲載元で詳細を見る</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : existingApplicationId ? (
         <Pressable style={styles.primary} onPress={() => router.push(`/application/${existingApplicationId}` as never)}>
           <Text style={styles.primaryText}>応募内容を確認</Text>
         </Pressable>
@@ -143,15 +159,17 @@ export default function JobDetailScreen() {
         </Pressable>
       )}
 
-      {!profile?.name?.trim() && !existingApplicationId ? (
+      {!job.is_external && !profile?.name?.trim() && !existingApplicationId ? (
         <Pressable style={styles.secondary} onPress={() => router.push('/(tabs)/profile')}>
           <Text style={styles.secondaryText}>プロフィールを登録する</Text>
         </Pressable>
       ) : null}
 
-      <Pressable style={styles.secondary} onPress={() => router.push(`/visits?jobId=${encodeURIComponent(job.id)}` as never)}>
-        <Text style={styles.secondaryText}>見学・体験を予約</Text>
-      </Pressable>
+      {!job.is_external ? (
+        <Pressable style={styles.secondary} onPress={() => router.push(`/visits?jobId=${encodeURIComponent(job.id)}` as never)}>
+          <Text style={styles.secondaryText}>見学・体験を予約</Text>
+        </Pressable>
+      ) : null}
       <Pressable style={styles.secondary} onPress={() => router.push('/(tabs)/jobs')}>
         <Text style={styles.secondaryText}>求人一覧へ戻る</Text>
       </Pressable>
@@ -167,6 +185,7 @@ const styles = StyleSheet.create({
   subtle: { color: '#606873', lineHeight: 20 },
   salary: { fontSize: 19, fontWeight: '900' },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 8 },
+  externalCard: { backgroundColor: '#fff8e6', borderRadius: 16, padding: 16, gap: 10 },
   sectionTitle: { fontSize: 18, fontWeight: '900' },
   body: { lineHeight: 22 },
   primary: { minHeight: 50, borderRadius: 13, backgroundColor: '#191c20', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },

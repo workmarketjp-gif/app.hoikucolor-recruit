@@ -14,13 +14,13 @@ export default function CandidateTabsLayout() {
   if (!isSignedIn) return <Redirect href="/(auth)/sign-in" />;
 
   return (
-    <Tabs screenOptions={{ headerShown: true, tabBarHideOnKeyboard: true }}>
+    <Tabs screenOptions={{ headerShown: true, tabBarHideOnKeyboard: true, tabBarLabelStyle: { fontSize: 12, fontWeight: '700' } }}>
       <Tabs.Screen name="home" options={{ title: 'ホーム', headerTitle: 'Hoiku Color' }} />
       <Tabs.Screen name="jobs" options={{ title: '求人', headerTitle: '求人を探す' }} />
-      <Tabs.Screen name="applications" options={{ title: '応募', headerTitle: '応募管理' }} />
-      <Tabs.Screen name="saved" options={{ title: '保存', headerTitle: '保存した求人' }} />
-      <Tabs.Screen name="notifications" options={{ title: '通知', headerTitle: '通知' }} />
-      <Tabs.Screen name="profile" options={{ title: 'マイページ', headerTitle: 'プロフィール・書類' }} />
+      <Tabs.Screen name="saved" options={{ title: '気になる', headerTitle: '気になる' }} />
+      <Tabs.Screen name="applications" options={{ title: '応募', headerTitle: '応募' }} />
+      <Tabs.Screen name="profile" options={{ title: 'マイページ', headerTitle: 'マイページ' }} />
+      <Tabs.Screen name="notifications" options={{ href: null, title: '通知', headerTitle: '通知' }} />
     </Tabs>
   );
 }
