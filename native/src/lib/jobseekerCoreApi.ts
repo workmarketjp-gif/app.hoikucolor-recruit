@@ -69,6 +69,11 @@ export type JobSearchPage = {
   nextCursor: JobSearchCursor | null;
 };
 
+export type JobSearchFacets = {
+  prefectures: string[];
+  employmentTypes: string[];
+};
+
 export type JobseekerProfileInput = {
   email: string | null;
   name: string | null;
@@ -133,16 +138,24 @@ function profileFromResponse(value: unknown): JobseekerProfile {
 
 export async function searchJobseekerJobs(
   client: SupabaseClient,
-  options: { keyword?: string; limit?: number; cursor?: JobSearchCursor | null } = {},
+  options: {
+    keyword?: string;
+    prefecture?: string;
+    employmentType?: string;
+    hoVerifiedOnly?: boolean;
+    hfVerifiedOnly?: boolean;
+    limit?: number;
+    cursor?: JobSearchCursor | null;
+  } = {},
 ): Promise<JobSearchPage> {
   const limit = Math.max(1, Math.min(options.limit ?? 20, 50));
   const cursor = options.cursor ?? null;
   const { data, error } = await client.rpc('hc_jobseeker_search_jobs_v2', {
     p_query: options.keyword?.trim() || null,
-    p_prefecture: null,
-    p_employment_type: null,
-    p_ho_verified: false,
-    p_hf_verified: false,
+    p_prefecture: options.prefecture?.trim() || null,
+    p_employment_type: options.employmentType?.trim() || null,
+    p_ho_verified: Boolean(options.hoVerifiedOnly),
+    p_hf_verified: Boolean(options.hfVerifiedOnly),
     p_limit: limit,
     p_after_quality: cursor?.quality ?? null,
     p_after_transparency: cursor?.transparency ?? null,
@@ -177,6 +190,16 @@ export async function searchJobseekerJobs(
             id: last.id,
           }
         : null,
+  };
+}
+
+export async function getJobSearchFacets(client: SupabaseClient): Promise<JobSearchFacets> {
+  const { data, error } = await client.rpc('hc_jobseeker_job_search_facets_v2');
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : null) as { prefectures?: unknown; employment_types?: unknown } | null;
+  return {
+    prefectures: Array.isArray(row?.prefectures) ? row.prefectures.filter((value): value is string => typeof value === 'string') : [],
+    employmentTypes: Array.isArray(row?.employment_types) ? row.employment_types.filter((value): value is string => typeof value === 'string') : [],
   };
 }
 
