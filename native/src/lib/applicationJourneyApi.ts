@@ -177,7 +177,7 @@ export async function listApplicationMessages(
 
 export async function getCandidateJob(client: SupabaseClient, jobId: string): Promise<JobseekerJob | null> {
   assertUuid(jobId, '求人ID');
-  const { data, error } = await client.rpc('hc_jobseeker_get_ranked_job', { p_job_id: jobId });
+  const { data, error } = await client.rpc('hc_jobseeker_get_job_v2', { p_job_id: jobId });
   if (error) throw error;
   const rows = Array.isArray(data) ? data : [];
   return (rows[0] as JobseekerJob | undefined) ?? null;
