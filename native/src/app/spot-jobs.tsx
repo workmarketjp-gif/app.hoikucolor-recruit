@@ -241,8 +241,7 @@ function SpotCard({
       {job.age_group_or_class ? <Text style={styles.body}>担当 {job.age_group_or_class}</Text> : null}
       {job.required_qualification ? <Text style={styles.body}>資格 {job.required_qualification}</Text> : null}
       {job.description ? <Text style={styles.body}>{job.description}</Text> : null}
-      {job.facility_message ? <Text style={styles.quote}>園からのメッセージ{'
-'}{job.facility_message}</Text> : null}
+      {job.facility_message ? <Text style={styles.quote}>園からのメッセージ{`\n`}{job.facility_message}</Text> : null}
       {applied ? (
         <>
           <Text style={styles.success}>応募済み{job.application_status ? `・${applicationStatusLabel(job.application_status)}` : ''}</Text>
