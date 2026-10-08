@@ -38,3 +38,4 @@ declare module '@clerk/expo/native' { export const AuthView:any; }
 
 declare module 'expo-auth-session' { export const makeRedirectUri:any; }
 declare module 'expo-web-browser' { export const maybeCompleteAuthSession:any; }
+declare module 'react-native-safe-area-context' { export const SafeAreaView:any; }
