@@ -1,10 +1,13 @@
 declare const process: { env: Record<string, string | undefined> };
+declare function require(path: string): any;
 declare module 'react' {
   export function useState<T>(initial: T | (() => T)): [T, (value: T | ((current: T) => T)) => void];
   export function useEffect(effect: () => void | (() => void), deps?: unknown[]): void;
   export function useMemo<T>(factory: () => T, deps: unknown[]): T;
   export function useRef<T>(initial: T): { current: T };
   export function useCallback<T extends (...args: any[]) => any>(fn: T, deps: unknown[]): T;
+  export function lazy(factory: () => Promise<any>): any;
+  export const Suspense: any;
   export interface Context<T> { __type?: T; Provider: any }
   export function useContext<T>(ctx: Context<T>): T;
   export function createContext<T>(value: T): Context<T>;
@@ -28,7 +31,7 @@ declare module 'expo-document-picker' { export type DocumentPickerAsset = { uri:
 declare module 'expo-file-system' { export const Paths:{document:any; cache:any}; export class File { constructor(...parts:any[]); exists:boolean; create(options?:any):void; write(content:string|Uint8Array):void; text():Promise<string>; arrayBuffer():Promise<ArrayBuffer>; delete():void; } }
 declare module 'expo-screen-capture' { export const isAvailableAsync:any; export const preventScreenCaptureAsync:any; export const allowScreenCaptureAsync:any; export const enableAppSwitcherProtectionAsync:any; export const disableAppSwitcherProtectionAsync:any; }
 declare module 'expo-local-authentication' { export const AuthenticationType:any; export const SecurityLevel:any; export const hasHardwareAsync:any; export const isEnrolledAsync:any; export const getEnrolledLevelAsync:any; export const supportedAuthenticationTypesAsync:any; export const authenticateAsync:any; export const cancelAuthenticate:any; }
-declare module 'react-native' { export const ActivityIndicator:any; export const Alert:any; export const Button:any; export const FlatList:any; export const Pressable:any; export const ScrollView:any; export const StyleSheet:any; export const SafeAreaView:any; export const Switch:any; export const Text:any; export const TextInput:any; export const View:any; export const Platform:{OS:string}; export const Linking:any; export const AppState:any; export type AppStateStatus = 'active'|'background'|'inactive'|'unknown'|'extension'; export type LayoutChangeEvent = any; }
+declare module 'react-native' { export const ActivityIndicator:any; export const Alert:any; export const Button:any; export const Image:any; export const FlatList:any; export const Pressable:any; export const ScrollView:any; export const StyleSheet:any; export const SafeAreaView:any; export const Switch:any; export const Text:any; export const TextInput:any; export const View:any; export const Platform:{OS:string}; export const Linking:any; export const AppState:any; export type AppStateStatus = 'active'|'background'|'inactive'|'unknown'|'extension'; export type LayoutChangeEvent = any; }
 declare module 'react-native-url-polyfill/auto';
 
 declare module '@clerk/expo/native' { export const AuthView:any; }

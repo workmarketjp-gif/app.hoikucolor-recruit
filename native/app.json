@@ -46,7 +46,11 @@
     },
     "android": {
       "package": "jp.hoikucolor.jobseeker",
-      "versionCode": 2
+      "versionCode": 3,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/hoiku-color-mark.png",
+        "backgroundColor": "#FFF5F7"
+      }
     },
     "extra": {
       "eas": {
@@ -54,6 +58,7 @@
       },
       "router": {}
     },
-    "owner": "workmarketjp"
+    "owner": "workmarketjp",
+    "icon": "./assets/hoiku-color-mark.png"
   }
 }
