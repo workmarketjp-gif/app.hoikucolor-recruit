@@ -79,6 +79,8 @@ jobs:
       - name: Guard Native root runtime boundary
         working-directory: native
         run: node qa/native-root-runtime-contract.mjs
+      - name: Guard Native authentication parity with Production Web
+        run: node native/qa/native-auth-web-parity-contract.mjs
       - name: Guard Native CA-01 runnable shell
         working-directory: native
         run: node qa/native-ca01-shell-contract.mjs
