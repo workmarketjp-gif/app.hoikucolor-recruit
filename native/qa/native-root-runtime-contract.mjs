@@ -3,6 +3,8 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 const layout = fs.readFileSync(path.join(root, 'src/app/_layout.tsx'), 'utf8');
+const privateRuntime = fs.readFileSync(path.join(root, 'src/components/PrivateRuntime.tsx'), 'utf8');
+const clerkConfig = fs.readFileSync(path.join(root, 'src/lib/clerkConfig.ts'), 'utf8');
 const deletionContext = fs.readFileSync(path.join(root, 'src/contexts/AccountDeletionContext.tsx'), 'utf8');
 const deletionGate = fs.readFileSync(path.join(root, 'src/components/AccountDeletionGate.tsx'), 'utf8');
 
@@ -11,7 +13,7 @@ const check = (label, ok) => checks.push([label, Boolean(ok)]);
 const ordered = (...needles) => {
   let cursor = -1;
   return needles.every((needle) => {
-    const index = layout.indexOf(needle, cursor + 1);
+    const index = privateRuntime.indexOf(needle, cursor + 1);
     if (index < 0) return false;
     cursor = index;
     return true;
@@ -20,11 +22,14 @@ const ordered = (...needles) => {
 
 check('Expo Router root is materialized under src/app', layout.includes('export default function RootLayout'));
 check('Clerk root uses persisted Expo token cache', layout.includes('<ClerkProvider') && layout.includes('tokenCache={tokenCache}'));
-check('missing Clerk configuration fails closed', layout.includes('clerk-config-missing') && layout.includes('EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY'));
+check('Clerk config is loaded through the canonical Hoiku Color config endpoint with static fallback', clerkConfig.includes('get-hoiku-color-clerk-public-key') && clerkConfig.includes('EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY'));
+check('missing Clerk configuration fails closed', layout.includes('clerk-config-missing'));
+check('Clerk initialization has a bounded wait and retry state', layout.includes('AUTH_LOAD_TIMEOUT_MS') && layout.includes('clerk-load-timeout') && layout.includes('再確認'));
+check('private providers are lazy-loaded after Clerk becomes active', layout.includes("lazy(() =>") && layout.includes("import('../components/PrivateRuntime')"));
 check('picker/camera process-death cache is reconciled before route runtime', layout.includes('<DocumentPickerCacheBoundary>') && layout.indexOf('<DocumentPickerCacheBoundary>') < layout.indexOf('<AuthScopedRuntime'));
 check('signed-out runtime excludes Candidate-private providers', layout.includes('if (!auth.isSignedIn) return <RouterStack />;'));
 check('private runtime requires an active exact Clerk session', layout.includes('if (!auth.active || !auth.sessionId)'));
-check('candidate runtime remounts on exact session handoff', layout.includes('<SessionFreshnessProvider key={auth.sessionId}>'));
+check('candidate runtime remounts on exact session handoff', layout.includes('<PrivateRuntime sessionId={auth.sessionId}>') && privateRuntime.includes('<SessionFreshnessProvider key={sessionId}>'));
 check(
   'provider order enforces session then release compatibility then App Lock then deletion then notification',
   ordered(
@@ -39,7 +44,7 @@ check(
   ),
 );
 check('release gate precedes Native-only account deletion RPC lifecycle',
-  layout.indexOf('<ReleaseCompatibilityBoundary>') < layout.indexOf('<AccountDeletionProvider>'));
+  privateRuntime.indexOf('<ReleaseCompatibilityBoundary>') < privateRuntime.indexOf('<AccountDeletionProvider>'));
 
 check('deletion state reuses canonical API helpers', deletionContext.includes('getAccountDeletionRequest') && deletionContext.includes('requestAccountDeletion') && deletionContext.includes('cancelAccountDeletion'));
 check('deletion status read/cancel work while private business gate is closed', deletionContext.includes('const pinned = await pinCandidateSession()'));

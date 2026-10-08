@@ -84,6 +84,13 @@ export function validateReleaseConfig({ rootDir, env, mode = 'production' }) {
   check(/^\d+(?:\.\d+){2}$/.test(expo.version ?? ''), 'APP_VERSION', 'App version must be x.y.z.');
   check(/^\d+$/.test(String(expo.ios?.buildNumber ?? '')) && Number(expo.ios?.buildNumber) > 0, 'IOS_BUILD_NUMBER', 'iOS build number must be a positive integer string.');
   check(Number.isInteger(expo.android?.versionCode) && expo.android.versionCode > 0, 'ANDROID_VERSION_CODE', 'Android versionCode must be a positive integer.');
+  check(expo.icon === './assets/hoiku-color-mark.png', 'APP_ICON', 'Native app icon must use the canonical Hoiku Color mark.');
+  check(
+    expo.android?.adaptiveIcon?.foregroundImage === './assets/hoiku-color-mark.png'
+      && expo.android?.adaptiveIcon?.backgroundColor === '#FFF5F7',
+    'ANDROID_ADAPTIVE_ICON',
+    'Android adaptive icon must use the Hoiku Color mark and branded background.',
+  );
 
   const plugins = expo.plugins ?? [];
   for (const required of REQUIRED_PLUGINS) {
