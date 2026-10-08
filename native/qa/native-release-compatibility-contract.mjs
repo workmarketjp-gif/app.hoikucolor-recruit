@@ -3,6 +3,7 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 const layout = fs.readFileSync(path.join(root, 'src/app/_layout.tsx'), 'utf8');
+const privateRuntime = fs.readFileSync(path.join(root, 'src/components/PrivateRuntime.tsx'), 'utf8');
 const context = fs.readFileSync(path.join(root, 'src/contexts/ReleaseCompatibilityContext.tsx'), 'utf8');
 const api = fs.readFileSync(path.join(root, 'src/lib/mobileReleaseApi.ts'), 'utf8');
 const identity = fs.readFileSync(path.join(root, 'src/lib/appIdentity.ts'), 'utf8');
@@ -13,7 +14,7 @@ const check = (label, ok) => checks.push([label, Boolean(ok)]);
 const ordered = (...needles) => {
   let cursor = -1;
   return needles.every((needle) => {
-    const index = layout.indexOf(needle, cursor + 1);
+    const index = privateRuntime.indexOf(needle, cursor + 1);
     if (index < 0) return false;
     cursor = index;
     return true;
