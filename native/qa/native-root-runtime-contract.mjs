@@ -33,14 +33,14 @@ check('candidate runtime remounts on exact session handoff', layout.includes('<P
 check(
   'provider order enforces session then release compatibility then App Lock then deletion then notification',
   ordered(
-    '<SessionFreshnessProvider key={auth.sessionId}>',
+    '<SessionFreshnessProvider key={sessionId}>',
     '<ReleaseCompatibilityProvider>',
     '<ReleaseCompatibilityBoundary>',
     '<AppLockProvider>',
     '<AccountDeletionProvider>',
     '<AccountDeletionBoundary>',
     '<NotificationProvider>',
-    '<RouterStack />',
+    '{children}',
   ),
 );
 check('release gate precedes Native-only account deletion RPC lifecycle',
