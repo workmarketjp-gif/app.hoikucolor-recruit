@@ -38,7 +38,7 @@ check('unconfigured backend policy is fail-closed at source',
   migration.includes("'APP_RELEASE_POLICY_NOT_CONFIGURED'::text") && migration.includes('select false,false,false,false,false'));
 check('release gate runs before every Native-only private backend provider',
   ordered(
-    '<SessionFreshnessProvider key={auth.sessionId}>',
+    '<SessionFreshnessProvider key={sessionId}>',
     '<ReleaseCompatibilityProvider>',
     '<ReleaseCompatibilityBoundary>',
     '<AppLockProvider>',
