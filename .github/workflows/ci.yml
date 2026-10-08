@@ -79,6 +79,8 @@ jobs:
       - name: Guard Native root runtime boundary
         working-directory: native
         run: node qa/native-root-runtime-contract.mjs
+      - name: Guard Native authentication parity with Production Web
+        run: node native/qa/native-auth-web-parity-contract.mjs
       - name: Guard Native CA-01 runnable shell
         working-directory: native
         run: node qa/native-ca01-shell-contract.mjs
@@ -98,3 +100,22 @@ jobs:
       - name: Typecheck materialized Native push client core
         run: npx tsc -p native/qa/tsconfig.push-core.json
       - run: npm run build
+
+  native-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+      - name: Install locked Native dependencies
+        run: npm ci
+        working-directory: native
+      - name: Typecheck against the real Native SDK
+        run: npm run typecheck
+        working-directory: native
+      - name: Bundle Android including authentication browser dependencies
+        run: npx expo export --platform android --output-dir /tmp/hc-native-android
+        working-directory: native

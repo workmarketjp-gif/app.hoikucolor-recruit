@@ -26,6 +26,7 @@ for (const route of routes) check(`route exists: ${route}`, exists(route));
 
 const signIn = read('src/app/(auth)/sign-in.tsx');
 const signUp = read('src/app/(auth)/sign-up.tsx');
+const auth = read('src/components/AuthScreen.tsx');
 const authLayout = read('src/app/(auth)/_layout.tsx');
 const tabsLayout = read('src/app/(tabs)/_layout.tsx');
 const jobs = read('src/app/(tabs)/jobs.tsx');
@@ -33,14 +34,12 @@ const compare = read('src/app/compare.tsx');
 const profile = read('src/app/(tabs)/profile.tsx');
 const api = read('src/lib/jobseekerCoreApi.ts');
 
-check('Core 3 password sign-in is used', signIn.includes('signIn.password({'));
-check('Core 3 sign-in finalize is used', signIn.includes('signIn.finalize()'));
-check('MFA status is handled', signIn.includes("needs_second_factor") && signIn.includes('verifyTOTP'));
-check('client trust status is handled', signIn.includes("needs_client_trust") && signIn.includes('verifyEmailCode'));
-check('legacy Clerk auth APIs are absent', !signIn.includes('setActive(') && !signIn.includes('@clerk/expo/legacy') && !signUp.includes('setActive(') && !signUp.includes('@clerk/expo/legacy'));
-check('sign-up sends email verification code', signUp.includes('signUp.verifications.sendEmailCode()'));
-check('sign-up verifies email code', signUp.includes('signUp.verifications.verifyEmailCode'));
-check('sign-up finalizes active session', signUp.includes('signUp.finalize()'));
+check('auth routes share the canonical screen', signIn.includes('<AuthScreen />') && signUp.includes('<AuthScreen isSignup />'));
+check('email code replaces password auth', auth.includes('signIn.emailCode.sendCode()') && auth.includes('signIn.emailCode.verifyCode') && !auth.includes('signIn.password('));
+check('verified new accounts transfer to sign-up', auth.includes('sign_up_if_missing_transfer') && auth.includes('signUp.create({ transfer: true })') && auth.includes('signUp.finalize()'));
+check('existing accounts finalize', auth.includes('signIn.finalize()'));
+check('MFA and client trust retained', auth.includes('needs_second_factor') && auth.includes('needs_client_trust') && auth.includes('verifyTOTP') && auth.includes('verifyEmailCode'));
+check('Google uses the app scheme', auth.includes("strategy: 'oauth_google'") && auth.includes("scheme: 'hoikucolor'"));
 check('signed-in users cannot remain in auth group', authLayout.includes('if (isSignedIn) return <Redirect href="/(tabs)/home"'));
 check('signed-out users cannot enter candidate tabs', tabsLayout.includes('if (!isSignedIn) return <Redirect href="/(auth)/sign-in"'));
 check('candidate business screens use exact-session pinning', jobs.includes('pinCandidateAction') && profile.includes('pinCandidateAction'));

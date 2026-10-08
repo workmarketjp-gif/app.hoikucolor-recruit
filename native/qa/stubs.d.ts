@@ -16,7 +16,7 @@ declare module 'react' {
   export type ComponentProps<T> = any;
 }
 declare module 'react/jsx-runtime' { export const jsx:any; export const jsxs:any; export const Fragment:any; }
-declare module '@clerk/expo' { export const ClerkProvider:any; export const useAuth:any; export const useSignIn:any; export const useSignUp:any; export const useClerk:any; export const useUser:any; export const useSession:any; }
+declare module '@clerk/expo' { export const ClerkProvider:any; export const useAuth:any; export const useSignIn:any; export const useSSO:any; export const useSignUp:any; export const useClerk:any; export const useUser:any; export const useSession:any; }
 declare module '@clerk/expo/token-cache' { export const tokenCache:any; }
 declare module '@supabase/supabase-js' { export type SupabaseClient = any; export const createClient:any; }
 declare module 'expo-router' { export const Stack:any; export const Tabs:any; export const Redirect:any; export const useRouter:any; export function useLocalSearchParams<T>(): T; }
@@ -31,7 +31,11 @@ declare module 'expo-document-picker' { export type DocumentPickerAsset = { uri:
 declare module 'expo-file-system' { export const Paths:{document:any; cache:any}; export class File { constructor(...parts:any[]); exists:boolean; create(options?:any):void; write(content:string|Uint8Array):void; text():Promise<string>; arrayBuffer():Promise<ArrayBuffer>; delete():void; } }
 declare module 'expo-screen-capture' { export const isAvailableAsync:any; export const preventScreenCaptureAsync:any; export const allowScreenCaptureAsync:any; export const enableAppSwitcherProtectionAsync:any; export const disableAppSwitcherProtectionAsync:any; }
 declare module 'expo-local-authentication' { export const AuthenticationType:any; export const SecurityLevel:any; export const hasHardwareAsync:any; export const isEnrolledAsync:any; export const getEnrolledLevelAsync:any; export const supportedAuthenticationTypesAsync:any; export const authenticateAsync:any; export const cancelAuthenticate:any; }
-declare module 'react-native' { export const ActivityIndicator:any; export const Alert:any; export const Button:any; export const Image:any; export const FlatList:any; export const Pressable:any; export const ScrollView:any; export const StyleSheet:any; export const SafeAreaView:any; export const Switch:any; export const Text:any; export const TextInput:any; export const View:any; export const Platform:{OS:string}; export const Linking:any; export const AppState:any; export type AppStateStatus = 'active'|'background'|'inactive'|'unknown'|'extension'; export type LayoutChangeEvent = any; }
+declare module 'react-native' { export const useWindowDimensions:any; export const ActivityIndicator:any; export const Alert:any; export const Button:any; export const Image:any; export const FlatList:any; export const Pressable:any; export const ScrollView:any; export const StyleSheet:any; export const SafeAreaView:any; export const KeyboardAvoidingView:any; export const Switch:any; export const Text:any; export const TextInput:any; export const View:any; export const Platform:{OS:string}; export const Linking:any; export const AppState:any; export type AppStateStatus = 'active'|'background'|'inactive'|'unknown'|'extension'; export type LayoutChangeEvent = any; }
 declare module 'react-native-url-polyfill/auto';
 
 declare module '@clerk/expo/native' { export const AuthView:any; }
+
+declare module 'expo-auth-session' { export const makeRedirectUri:any; }
+declare module 'expo-web-browser' { export const maybeCompleteAuthSession:any; }
+declare module 'react-native-safe-area-context' { export const SafeAreaView:any; }
