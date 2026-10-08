@@ -100,3 +100,22 @@ jobs:
       - name: Typecheck materialized Native push client core
         run: npx tsc -p native/qa/tsconfig.push-core.json
       - run: npm run build
+
+  native-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+      - name: Install locked Native dependencies
+        run: npm ci
+        working-directory: native
+      - name: Typecheck against the real Native SDK
+        run: npm run typecheck
+        working-directory: native
+      - name: Bundle Android including authentication browser dependencies
+        run: npx expo export --platform android --output-dir /tmp/hc-native-android
+        working-directory: native
