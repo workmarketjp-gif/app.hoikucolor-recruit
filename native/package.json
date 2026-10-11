@@ -20,6 +20,7 @@
     "test:release-config-preflight": "node qa/native-release-config-preflight-contract.mjs",
     "release:preflight": "node qa/native-release-config-preflight.mjs --mode production",
     "eas-build-pre-install": "node qa/native-release-config-preflight.mjs",
+    "eas-build-post-install": "node qa/native-icon-config-contract.mjs",
     "test:push-session-quarantine": "node qa/native-push-session-quarantine-contract.mjs",
     "test:durable-mutation-recovery": "node qa/native-durable-mutation-recovery-contract.mjs",
     "test:push-installation-rebind": "node qa/native-push-installation-rebind-contract.mjs",

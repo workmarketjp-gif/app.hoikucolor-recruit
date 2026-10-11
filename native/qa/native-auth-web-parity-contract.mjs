@@ -23,6 +23,7 @@ function harness(options = {}) {
   const jsx = (type, props) => ({ type, props });
   const exports = {};
   const mocks = {
+    './BuildDiagnostics': { BuildDiagnostics: () => null },
     '@clerk/expo': { useSignIn: () => ({ signIn }), useSignUp: () => ({ signUp }), useSSO: () => ({ startSSOFlow: async (args) => { calls.push(['google', args]); return options.google ?? { authSessionResult: { type: 'cancel' } }; } }) },
     'expo-router': { useRouter: () => ({ replace: (path) => calls.push(['route', path]) }) },
     'expo-auth-session': { makeRedirectUri: ({ scheme, path }) => `${scheme}://${path}` },

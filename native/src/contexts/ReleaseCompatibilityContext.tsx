@@ -16,6 +16,7 @@ import {
   type MobileReleaseCompatibility,
 } from '../lib/mobileReleaseApi';
 import { createNativeSupabase } from '../lib/supabase';
+import { bootLog } from '../lib/bootDiagnostics';
 
 const OFFLINE_PATTERN = /offline|network|fetch|timeout|connection/i;
 
@@ -100,6 +101,7 @@ export function ReleaseCompatibilityProvider({ children }: PropsWithChildren) {
   }, []);
 
   const refresh = useCallback(async () => {
+    bootLog('HC_RELEASE_GATE_START');
     const launchSession = session;
     const launchIdentity = identityRef.current;
     if (
@@ -145,8 +147,10 @@ export function ReleaseCompatibilityProvider({ children }: PropsWithChildren) {
       setLastError(null);
       setOfflineUsingLastVerified(false);
       lastVerifiedAllowedRef.current = next.configured && next.allowed;
+      bootLog(next.configured && next.allowed ? 'HC_RELEASE_GATE_PASS' : 'HC_RELEASE_GATE_BLOCK');
       return next.configured && next.allowed;
     } catch (error) {
+      bootLog('HC_RELEASE_GATE_BLOCK');
       if (!mountedRef.current || currentGeneration !== generation.current) return false;
 
       const current = identityRef.current;

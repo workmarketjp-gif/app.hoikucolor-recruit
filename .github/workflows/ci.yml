@@ -110,12 +110,37 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: native/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
       - name: Install locked Native dependencies
         run: npm ci
         working-directory: native
       - name: Typecheck against the real Native SDK
         run: npm run typecheck
         working-directory: native
+      - name: Regress all materialized Native contracts (report historical missing contracts)
+        run: npm run test:contracts:available
+        working-directory: native
+      - name: Verify resolved Expo identity and launcher config
+        run: node qa/native-icon-config-contract.mjs
+        working-directory: native
+      - name: Generate clean Android launcher resources
+        run: npx expo prebuild --platform android --clean --no-install
+        working-directory: native
+      - name: Verify Android launcher mipmaps and manifest
+        run: node qa/native-icon-config-contract.mjs --android-resources
+        working-directory: native
+      - name: Record build provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-android-provenance-${{ github.sha }}
+          path: native/.expo-resolved-audit.json
+          include-hidden-files: true
       - name: Bundle Android including authentication browser dependencies
         run: npx expo export --platform android --output-dir /tmp/hc-native-android
         working-directory: native
+      - name: Compile Android release APK
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
+        working-directory: native/android

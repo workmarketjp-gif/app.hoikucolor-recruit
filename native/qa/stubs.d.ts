@@ -1,6 +1,9 @@
 declare const process: { env: Record<string, string | undefined> };
 declare function require(path: string): any;
+declare const __DEV__: boolean;
+declare module 'expo' { export function reloadAppAsync(): Promise<void>; }
 declare module 'react' {
+  export class Component<P = {}, S = {}> { props: P; state: S; }
   export function useState<T>(initial: T | (() => T)): [T, (value: T | ((current: T) => T)) => void];
   export function useEffect(effect: () => void | (() => void), deps?: unknown[]): void;
   export function useMemo<T>(factory: () => T, deps: unknown[]): T;

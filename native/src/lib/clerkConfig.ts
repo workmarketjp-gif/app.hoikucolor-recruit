@@ -1,3 +1,5 @@
+import { bootLog } from './bootDiagnostics';
+
 const STATIC_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() ?? '';
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim().replace(/\/$/, '') ?? '';
 const SUPABASE_KEY = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ?? '';
@@ -9,10 +11,11 @@ function validPublishableKey(value: string | null | undefined) {
 }
 
 export async function loadHoikuColorClerkPublishableKey(): Promise<string> {
+  bootLog('HC_CLERK_CONFIG_START');
   const fallback = validPublishableKey(STATIC_PUBLISHABLE_KEY) ? STATIC_PUBLISHABLE_KEY : null;
 
   if (!SUPABASE_URL || !SUPABASE_KEY) {
-    if (fallback) return fallback;
+    if (fallback) { bootLog('HC_CLERK_CONFIG_SOURCE_FALLBACK'); return fallback; }
     throw new Error('ログイン設定を確認できませんでした。');
   }
 
@@ -31,14 +34,19 @@ export async function loadHoikuColorClerkPublishableKey(): Promise<string> {
       },
     );
 
-    if (!response.ok) throw new Error(`CLERK_CONFIG_HTTP_${response.status}`);
+    if (!response.ok) { bootLog(`HC_CLERK_CONFIG_HTTP_${response.status}`); throw new Error('CLERK_CONFIG_HTTP_FAILED'); }
     const payload = await response.json() as { publishableKey?: unknown };
     const fetched = typeof payload.publishableKey === 'string' ? payload.publishableKey.trim() : '';
-    if (validPublishableKey(fetched)) return fetched;
-    if (fallback) return fallback;
+    if (validPublishableKey(fetched)) {
+      if (fallback && fetched !== fallback) throw new Error('CLERK_CONFIG_INSTANCE_MISMATCH');
+      bootLog('HC_CLERK_CONFIG_SOURCE_REMOTE');
+      return fetched;
+    }
+    if (fallback) { bootLog('HC_CLERK_CONFIG_SOURCE_FALLBACK'); return fallback; }
     throw new Error('CLERK_CONFIG_INVALID');
   } catch (error) {
-    if (fallback) return fallback;
+    if (error instanceof Error && error.message === 'CLERK_CONFIG_INSTANCE_MISMATCH') throw error;
+    if (fallback) { bootLog('HC_CLERK_CONFIG_SOURCE_FALLBACK'); return fallback; }
     throw error;
   } finally {
     clearTimeout(timeout);
