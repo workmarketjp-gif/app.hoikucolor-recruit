@@ -6,3 +6,12 @@ dist
 dist-e2e
 test-results
 playwright-report
+native/android/
+native/.expo/
+native/.expo-resolved-audit.json
+.build-audit/
+build3-audit.json
+native/build3-audit.json
+native-install.log
+web-install.log
+native/prebuild-audit.log

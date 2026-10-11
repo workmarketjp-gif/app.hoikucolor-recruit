@@ -5,6 +5,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Image, useWindowDimensions, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BuildDiagnostics } from './BuildDiagnostics';
 
 WebBrowser.maybeCompleteAuthSession();
 type MfaStrategy = 'totp' | 'phone_code' | 'backup_code' | 'email_code';
@@ -134,6 +135,7 @@ export function AuthScreen({ isSignup = false }: { isSignup?: boolean }) {
       <KeyboardAvoidingView style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={[styles.page, narrow && { paddingHorizontal: 18 }]} keyboardShouldPersistTaps="handled">
           <View style={styles.content}>
+            <BuildDiagnostics />
             <Image source={require('../../assets/hoiku-color-logo.png')} style={styles.logo} resizeMode="contain" accessibilityLabel="Hoiku Color" />
             <View style={styles.role}><Text style={styles.roleText}>求職者専用</Text></View>
             <Text style={styles.eyebrow}>求職者</Text>
@@ -175,7 +177,7 @@ const styles = StyleSheet.create({
   page: { flexGrow: 1, paddingHorizontal: 22, paddingTop: 28, paddingBottom: 34, alignItems: 'center' },
   content: { width: '100%', maxWidth: 500 },
   logo: { width: 175, height: 44, marginBottom: 38 },
-  role: { minHeight: 44, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e6e2e0', borderRadius: 12, backgroundColor: '#faf9f8', marginBottom: 26 },
+  role: { minHeight: 48, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e6e2e0', borderRadius: 12, backgroundColor: '#faf9f8', marginBottom: 26 },
   roleText: { color: '#ed274b', fontSize: 12, fontWeight: '900' },
   eyebrow: { color: '#fb2f52', fontSize: 10, fontWeight: '900', letterSpacing: 1.6 },
   title: { color: '#17253a', fontSize: 27, fontWeight: '900', marginTop: 9, marginBottom: 8 },
@@ -188,5 +190,5 @@ const styles = StyleSheet.create({
   primaryButton: { minHeight: 52, borderRadius: 11, backgroundColor: '#ed274b', alignItems: 'center', justifyContent: 'center', padding: 12, marginTop: 16 }, primaryText: { color: '#fff', fontSize: 16, fontWeight: '900' }, disabled: { opacity: 0.58 },
   codeCopy: { marginTop: 24, marginBottom: 14, padding: 16, borderWidth: 1, borderColor: '#f0e2e5', backgroundColor: '#fff8fa', borderRadius: 11 }, codeInput: { textAlign: 'center', letterSpacing: 4, fontSize: 18 },
   error: { marginTop: 10, padding: 12, borderRadius: 9, backgroundColor: '#fff4f6', color: '#9d3449', fontSize: 15, lineHeight: 23 },
-  codeActions: { marginTop: 3 }, footer: { marginTop: 22 }, linkButton: { minHeight: 44, justifyContent: 'center', paddingVertical: 10 }, linkText: { color: '#c03a54', fontSize: 12, fontWeight: '800' }, secondaryText: { color: '#87909c', fontSize: 12, fontWeight: '800' },
+  codeActions: { marginTop: 3 }, footer: { marginTop: 22 }, linkButton: { minHeight: 48, justifyContent: 'center', paddingVertical: 10 }, linkText: { color: '#c03a54', fontSize: 12, fontWeight: '800' }, secondaryText: { color: '#87909c', fontSize: 12, fontWeight: '800' },
 });

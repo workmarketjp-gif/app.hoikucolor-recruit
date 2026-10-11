@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type PropsWithChildren } from 'react'
 import { ActivityIndicator, Button, Text, View } from 'react-native';
 import { purgePendingDocumentPickerCache } from '../lib/documentPickerCache';
 import { reconcilePendingCameraCaptureResult } from '../lib/cameraCaptureRecovery';
+import { bootLog } from '../lib/bootDiagnostics';
 
 /**
  * Before any navigation/session UI mounts, reconcile a DocumentPicker/camera cache copy
@@ -13,12 +14,15 @@ export function DocumentPickerCacheBoundary({ children }: PropsWithChildren) {
   const [lastError, setLastError] = useState<string | null>(null);
 
   const reconcile = useCallback(async () => {
+    bootLog('HC_CACHE_RECONCILE_START');
     setChecking(true);
     setLastError(null);
     try {
       await reconcilePendingCameraCaptureResult();
       await purgePendingDocumentPickerCache();
+      bootLog('HC_CACHE_RECONCILE_READY');
     } catch (error) {
+      bootLog('HC_CACHE_RECONCILE_FAILED');
       setLastError(String((error as { message?: unknown } | null)?.message ?? error));
     } finally {
       setChecking(false);
