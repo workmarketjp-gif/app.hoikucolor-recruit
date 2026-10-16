@@ -5,7 +5,8 @@
   "version": "0.1.0",
   "scripts": {
     "test": "node --test qa/*.test.mjs",
-    "start:local": "node serve-local.mjs"
+    "start:local": "node serve-local.mjs",
+    "test:sdk": "node --test qa/official-sdk-network.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
