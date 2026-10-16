@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8');
+const route=read('src/PrivateRecruitmentRoute.tsx'),ui=read('src/private-recruitment/PrivateRecruitmentTest.tsx'),app=read('src/AppRoot.tsx');
+assert.ok(app.indexOf('if (!isSignedIn)')<app.indexOf('const testScope'));
+assert.match(app,/restoreReturnTarget\(\)/);assert.match(app,/PrivateRecruitmentRoute key=/);
+assert.match(route,/!hasActiveSession\(\)/);assert.match(route,/supabase\.rpc\('hc_recruitment_test',args\)/);
+assert.doesNotMatch(route+ui,/service_role|hc_jobseeker_submit_application|application\/ld\+json|JobPosting|test-fixture-token/);
+assert.match(route,/event\.origin!==poppyOrigin/);assert.match(route,/event\.source!==frame.current\?\.contentWindow/);
+assert.match(route,/recruitmentTestOrigin\(import.meta.env.VITE_HOIKU_POPPY_URL,'https:\/\/app.hoikupoppy.ai'\)/);
+assert.match(route,/sandbox="allow-scripts allow-same-origin"/);assert.match(route,/referrerPolicy="no-referrer"/);
+assert.match(ui,/p_action:'snapshot'/);assert.match(ui,/mutate\('apply'/);assert.match(ui,/mutate\('send'/);assert.match(ui,/mutate\('status'/);
+assert.match(ui,/expected_status:application.status/);assert.match(ui,/noindex,nofollow,noarchive/);
+assert.match(read('public/_headers'),/X-Robots-Tag: noindex/);
+console.log('PASS private recruitment contract: authenticated route, dedicated RPC, message and selection, origin/source isolation, no SEO or formal application writes');
