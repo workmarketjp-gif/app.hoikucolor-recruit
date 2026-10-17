@@ -345,3 +345,38 @@ body { background: var(--hc-bg); color: var(--hc-ink); font-size: 16px; line-hei
 @media (max-width: 360px) {
   .hc-job-actions { grid-template-columns: 1fr; }
 }
+
+/* ---------- Apply: documents for this job ---------- */
+.hc-apply-docs { margin-top: 14px; display: grid; gap: 12px; border-top: 1px solid var(--hc-line); padding-top: 14px; min-width: 0; }
+.hc-apply-docs h4 { margin: 0; font-size: 17px; font-weight: 800; }
+.hc-apply-docs p { margin: 0; font-size: 15px; color: var(--hc-ink-soft); overflow-wrap: anywhere; }
+.hc-apply-docs .form-error { color: var(--hc-accent-dark); }
+.hc-apply-docs-alert { display: grid; gap: 8px; }
+.hc-apply-docs-hint { color: var(--hc-ink) !important; font-weight: 700; }
+.hc-apply-docs-note { font-size: 14px !important; color: var(--hc-muted) !important; }
+.hc-apply-doc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.hc-apply-doc { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--hc-line); border-radius: 14px; background: var(--hc-surface); min-width: 0; }
+.hc-apply-doc.is-missing { border-color: var(--hc-accent); }
+.hc-apply-doc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.hc-apply-doc-head strong { font-size: 16px; }
+.hc-apply-doc-level { display: inline-flex; align-items: center; min-height: 24px; padding: 0 10px; border-radius: 12px; font-size: 13px; font-weight: 800; background: #eef1f5; color: var(--hc-ink-soft); }
+.hc-apply-doc-level.is-required { background: var(--hc-accent-soft); color: var(--hc-accent-dark); }
+.hc-apply-doc-note { font-size: 14px !important; }
+.hc-apply-doc-empty { font-weight: 700; }
+.hc-apply-doc-options { margin: 0; padding: 0; border: 0; display: grid; gap: 6px; min-width: 0; }
+.hc-apply-doc-option { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 6px 12px; border: 1px solid var(--hc-line); border-radius: 12px; cursor: pointer; font-size: 15px; min-width: 0; }
+.hc-apply-doc-option:has(input:checked) { border-color: var(--hc-accent); background: var(--hc-accent-soft); }
+.hc-apply-doc-option input { flex: 0 0 auto; width: 22px; height: 22px; margin: 0; accent-color: var(--hc-accent); }
+.hc-apply-doc-option > span { display: grid; min-width: 0; }
+.hc-apply-doc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hc-apply-doc-option small { font-size: 13px; color: var(--hc-muted); }
+.hc-apply-doc-upload { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 48px !important; word-break: keep-all; overflow-wrap: anywhere; }
+
+/* ---------- Profile: qualifications and evidence ---------- */
+.hc-qualification-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.hc-qualification { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--hc-line); border-radius: 14px; min-width: 0; }
+.hc-qualification > strong { font-size: 16px; }
+.hc-qualification-evidence { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 15px; color: var(--hc-ink-soft); }
+.hc-qualification-evidence .secondary-button { min-height: 48px !important; }
+
+.hc-job-actions.is-single { grid-template-columns: 1fr; }

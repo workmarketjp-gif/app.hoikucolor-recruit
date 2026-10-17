@@ -5,6 +5,11 @@ export type JobseekerDocumentType =
   | 'work_history'
   | 'nursery_teacher_license'
   | 'kindergarten_license'
+  | 'registered_dietitian_license'
+  | 'dietitian_license'
+  | 'cook_license'
+  | 'nurse_license'
+  | 'assistant_nurse_license'
   | 'other';
 
 export type JobseekerDocument = {

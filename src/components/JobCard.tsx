@@ -2,7 +2,8 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Icon } from './Icon';
 import { VisitTrialPanel } from './VisitTrialPanel';
 import { VerifiedFinanceSummary } from './VerifiedFinanceSummary';
-import { getProfile, submitApplication, type Job, type VerifiedWorkplaceMetric } from '../lib/recruitRepository';
+import { ApplyDocumentsStep } from './ApplyDocumentsStep';
+import { getProfile, type Job, type JobseekerProfile, type VerifiedWorkplaceMetric } from '../lib/recruitRepository';
 import type { SavedJobWithStatus } from '../lib/savedJobStatusRepository';
 import { errorMessage } from '../lib/useResource';
 
@@ -40,21 +41,22 @@ export function JobCard({ job, saved, onToggleSaved, onStartApplication, onAppli
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [applyProfile, setApplyProfile] = useState<JobseekerProfile | null>(null);
   const isClosed = (job as Partial<SavedJobWithStatus>).is_open === false || Boolean(job.closing_at && new Date(job.closing_at).getTime() < Date.now());
   const isExternal = job.is_external === true;
   const canApplyDirect = job.can_apply_direct !== false && !isExternal;
   const location = [job.prefecture, job.city].filter(Boolean).join(' ') || '勤務地は詳細をご確認ください';
 
+  // 応募する → confirm this job's documents (ApplyDocumentsStep) → the application is created there.
   const apply = async () => {
     if (isClosed) { setApplyError('この求人は募集を終了しています。'); return; }
     setApplying(true); setApplyError(null);
     try {
       const profile = await getProfile();
       if (!profile?.name?.trim()) { onStartApplication(job.id); return; }
-      const applicationId = await submitApplication(job.id, profile);
-      onApplied(applicationId);
+      setApplyProfile(profile);
     } catch (err) {
-      setApplyError(errorMessage(err, '応募を送信できませんでした。'));
+      setApplyError(errorMessage(err, '応募の準備ができませんでした。もう一度お試しください。'));
     } finally {
       setApplying(false);
     }
@@ -113,7 +115,9 @@ export function JobCard({ job, saved, onToggleSaved, onStartApplication, onAppli
       )}
 
       {applyError && <p className="form-error" role="alert">{applyError}</p>}
-      <div className="hc-job-actions">
+      {applyProfile && canApplyDirect && !isClosed ? (
+        <ApplyDocumentsStep jobId={job.id} profile={applyProfile} onCancel={() => setApplyProfile(null)} onApplied={onApplied} />
+      ) : <div className="hc-job-actions">
         <button className="secondary-button" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>{expanded ? '閉じる' : expandLabel}</button>
         {!canApplyDirect ? (
           <a className="primary-button hc-external-job-link" href={job.source_url || '#'} target="_blank" rel="noopener noreferrer" aria-disabled={!job.source_url}>
@@ -122,7 +126,7 @@ export function JobCard({ job, saved, onToggleSaved, onStartApplication, onAppli
         ) : (
           <button className="primary-button" type="button" onClick={apply} disabled={applying || isClosed}>{isClosed ? '募集終了' : applying ? '応募中…' : '応募する'}</button>
         )}
-      </div>
+      </div>}
     </article>
   );
 }
