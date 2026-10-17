@@ -11,14 +11,9 @@ import {
   type JobseekerDocument,
   type JobseekerDocumentType,
 } from '../lib/documentVaultRepository';
+import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_ORDER, evidenceTypesForQualification } from '../lib/documentTypes';
 
-const labels: Record<JobseekerDocumentType, string> = {
-  resume: '履歴書',
-  work_history: '職務経歴書',
-  nursery_teacher_license: '保育士証',
-  kindergarten_license: '幼稚園教諭免許',
-  other: 'その他',
-};
+const labels = DOCUMENT_TYPE_LABELS;
 
 type UploadIntent = {
   documentType: JobseekerDocumentType;
@@ -32,7 +27,11 @@ function formatBytes(value: number | null) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function DocumentVaultPanel() {
+/**
+ * `qualifications` are the profile's declared (self-reported) qualifications. They are shown
+ * next to, never merged with, the uploaded files: saving a licence copy is not verification.
+ */
+export function DocumentVaultPanel({ qualifications }: { qualifications?: string[] }) {
   const { userId } = useCandidateSession();
   const user = userId ? { id: userId } : null;
   const [documents, setDocuments] = useState<JobseekerDocument[]>([]);
@@ -135,7 +134,7 @@ export function DocumentVaultPanel() {
       <div style={{ display: 'grid', gap: 12 }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <select value={documentType} onChange={(e) => setDocumentType(e.target.value as JobseekerDocumentType)} style={{ minHeight: 44, flex: '1 1 190px' }}>
-            {Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            {DOCUMENT_TYPE_ORDER.map((value) => <option key={value} value={value}>{labels[value]}</option>)}
           </select>
           <input ref={fileRef} type="file" accept="application/pdf,image/jpeg,image/png" hidden onChange={(e) => {
             const file = e.target.files?.[0];
@@ -161,6 +160,27 @@ export function DocumentVaultPanel() {
           {failedUpload && !busy && <button type="button" className="secondary-button" onClick={() => void upload(failedUpload.file, failedUpload.intent)}>
             同じファイルでもう一度保存する
           </button>}
+        </div>}
+        {qualifications && !loading && <div style={{ display: 'grid', gap: 10 }}>
+          <h4 id="qualification-evidence-heading" style={{ margin: 0, fontSize: 17 }}>資格と証明書類</h4>
+          <p style={{ margin: 0, fontSize: 14 }}>資格はプロフィールで登録した内容（ご本人の申告）です。免許証などの写しを保存しても、資格が確認済みになるわけではありません。確認は応募先の園が行います。</p>
+          {qualifications.length ? <ul className="hc-qualification-list">
+            {qualifications.map((qualification) => {
+              const evidenceTypes = evidenceTypesForQualification(qualification);
+              return <li key={qualification} className="hc-qualification">
+                <strong>{qualification}</strong>
+                {evidenceTypes.length ? evidenceTypes.map((type) => {
+                  const saved = documents.filter((document) => document.document_type === type).length;
+                  return <div key={type} className="hc-qualification-evidence">
+                    <span>{labels[type]}：{saved ? `保存済み（${saved}件）` : 'まだ保存されていません'}</span>
+                    {!saved && <button type="button" className="secondary-button" disabled={busy} onClick={() => chooseFile({ documentType: type })}>
+                      <Icon name="upload" size={16} /> {labels[type]}を追加
+                    </button>}
+                  </div>;
+                }) : <div className="hc-qualification-evidence"><span>証明書類は「その他」として保存できます。</span></div>}
+              </li>;
+            })}
+          </ul> : <p style={{ margin: 0, fontSize: 14 }}>プロフィールで資格を登録すると、ここに証明書類の保存状況が表示されます。</p>}
         </div>}
         {loading ? <div className="empty-state"><p>応募書類を読み込んでいます。</p></div> : documents.length ? (
           <div style={{ display: 'grid', gap: 10 }}>

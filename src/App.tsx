@@ -586,7 +586,7 @@ function ProfileView({ profileResource, fallback, onSaved }: {
         </nav>
       )}
       <ProfileForm key={initial.clerk_user_id} initial={initial} requireForApplication={Boolean(returnJob)} onSaved={onSaved} />
-      <DocumentVaultPanel />
+      <DocumentVaultPanel qualifications={initial.qualifications} />
     </div>
   );
 }

@@ -22,7 +22,12 @@ const labels: Record<JobseekerDocumentType, string> = {
   resume: '履歴書',
   work_history: '職務経歴書',
   nursery_teacher_license: '保育士証',
-  kindergarten_license: '幼稚園教諭免許',
+  kindergarten_license: '幼稚園教諭免許状',
+  registered_dietitian_license: '管理栄養士免許証',
+  dietitian_license: '栄養士免許証',
+  cook_license: '調理師免許証',
+  nurse_license: '看護師免許証',
+  assistant_nurse_license: '准看護師免許証',
   other: 'その他',
 };
 const types = Object.keys(labels) as JobseekerDocumentType[];

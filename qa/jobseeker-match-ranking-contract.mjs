@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const matching = fs.readFileSync('src/lib/jobMatching.ts', 'utf8');
 const route = fs.readFileSync('src/views/MatchesView.tsx', 'utf8');
 const jobCard = fs.readFileSync('src/components/JobCard.tsx', 'utf8');
+const applyStep = fs.readFileSync('src/components/ApplyDocumentsStep.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const router = fs.readFileSync('src/lib/router.ts', 'utf8');
 
@@ -23,7 +24,7 @@ assert(route.includes('勤務地・雇用形態・給与などは通常ロジッ
 assert(route.includes('保育観は現在、求人文面に明示された表現だけ'), 'UI must not claim unsupported AI childcare-value inference');
 assert(route.includes('園の申告値と混ぜません'), 'Verified evidence separation disclosure is missing');
 assert(route.includes('70%以上だけ表示'), 'high-match filter is missing');
-assert(route.includes('<JobCard') && route.includes('onToggleSaved={onToggleSaved}') && jobCard.includes('submitApplication(job.id, profile)') && app.includes('saveJob(jobId, session.userId)') && app.includes('unsaveJob(jobId)'), 'match results must support core candidate actions through the shared job card');
+assert(route.includes('<JobCard') && route.includes('onToggleSaved={onToggleSaved}') && jobCard.includes('<ApplyDocumentsStep jobId={job.id} profile={applyProfile}') && applyStep.includes('submitApplication(jobId, profile, {') && app.includes('saveJob(jobId, session.userId)') && app.includes('unsaveJob(jobId)'), 'match results must support core candidate actions through the shared job card');
 assert(app.includes('<a href="/matches">') && app.includes('href="/matches">マッチ度順で見る'), 'main app navigation to matching is missing');
 assert(router.includes("matches: '/matches'") && app.includes("{view === 'matches' && <MatchesView"), 'matching must be a regular view of the candidate app');
 
