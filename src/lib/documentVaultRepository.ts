@@ -195,6 +195,16 @@ async function ensureApplicationCopy(sourcePath: string, destinationPath: string
   throw retry.error;
 }
 
+/**
+ * Private recruitment test lane: copy a vault document to the test path the lane registered
+ * for it (recruitment-test/<scope>/<application>/vault-<doc>/<file>). Storage policies allow
+ * this only for the candidate who owns that test application, once.
+ */
+export async function copyVaultDocumentToTestApplication(document: JobseekerDocument, destinationPath: string) {
+  if (!destinationPath.startsWith('recruitment-test/')) throw new Error('提出先を確認できませんでした。');
+  await ensureApplicationCopy(document.file_path, destinationPath);
+}
+
 async function findJobseekerDocumentById(documentId: string): Promise<JobseekerDocument | null> {
   const { data, error } = await db()
     .from('hc_jobseeker_documents')
