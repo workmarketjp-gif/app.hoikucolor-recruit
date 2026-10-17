@@ -7,10 +7,11 @@ import { allowedYears, buildCorpus, checkDraft } from '../supabase/functions/hc-
 // candidate, rejects drafts naming qualifications / employers / years that are not in the
 // input, and never writes to the résumé — the candidate must accept the draft first.
 
-const read = (path) => fs.readFileSync(path, 'utf8')
+// Normalise line endings so the function-slicing regexes below also work on CRLF checkouts (Windows autocrlf).
+const read = (path) => fs.readFileSync(path, 'utf8').replace(/\r\n/g, '\n')
 const fnPath = 'supabase/functions/hc-resume-writing-assist/index.ts'
 const fn = read(fnPath)
-const migration = read('supabase/migrations/20261017130000_hc_jobseeker_resume_ai_quota_v1.sql')
+const migration = read('supabase/migrations/20261017101213_hc_jobseeker_resume_ai_quota_v1.sql')
 const client = read('src/lib/resumeWritingAssist.ts')
 const view = read('src/views/ResumeBuilderView.tsx')
 const pkg = JSON.parse(read('package.json'))
