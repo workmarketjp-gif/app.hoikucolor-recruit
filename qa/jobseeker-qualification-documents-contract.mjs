@@ -40,7 +40,7 @@ const nativeVault = read('native/src/components/DocumentVaultSection.tsx');
 for (const label of Object.values(EXPECTED_LABELS)) check(nativeVault.includes(`'${label}'`), `Native document vault must label ${label}`);
 
 // ---------- 2. Migration is additive and keeps the security boundary ----------
-const migration = read('supabase/migrations/20261017120000_hc_jobseeker_qualification_documents_v1.sql');
+const migration = read('supabase/migrations/20261017101147_hc_jobseeker_qualification_documents_v1.sql');
 const sql = migration.replace(/--[^\n]*/g, '');
 const typeList = `('${ALL_TYPES.join("','")}')`;
 const flatSql = sql.replace(/\s+/g, ' ');

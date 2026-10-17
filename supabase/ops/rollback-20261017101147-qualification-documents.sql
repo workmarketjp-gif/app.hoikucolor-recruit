@@ -1,4 +1,4 @@
--- Rollback for 20261017120000_hc_jobseeker_qualification_documents_v1.
+-- Rollback for 20261017101147_hc_jobseeker_qualification_documents_v1.
 -- Restores the production definitions captured on 2026-10-17 before the migration.
 --
 -- Safe only while no row uses one of the five new licence types: the narrow
@@ -269,6 +269,6 @@ drop function if exists ho_private.hc_document_requirements_normalize(jsonb);
 drop function if exists ho_private.hc_document_requirement_level_is_valid(text);
 drop function if exists ho_private.hc_jobseeker_document_type_is_valid(text);
 
-delete from supabase_migrations.schema_migrations where version = '20261017120000';
+delete from supabase_migrations.schema_migrations where version = '20261017101147';
 
 commit;
