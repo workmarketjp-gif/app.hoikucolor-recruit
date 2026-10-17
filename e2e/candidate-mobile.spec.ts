@@ -126,6 +126,8 @@ for (const width of [375, 390, 393, 430]) {
       await expect(search).toBeVisible();
       expect(await search.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
       await expect(page.getByRole('button', { name: '勤務実績データあり' })).toBeVisible();
+      // Filter dropdowns are inputs too: below 16px iOS zooms the page on focus.
+      for (const name of ['勤務地', '雇用形態']) expect(await page.getByRole('combobox', { name }).evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
       await expect(page.getByRole('button', { name: '会計実績データあり' })).toBeVisible();
       await expect(page.locator('.hc-result-bar')).toContainText('2件');
       await expect(page.locator('.hc-job-card')).toHaveCount(2);
