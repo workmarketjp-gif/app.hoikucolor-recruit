@@ -51,24 +51,99 @@ function db() {
   return supabase;
 }
 
-function safeFileName(input: string) {
-  const normalized = input
-    .normalize('NFKC')
-    .replace(/[\\/\u0000-\u001f\u007f]+/g, '_')
-    .replace(/\s+/g, '_')
-    .replace(/\.{2,}/g, '.')
-    .replace(/^\.+|\.+$/g, '')
-    .slice(-120);
-  return normalized || 'document';
+/**
+ * Thrown when resending the same file cannot help: the file itself was
+ * rejected, or the save may already have committed (a retry would duplicate
+ * it). The UI hides the "same file" retry for these.
+ */
+export class NonRetryableDocumentError extends Error {}
+
+const EXTENSION_BY_MIME: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+};
+
+// Supabase Storage rejects object keys outside this ASCII set with
+// "400 Invalid key", so user-supplied names (e.g. 履歴書(山田).pdf) must never
+// reach the key. The original name is kept only in metadata (title).
+const STORAGE_KEY_SEGMENT = /^[A-Za-z0-9!\-_.*'()]+$/;
+
+export function storageFileNameForMime(mimeType: string) {
+  const extension = EXTENSION_BY_MIME[mimeType];
+  if (!extension) throw new NonRetryableDocumentError('PDF、JPEG、PNGのみ保存できます。');
+  return `document.${extension}`;
 }
 
-function assertUploadable(file: File) {
+function mimeFromFile(file: File): string | null {
+  if (ALLOWED_MIME_TYPES.has(file.type)) return file.type;
+  // Some Android/Windows pickers send an empty type; fall back to the extension
+  // and let the signature check below decide.
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.png')) return 'image/png';
+  return null;
+}
+
+function bytesMatchMime(bytes: Uint8Array, mime: string) {
+  if (mime === 'application/pdf') {
+    return bytes.length >= 5 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 && bytes[4] === 0x2d;
+  }
+  if (mime === 'image/jpeg') {
+    return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+  if (mime === 'image/png') {
+    return bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
+  }
+  return false;
+}
+
+async function assertUploadable(file: File): Promise<string> {
   if (!file.size || file.size > MAX_FILE_SIZE) {
-    throw new Error('書類は10MB以下のファイルを選択してください。');
+    throw new NonRetryableDocumentError('書類は10MB以下のファイルを選択してください。');
   }
-  if (!ALLOWED_MIME_TYPES.has(file.type)) {
-    throw new Error('PDF、JPEG、PNGのみ保存できます。');
+  const mimeType = mimeFromFile(file);
+  if (!mimeType) {
+    throw new NonRetryableDocumentError('PDF、JPEG、PNGのみ保存できます。');
   }
+  let header: Uint8Array;
+  try {
+    header = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+  } catch {
+    throw new NonRetryableDocumentError('ファイルを読み込めませんでした。もう一度ファイルを選び直してください。');
+  }
+  if (!bytesMatchMime(header, mimeType)) {
+    throw new NonRetryableDocumentError('ファイルの中身がPDF・JPEG・PNGではないか、壊れている可能性があります。別のファイルをお試しください。');
+  }
+  return mimeType;
+}
+
+/**
+ * Converts Storage/PostgREST/network errors into plain Japanese. Raw messages
+ * can contain storage keys and the candidate's original file name, so they are
+ * never shown as-is.
+ */
+export function describeDocumentError(error: unknown, fallback: string): string {
+  const raw = error && typeof error === 'object' && 'message' in error ? String((error as { message: unknown }).message ?? '') : '';
+  const status = error && typeof error === 'object'
+    ? Number((error as { statusCode?: unknown; status?: unknown }).statusCode ?? (error as { status?: unknown }).status)
+    : NaN;
+  // Messages we authored are already user-facing Japanese.
+  if (/[぀-ヿ]/.test(raw) && !raw.includes('jobseekers/')) return raw;
+  if (error instanceof TypeError || /Failed to fetch|NetworkError|network|timeout/i.test(raw)) {
+    return '通信が不安定なため完了できませんでした。通信状況を確認して、もう一度お試しください。';
+  }
+  if (status === 401 || /jwt|expired|unauthori[sz]ed/i.test(raw)) {
+    return 'ログインの有効期限が切れました。もう一度ログインしてからお試しください。';
+  }
+  if (status === 413 || /too large|exceeded the maximum/i.test(raw)) {
+    return '書類は10MB以下のファイルを選択してください。';
+  }
+  if (/mime|content type/i.test(raw)) {
+    return 'PDF、JPEG、PNGのみ保存できます。';
+  }
+  return fallback;
 }
 
 const documentColumns =
@@ -81,11 +156,11 @@ async function storageObjectExists(path: string) {
   return !error && Boolean(data?.signedUrl);
 }
 
-async function ensureUploadedSourceObject(path: string, file: File) {
+async function ensureUploadedSourceObject(path: string, file: File, mimeType: string) {
   const bucket = db().storage.from(BUCKET);
   const upload = () => bucket.upload(path, file, {
     upsert: false,
-    contentType: file.type,
+    contentType: mimeType,
   });
 
   const first = await upload();
@@ -192,21 +267,23 @@ export async function uploadJobseekerDocument(
 ): Promise<JobseekerDocument> {
   const ownerId = clerkUserId.trim();
   if (!ownerId) throw new Error('ログインユーザーを確認できませんでした。');
-  assertUploadable(file);
+  const mimeType = await assertUploadable(file);
 
   const id = crypto.randomUUID();
-  const fileName = safeFileName(file.name);
+  // Opaque, server-checkable key: jobseekers/<sub>/<document-uuid>/document.<ext>.
+  // The original (often Japanese) file name is preserved in `title` for display.
+  const fileName = storageFileNameForMime(mimeType);
   const path = `jobseekers/${ownerId}/${id}/${fileName}`;
-  const title = (options.title?.trim() || file.name || fileName).slice(0, 200);
+  const title = (options.title?.trim() || file.name.normalize('NFC').trim() || fileName).slice(0, 200);
 
-  await ensureUploadedSourceObject(path, file);
+  await ensureUploadedSourceObject(path, file, mimeType);
 
   const { data, error } = await db().rpc('hc_register_jobseeker_document_source', {
     p_document_id: id,
     p_document_type: documentType,
     p_title: title,
     p_file_path: path,
-    p_mime_type: file.type,
+    p_mime_type: mimeType,
     p_file_size: file.size,
   });
 
@@ -218,7 +295,7 @@ export async function uploadJobseekerDocument(
       // Do not delete an object when the metadata commit result itself is unknown.
       // A later stale-orphan reconciliation can safely remove it only if no
       // canonical row ever appears.
-      throw new Error('書類保存の結果を確認できませんでした。画面を再読み込みして確認してください。');
+      throw new NonRetryableDocumentError('書類保存の結果を確認できませんでした。画面を再読み込みして確認してください。');
     }
 
     if (!saved) {
@@ -324,8 +401,13 @@ export async function attachJobseekerDocumentToApplication(
     .single();
   if (applicationError) throw applicationError;
 
+  // hc_register_jobseeker_document_attachment requires the destination to end
+  // with the source key's last segment verbatim, so never re-derive it.
   const pathParts = document.file_path.split('/');
-  const fileName = safeFileName(pathParts[pathParts.length - 1] || document.title);
+  const fileName = pathParts[pathParts.length - 1] ?? '';
+  if (!STORAGE_KEY_SEGMENT.test(fileName)) {
+    throw new Error('この書類は提出用にコピーできません。書類を保存し直してからお試しください。');
+  }
   const destinationPath = `${application.organization_id}/${application.facility_id}/${application.id}/vault-${document.id}/${fileName}`;
 
   await ensureApplicationCopy(document.file_path, destinationPath);
