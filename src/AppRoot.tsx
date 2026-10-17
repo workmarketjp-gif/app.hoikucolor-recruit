@@ -1,13 +1,14 @@
 import { ClerkProvider, SignOutButton, useAuth, useClerk, useSession, useSignIn, useSignUp, useUser } from '@clerk/react';
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState, type FormEvent } from 'react';
 import { App } from './App';
+import { PrivateRecruitmentRoute, privateTestScope } from './PrivateRecruitmentRoute';
 import { AppLoading } from './components/AppLoading';
 import { CandidateSessionProvider, type CandidateSession } from './lib/candidateSession';
 import { Brand } from './components/Brand';
 import googleMark from './logo/google-g.svg';
 import logoMark from './logo/logom_hoikucolor.png';
 import { loadHoikuColorClerkPublishableKey } from './lib/clerkConfig';
-import { rememberReturnTarget } from './lib/router';
+import { rememberReturnTarget, restoreReturnTarget } from './lib/router';
 import { setSupabaseAccessTokenGetter } from './lib/supabase';
 import './auth-overrides.css';
 import './auth-custom.css';
@@ -118,7 +119,9 @@ function AuthGate() {
   }
 
   if (!candidate) return <AppLoading />;
-  return <CandidateSessionProvider value={candidate}><App /></CandidateSessionProvider>;
+  restoreReturnTarget();
+  const testScope = privateTestScope(window.location.pathname);
+  return <CandidateSessionProvider value={candidate}>{testScope ? <PrivateRecruitmentRoute key={`${candidate.userId}:${testScope}`} scopeId={testScope} name={candidate.fullName || ''}/> : <App />}</CandidateSessionProvider>;
 }
 
 function OAuthCallback() {

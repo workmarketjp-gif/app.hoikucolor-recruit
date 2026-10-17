@@ -3,6 +3,7 @@
   // Existing Worker: app-hoikucolor-recruit. Vite builds the SPA into ./dist.
   "name": "app-hoikucolor-recruit",
   "compatibility_date": "2026-09-19",
+  "previews": {},
   "assets": {
     "directory": "./dist",
     // Client-side routes (/jobs, /applications, /profile, ...) fall back to index.html.

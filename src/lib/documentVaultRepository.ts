@@ -51,6 +51,13 @@ function db() {
   return supabase;
 }
 
+/**
+ * Thrown when resending the same file cannot help: the file itself was
+ * rejected, or the save may already have committed (a retry would duplicate
+ * it). The UI hides the "same file" retry for these.
+ */
+export class NonRetryableDocumentError extends Error {}
+
 const EXTENSION_BY_MIME: Record<string, string> = {
   'application/pdf': 'pdf',
   'image/jpeg': 'jpg',
@@ -64,7 +71,7 @@ const STORAGE_KEY_SEGMENT = /^[A-Za-z0-9!\-_.*'()]+$/;
 
 export function storageFileNameForMime(mimeType: string) {
   const extension = EXTENSION_BY_MIME[mimeType];
-  if (!extension) throw new Error('PDF、JPEG、PNGのみ保存できます。');
+  if (!extension) throw new NonRetryableDocumentError('PDF、JPEG、PNGのみ保存できます。');
   return `document.${extension}`;
 }
 
@@ -94,20 +101,20 @@ function bytesMatchMime(bytes: Uint8Array, mime: string) {
 
 async function assertUploadable(file: File): Promise<string> {
   if (!file.size || file.size > MAX_FILE_SIZE) {
-    throw new Error('書類は10MB以下のファイルを選択してください。');
+    throw new NonRetryableDocumentError('書類は10MB以下のファイルを選択してください。');
   }
   const mimeType = mimeFromFile(file);
   if (!mimeType) {
-    throw new Error('PDF、JPEG、PNGのみ保存できます。');
+    throw new NonRetryableDocumentError('PDF、JPEG、PNGのみ保存できます。');
   }
   let header: Uint8Array;
   try {
     header = new Uint8Array(await file.slice(0, 8).arrayBuffer());
   } catch {
-    throw new Error('ファイルを読み込めませんでした。もう一度ファイルを選び直してください。');
+    throw new NonRetryableDocumentError('ファイルを読み込めませんでした。もう一度ファイルを選び直してください。');
   }
   if (!bytesMatchMime(header, mimeType)) {
-    throw new Error('ファイルの中身がPDF・JPEG・PNGではないか、壊れている可能性があります。別のファイルをお試しください。');
+    throw new NonRetryableDocumentError('ファイルの中身がPDF・JPEG・PNGではないか、壊れている可能性があります。別のファイルをお試しください。');
   }
   return mimeType;
 }
@@ -288,7 +295,7 @@ export async function uploadJobseekerDocument(
       // Do not delete an object when the metadata commit result itself is unknown.
       // A later stale-orphan reconciliation can safely remove it only if no
       // canonical row ever appears.
-      throw new Error('書類保存の結果を確認できませんでした。画面を再読み込みして確認してください。');
+      throw new NonRetryableDocumentError('書類保存の結果を確認できませんでした。画面を再読み込みして確認してください。');
     }
 
     if (!saved) {
