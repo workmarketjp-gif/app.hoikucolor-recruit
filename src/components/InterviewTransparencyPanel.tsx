@@ -114,37 +114,45 @@ export function InterviewTransparencyPanel({ jobId, facilityId }: { jobId: strin
   const hasFacilityData = rows.some((row) => row.facilityValue) || faqRows.length > 0;
   const hasVerifiedData = rows.some((row) => row.verifiedMetric);
 
-  if (loading) return <section className="interview-transparency is-loading">面接前に確認したい情報を読み込んでいます…</section>;
-  if (error) return <section className="interview-transparency is-error"><strong>面接前チェック</strong><span>{error}</span></section>;
+  if (loading) return <section className="interview-transparency is-loading" aria-busy="true">面接前に確認したい情報を読み込んでいます…</section>;
+  if (error) return <section className="interview-transparency is-error" role="alert"><strong>面接前に確認したい情報</strong><span>{error}</span></section>;
   if (!hasFacilityData && !hasVerifiedData) return null;
 
-  return <section className="interview-transparency" aria-label="面接で聞きづらい項目">
-    <div className="interview-transparency-head">
-      <div><strong>面接で聞きづらいことを、応募前に確認</strong></div>
-    </div>
+  // Each missing-value label is explained once, and only when it is actually shown.
+  const verifiedLabel = (row: TransparencyRow) => row.verifiedUnavailableLabel || '実績未公開';
+  const shownMissing = new Set(rows.filter((row) => !row.verifiedMetric).map(verifiedLabel));
 
-    <div className="interview-source-legend" aria-label="情報源">
-      <span className="facility-source">園の公開回答（申告）</span>
-      <span className="verified-source">勤務実績</span>
-    </div>
+  return <section className="interview-transparency" aria-labelledby={`interview-transparency-${jobId}`}>
+    <h4 className="interview-transparency-title" id={`interview-transparency-${jobId}`}>面接で聞きづらいことを、応募前に確認</h4>
+    <p className="interview-transparency-lead">
+      「園の回答」は園が公開している回答（園の公開回答（申告））、「勤務実績」は実際の勤務記録から集計した値です。
+    </p>
 
-    <div className="interview-comparison" role="table" aria-label="園の回答と勤務実績の比較">
-      <div className="interview-comparison-row is-head" role="row">
-        <strong role="columnheader">確認項目</strong>
-        <strong role="columnheader">園の公開回答（申告）</strong>
-        <strong role="columnheader">勤務実績</strong>
-      </div>
-      {rows.map((row) => <div className="interview-comparison-row" role="row" key={row.label}>
-        <strong role="rowheader">{row.label}</strong>
-        <div role="cell" className={row.facilityValue ? '' : 'is-missing'}>{row.facilityValue || '公開回答なし'}</div>
-        <div role="cell" className={row.verifiedMetric ? 'verified-value' : 'is-missing'}>
-          {row.verifiedMetric ? <><strong>{formatMetric(row.verifiedMetric)}</strong><small>{row.verifiedMetric.sample_size}件の記録</small></> : (row.verifiedUnavailableLabel || '実績未公開')}
-        </div>
+    <dl className="interview-checks">
+      {rows.map((row) => <div className="interview-check" key={row.label}>
+        <dt>{row.label}</dt>
+        <dd className={row.facilityValue ? '' : 'is-missing'}>
+          <span className="facility-source">園の回答</span>
+          <span className="interview-check-value">{row.facilityValue || '公開回答なし'}</span>
+        </dd>
+        <dd className={row.verifiedMetric ? 'is-verified' : 'is-missing'}>
+          <span className="verified-source">勤務実績</span>
+          <span className="interview-check-value">
+            {row.verifiedMetric
+              ? <><strong>{formatMetric(row.verifiedMetric)}</strong> <small>{row.verifiedMetric.sample_size}件の記録から集計</small></>
+              : verifiedLabel(row)}
+          </span>
+        </dd>
       </div>)}
-    </div>
+    </dl>
+
+    {shownMissing.size > 0 && <dl className="interview-missing-help">
+      {shownMissing.has('実績未公開') && <div><dt>実績未公開</dt><dd>勤務記録から集計する項目ですが、この園の値はまだ公開されていません。</dd></div>}
+      {shownMissing.has('勤務実績なし') && <div><dt>勤務実績なし</dt><dd>この項目は勤務記録から集計していないため、比べられる値がありません。</dd></div>}
+    </dl>}
 
     {faqRows.length > 0 && <div className="interview-faqs">
-      <div className="interview-faqs-head"><strong>園が先に答えている質問</strong><span>園の公開Q&A</span></div>
+      <h5 className="interview-faqs-title">園が先に答えている質問</h5>
       {faqRows.map((faq) => <details key={`${faq.question}-${faq.answer}`}>
         <summary>{faq.question}</summary>
         <p>{faq.answer}</p>

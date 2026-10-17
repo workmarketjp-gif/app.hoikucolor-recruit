@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   emptyJobseekerMatchingPreferences,
   getJobseekerMatchingPreferences,
@@ -39,18 +39,6 @@ export function ProfileMatchingPreferencesPanel() {
     return () => { active = false; };
   }, []);
 
-  const completion = useMemo(() => {
-    const checks = [
-      draft.desired_prefectures.length > 0,
-      draft.desired_monthly_salary_min !== null || draft.desired_hourly_wage_min !== null,
-      draft.available_weekdays.length > 0,
-      draft.classroom_experience.length > 0,
-      draft.childcare_values.length > 0,
-      draft.work_preferences.length > 0,
-    ];
-    return Math.round((checks.filter(Boolean).length / checks.length) * 100);
-  }, [draft]);
-
   const update = <K extends keyof JobseekerMatchingPreferences>(key: K, value: JobseekerMatchingPreferences[K]) => setDraft((prev) => ({ ...prev, [key]: value }));
 
   const save = async () => {
@@ -75,7 +63,6 @@ export function ProfileMatchingPreferencesPanel() {
   return <section className="form-section profile-matching-panel" aria-labelledby="profile-matching-heading">
     <div className="form-section-head profile-matching-head">
       <div><h3 id="profile-matching-heading">詳しい希望条件・保育観</h3><p>求人の絞り込み、保育観マッチング、匿名スカウトの精度向上に使います。氏名・連絡先・現在勤務先は匿名スカウトには含まれません。</p></div>
-      <span className="profile-completion">入力度 {completion}%</span>
     </div>
 
     <div className="profile-preference-block">

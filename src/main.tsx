@@ -7,7 +7,7 @@ import './mobile-hardening.css';
 import './candidate-shell.css';
 
 // One app, one Clerk session, one router: every candidate screen (/, /jobs, /saved,
-// /applications, /profile, /scouts, /visits, /spot-jobs, /matches, /compare) is a
+// /applications, /messages, /profile, /scouts, /visits, /spot-jobs, /matches, /compare) is a
 // regular view of App. Nothing is injected into the page from outside React.
 const AppRoot = lazy(() => import('./AppRoot').then((module) => ({ default: module.AppRoot })));
 

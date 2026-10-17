@@ -13,12 +13,12 @@
 .scout-inbox-card-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .scout-inbox-card-head h4 { margin: 6px 0 2px; font-size: 17px; color: var(--hc-ink, #1e2a3b); overflow-wrap: anywhere; }
 .scout-inbox-card-head p, .scout-inbox-card-head small { margin: 0; font-size: 14px; color: var(--hc-muted, #6b7584); }
-.scout-status { display: inline-flex; align-items: center; min-height: 24px; padding: 0 10px; border-radius: 12px; background: #f3efee; color: var(--hc-ink-soft, #4a5566); font-size: 13px; font-weight: 800; }
+.scout-status { display: inline-flex; align-items: center; min-height: 24px; padding: 0 10px; border-radius: 12px; background: #f3efee; color: var(--hc-ink-soft, #4a5566); font-size: 14px; font-weight: 800; }
 .scout-status.status-pending { background: var(--hc-accent-soft, #fff0f3); color: var(--hc-accent-dark, #e72346); }
 .scout-status.status-accepted { background: #e9f8f1; color: #16714a; }
 .scout-job-line { display: flex; gap: 8px; align-items: center; font-size: 15px; color: var(--hc-ink-soft, #4a5566); }
 .scout-message { margin: 0; padding: 12px 14px; border-radius: 14px; background: #faf6f5; font-size: 15px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
-.scout-inbox-meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--hc-muted, #6b7584); }
+.scout-inbox-meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 14px; color: var(--hc-muted, #6b7584); }
 .scout-inbox-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .scout-inbox-actions button { width: 100%; }
 .scout-response-note { margin: 0; padding: 10px 12px; border-radius: 12px; background: #faf6f5; font-size: 14px; color: var(--hc-ink-soft, #4a5566); }

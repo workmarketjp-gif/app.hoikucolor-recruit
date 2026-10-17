@@ -15,7 +15,7 @@
   border-radius: 12px;
   background: #faf7f9;
   color: #6f6670;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .visit-trial-head {
@@ -32,7 +32,7 @@
 }
 
 .visit-trial-head span {
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 800;
   letter-spacing: .12em;
   color: #b84e7b;
@@ -50,7 +50,7 @@
   background: #fff;
   border: 1px solid rgba(223, 87, 143, 0.22);
   color: #b84e7b;
-  font-size: 11px;
+  font-size: 14px;
   font-style: normal;
   font-weight: 700;
 }
@@ -82,11 +82,11 @@
 }
 
 .visit-mode-grid strong {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .visit-mode-grid small {
-  font-size: 11px;
+  font-size: 14px;
   color: #8d828a;
 }
 
@@ -105,7 +105,7 @@
 
 .visit-form-grid label > span,
 .visit-message > span {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   color: #625860;
 }
@@ -131,7 +131,7 @@
 .visit-availability,
 .visit-trial-footnote {
   color: #80747c;
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.6;
 }
 
@@ -141,7 +141,7 @@
   border-radius: 11px;
   background: #fff;
   color: #5d535a;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.6;
 }
 
@@ -158,13 +158,13 @@
   border-radius: 11px;
   background: #fff;
   color: #6b6067;
-  font-size: 12px;
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 
 .visit-guidance strong {
   color: #463d43;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .visit-submit {
@@ -198,7 +198,7 @@
 .visit-reservation-card p {
   color: #433a40;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .visit-reservation-card small {
@@ -213,7 +213,7 @@
   padding: 4px 8px;
   background: #f4edf1;
   color: #7e6572;
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 800;
 }
 
@@ -225,7 +225,7 @@
 .visit-trial-panel .form-success {
   display: block;
   color: #32704b;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
 }
 

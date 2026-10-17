@@ -43,7 +43,13 @@ requireText(panel, '公開されていない値を推測で補うことはしま
 requireText(visitPanel, '<InterviewTransparencyPanel jobId={jobId} facilityId={facilityId} />', 'job-detail integration');
 requireText(visitPanel, 'if (!settings || enabledTypes(settings).length === 0) return transparencyPanel;', 'transparency independent of visit availability');
 requireText(panelCss, '@media (max-width: 620px)', 'mobile layout');
-requireText(panelCss, "content: '園の公開回答（申告）'", 'mobile source label');
-requireText(panelCss, "content: '勤務実績'", 'mobile verified label');
+// Stacked rows, not a table: every value carries its own source label in the DOM.
+forbidText(panel, 'role="table"', 'sideways-scrolling comparison table');
+requireText(panel, '<span className="facility-source">園の回答</span>', 'per-value facility source label');
+requireText(panelCss, '.interview-check dd', 'stacked row layout');
+// The two "no value" states stay distinct and are each explained in plain words.
+requireText(panel, '実績未公開</dt><dd>勤務記録から集計する項目ですが、この園の値はまだ公開されていません。', 'unpublished-metric explanation');
+requireText(panel, '勤務実績なし</dt><dd>この項目は勤務記録から集計していないため、比べられる値がありません。', 'no-record explanation');
+requireText(panel, '<details', 'accessible Q&A disclosure');
 
 console.log('jobseeker interview transparency contract: OK');
