@@ -662,7 +662,7 @@ function ProfileView({ profileResource, email, onSignOut, fallback, onSaved }: {
     <div className="hc-profile">
       {returnJob && <p className="hc-notice">応募に必要な項目を入力して保存すると、求人に戻ります。</p>}
       <ProfileForm key={initial.clerk_user_id} initial={initial} requireForApplication={Boolean(returnJob)} onSaved={onSaved} />
-      <DocumentVaultPanel />
+      <DocumentVaultPanel qualifications={initial.qualifications} />
       {!returnJob && (
         <section className="hc-form-section" aria-labelledby="profile-more-heading">
           <div className="hc-form-section-head"><h2 id="profile-more-heading">そのほかの機能</h2></div>

@@ -1,4 +1,5 @@
-import { attachJobseekerDocumentToApplication, listJobseekerDocuments } from './documentVaultRepository';
+import { attachJobseekerDocumentToApplication, listJobseekerDocuments, type JobseekerDocument } from './documentVaultRepository';
+import { isMissingRpcError } from './jobDocumentRequirementRepository';
 import { supabase } from './supabase';
 
 export type VerifiedWorkplaceMetric = {
@@ -232,15 +233,24 @@ export function clearApplicationDocumentHandoffWarning(applicationId: string) {
 }
 
 async function handoffDefaultDocuments(applicationId: string) {
+  await handoffDocuments(applicationId, (document) => document.is_default);
+}
+
+async function handoffSelectedDocuments(applicationId: string, documentIds: string[]) {
+  const selected = new Set(documentIds);
+  await handoffDocuments(applicationId, (document) => selected.has(document.id));
+}
+
+async function handoffDocuments(applicationId: string, include: (document: JobseekerDocument) => boolean) {
   try {
-    const defaultDocuments = (await listJobseekerDocuments()).filter((document) => document.is_default);
-    if (!defaultDocuments.length) {
+    const documents = (await listJobseekerDocuments()).filter(include);
+    if (!documents.length) {
       setApplicationDocumentHandoffWarning(applicationId, false);
       return;
     }
 
     const results = await Promise.allSettled(
-      defaultDocuments.map((document) => attachJobseekerDocumentToApplication(document, applicationId)),
+      documents.map((document) => attachJobseekerDocumentToApplication(document, applicationId)),
     );
     setApplicationDocumentHandoffWarning(applicationId, results.some((result) => result.status === 'rejected'));
   } catch {
@@ -436,11 +446,35 @@ export async function respondToInterview(
   if (error) throw error;
 }
 
-export async function submitApplication(jobId: string, profile: JobseekerProfile): Promise<string> {
+/** Plain-Japanese reasons for the v2 submission guards (see the migration). */
+function submissionDocumentError(error: unknown): Error | null {
+  const message = error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string'
+    ? (error as { message: string }).message
+    : '';
+  if (message.includes('required documents missing')) {
+    return new Error('この求人に必要な書類がそろっていません。書類を選ぶか、この画面でアップロードしてから応募してください。');
+  }
+  if (message.includes('one document per type')) return new Error('同じ種類の書類は1件だけ選べます。');
+  if (message.includes('document not found') || message.includes('too many documents')) {
+    return new Error('選んだ書類を確認できませんでした。書類の一覧を読み込み直してから、もう一度お試しください。');
+  }
+  return null;
+}
+
+/**
+ * `documentIds` omitted: the original behaviour (v1 RPC, send every 「応募時に使う」 document).
+ * `documentIds` given: the candidate chose these documents for this job. The v2 RPC checks
+ * ownership and the job's required documents in the same transaction that creates the application.
+ */
+export async function submitApplication(
+  jobId: string,
+  profile: JobseekerProfile,
+  options: { documentIds?: string[] } = {},
+): Promise<string> {
   const applicantName = profile.name?.trim() || '';
   if (!applicantName) throw new Error('応募前にプロフィールのお名前を登録してください。');
 
-  const { data, error } = await client().rpc('hc_jobseeker_submit_application', {
+  const params = {
     p_job_id: jobId,
     p_applicant_name: applicantName,
     p_applicant_name_kana: profile.name_kana?.trim() || null,
@@ -450,7 +484,27 @@ export async function submitApplication(jobId: string, profile: JobseekerProfile
     p_years_of_experience: profile.years_of_experience,
     p_desired_start_date: profile.desired_start_date,
     p_message: profile.self_intro?.trim() || null,
-  });
+  };
+
+  if (options.documentIds) {
+    const documentIds = [...new Set(options.documentIds)];
+    const v2 = await client().rpc('hc_jobseeker_submit_application_v2', { ...params, p_document_ids: documentIds });
+    if (!v2.error) {
+      if (typeof v2.data !== 'string' || !v2.data) throw new Error('応募IDを取得できませんでした。');
+      await handoffSelectedDocuments(v2.data, documentIds);
+      return v2.data;
+    }
+    if (!isMissingRpcError(v2.error)) throw submissionDocumentError(v2.error) ?? v2.error;
+    // Migration not applied yet: no job can have requirements, so v1 is equivalent
+    // apart from the expectation snapshot, which then still lists the defaults.
+    const { data, error } = await client().rpc('hc_jobseeker_submit_application', params);
+    if (error) throw error;
+    if (typeof data !== 'string' || !data) throw new Error('応募IDを取得できませんでした。');
+    await handoffSelectedDocuments(data, documentIds);
+    return data;
+  }
+
+  const { data, error } = await client().rpc('hc_jobseeker_submit_application', params);
   if (error) throw error;
   if (typeof data !== 'string' || !data) throw new Error('応募IDを取得できませんでした。');
 
