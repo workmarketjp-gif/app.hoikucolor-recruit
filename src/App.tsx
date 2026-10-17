@@ -25,6 +25,7 @@ const MatchesView = lazy(() => import('./views/MatchesView').then((module) => ({
 const ScoutsView = lazy(() => import('./views/ScoutsView').then((module) => ({ default: module.ScoutsView })));
 const SpotJobsView = lazy(() => import('./views/SpotJobsView').then((module) => ({ default: module.SpotJobsView })));
 const VisitsView = lazy(() => import('./views/VisitsView').then((module) => ({ default: module.VisitsView })));
+const ResumeBuilderView = lazy(() => import('./views/ResumeBuilderView').then((module) => ({ default: module.ResumeBuilderView })));
 
 const viewTitles: Record<View, string> = {
   home: 'ホーム',
@@ -38,6 +39,7 @@ const viewTitles: Record<View, string> = {
   spot: 'スポット勤務',
   matches: 'マッチ度',
   compare: '園を比較',
+  resume: '応募書類をつくる',
 };
 
 /**
@@ -56,9 +58,10 @@ const parentTab: Record<View, ShellTab | null> = {
   spot: 'jobs',
   matches: 'jobs',
   compare: 'saved',
+  resume: 'profile',
 };
 
-const secondaryViews = new Set<View>(['scouts', 'visits', 'spot', 'matches', 'compare']);
+const secondaryViews = new Set<View>(['scouts', 'visits', 'spot', 'matches', 'compare', 'resume']);
 const closedApplicationStatuses = ['rejected', 'withdrawn', 'hired'];
 
 type Route = { view: View; applicationId: string | null; key: number };
@@ -267,6 +270,7 @@ export function App() {
             {view === 'spot' && <SpotJobsView onStartApplication={() => navigate('profile')} />}
             {view === 'matches' && <MatchesView userKey={userKey} savedIds={savedIdList} {...jobActions} />}
             {view === 'compare' && <CompareView userKey={userKey} />}
+            {view === 'resume' && <ResumeBuilderView onProfileSaved={profile.setData} />}
           </Suspense>
         )}
       </div>
@@ -667,6 +671,7 @@ function ProfileView({ profileResource, email, onSignOut, fallback, onSaved }: {
         <section className="hc-form-section" aria-labelledby="profile-more-heading">
           <div className="hc-form-section-head"><h2 id="profile-more-heading">そのほかの機能</h2></div>
           <nav className="hc-menu is-flush" aria-label="そのほかの機能">
+            <a href="/resume">履歴書・職務経歴書をつくる<Icon name="chevron" size={16} /></a>
             <a href="/scouts">スカウト<Icon name="chevron" size={16} /></a>
             <a href="/visits">見学・体験の予約<Icon name="chevron" size={16} /></a>
             <a href="/spot-jobs">スポット勤務<Icon name="chevron" size={16} /></a>
