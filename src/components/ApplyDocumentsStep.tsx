@@ -214,7 +214,7 @@ function ApplyDocumentRowView({ row, selectedId, onSelect, onUpload, uploading, 
 
     {uploadError && <p className="form-error" role="alert">{uploadError}</p>}
     <button type="button" className="secondary-button hc-apply-doc-upload" onClick={onUpload} disabled={disabled}>
-      <Icon name="upload" size={16} /> {uploading ? '保存しています…' : row.candidates.length ? '別のファイルをアップロード' : `${label}をアップロード`}
+      <Icon name="upload" size={16} /> {uploading ? '保存しています…' : row.candidates.length ? '別のファイルを追加' : `${label}を追加`}
     </button>
   </li>;
 }

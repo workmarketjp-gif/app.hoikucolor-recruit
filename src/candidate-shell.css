@@ -305,7 +305,7 @@ body { background: var(--hc-bg); color: var(--hc-ink); font-size: 16px; line-hei
 .hc-apply-doc-option > span { display: grid; min-width: 0; }
 .hc-apply-doc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hc-apply-doc-option small { font-size: 13px; color: var(--hc-muted); }
-.hc-apply-doc-upload { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 48px !important; }
+.hc-apply-doc-upload { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 48px !important; word-break: keep-all; overflow-wrap: anywhere; }
 
 /* ---------- Profile: qualifications and evidence ---------- */
 .hc-qualification-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
