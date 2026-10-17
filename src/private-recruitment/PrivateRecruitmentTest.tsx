@@ -1,18 +1,29 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import './PrivateRecruitmentTest.css';
 
-export type TestJob = { id: string; title: string; description: string; conditions: Record<string, string>; presentation: 'standard' | 'original'; site_payload: unknown; accepting: boolean };
+export type TestJob = { id: string; title: string; description: string; conditions: Record<string, string>; presentation: 'standard' | 'original'; site_payload: unknown; accepting: boolean; document_requirements?: unknown };
+// A document the candidate submitted with a test application. file_path is a private
+// bucket key used only to create a short signed URL; attached=false means the copy is unfinished.
+export type TestDocument = { id: string; application_id: string; document_type: string; title: string; mime_type: string | null; file_size: number | null; file_path: string; source_jobseeker_document_id?: string | null; attached: boolean };
+export type TestApplyResult = { application_id: string; created?: boolean; documents?: Array<{ id: string; source_jobseeker_document_id: string; file_path: string; attached: boolean }> };
 type TestApplication = { id: string; job_id: string; applicant_name: string; status: string };
 type TestMessage = { id: string; application_id: string; sender_role: string; body: string };
-type Snapshot = { scope: { id: string; label: string; facility_id: string }; role: 'candidate' | 'nursery'; jobs: TestJob[]; applications: TestApplication[]; messages: TestMessage[] };
+type Snapshot = { scope: { id: string; label: string; facility_id: string }; role: 'candidate' | 'nursery'; jobs: TestJob[]; applications: TestApplication[]; messages: TestMessage[]; documents?: TestDocument[] };
 export type TestRpc = (args: { p_action: string; p_scope_id: string; p_job_id?: string; p_application_id?: string; p_body?: Record<string, unknown> }) => Promise<unknown>;
 const labels: Record<string, string> = {new:'応募済み',reviewing:'書類確認中',interview:'面接予定',offered:'内定',rejected:'選考終了',withdrawn:'辞退'};
 const next: Record<string,string[]> = {new:['reviewing','rejected'],reviewing:['interview','rejected'],interview:['offered','rejected']};
 export function privateTestScope(path: string) {
  return path.match(/\/(?:jobs|color)\/test\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/?$/i)?.[1] || null;
 }
-export function PrivateRecruitmentTest({ scopeId, rpc, expectedRole, name = '', original }: {
+// Optional document hooks (each app plugs in its own vault/viewer; absent = no documents):
+//  documentStep    candidate: renders the document choice for a job and calls submit(ids) to apply
+//  afterApply      candidate: finishes pending copies (copy + document_attached) for an application
+//  renderDocuments both roles: renders the documents of the open application
+export function PrivateRecruitmentTest({ scopeId, rpc, expectedRole, name = '', original, documentStep, afterApply, renderDocuments }: {
  scopeId: string; rpc: TestRpc; expectedRole: 'candidate'|'nursery'; name?: string; original?: (job: TestJob, applied: boolean) => ReactNode;
+ documentStep?: (args: { job: TestJob; pending: boolean; submit: (documentIds: string[]) => void }) => ReactNode;
+ afterApply?: (result: TestApplyResult) => Promise<void>;
+ renderDocuments?: (documents: TestDocument[]) => ReactNode;
 }) {
  const [snapshot,setSnapshot]=useState<Snapshot|null>(null);
  const [error,setError]=useState('');
@@ -50,9 +61,14 @@ export function PrivateRecruitmentTest({ scopeId, rpc, expectedRole, name = '', 
   try{
    const result=await rpc({p_action:action,p_scope_id:scopeId,p_job_id:job?.id,p_application_id:application?.id,p_body:body}) as {application_id?:string};
    if(result.application_id)setAppId(result.application_id);
+   if(action==='apply'&&afterApply&&result.application_id){
+    try{await afterApply(result as TestApplyResult);}catch{setError('応募は届いています。書類の提出が完了していないため、下の「書類の提出を完了する」から送り直してください。');}
+   }
    if(action==='send'){setMessage('');nonce.current=null;}
    setStatus('');await refresh();
-  }catch{setError('操作を完了できませんでした。更新して現在の状態を確認してください。');}
+  }catch(e){setError(String((e as {message?:unknown})?.message??'').includes('required documents missing')
+   ?'この求人に必要な書類がそろっていません。書類を選ぶか、アップロードしてから応募してください。'
+   :'操作を完了できませんでした。更新して現在の状態を確認してください。');}
   finally{busy.current=false;if(mounted.current)setPending(false);}
  };
  const job=snapshot?.jobs.find(j=>j.id===jobId) || snapshot?.jobs[0];
@@ -68,10 +84,14 @@ export function PrivateRecruitmentTest({ scopeId, rpc, expectedRole, name = '', 
     <label>募集要項<select aria-label="募集要項" value={job?.id||''} onChange={e=>{setJobId(e.target.value);setAppId('');setStatus('');setMessage('');nonce.current=null;}}>{snapshot.jobs.map(j=><option key={j.id} value={j.id}>{j.title}</option>)}</select></label>
     {job&&<section aria-label="募集要項">
      {job.presentation==='original'&&original ? original(job,Boolean(application)) : <><h2>{job.title}</h2><p className="recruitment-test-copy">{job.description}</p><dl>{Object.entries(job.conditions).map(([key,value])=><div key={key}><dt>{key}</dt><dd>{String(value)}</dd></div>)}</dl></>}
-     {!application&&<form onSubmit={e=>{e.preventDefault();void mutate('apply',{applicant_name:applicant});}}>
+     {!application&&(documentStep&&job.accepting?<div className="recruitment-test-apply">
+      <label>お名前<input value={applicant} onChange={e=>setApplicant(e.target.value)} required maxLength={100} autoComplete="name"/></label>
+      {!applicant.trim()&&<p>お名前を入力すると応募できます。</p>}
+      {documentStep({job,pending,submit:ids=>{if(applicant.trim())void mutate('apply',{applicant_name:applicant,document_ids:ids});}})}
+     </div>:<form onSubmit={e=>{e.preventDefault();void mutate('apply',{applicant_name:applicant});}}>
       <label>お名前<input value={applicant} onChange={e=>setApplicant(e.target.value)} required maxLength={100} autoComplete="name"/></label>
       <button disabled={pending||!job.accepting||!applicant.trim()}>{job.accepting?'このテスト求人に応募する':'受付を終了しました'}</button>
-     </form>}
+     </form>)}
     </section>}
    </>}
    {expectedRole==='nursery'&&<section><h2>テスト応募の受信一覧</h2>
@@ -83,6 +103,12 @@ export function PrivateRecruitmentTest({ scopeId, rpc, expectedRole, name = '', 
     {expectedRole==='nursery'&&next[application.status]&&<form onSubmit={e=>{e.preventDefault();void mutate('status',{status,expected_status:application.status});}}>
      <label>次の選考状況<select aria-label="次の選考状況" required value={status} onChange={e=>setStatus(e.target.value)}><option value="">選択してください</option>{next[application.status].map(s=><option key={s} value={s}>{labels[s]}</option>)}</select></label>
      <button disabled={pending||!status}>選考状況を変更する</button></form>}
+    {renderDocuments&&<><h3>提出書類</h3>{renderDocuments((snapshot.documents||[]).filter(d=>d.application_id===application.id))}</>}
+    {expectedRole==='candidate'&&afterApply&&(snapshot.documents||[]).some(d=>d.application_id===application.id&&!d.attached)&&<button type="button" disabled={pending} onClick={()=>{
+     const pendingDocs=(snapshot.documents||[]).filter(d=>d.application_id===application.id&&!d.attached).map(d=>({id:d.id,source_jobseeker_document_id:String(d.source_jobseeker_document_id||''),file_path:d.file_path,attached:false}));
+     busy.current=true;setPending(true);setError('');
+     void afterApply({application_id:application.id,documents:pendingDocs}).catch(()=>setError('書類の提出を完了できませんでした。通信状況を確認して、もう一度お試しください。')).finally(()=>{busy.current=false;if(mounted.current)setPending(false);void refresh();});
+    }}>書類の提出を完了する</button>}
     <h3>メッセージ</h3><ol className="recruitment-test-messages">{snapshot.messages.filter(m=>m.application_id===application.id).map(m=><li key={m.id}><strong>{m.sender_role==='nursery'?'園から':'応募者から'}</strong><p>{m.body}</p></li>)}</ol>
     {!['rejected','withdrawn'].includes(application.status)&&<form onSubmit={e=>{e.preventDefault();nonce.current ||= crypto.randomUUID();void mutate('send',{message,client_message_id:nonce.current});}}>
      <label>メッセージ<textarea value={message} onChange={e=>{setMessage(e.target.value);nonce.current=null;}} required maxLength={4000}/></label>
