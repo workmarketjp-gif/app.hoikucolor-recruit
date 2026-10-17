@@ -1,5 +1,6 @@
 -- Hoiku Color Candidate Web — résumé (履歴書) / work-history (職務経歴書) builder v1.
--- Source only. Apply to production only after explicit approval.
+-- Production migration version: 20261017055551 (applied 2026-10-17 with the user's approval).
+-- Production already has this migration. Repository sync must NOT re-apply it there.
 --
 -- Structured data is the source of truth; generated PDFs are ordinary Vault documents
 -- (hc_jobseeker_documents, types resume / work_history) and reuse the existing private

@@ -5,8 +5,9 @@ import fs from 'node:fs'
 // the existing private document vault, and the optional photo never uploaded on its own.
 
 const read = (path) => fs.readFileSync(path, 'utf8')
-const migrationPath = 'supabase/migrations/20261017100000_hc_jobseeker_resume_builder_v1.sql'
+const migrationPath = 'supabase/migrations/20261017055551_hc_jobseeker_resume_builder_v1.sql'
 const migration = read(migrationPath)
+const indexFix = read('supabase/migrations/20261017120000_hc_jobseeker_resume_entries_drop_duplicate_index_v1.sql')
 const repository = read('src/lib/resumeRepository.ts')
 const documentModel = read('src/lib/resumeDocument.ts')
 const pdf = read('src/lib/resumePdf.ts')
@@ -55,6 +56,7 @@ const checks = [
   ['authenticated gets SELECT only', /grant select on table public\.hc_jobseeker_resumes to authenticated;/.test(migration) && /grant select on table public\.hc_jobseeker_resume_entries to authenticated;/.test(migration) && !/grant (insert|update|delete|all)[^;]*hc_jobseeker_resume/i.test(migration)],
   ['owner policies use the Clerk sub via initplan-safe auth.jwt()', (migration.match(/using \(clerk_user_id = nullif\(\(\(select auth\.jwt\(\)\) ->> 'sub'\), ''\)\)/g) || []).length === 2],
   ['account-deletion write freeze covers both tables', (migration.match(/hc_candidate_owned_row_account_freeze_v1\('clerk_user_id'\)/g) || []).length === 2],
+  ['redundant owner index is dropped (the unique constraint already covers it)', /drop index if exists public\.hc_jobseeker_resume_entries_owner_idx;/.test(indexFix) && /hc_jobseeker_resume_entries_order_unique/.test(indexFix)],
   ['migration fails closed on privilege drift', /HC_RESUME_BUILDER_PRIVILEGE_DRIFT/.test(migration)],
 
   // RPC boundary.
