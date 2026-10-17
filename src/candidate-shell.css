@@ -313,3 +313,5 @@ body { background: var(--hc-bg); color: var(--hc-ink); font-size: 16px; line-hei
 .hc-qualification > strong { font-size: 16px; }
 .hc-qualification-evidence { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 15px; color: var(--hc-ink-soft); }
 .hc-qualification-evidence .secondary-button { min-height: 48px !important; }
+
+.hc-job-actions.is-single { grid-template-columns: 1fr; }

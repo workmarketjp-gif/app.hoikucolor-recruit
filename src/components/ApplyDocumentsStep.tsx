@@ -26,9 +26,18 @@ import { errorMessage } from '../lib/useResource';
 
 type Props = {
   jobId: string;
-  profile: JobseekerProfile;
-  onCancel: () => void;
-  onApplied: (applicationId: string) => void;
+  /** Normal jobs: applied with this profile through submitApplication (v2 RPC). */
+  profile?: JobseekerProfile;
+  onCancel?: () => void;
+  onApplied?: (applicationId: string) => void;
+  /**
+   * Other application flows (the private recruitment test lane) reuse the same step:
+   * where this job's requirements come from, and who submits the chosen document ids.
+   */
+  loadRequirements?: () => Promise<JobDocumentRequirements>;
+  submitDocuments?: (documentIds: string[]) => void;
+  /** True while the caller is still submitting through submitDocuments. */
+  externalPending?: boolean;
 };
 
 /**
@@ -36,7 +45,7 @@ type Props = {
  * job asks for, pre-selects saved 「応募時に使う」 files, lets the candidate upload a missing
  * one without leaving the job, and blocks only on documents the facility marked 必須.
  */
-export function ApplyDocumentsStep({ jobId, profile, onCancel, onApplied }: Props) {
+export function ApplyDocumentsStep({ jobId, profile, onCancel, onApplied, loadRequirements, submitDocuments, externalPending = false }: Props) {
   const { userId } = useCandidateSession();
   const [requirements, setRequirements] = useState<JobDocumentRequirements | null>(null);
   const [documents, setDocuments] = useState<JobseekerDocument[]>([]);
@@ -54,7 +63,7 @@ export function ApplyDocumentsStep({ jobId, profile, onCancel, onApplied }: Prop
     setLoadError(null);
     try {
       const [nextRequirements, nextDocuments] = await Promise.all([
-        getJobDocumentRequirements(jobId),
+        loadRequirements ? loadRequirements() : getJobDocumentRequirements(jobId),
         listJobseekerDocuments(),
       ]);
       setRequirements(nextRequirements);
@@ -63,6 +72,8 @@ export function ApplyDocumentsStep({ jobId, profile, onCancel, onApplied }: Prop
     } catch (err) {
       setLoadError(describeDocumentError(err, '応募に使う書類を読み込めませんでした。もう一度お試しください。'));
     }
+    // loadRequirements is read once per job; callers pass a stable function per job.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
   useEffect(() => { void load(); }, [load]);
@@ -72,7 +83,7 @@ export function ApplyDocumentsStep({ jobId, profile, onCancel, onApplied }: Prop
     [requirements, documents],
   );
   const missing = useMemo(() => missingRequiredDocuments(rows, selection), [rows, selection]);
-  const busy = submitting || uploadingType !== null;
+  const busy = submitting || externalPending || uploadingType !== null;
 
   const chooseFile = (type: JobseekerDocumentType) => {
     if (busy) return;
@@ -100,10 +111,13 @@ export function ApplyDocumentsStep({ jobId, profile, onCancel, onApplied }: Prop
   const submit = async () => {
     setTriedSubmit(true);
     if (missing.length || busy) return;
+    const documentIds = selectedDocumentIds(rows, selection);
+    if (submitDocuments) { submitDocuments(documentIds); return; }
+    if (!profile) return;
     setSubmitting(true); setSubmitError(null);
     try {
-      const applicationId = await submitApplication(jobId, profile, { documentIds: selectedDocumentIds(rows, selection) });
-      onApplied(applicationId);
+      const applicationId = await submitApplication(jobId, profile, { documentIds });
+      onApplied?.(applicationId);
     } catch (err) {
       setSubmitError(errorMessage(err, '応募を送信できませんでした。通信状況を確認して、もう一度お試しください。'));
     } finally {
@@ -157,10 +171,10 @@ export function ApplyDocumentsStep({ jobId, profile, onCancel, onApplied }: Prop
     </p>}
     {submitError && <p className="form-error" role="alert">{submitError}</p>}
 
-    <div className="hc-job-actions">
-      <button type="button" className="secondary-button" onClick={onCancel} disabled={submitting}>戻る</button>
+    <div className={`hc-job-actions ${onCancel ? '' : 'is-single'}`}>
+      {onCancel && <button type="button" className="secondary-button" onClick={onCancel} disabled={submitting}>戻る</button>}
       <button type="button" className="primary-button" onClick={() => void submit()} disabled={busy || !requirements || Boolean(loadError)} aria-disabled={missing.length > 0}>
-        {submitting ? '応募しています…' : 'この内容で応募する'}
+        {submitting || externalPending ? '応募しています…' : 'この内容で応募する'}
       </button>
     </div>
   </section>;
