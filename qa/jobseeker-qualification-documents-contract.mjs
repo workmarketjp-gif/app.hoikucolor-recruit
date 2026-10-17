@@ -151,7 +151,7 @@ check(jobCard.includes('<ApplyDocumentsStep jobId={job.id} profile={applyProfile
 check(applyStep.includes('getJobDocumentRequirements(jobId)') && applyStep.includes('listJobseekerDocuments()'), 'apply step must load this job\'s requirements and the saved documents');
 check(applyStep.includes('uploadJobseekerDocument(userId, type, file'), 'apply step must allow uploading a missing document inline');
 check(applyStep.includes('if (missing.length || busy) return;'), 'apply step must block only on missing required documents');
-check(applyStep.includes('submitApplication(jobId, profile, { documentIds: selectedDocumentIds(rows, selection) })'), 'apply step must submit the chosen documents');
+check(applyStep.includes('const documentIds = selectedDocumentIds(rows, selection);') && applyStep.includes('submitApplication(jobId, profile, { documentIds })') && applyStep.includes('if (submitDocuments) { submitDocuments(documentIds); return; }'), 'apply step must submit the chosen documents (normal jobs via v2, other flows via the injected submitter)');
 check(applyStep.includes('はこの求人の応募に必要です'), 'blocking reason must be explained in plain Japanese');
 check(repository.includes("rpc('hc_jobseeker_submit_application_v2'") && repository.includes('isMissingRpcError(v2.error)'), 'v2 submit must fall back to v1 only when the migration is not applied');
 check(repository.includes('await handoffDefaultDocuments(data);'), 'callers without a selection keep the default-document handoff');
