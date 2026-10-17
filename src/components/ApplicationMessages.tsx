@@ -15,14 +15,9 @@ import {
   listApplicationDocumentExpectations,
   type ApplicationDocumentExpectation,
 } from '../lib/applicationDocumentExpectationRepository';
+import { DOCUMENT_TYPE_LABELS } from '../lib/documentTypes';
 
-const documentLabels: Record<string, string> = {
-  resume: '履歴書',
-  work_history: '職務経歴書',
-  nursery_teacher_license: '保育士証',
-  kindergarten_license: '幼稚園教諭免許',
-  other: 'その他',
-};
+const documentLabels = DOCUMENT_TYPE_LABELS as Record<string, string>;
 
 type LoadMessageOptions = {
   acknowledge?: boolean;

@@ -5,6 +5,11 @@ export type JobseekerDocumentType =
   | 'work_history'
   | 'nursery_teacher_license'
   | 'kindergarten_license'
+  | 'registered_dietitian_license'
+  | 'dietitian_license'
+  | 'cook_license'
+  | 'nurse_license'
+  | 'assistant_nurse_license'
   | 'other';
 
 export type JobseekerDocument = {
@@ -188,6 +193,16 @@ async function ensureApplicationCopy(sourcePath: string, destinationPath: string
   if (!retry.error) return;
   if (await storageObjectExists(destinationPath)) return;
   throw retry.error;
+}
+
+/**
+ * Private recruitment test lane: copy a vault document to the test path the lane registered
+ * for it (recruitment-test/<scope>/<application>/vault-<doc>/<file>). Storage policies allow
+ * this only for the candidate who owns that test application, once.
+ */
+export async function copyVaultDocumentToTestApplication(document: JobseekerDocument, destinationPath: string) {
+  if (!destinationPath.startsWith('recruitment-test/')) throw new Error('提出先を確認できませんでした。');
+  await ensureApplicationCopy(document.file_path, destinationPath);
 }
 
 async function findJobseekerDocumentById(documentId: string): Promise<JobseekerDocument | null> {
