@@ -1,5 +1,27 @@
-// Pure module: type-only imports, so qa/ contracts can execute it directly in Node.
-import type { JobseekerDocument, JobseekerDocumentType } from './documentVaultRepository';
+// Pure, dependency-free module shared by Web (src/lib) and Native (native/src/lib).
+// The two copies must stay byte-identical (qa/jobseeker-qualification-documents-contract.mjs),
+// and Node runs this file directly in qa/ contracts, so it imports nothing.
+
+export type JobseekerDocumentType =
+  | 'resume'
+  | 'work_history'
+  | 'nursery_teacher_license'
+  | 'kindergarten_license'
+  | 'registered_dietitian_license'
+  | 'dietitian_license'
+  | 'cook_license'
+  | 'nurse_license'
+  | 'assistant_nurse_license'
+  | 'other';
+
+/** The fields of a saved vault document that the apply step needs. */
+export type ApplyDocumentLike = {
+  id: string;
+  document_type: JobseekerDocumentType;
+  title: string;
+  is_default: boolean;
+  uploaded_at: string;
+};
 
 /** Display order used everywhere a jobseeker picks or sees a document type. */
 export const DOCUMENT_TYPE_ORDER: JobseekerDocumentType[] = [
@@ -75,12 +97,12 @@ export type JobDocumentRequirements = {
   items: JobDocumentRequirement[];
 };
 
-export type ApplyDocumentRow = {
+export type ApplyDocumentRow<D extends ApplyDocumentLike = ApplyDocumentLike> = {
   type: JobseekerDocumentType;
   level: ApplyDocumentLevel;
   note: string | null;
   /** Saved vault documents of this type, default first, then newest. */
-  candidates: JobseekerDocument[];
+  candidates: D[];
 };
 
 export type ApplyDocumentSelection = Partial<Record<JobseekerDocumentType, string | null>>;
@@ -111,7 +133,7 @@ export function normalizeRequirements(rows: unknown): JobDocumentRequirement[] {
   return result;
 }
 
-function sortCandidates(documents: JobseekerDocument[]) {
+function sortCandidates<D extends ApplyDocumentLike>(documents: D[]): D[] {
   return [...documents].sort((a, b) => {
     if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
     return Date.parse(b.uploaded_at) - Date.parse(a.uploaded_at);
@@ -124,10 +146,10 @@ function sortCandidates(documents: JobseekerDocument[]) {
  * - Not configured: the types the candidate already marked 「応募時に使う」, as optional,
  *   which is exactly what the pre-requirement apply flow sent.
  */
-export function buildApplyDocumentRows(
+export function buildApplyDocumentRows<D extends ApplyDocumentLike>(
   requirements: JobDocumentRequirements,
-  documents: JobseekerDocument[],
-): ApplyDocumentRow[] {
+  documents: D[],
+): ApplyDocumentRow<D>[] {
   const byType = (type: JobseekerDocumentType) => sortCandidates(documents.filter((document) => document.document_type === type));
   if (!requirements.configured) {
     return DOCUMENT_TYPE_ORDER

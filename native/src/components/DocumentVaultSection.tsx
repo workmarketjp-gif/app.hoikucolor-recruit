@@ -38,13 +38,27 @@ function formatBytes(value: number | null) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function DocumentVaultSection() {
+/**
+ * `initialType` preselects the type to add (the apply step opens this section for a missing
+ * document). `onDocumentsChanged` receives every canonical reload so the caller can refresh.
+ */
+export function DocumentVaultSection({ initialType = 'resume', onDocumentsChanged }: {
+  initialType?: JobseekerDocumentType;
+  onDocumentsChanged?: (documents: JobseekerDocument[]) => void;
+} = {}) {
   const { session } = useSession();
   const user = session?.user ?? null;
   const privacy = usePrivateDataQuarantine();
   const { pinCandidateAction } = usePinnedCandidateAction();
-  const [documents, setDocuments] = useState<JobseekerDocument[]>([]);
-  const [documentType, setDocumentType] = useState<JobseekerDocumentType>('resume');
+  const [documents, setDocumentsState] = useState<JobseekerDocument[]>([]);
+  const onDocumentsChangedRef = useRef(onDocumentsChanged);
+  onDocumentsChangedRef.current = onDocumentsChanged;
+  const setDocuments = useCallback((next: JobseekerDocument[]) => {
+    setDocumentsState(next);
+    onDocumentsChangedRef.current?.(next);
+  }, []);
+  const [documentType, setDocumentType] = useState<JobseekerDocumentType>(initialType);
+  useEffect(() => { setDocumentType(initialType); }, [initialType]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const userIdRef = useRef<string | null>(user?.id ?? null);

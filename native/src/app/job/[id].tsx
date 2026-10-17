@@ -4,6 +4,7 @@ import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, Vi
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { getJobseekerProfile, type JobseekerJob, type JobseekerProfile } from '../../lib/jobseekerCoreApi';
 import { getCandidateJob, listApplications, submitApplication } from '../../lib/applicationJourneyApi';
+import { ApplyDocumentsPanel } from '../../components/ApplyDocumentsPanel';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -32,6 +33,8 @@ export default function JobDetailScreen() {
   const [existingApplicationId, setExistingApplicationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
+  // この求人に応募する → this job's documents (ApplyDocumentsPanel) → submit with the chosen documents.
+  const [choosingDocuments, setChoosingDocuments] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
 
@@ -84,7 +87,17 @@ export default function JobDetailScreen() {
     }
   };
 
-  const apply = async () => {
+  const startApply = () => {
+    if (!profile?.name?.trim()) {
+      setError('応募前にプロフィールを登録してください。');
+      return;
+    }
+    if (applying || existingApplicationId) return;
+    setError(null);
+    setChoosingDocuments(true);
+  };
+
+  const apply = async (documentIds: string[]) => {
     if (!profile) {
       setError('応募前にプロフィールを登録してください。');
       return;
@@ -95,7 +108,7 @@ export default function JobDetailScreen() {
     try {
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
-      const result = await submitApplication(pinned.client, jobId, profile);
+      const result = await submitApplication(pinned.client, jobId, profile, { documentIds });
       if (!pinned.isCurrent()) return;
       routeToApplication(result.applicationId, result.documentHandoffFailures > 0);
     } catch (applyError) {
@@ -153,8 +166,10 @@ export default function JobDetailScreen() {
         <Pressable style={styles.primary} onPress={() => router.push(`/application/${existingApplicationId}` as never)}>
           <Text style={styles.primaryText}>応募内容を確認</Text>
         </Pressable>
+      ) : choosingDocuments ? (
+        <ApplyDocumentsPanel jobId={job.id} submitting={applying} onCancel={() => setChoosingDocuments(false)} onSubmit={(documentIds) => void apply(documentIds)} />
       ) : (
-        <Pressable style={styles.primary} disabled={applying} onPress={() => void apply()}>
+        <Pressable style={styles.primary} disabled={applying} onPress={startApply}>
           <Text style={styles.primaryText}>{applying ? '応募を確認中…' : 'この求人に応募する'}</Text>
         </Pressable>
       )}

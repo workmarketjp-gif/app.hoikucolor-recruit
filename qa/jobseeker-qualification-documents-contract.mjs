@@ -49,8 +49,10 @@ for (const table of ['hc_jobseeker_documents', 'hc_application_documents', 'hc_a
   check(new RegExp(`validate constraint ${table}_document_type_check`, 'i').test(sql), `${table} CHECK must be validated after widening`);
 }
 check(!/\bupdate\s+public\.hc_(jobseeker|application)_documents\b/i.test(sql), 'migration must never rewrite existing document rows');
-check(!/\bdelete\s+from\b/i.test(sql) && !/\btruncate\b/i.test(sql), 'migration must not delete data');
-check(!/create\s+or\s+replace\s+function\s+public\.hc_jobseeker_submit_application\s*\(/i.test(sql), 'v1 submit RPC must stay untouched (Native depends on it)');
+check(!/\bdelete\s+from\s+public\.hc_(jobseeker_documents|application_documents|application_document_expectations|applications|jobs)\b/i.test(sql) && !/\btruncate\b/i.test(sql), 'migration must not delete candidate or job data (only the nursery settings RPC replaces its own requirement rows)');
+check(/create or replace function ho_private\.hc_jobseeker_submit_application_impl\([\s\S]*?hc_jobseeker_submit_application_v2_impl\(/i.test(sql), 'v1 implementation must delegate to the shared v2 rule');
+check(/ho_private\.recruitment_can_write\(j\.facility_id\)/.test(sql) && /hc_employer_set_market_job_document_requirements/.test(sql), 'nursery settings must be authorised by the existing recruitment write check');
+check(!/create\s+or\s+replace\s+function\s+public\.hc_jobseeker_submit_application\s*\(/i.test(sql), 'public v1 submit wrapper signature must stay untouched (old Native builds call it)');
 check(/ho_private\.hc_jobseeker_document_type_is_valid\(p_document_type\)/.test(sql), 'source registration must validate against the canonical type list');
 check(/create table if not exists public\.hc_job_document_requirements/i.test(sql), 'per-job requirement table must exist');
 check(/requirement in \('required','optional','requested_later','not_applicable'\)/.test(sql), 'requirement levels must be required/optional/requested_later/not_applicable');
@@ -155,6 +157,21 @@ check(repository.includes("rpc('hc_jobseeker_submit_application_v2'") && reposit
 check(repository.includes('await handoffDefaultDocuments(data);'), 'callers without a selection keep the default-document handoff');
 check(requirementRepository.includes("rpc('hc_jobseeker_get_job_document_requirements'") && requirementRepository.includes("code === 'PGRST202'"), 'requirement lookup must treat a missing RPC as not configured');
 check(!/service_role|SERVICE_ROLE/.test(applyStep + requirementRepository + repository), 'browser code must never use the service role');
+
+// ---------- 6. Native uses the same rules ----------
+check(read('src/lib/documentTypes.ts') === read('native/src/lib/documentTypes.ts'), 'Native documentTypes.ts must be byte-identical to Web');
+const nativeApi = read('native/src/lib/applicationJourneyApi.ts');
+const nativeJob = read('native/src/app/job/[id].tsx');
+const nativePanel = read('native/src/components/ApplyDocumentsPanel.tsx');
+const nativeRequirementApi = read('native/src/lib/jobDocumentRequirementApi.ts');
+check(nativeApi.includes("rpc('hc_jobseeker_submit_application_v2'") && nativeApi.includes('isMissingRpcError(error)'), 'Native submits through v2 (v1 only when the migration is not applied)');
+check(nativeJob.includes('<ApplyDocumentsPanel jobId={job.id}') && nativeJob.includes('submitApplication(pinned.client, jobId, profile, { documentIds })'), 'Native job screen confirms documents before submitting');
+check(nativePanel.includes('missingRequiredDocuments(rows, selection)') && nativePanel.includes('if (missing.length || submitting) return;'), 'Native blocks only on missing required documents');
+check(nativePanel.includes('<DocumentVaultSection initialType={row.type} onDocumentsChanged={onVaultChanged} />'), 'Native inline upload reuses the existing vault component');
+const webRequirementRepo = requirementRepository;
+const messageOf = (source) => source.slice(source.indexOf('required documents missing'), source.indexOf('one document per type'));
+check(messageOf(nativeRequirementApi).includes('この求人に必要な書類がそろっていません') && messageOf(repository).includes('この求人に必要な書類がそろっていません'), 'Web and Native show the same message for a missing required document');
+check(webRequirementRepo.includes("code === 'PGRST202'") && nativeRequirementApi.includes("code === 'PGRST202'"), 'Web and Native treat a missing RPC the same way');
 
 if (failures.length) {
   console.error('jobseeker-qualification-documents-contract failed:');

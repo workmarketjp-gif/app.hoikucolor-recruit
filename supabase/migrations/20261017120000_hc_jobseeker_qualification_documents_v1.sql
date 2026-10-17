@@ -3,13 +3,17 @@
 -- Backward compatible by construction:
 --   * Document type CHECKs are only widened (strict superset of the old list).
 --     No existing row is updated; VALIDATE only scans.
---   * hc_jobseeker_submit_application (v1) is untouched, so Native and any
---     older Web bundle keep their exact behaviour.
+--   * The public hc_jobseeker_submit_application (v1) signature is unchanged.
+--     Its private implementation now delegates to the v2 implementation with
+--     "my 応募時に使う documents" as the selection, so the required-document
+--     rule is enforced identically for every client (old Native builds too).
+--     With no requirement rows the behaviour is exactly the previous one.
 --   * The requirement table starts empty. A job without rows means
 --     "not configured" and the jobseeker apply flow behaves as before.
---   * No employer-side write path is added here. Employers configure
---     requirements in the employer app in a follow-up; until then only
---     operators can insert rows (table privileges are revoked from browsers).
+--   * Nurseries set requirements from Poppy job management through
+--     hc_employer_set_market_job_document_requirements, authorised by the
+--     existing ho_private.recruitment_can_write facility check. Browsers have
+--     no direct table access.
 
 -- 1. Canonical list of jobseeker document types ------------------------------
 
@@ -34,6 +38,63 @@ as $function$
 $function$;
 
 revoke all on function ho_private.hc_jobseeker_document_type_is_valid(text) from public, anon, authenticated;
+
+-- Shared with the private recruitment test lane (Poppy repository migration).
+create or replace function ho_private.hc_document_requirement_level_is_valid(p_requirement text)
+returns boolean
+language sql
+immutable
+set search_path to ''
+as $function$
+  select p_requirement in ('required', 'optional', 'requested_later', 'not_applicable');
+$function$;
+
+revoke all on function ho_private.hc_document_requirement_level_is_valid(text) from public, anon, authenticated;
+
+-- Validates and normalises a requirement list:
+--   [{"document_type": "...", "requirement": "...", "note": "..."}, ...]
+-- Returns the cleaned array; raises 22023 on anything else.
+create or replace function ho_private.hc_document_requirements_normalize(p_items jsonb)
+returns jsonb
+language plpgsql
+immutable
+set search_path to ''
+as $function$
+declare
+  v_item jsonb;
+  v_type text;
+  v_level text;
+  v_note text;
+  v_seen text[] := '{}';
+  v_result jsonb := '[]'::jsonb;
+begin
+  if p_items is null then
+    return '[]'::jsonb;
+  end if;
+  if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) > 10 then
+    raise exception 'invalid document requirements' using errcode = '22023';
+  end if;
+  for v_item in select value from jsonb_array_elements(p_items) loop
+    if jsonb_typeof(v_item) <> 'object' then
+      raise exception 'invalid document requirements' using errcode = '22023';
+    end if;
+    v_type := v_item ->> 'document_type';
+    v_level := v_item ->> 'requirement';
+    v_note := nullif(btrim(coalesce(v_item ->> 'note', '')), '');
+    if not coalesce(ho_private.hc_jobseeker_document_type_is_valid(v_type), false)
+       or not coalesce(ho_private.hc_document_requirement_level_is_valid(v_level), false)
+       or v_type = any(v_seen)
+       or (v_note is not null and char_length(v_note) > 200) then
+      raise exception 'invalid document requirements' using errcode = '22023';
+    end if;
+    v_seen := v_seen || v_type;
+    v_result := v_result || jsonb_build_array(jsonb_build_object('document_type', v_type, 'requirement', v_level, 'note', v_note));
+  end loop;
+  return v_result;
+end;
+$function$;
+
+revoke all on function ho_private.hc_document_requirements_normalize(jsonb) from public, anon, authenticated;
 
 -- 2. Widen the three document_type CHECK constraints --------------------------
 
@@ -460,3 +521,157 @@ $function$;
 
 revoke all on function public.hc_jobseeker_submit_application_v2(uuid,text,text,text,text,text,numeric,date,text,uuid[]) from public, anon;
 grant execute on function public.hc_jobseeker_submit_application_v2(uuid,text,text,text,text,text,numeric,date,text,uuid[]) to authenticated;
+
+-- 7. v1 uses the same rule ----------------------------------------------------
+-- The public v1 wrapper (search_path '', SQL) is unchanged and still calls this
+-- private implementation. The selection is the caller's 応募時に使う documents
+-- (at most one per type by hc_jobseeker_documents_one_default_per_type), which
+-- is exactly what v1 snapshotted before. Required documents now apply to v1 too.
+
+create or replace function ho_private.hc_jobseeker_submit_application_impl(
+  p_job_id uuid,
+  p_applicant_name text,
+  p_applicant_name_kana text default null::text,
+  p_email text default null::text,
+  p_phone text default null::text,
+  p_qualifications text default null::text,
+  p_years_of_experience numeric default null::numeric,
+  p_desired_start_date date default null::date,
+  p_message text default null::text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path to 'public', 'auth', 'pg_temp'
+as $function$
+declare
+  v_user_id text := auth.jwt() ->> 'sub';
+  v_defaults uuid[];
+begin
+  select coalesce(array_agg(d.id order by d.document_type), '{}'::uuid[])
+    into v_defaults
+  from public.hc_jobseeker_documents d
+  where d.jobseeker_clerk_user_id = v_user_id
+    and d.is_default;
+
+  return ho_private.hc_jobseeker_submit_application_v2_impl(
+    p_job_id,
+    p_applicant_name,
+    p_applicant_name_kana,
+    p_email,
+    p_phone,
+    p_qualifications,
+    p_years_of_experience,
+    p_desired_start_date,
+    p_message,
+    v_defaults
+  );
+end;
+$function$;
+
+revoke all on function ho_private.hc_jobseeker_submit_application_impl(uuid,text,text,text,text,text,numeric,date,text) from public, anon, authenticated;
+
+-- 8. Nursery settings from Poppy job management ---------------------------------
+-- Addressed by the Poppy (Hoiku Market) job id. One Poppy job can be synced to
+-- several hc_jobs rows (one per linked facility); the caller must be allowed to
+-- write recruitment for every one of them, otherwise nothing is changed.
+
+create or replace function ho_private.hc_employer_market_job_document_requirements_impl(
+  p_hm_job_id uuid,
+  p_items jsonb,
+  p_write boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path to ''
+as $function$
+declare
+  v_user_id text := nullif((select auth.jwt()) ->> 'sub', '');
+  v_job_ids uuid[];
+  v_items jsonb;
+begin
+  if v_user_id is null then
+    raise exception 'authentication required' using errcode = '42501';
+  end if;
+
+  select coalesce(array_agg(j.id order by j.id), '{}'::uuid[])
+    into v_job_ids
+  from public.hc_jobs j
+  where j.source_type = 'market'
+    and j.source_id = p_hm_job_id;
+
+  if cardinality(v_job_ids) = 0 then
+    -- Not synced to Hoiku Color (no active facility link). Nothing to configure.
+    return jsonb_build_object('linked', false, 'items', '[]'::jsonb);
+  end if;
+
+  if exists (
+    select 1 from public.hc_jobs j
+    where j.id = any(v_job_ids)
+      and not (case when p_write then ho_private.recruitment_can_write(j.facility_id)
+                    else ho_private.recruitment_can_read(j.facility_id) end)
+  ) then
+    raise exception 'recruitment access denied' using errcode = '42501';
+  end if;
+
+  if p_write then
+    v_items := ho_private.hc_document_requirements_normalize(p_items);
+
+    -- Serialise concurrent saves of the same Poppy job.
+    perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('hc-job-document-requirements|' || p_hm_job_id::text, 0));
+
+    delete from public.hc_job_document_requirements r
+    where r.job_id = any(v_job_ids)
+      and not exists (
+        select 1 from jsonb_array_elements(v_items) i
+        where i ->> 'document_type' = r.document_type
+      );
+
+    insert into public.hc_job_document_requirements (job_id, document_type, requirement, note, created_by, updated_by)
+    select j.id, i ->> 'document_type', i ->> 'requirement', i ->> 'note', v_user_id, v_user_id
+    from unnest(v_job_ids) as j(id)
+    cross join jsonb_array_elements(v_items) i
+    on conflict (job_id, document_type) do update
+      set requirement = excluded.requirement,
+          note = excluded.note,
+          updated_by = excluded.updated_by,
+          updated_at = now()
+      where public.hc_job_document_requirements.requirement is distinct from excluded.requirement
+         or public.hc_job_document_requirements.note is distinct from excluded.note;
+  end if;
+
+  -- All synced rows carry the same list; read it from the first one.
+  select coalesce(jsonb_agg(jsonb_build_object('document_type', r.document_type, 'requirement', r.requirement, 'note', r.note) order by r.document_type), '[]'::jsonb)
+    into v_items
+  from public.hc_job_document_requirements r
+  where r.job_id = v_job_ids[1];
+
+  return jsonb_build_object('linked', true, 'items', v_items);
+end;
+$function$;
+
+revoke all on function ho_private.hc_employer_market_job_document_requirements_impl(uuid,jsonb,boolean) from public, anon, authenticated;
+
+create or replace function public.hc_employer_get_market_job_document_requirements(p_hm_job_id uuid)
+returns jsonb
+language sql
+security definer
+set search_path to ''
+as $function$
+  select ho_private.hc_employer_market_job_document_requirements_impl(p_hm_job_id, null, false);
+$function$;
+
+create or replace function public.hc_employer_set_market_job_document_requirements(p_hm_job_id uuid, p_items jsonb)
+returns jsonb
+language sql
+security definer
+set search_path to ''
+as $function$
+  select ho_private.hc_employer_market_job_document_requirements_impl(p_hm_job_id, p_items, true);
+$function$;
+
+revoke all on function public.hc_employer_get_market_job_document_requirements(uuid) from public, anon;
+revoke all on function public.hc_employer_set_market_job_document_requirements(uuid,jsonb) from public, anon;
+grant execute on function public.hc_employer_get_market_job_document_requirements(uuid) to authenticated;
+grant execute on function public.hc_employer_set_market_job_document_requirements(uuid,jsonb) to authenticated;

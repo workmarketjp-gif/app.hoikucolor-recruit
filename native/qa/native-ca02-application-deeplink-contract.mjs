@@ -50,7 +50,7 @@ expect('visit result is verified before durable key clears', api.includes('if (!
 expect('visit cancellation reuses canonical RPC and verifies cancelled state', api.includes("rpc('hc_cancel_visit'") && api.includes("visit.status !== 'cancelled'"));
 expect('document handoff reuses existing vault APIs and is repairable', api.includes('attachJobseekerDocumentToApplication') && api.includes('repairApplicationDocumentHandoff'));
 expect('jobs open a concrete Native job/apply route', jobs.includes('router.push(`/job/${job.id}`'));
-expect('job route submits using canonical journey API', jobDetail.includes('submitApplication(pinned.client, jobId, profile)'));
+expect('job route submits using canonical journey API with the chosen documents', jobDetail.includes('submitApplication(pinned.client, jobId, profile, { documentIds })') && api.includes("rpc('hc_jobseeker_submit_application_v2'"));
 expect('applications tab exists and opens concrete detail route', tabs.includes('name="applications"') && applications.includes('router.push(`/application/${application.id}`'));
 expect('application detail renders candidate messages', detail.includes('sendApplicationMessageDurable') && detail.includes("focus === 'messages'"));
 expect('application detail handles exact interview deep link', detail.includes("focus === 'interview'") && detail.includes('focusedInterviewId === interview.id'));

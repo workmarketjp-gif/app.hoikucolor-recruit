@@ -10,6 +10,7 @@ import {
   clearDurableMutation,
   prepareDurableMutation,
 } from './durableMutation';
+import { isMissingRpcError, submissionDocumentError } from './jobDocumentRequirementApi';
 import type { JobseekerJob, JobseekerProfile } from './jobseekerCoreApi';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -183,16 +184,23 @@ export async function getCandidateJob(client: SupabaseClient, jobId: string): Pr
   return (rows[0] as JobseekerJob | undefined) ?? null;
 }
 
+/**
+ * `documentIds` given: the candidate chose these vault documents for this job, and the v2 RPC
+ * checks ownership and the job's required documents in the application transaction (same as Web).
+ * Omitted (spot jobs): v1, whose server implementation applies the same rule to the
+ * 「応募時に使う」 documents.
+ */
 export async function submitApplication(
   client: SupabaseClient,
   jobId: string,
   profile: JobseekerProfile,
+  options: { documentIds?: string[] } = {},
 ): Promise<{ applicationId: string; documentHandoffFailures: number }> {
   assertUuid(jobId, '求人ID');
   const applicantName = profile.name?.trim() ?? '';
   if (!applicantName) throw new Error('応募前にプロフィールのお名前を登録してください。');
 
-  const { data, error } = await client.rpc('hc_jobseeker_submit_application', {
+  const params = {
     p_job_id: jobId,
     p_applicant_name: applicantName,
     p_applicant_name_kana: cleanOptionalText(profile.name_kana),
@@ -202,8 +210,17 @@ export async function submitApplication(
     p_years_of_experience: profile.years_of_experience,
     p_desired_start_date: profile.desired_start_date,
     p_message: cleanOptionalText(profile.self_intro),
-  });
-  if (error) throw error;
+  };
+  const selectedIds = options.documentIds ? [...new Set(options.documentIds)] : null;
+
+  let { data, error } = selectedIds
+    ? await client.rpc('hc_jobseeker_submit_application_v2', { ...params, p_document_ids: selectedIds })
+    : await client.rpc('hc_jobseeker_submit_application', params);
+  if (error && selectedIds && isMissingRpcError(error)) {
+    // Migration not applied yet: no job can have requirements, so v1 is equivalent.
+    ({ data, error } = await client.rpc('hc_jobseeker_submit_application', params));
+  }
+  if (error) throw submissionDocumentError(error) ?? error;
   if (typeof data !== 'string' || !UUID_PATTERN.test(data)) {
     throw new Error('応募結果を確認できませんでした。');
   }
@@ -215,7 +232,8 @@ export async function submitApplication(
 
   let documentHandoffFailures = 0;
   try {
-    const defaults = (await listJobseekerDocuments(client)).filter((document) => document.is_default);
+    const selected = selectedIds ? new Set(selectedIds) : null;
+    const defaults = (await listJobseekerDocuments(client)).filter((document) => (selected ? selected.has(document.id) : document.is_default));
     const results = await Promise.allSettled(
       defaults.map((document) => attachJobseekerDocumentToApplication(client, document, data)),
     );
