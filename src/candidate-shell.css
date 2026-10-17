@@ -74,7 +74,8 @@ body { background: var(--hc-bg); color: var(--hc-ink); font-size: 16px; line-hei
   border-bottom: 1px solid var(--hc-line);
 }
 .hc-header-brand { flex: none; display: inline-flex; align-items: center; min-height: 48px; border-radius: 12px; }
-.hc-header-brand .brand-logo-image { width: 92px; }
+.hc-app-header .hc-header-brand .brand-logo-image { width: 92px; }
+@media (max-width: 360px) { .hc-app-header .hc-header-brand .brand-logo-image { width: 76px; } }
 .hc-header-title { flex: 1; min-width: 0; margin: 0; font-size: 20px; font-weight: 800; line-height: 1.25; letter-spacing: .01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hc-header-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 .hc-header-actions .icon-button,
@@ -253,11 +254,11 @@ body { background: var(--hc-bg); color: var(--hc-ink); font-size: 16px; line-hei
 .hc-job-tags > span { font-size: 14px; }
 .hc-job-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; margin-top: 14px; }
 .hc-job-detail { margin-top: 14px; display: grid; gap: 16px; border-top: 1px solid var(--hc-line); padding-top: 14px; }
-.hc-job-detail h4 { margin: 0 0 6px; font-size: 16px; font-weight: 800; }
-.hc-job-detail p { margin: 0; font-size: 15px; color: var(--hc-ink-soft); overflow-wrap: anywhere; }
-.hc-job-detail dl { margin: 0; display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 6px 10px; font-size: 15px; }
-.hc-job-detail dt { color: var(--hc-muted); }
-.hc-job-detail dd { margin: 0; overflow-wrap: anywhere; }
+.hc-job-detail > section:not([class]) > h4 { margin: 0 0 6px; font-size: 16px; font-weight: 800; }
+.hc-job-detail > section:not([class]) > p { margin: 0; font-size: 16px; color: var(--hc-ink-soft); overflow-wrap: anywhere; }
+.hc-job-detail > section:not([class]) > dl { margin: 0; display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 8px 16px; font-size: 16px; }
+.hc-job-detail > section:not([class]) > dl > dt { color: var(--hc-muted); font-size: 15px; }
+.hc-job-detail > section:not([class]) > dl > dd { margin: 0; overflow-wrap: anywhere; }
 .hc-job-description { white-space: pre-wrap; }
 .hc-external-job-link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 .hc-job-source-footer {
@@ -302,6 +303,31 @@ body { background: var(--hc-bg); color: var(--hc-ink); font-size: 16px; line-hei
 .hc-menu { margin: 0 0 20px; display: grid; background: var(--hc-surface); border-radius: var(--hc-radius); border: 1px solid var(--hc-line); overflow: hidden; }
 .hc-menu a { min-height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-top: 1px solid var(--hc-line); color: var(--hc-ink); text-decoration: none; font-size: 16px; font-weight: 700; }
 .hc-menu a:first-child { border-top: 0; }
+/* ---------- 応募書類 (DocumentVaultPanel) — same card as the other マイページ sections ---------- */
+.hc-profile .form-section[aria-labelledby="document-vault-heading"] { margin: 0; gap: var(--hc-space-2); padding: 18px 16px; background: var(--hc-surface); }
+.hc-profile .form-section[aria-labelledby="document-vault-heading"] .form-section-head { padding: 0; border: 0; }
+.hc-shell .form-section-head h2 { margin: 0; font-size: 20px; font-weight: 800; }
+.hc-shell .form-section-head h2 + p { margin: 4px 0 0; }
+.doc-vault { display: grid; gap: var(--hc-space-2); min-width: 0; }
+.doc-vault-add { display: flex; flex-wrap: wrap; align-items: center; gap: var(--hc-space-1); }
+.doc-vault-add select { flex: 1 1 190px; min-width: 0; min-height: 48px; padding: 0 14px; border: 1px solid #ddd6d4; border-radius: 12px; background: #fff; color: var(--hc-ink); font-size: 16px; }
+.doc-vault-add .secondary-button { flex: 1 1 160px; }
+.hc-shell .doc-vault-hint { margin-top: -8px; }
+.doc-vault-status { display: grid; gap: var(--hc-space-1); font-size: 15px; }
+.doc-vault-status:empty { display: none; }
+.doc-vault-status.is-error { justify-items: start; }
+.doc-vault-list { display: grid; gap: var(--hc-space-1); }
+.doc-vault-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 12px 14px; border: 1px solid var(--hc-line); border-radius: 14px; background: var(--hc-surface); }
+.doc-vault-open { flex: 1 1 240px; display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 48px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: var(--hc-ink); text-align: left; cursor: pointer; }
+.doc-vault-icon { flex: none; width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; background: var(--hc-accent-soft); color: var(--hc-accent-ink); }
+.doc-vault-text { display: grid; gap: 2px; min-width: 0; }
+.hc-shell .doc-vault-text strong { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 16px; }
+.hc-shell .doc-vault-text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-vault-default { display: inline-flex; align-items: center; min-height: 24px; padding: 0 10px; border-radius: 12px; background: #e9f5f1; color: var(--hc-verified-ink); font-size: 14px; font-weight: 800; }
+.doc-vault-actions { display: flex; flex-wrap: wrap; gap: var(--hc-space-1); }
+.doc-vault-actions .secondary-button { min-height: 48px; }
+@media (max-width: 460px) { .doc-vault-actions { width: 100%; } .doc-vault-actions .secondary-button { flex: 1 1 0; } }
+
 /* Shared list rows (メッセージ, 応募書類). */
 .hc-list { display: grid; background: var(--hc-surface); border-radius: var(--hc-radius); border: 1px solid var(--hc-line); overflow: hidden; }
 .hc-list-row { min-height: 64px; display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: 0; border-top: 1px solid var(--hc-line); background: transparent; color: var(--hc-ink); text-decoration: none; text-align: left; }

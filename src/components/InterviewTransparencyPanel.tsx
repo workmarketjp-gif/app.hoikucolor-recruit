@@ -125,7 +125,7 @@ export function InterviewTransparencyPanel({ jobId, facilityId }: { jobId: strin
   return <section className="interview-transparency" aria-labelledby={`interview-transparency-${jobId}`}>
     <h4 className="interview-transparency-title" id={`interview-transparency-${jobId}`}>面接で聞きづらいことを、応募前に確認</h4>
     <p className="interview-transparency-lead">
-      「園の回答」は園が公開している回答（園の公開回答（申告））、「勤務実績」は実際の勤務記録から集計した値です。
+      項目ごとに、園の公開回答（申告）を「園の回答」、実際の勤務記録から集計した値を「勤務実績」として並べています。
     </p>
 
     <dl className="interview-checks">

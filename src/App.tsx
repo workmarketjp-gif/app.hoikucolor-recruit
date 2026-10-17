@@ -434,7 +434,8 @@ function JobsView({ savedIds, ...jobActions }: { savedIds: string[] } & JobActio
     const card = document.getElementById(`job-${deepLinkedJobId}`);
     if (!card) return;
     focusedJobRef.current = deepLinkedJobId;
-    card.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) card.scrollIntoView({ block: 'start' });
+    else card.scrollIntoView({ behavior: 'smooth', block: 'start' });
     window.setTimeout(() => card.focus({ preventScroll: true }), 350);
   }, [deepLinkedJobId, jobs]);
 
