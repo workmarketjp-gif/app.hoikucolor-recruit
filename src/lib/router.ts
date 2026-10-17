@@ -73,6 +73,10 @@ export function normalizeReturnTarget(raw: string | null): string | null {
   try {
     const url = new URL(raw, window.location.origin);
     if (url.origin !== window.location.origin) return null;
+    if (/^\/jobs\/test\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/?$/i.test(url.pathname)) {
+      const jobId=url.searchParams.get('job_id');
+      return url.pathname.replace(/\/$/,'')+(jobId&&uuidPattern.test(jobId)?`?job_id=${jobId}`:'');
+    }
     const view = pathToView(url.pathname);
     if (!view || view === 'home') return null;
     const params = new URLSearchParams();

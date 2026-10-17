@@ -5,6 +5,7 @@ import {
   createJobseekerDocumentSignedUrl,
   deleteJobseekerDocument,
   describeDocumentError,
+  NonRetryableDocumentError,
   listJobseekerDocuments,
   setDefaultJobseekerDocument,
   uploadJobseekerDocument,
@@ -87,7 +88,7 @@ export function DocumentVaultPanel() {
       }
     } catch (err) {
       setError(describeDocumentError(err, '書類を保存できませんでした。通信状況を確認して、もう一度お試しください。'));
-      setFailedUpload({ file, intent });
+      if (!(err instanceof NonRetryableDocumentError)) setFailedUpload({ file, intent });
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = '';
