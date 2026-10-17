@@ -4,13 +4,14 @@ import { useEffect } from 'react';
  * Every candidate screen lives in one app under one session. This module owns the
  * URL ⇄ screen mapping, in-app link handling, and the post-login return target.
  */
-export type View = 'home' | 'jobs' | 'saved' | 'applications' | 'profile' | 'scouts' | 'visits' | 'spot' | 'matches' | 'compare';
+export type View = 'home' | 'jobs' | 'saved' | 'applications' | 'messages' | 'profile' | 'scouts' | 'visits' | 'spot' | 'matches' | 'compare';
 
 export const viewPaths: Record<View, string> = {
   home: '/',
   jobs: '/jobs',
   saved: '/saved',
   applications: '/applications',
+  messages: '/messages',
   profile: '/profile',
   scouts: '/scouts',
   visits: '/visits',

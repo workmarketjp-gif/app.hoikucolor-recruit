@@ -2,7 +2,7 @@
  * Mobile first: one column, 16px body, 48px+ targets. */
 
 .application-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.application-back { min-height: 48px; display: inline-flex; align-items: center; gap: 6px; padding: 0 4px; border: 0; background: none; color: var(--hc-accent-dark); font-size: 16px; font-weight: 800; }
+.application-back { min-height: 48px; display: inline-flex; align-items: center; gap: 6px; padding: 0 4px; border: 0; background: none; color: var(--hc-accent-ink); font-size: 16px; font-weight: 800; }
 .application-refresh { min-height: 44px !important; padding: 0 16px; }
 
 .application-detail-hero { display: grid; gap: 14px; padding: 18px 16px; background: var(--hc-surface); border: 1px solid var(--hc-line); border-radius: var(--hc-radius); }
@@ -13,16 +13,16 @@
 
 .next-action-card { display: grid; gap: 2px; padding: 14px; border-radius: 14px; background: var(--hc-accent-soft); }
 .next-action-card > span { display: none; }
-.next-action-card strong { font-size: 15px; color: var(--hc-accent-dark); }
+.next-action-card strong { font-size: 15px; color: var(--hc-accent-ink); }
 .next-action-card p { margin: 0; font-size: 18px; font-weight: 800; color: var(--hc-ink); }
 .next-action-card small { font-size: 14px; color: var(--hc-ink-soft); }
-.next-action-alert { font-weight: 800; color: var(--hc-accent-dark) !important; }
+.next-action-alert { font-weight: 800; color: var(--hc-accent-ink) !important; }
 
 .selection-timeline { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 16px 0; padding: 14px 10px; background: var(--hc-surface); border: 1px solid var(--hc-line); border-radius: var(--hc-radius); overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
 .selection-step { position: relative; display: grid; justify-items: center; gap: 6px; min-width: 52px; text-align: center; }
 .selection-step:not(:last-of-type)::after { content: ""; position: absolute; top: 15px; left: calc(50% + 18px); right: calc(-50% + 18px); height: 2px; background: var(--hc-line); }
 .selection-step > span { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--hc-line); background: #fff; color: var(--hc-muted); font-size: 14px; font-weight: 800; }
-.selection-step strong { font-size: 13px; color: var(--hc-muted); white-space: nowrap; }
+.selection-step strong { font-size: 14px; color: var(--hc-muted); white-space: nowrap; }
 .selection-step.is-complete > span { border-color: var(--hc-accent); background: var(--hc-accent); color: #fff; }
 .selection-step.is-complete strong { color: var(--hc-ink); }
 .selection-step.is-complete:not(:last-of-type)::after { background: var(--hc-accent); }
@@ -60,9 +60,9 @@
 .interview-response-status { display: grid; gap: 2px; padding: 12px; border-radius: 12px; background: #fff; border: 1px solid var(--hc-line); }
 .interview-response-status strong { font-size: 15px; }
 .interview-response-status p { margin: 4px 0 0; font-size: 15px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.interview-response-status small { font-size: 13px; color: var(--hc-muted); }
+.interview-response-status small { font-size: 14px; color: var(--hc-muted); }
 .interview-response-status.is-accepted strong { color: #19845a; }
-.interview-response-status.is-reschedule strong { color: var(--hc-accent-dark); }
+.interview-response-status.is-reschedule strong { color: var(--hc-accent-ink); }
 .interview-response-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 /* Beats the legacy 44px floor in mobile-hardening.css: candidate actions are 52px. */
 .hc-shell .interview-response-actions .primary-button, .hc-shell .interview-response-actions .secondary-button, .hc-shell .interview-reschedule-form .primary-button { min-height: 52px !important; }
@@ -70,8 +70,8 @@
 .interview-reschedule-form label { display: grid; gap: 6px; font-size: 15px; font-weight: 700; }
 .interview-reschedule-form textarea { width: 100%; min-height: 104px; padding: 12px 14px; border: 1px solid #ddd6d4; border-radius: 12px; font-size: 16px; box-sizing: border-box; }
 .interview-reschedule-form > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.interview-reschedule-form small { font-size: 13px; color: var(--hc-muted); }
-.interview-response-error { margin: 0; color: var(--hc-accent-dark); font-size: 15px; font-weight: 700; }
+.interview-reschedule-form small { font-size: 14px; color: var(--hc-muted); }
+.interview-response-error { margin: 0; color: var(--hc-accent-ink); font-size: 15px; font-weight: 700; }
 .interview-response-closed { font-size: 14px; color: var(--hc-muted); }
 
 @media (min-width: 901px) {

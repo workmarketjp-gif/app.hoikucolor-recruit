@@ -9,7 +9,7 @@
   border-radius: 12px;
   background: #fff;
   color: #533f4c;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
@@ -34,8 +34,8 @@
   margin-bottom: 10px;
 }
 
-.verified-workplace-head strong { color: #ad356f; font-size: 13px; }
-.verified-workplace-head span { color: #806775; font-size: 11px; font-weight: 700; }
+.verified-workplace-head strong { color: #a52d66; font-size: 16px; }
+.verified-workplace-head span { color: var(--hc-muted, #5f6977); font-size: 14px; font-weight: 700; }
 
 .verified-metric-grid {
   display: grid;
@@ -53,10 +53,10 @@
   box-shadow: inset 0 0 0 1px #f5e8ef;
 }
 
-.verified-metric span { color: #765e6c; font-size: 11px; }
+.verified-metric span { color: var(--hc-muted, #5f6977); font-size: 14px; }
 .verified-metric strong { color: #352731; font-size: 17px; line-height: 1.25; overflow-wrap: anywhere; }
-.verified-metric small { color: #9b8793; font-size: 10px; }
-.verified-period { display: block; margin-top: 10px; color: #8b7481; font-size: 10px; line-height: 1.5; }
+.verified-metric small { color: var(--hc-muted, #5f6977); font-size: 14px; }
+.verified-period { display: block; margin-top: 10px; color: var(--hc-muted, #5f6977); font-size: 14px; line-height: 1.5; }
 
 @media (max-width: 720px) {
   .verified-filter { width: 100%; }

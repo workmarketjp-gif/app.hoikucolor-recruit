@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-type IconName = 'home' | 'search' | 'heart' | 'briefcase' | 'user' | 'bell' | 'arrow' | 'logout' | 'map' | 'yen' | 'clock' | 'chevron' | 'external' | 'menu' | 'close' | 'sparkles' | 'upload' | 'file' | 'shield';
+type IconName = 'home' | 'search' | 'heart' | 'briefcase' | 'user' | 'bell' | 'arrow' | 'logout' | 'map' | 'yen' | 'clock' | 'chevron' | 'external' | 'menu' | 'close' | 'sparkles' | 'upload' | 'file' | 'shield' | 'chat';
 
 const paths: Record<IconName, ReactNode> = {
   home: <><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13v-9.5"/><path d="M9.5 20v-6h5v6"/></>,
@@ -21,6 +21,7 @@ const paths: Record<IconName, ReactNode> = {
   sparkles: <><path d="M12 3l1.2 3.3L16.5 7.5l-3.3 1.2L12 12l-1.2-3.3-3.3-1.2 3.3-1.2L12 3Z"/><path d="M18.5 13.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2ZM5.5 14l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7.7-1.8Z"/></>,
   upload: <><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 14v5h14v-5"/></>,
   file: <><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h5"/></>,
+  chat: <path d="M4.5 5h15a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-4.5 3.5V17h-1a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"/>,
   shield: <><path d="M12 3 20 6v5c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6l8-3Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></>,
 };
 
