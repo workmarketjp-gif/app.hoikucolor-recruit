@@ -72,15 +72,20 @@ const applicationDocumentColumns =
 const applicationDocumentExpectationColumns =
   'id,application_id,source_jobseeker_document_id_snapshot,document_type,title,destination_file_path,captured_at';
 
-function safeFileName(input: string) {
-  const normalized = input
-    .normalize('NFKC')
-    .replace(/[\\/\u0000-\u001f\u007f]+/g, '_')
-    .replace(/\s+/g, '_')
-    .replace(/\.{2,}/g, '.')
-    .replace(/^\.+|\.+$/g, '')
-    .slice(-120);
-  return normalized || 'document';
+const EXTENSION_BY_MIME: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+};
+
+// Supabase Storage rejects keys outside this ASCII set with "400 Invalid key";
+// the user's original (often Japanese) file name lives only in `title`.
+const STORAGE_KEY_SEGMENT = /^[A-Za-z0-9!\-_.*'()]+$/;
+
+function storageFileNameForMime(mimeType: string) {
+  const extension = EXTENSION_BY_MIME[mimeType];
+  if (!extension) throw new Error('PDF、JPEG、PNGのみ保存できます。');
+  return `document.${extension}`;
 }
 
 function mimeFromAsset(asset: CandidateDocumentAsset): string | null {
@@ -228,9 +233,9 @@ export async function uploadPickedJobseekerDocument(client: SupabaseClient, cler
   const { buffer, mimeType, size } = await readAndValidatePickedAsset(asset, ownerId);
   if (options.canStartUpload && !options.canStartUpload()) throw new Error('DOCUMENT_UPLOAD_QUARANTINED');
   const id = Crypto.randomUUID();
-  const fileName = safeFileName(asset.name);
+  const fileName = storageFileNameForMime(mimeType);
   const path = `jobseekers/${ownerId}/${id}/${fileName}`;
-  const title = (options.title?.trim() || asset.name || fileName).slice(0, 200);
+  const title = (options.title?.trim() || asset.name.normalize('NFC').trim() || fileName).slice(0, 200);
   await ensureUploadedSourceObject(client, path, buffer, mimeType);
   const { data, error } = await client.rpc('hc_register_jobseeker_document_source', { p_document_id: id, p_document_type: documentType, p_title: title, p_file_path: path, p_mime_type: mimeType, p_file_size: size });
   let saved = data as JobseekerDocument | null;
@@ -298,7 +303,9 @@ export async function attachJobseekerDocumentToApplication(client: SupabaseClien
   const { data: application, error: applicationError } = await client.from('hc_applications').select('id,organization_id,facility_id').eq('id', applicationId).single();
   if (applicationError) throw applicationError;
   const pathParts = document.file_path.split('/');
-  const fileName = safeFileName(pathParts[pathParts.length - 1] || document.title);
+  // The attachment RPC requires the source key's last segment verbatim.
+  const fileName = pathParts[pathParts.length - 1] ?? '';
+  if (!STORAGE_KEY_SEGMENT.test(fileName)) throw new Error('この書類は提出用にコピーできません。書類を保存し直してからお試しください。');
   const destinationPath = `${application.organization_id}/${application.facility_id}/${application.id}/vault-${document.id}/${fileName}`;
   await ensureApplicationCopy(client, document.file_path, destinationPath);
   const { data, error } = await client.rpc('hc_register_jobseeker_document_attachment', { p_document_id: document.id, p_application_id: applicationId, p_destination_path: destinationPath });
