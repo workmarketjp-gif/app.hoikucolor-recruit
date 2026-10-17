@@ -25,6 +25,7 @@ const MatchesView = lazy(() => import('./views/MatchesView').then((module) => ({
 const ScoutsView = lazy(() => import('./views/ScoutsView').then((module) => ({ default: module.ScoutsView })));
 const SpotJobsView = lazy(() => import('./views/SpotJobsView').then((module) => ({ default: module.SpotJobsView })));
 const VisitsView = lazy(() => import('./views/VisitsView').then((module) => ({ default: module.VisitsView })));
+const ResumeBuilderView = lazy(() => import('./views/ResumeBuilderView').then((module) => ({ default: module.ResumeBuilderView })));
 
 const viewTitles: Record<View, string> = {
   home: 'ホーム',
@@ -37,6 +38,7 @@ const viewTitles: Record<View, string> = {
   spot: 'スポット勤務',
   matches: 'マッチ度',
   compare: '園を比較',
+  resume: '応募書類をつくる',
 };
 
 /** Which bottom tab a screen belongs to. Secondary screens keep their parent tab lit. */
@@ -51,9 +53,10 @@ const parentTab: Record<View, ShellTab> = {
   spot: 'jobs',
   matches: 'jobs',
   compare: 'saved',
+  resume: 'profile',
 };
 
-const secondaryViews = new Set<View>(['scouts', 'visits', 'spot', 'matches', 'compare']);
+const secondaryViews = new Set<View>(['scouts', 'visits', 'spot', 'matches', 'compare', 'resume']);
 const closedApplicationStatuses = ['rejected', 'withdrawn', 'hired'];
 
 type Route = { view: View; applicationId: string | null; key: number };
@@ -170,7 +173,7 @@ export function App() {
       window.history.back();
       return;
     }
-    navigate(view === 'applications' ? 'applications' : view === 'compare' ? 'saved' : 'home');
+    navigate(view === 'applications' ? 'applications' : view === 'compare' ? 'saved' : view === 'resume' ? 'profile' : 'home');
   }, [navigate, view]);
 
   const savedIdList = savedIds.data ?? [];
@@ -251,6 +254,7 @@ export function App() {
             {view === 'spot' && <SpotJobsView onStartApplication={() => navigate('profile')} />}
             {view === 'matches' && <MatchesView userKey={userKey} savedIds={savedIdList} {...jobActions} />}
             {view === 'compare' && <CompareView userKey={userKey} />}
+            {view === 'resume' && <ResumeBuilderView onProfileSaved={profile.setData} />}
           </Suspense>
         )}
       </div>
@@ -578,6 +582,7 @@ function ProfileView({ profileResource, fallback, onSaved }: {
       {returnJob && <p className="hc-notice">応募に必要な項目を入力して保存すると、求人に戻ります。</p>}
       {!returnJob && (
         <nav className="hc-menu" aria-label="その他のメニュー">
+          <a href="/resume">履歴書・職務経歴書をつくる<Icon name="chevron" size={16} /></a>
           <a href="/scouts">スカウト<Icon name="chevron" size={16} /></a>
           <a href="/visits">見学・体験の予約<Icon name="chevron" size={16} /></a>
           <a href="/spot-jobs">スポット勤務<Icon name="chevron" size={16} /></a>
