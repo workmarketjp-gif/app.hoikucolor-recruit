@@ -4,6 +4,7 @@ import { Icon } from './Icon';
 import {
   createJobseekerDocumentSignedUrl,
   deleteJobseekerDocument,
+  describeDocumentError,
   listJobseekerDocuments,
   setDefaultJobseekerDocument,
   uploadJobseekerDocument,
@@ -40,6 +41,7 @@ export function DocumentVaultPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [failedUpload, setFailedUpload] = useState<{ file: File; intent: UploadIntent } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadIntentRef = useRef<UploadIntent | null>(null);
 
@@ -61,7 +63,7 @@ export function DocumentVaultPanel() {
       setDocuments(await listJobseekerDocuments());
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '応募書類を読み込めませんでした。');
+      setError(describeDocumentError(err, '応募書類を読み込めませんでした。画面を再読み込みしてください。'));
     } finally {
       setLoading(false);
     }
@@ -74,7 +76,7 @@ export function DocumentVaultPanel() {
       setError('ログインユーザーを確認できませんでした。');
       return;
     }
-    setBusy(true); setError(null); setNotice(null);
+    setBusy(true); setError(null); setNotice(null); setFailedUpload(null);
     try {
       await uploadJobseekerDocument(user.id, intent.documentType, file, { makeDefault: intent.makeDefault });
       await load();
@@ -84,7 +86,8 @@ export function DocumentVaultPanel() {
         setNotice(`${labels[intent.documentType]}を保存しました。応募時に何度でも再利用できます。`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '書類を保存できませんでした。');
+      setError(describeDocumentError(err, '書類を保存できませんでした。通信状況を確認して、もう一度お試しください。'));
+      setFailedUpload({ file, intent });
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -96,7 +99,7 @@ export function DocumentVaultPanel() {
       const url = await createJobseekerDocumentSignedUrl(document);
       window.open(url, '_blank', 'noopener,noreferrer');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '書類を開けませんでした。');
+      setError(describeDocumentError(err, '書類を開けませんでした。もう一度お試しください。'));
     }
   };
 
@@ -107,7 +110,7 @@ export function DocumentVaultPanel() {
       await load();
       setNotice(`${labels[document.document_type]}の応募時に使う書類を変更しました。`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '既定書類を変更できませんでした。');
+      setError(describeDocumentError(err, '応募時に使う書類を変更できませんでした。もう一度お試しください。'));
     } finally { setBusy(false); }
   };
 
@@ -119,7 +122,7 @@ export function DocumentVaultPanel() {
       await load();
       setNotice('書類庫から削除しました。提出済みの応募書類はそのまま保持されます。');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '書類を削除できませんでした。');
+      setError(describeDocumentError(err, '書類を削除できませんでした。もう一度お試しください。'));
     } finally { setBusy(false); }
   };
 
@@ -145,12 +148,20 @@ export function DocumentVaultPanel() {
             if (file) void upload(file, intent);
           }} />
           <button className="secondary-button" type="button" disabled={busy} onClick={() => chooseFile({ documentType })}>
-            <Icon name="upload" size={16} /> {busy ? '処理中…' : '書類を追加'}
+            <Icon name="upload" size={16} /> {busy ? '保存しています…' : '書類を追加'}
           </button>
         </div>
         <small>PDF・画像（JPEG / PNG）、1ファイル10MBまで。各種類の「応募時に使う」を1件選べます。</small>
-        {error && <span className="form-error">{error}</span>}
-        {notice && <span className="form-success">{notice}</span>}
+        <div aria-live="polite" role="status" style={{ display: 'grid', gap: 8 }}>
+          {busy && <span>書類を保存しています。画面を閉じずにお待ちください。</span>}
+          {notice && <span className="form-success">{notice}</span>}
+        </div>
+        {error && <div role="alert" style={{ display: 'grid', gap: 8, justifyItems: 'start' }}>
+          <span className="form-error">{error}</span>
+          {failedUpload && !busy && <button type="button" className="secondary-button" onClick={() => void upload(failedUpload.file, failedUpload.intent)}>
+            同じファイルでもう一度保存する
+          </button>}
+        </div>}
         {loading ? <div className="empty-state"><p>応募書類を読み込んでいます。</p></div> : documents.length ? (
           <div style={{ display: 'grid', gap: 10 }}>
             {documents.map((document) => <article key={document.id} style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', border: '1px solid var(--border, #e8e8ee)', borderRadius: 14, padding: '12px 14px', minWidth: 0 }}>
