@@ -183,3 +183,53 @@ test('a stale revision from another tab is surfaced, not overwritten', async ({ 
   await expect(page.getByText('別の画面や端末で先に保存されました')).toBeVisible({ timeout: 8000 });
   await expect(page.getByRole('button', { name: '読み込み直す' })).toBeVisible();
 });
+
+const draftText = '保育士として3年間、1歳児クラスの担任を務めてきました。';
+
+for (const width of widths) {
+  test(`${width}px: AI drafts are shown for review and applied only when accepted`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: width < 900 ? 844 : 900 });
+    const recorded = await mockApi(page);
+    const requested: string[] = [];
+    await page.route(/\/functions\/v1\/hc-resume-writing-assist/, async (route) => {
+      const field = String((route.request().postDataJSON() ?? {}).field);
+      requested.push(field);
+      if (field === 'strengths') {
+        return route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ code: 'RATE_LIMITED', message: '続けて作れるのは10分間に5回までです。約3分後にお試しください。' }) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ field, draft: draftText }) });
+    });
+    await page.goto('/resume');
+    await page.getByRole('button', { name: /自己PR/ }).first().click();
+    await expect(page.getByRole('heading', { level: 2, name: 'あなたの強みや思いを書きましょう' })).toBeVisible();
+    await expect(page.getByText('外部のAIサービスに送ります')).toBeVisible();
+
+    await page.getByRole('button', { name: '職務要約の下書きを作る' }).click();
+    const panel = page.getByRole('region', { name: '職務要約の下書き' });
+    await expect(panel).toContainText(draftText);
+    await expect(panel).toContainText('まだ反映されていません');
+    await expectPageQuality(page);
+    await page.screenshot({ path: testInfo.outputPath(`writing-draft-${width}.png`), fullPage: true });
+    // Not applied yet: the field is still empty and nothing containing the draft was saved.
+    await expect(page.getByLabel('職務要約（これまでの仕事を2〜3行で）')).toHaveValue('');
+    expect(JSON.stringify(recorded.saves)).not.toContain(draftText);
+
+    await panel.getByRole('button', { name: 'この下書きを使う' }).click();
+    await expect(page.getByLabel('職務要約（これまでの仕事を2〜3行で）')).toHaveValue(draftText);
+    await expect(panel).toHaveCount(0);
+    await expect(page.getByText('✓ 自動保存しました')).toBeVisible({ timeout: 8000 });
+    expect((recorded.saves.at(-1)?.p_resume as Record<string, unknown>).work_summary).toBe(draftText);
+
+    await page.getByRole('button', { name: '志望動機の下書きを作る' }).click();
+    const motivation = page.getByRole('region', { name: '志望動機の下書き' });
+    await motivation.getByRole('button', { name: '使わない' }).click();
+    await expect(motivation).toHaveCount(0);
+    await expect(page.getByLabel('志望動機')).toHaveValue('');
+
+    await page.getByRole('button', { name: '得意なこと・強みの下書きを作る' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: '10分間に5回まで' })).toBeVisible();
+    await expect(page.getByLabel('得意なこと・強み')).toHaveValue('');
+    await expectPageQuality(page);
+    expect(requested).toEqual(['work_summary', 'motivation', 'strengths']);
+  });
+}
