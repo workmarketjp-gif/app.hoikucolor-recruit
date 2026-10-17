@@ -46,6 +46,11 @@ check('web: original file name kept for display in title', web.includes("file.na
 
 check('panel: raw Storage errors are translated', panel.includes('describeDocumentError(') && !panel.includes('err.message'));
 check('panel: failed upload can be retried without reselecting', panel.includes('同じファイルでもう一度保存する'));
+check('panel: no same-file retry for rejected files or possibly-committed saves',
+  panel.includes('if (!(err instanceof NonRetryableDocumentError)) setFailedUpload(')
+  && /throw new NonRetryableDocumentError\('ファイルの中身がPDF・JPEG・PNGではないか/.test(web)
+  && /throw new NonRetryableDocumentError\('書類は10MB以下/.test(web)
+  && /throw new NonRetryableDocumentError\('書類保存の結果を確認できませんでした/.test(web));
 check('panel: progress/success announced to assistive tech', panel.includes('aria-live="polite"'));
 check('panel: error announced to assistive tech', panel.includes('role="alert"'));
 
