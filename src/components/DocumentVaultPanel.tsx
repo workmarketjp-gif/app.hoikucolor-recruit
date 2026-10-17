@@ -152,6 +152,7 @@ export function DocumentVaultPanel({ qualifications }: { qualifications?: string
           </button>
         </div>
         <small className="doc-vault-hint">PDF・画像（JPEG / PNG）、1ファイル10MBまで。各種類の「応募時に使う」を1件選べます。</small>
+        <a className="secondary-button" href="/resume"><Icon name="file" size={16} /> 履歴書・職務経歴書をアプリで作る</a>
         <div aria-live="polite" role="status" className="doc-vault-status">
           {busy && <span>書類を保存しています。画面を閉じずにお待ちください。</span>}
           {notice && <span className="form-success">{notice}</span>}
