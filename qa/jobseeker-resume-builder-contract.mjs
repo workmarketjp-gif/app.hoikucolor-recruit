@@ -7,7 +7,7 @@ import fs from 'node:fs'
 const read = (path) => fs.readFileSync(path, 'utf8')
 const migrationPath = 'supabase/migrations/20261017055551_hc_jobseeker_resume_builder_v1.sql'
 const migration = read(migrationPath)
-const indexFix = read('supabase/migrations/20261017120000_hc_jobseeker_resume_entries_drop_duplicate_index_v1.sql')
+const indexFix = read('supabase/migrations/20261017091839_hc_jobseeker_resume_entries_drop_duplicate_index_v1.sql')
 const repository = read('src/lib/resumeRepository.ts')
 const documentModel = read('src/lib/resumeDocument.ts')
 const pdf = read('src/lib/resumePdf.ts')

@@ -1,5 +1,6 @@
 -- Hoiku Color Candidate Web — résumé builder follow-up v1.
--- Source only. Apply to production only after explicit approval.
+-- Production migration version: 20261017091839 (applied 2026-10-17 with the user's approval).
+-- Production already has this migration. Repository sync must NOT re-apply it there.
 --
 -- hc_jobseeker_resume_entries_owner_idx (clerk_user_id, kind, sort_order) duplicates the
 -- btree index behind the unique constraint hc_jobseeker_resume_entries_order_unique on the
