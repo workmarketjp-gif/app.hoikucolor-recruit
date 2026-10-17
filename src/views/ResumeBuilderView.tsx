@@ -31,6 +31,7 @@ import {
   type ResumeEducation,
   type ResumeEmployment,
 } from '../lib/resumeRepository';
+import { requestWritingDraft, type WritingAssistField } from '../lib/resumeWritingAssist';
 import { errorMessage } from '../lib/useResource';
 import './ResumeBuilderView.css';
 
@@ -504,20 +505,76 @@ function ChildcareStep({ profile, preferences, updateProfile, updatePreferences 
   </>;
 }
 
-function WritingStep({ profile, resume, updateResume }: StepProps) {
+/**
+ * Optional draft for one writing field. The draft is built only from what the candidate
+ * already saved, is shown for review, and is applied only when they press「この下書きを使う」.
+ */
+function WritingAssist({ field, label, current, flushAll, onAccept }: {
+  field: WritingAssistField; label: string; current: string | null; flushAll: () => Promise<boolean>; onAccept: (draft: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const create = async () => {
+    if (busy) return;
+    setBusy(true); setError(null); setDraft(null);
+    try {
+      if (!(await flushAll())) throw new Error('入力内容を保存できませんでした。通信状況を確認して、もう一度お試しください。');
+      setDraft(await requestWritingDraft(field));
+    } catch (err) {
+      setError(errorMessage(err, '下書きを作れませんでした。時間をおいてお試しください。'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rb-assist">
+      {!draft && (
+        <button type="button" className="secondary-button rb-assist-button" onClick={() => { void create(); }} disabled={busy} aria-busy={busy}>
+          <Icon name="sparkles" size={18} />{busy ? '下書きを作成中…' : `${label}の下書きを作る`}
+        </button>
+      )}
+      {error && <p className="rb-assist-error" role="alert">{error}</p>}
+      {draft && (
+        <section className="rb-assist-draft" aria-label={`${label}の下書き`}>
+          <p className="rb-assist-title">下書き（まだ反映されていません）</p>
+          <p className="rb-assist-text">{draft}</p>
+          <p className="rb-hint">内容が事実と合っているか必ず確認してください。{current ? 'このボタンを押すと、いま書いてある文章と置き換わります。' : ''}使ったあとも自由に書き直せます。</p>
+          <div className="rb-assist-actions">
+            <button type="button" className="primary-button" onClick={() => { onAccept(draft); setDraft(null); }}>この下書きを使う</button>
+            <button type="button" className="secondary-button" onClick={() => setDraft(null)}>使わない</button>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function WritingStep({ profile, resume, updateResume, flushAll }: StepProps) {
+  const assist = (field: WritingAssistField, label: string) => (
+    <WritingAssist field={field} label={label} current={resume[field]} flushAll={flushAll}
+      onAccept={(draft) => updateResume({ [field]: draft.slice(0, resumeLimits[field]) })} />
+  );
   return <>
     <p className="hc-note">うまく書けなくても大丈夫です。下の質問に、思いつくことを短く書くだけで伝わります。本当にあった経験だけを書きましょう。</p>
+    <p className="hc-note rb-assist-note">各欄の「下書きを作る」を押すと、これまでに入力した資格・職歴・保育経験だけを使って、AIが文章の下書きを作ります。下書きは確認してから使うかどうか選べます。作成のため、入力内容を外部のAIサービスに送ります（氏名・連絡先・住所・生年月日・学歴は送らず、勤務先欄の名前は記号に置き換えます）。</p>
     <TextArea label="職務要約（これまでの仕事を2〜3行で）" optional max={resumeLimits.work_summary} rows={4} value={resume.work_summary} onChange={(value) => updateResume({ work_summary: value })}
       hint="何年、どんな園で、どの年齢を担当したか。職務経歴書のいちばん上に載ります。" />
+    {assist('work_summary', '職務要約')}
     <TextArea label="得意なこと・強み" optional max={resumeLimits.strengths} rows={3} value={resume.strengths} onChange={(value) => updateResume({ strengths: value })}
       hint="ピアノ、製作、運動遊び、保護者対応、記録の工夫など" />
+    {assist('strengths', '得意なこと・強み')}
     <TextArea label="自己PR" optional max={resumeLimits.self_pr} rows={6} value={resume.self_pr} onChange={(value) => updateResume({ self_pr: value })}
       hint="保育で大切にしていること、それが表れた具体的な場面を1つ" />
     {!resume.self_pr && profile.self_intro && (
       <button type="button" className="secondary-button rb-add" onClick={() => updateResume({ self_pr: profile.self_intro!.slice(0, resumeLimits.self_pr) })}>プロフィールの自己紹介を自己PRに使う</button>
     )}
+    {assist('self_pr', '自己PR')}
     <TextArea label="志望動機" optional max={resumeLimits.motivation} rows={5} value={resume.motivation} onChange={(value) => updateResume({ motivation: value })}
       hint="園ごとに変える場合は、応募前にここを書き換えてPDFを作り直せます。" />
+    {assist('motivation', '志望動機')}
     <TextArea label="本人希望記入欄" optional max={resumeLimits.personal_requests} rows={3} value={resume.personal_requests} onChange={(value) => updateResume({ personal_requests: value })}
       hint="空欄なら「貴園の規定に従います。」と入ります。勤務時間などの条件があれば書きましょう。" />
   </>;

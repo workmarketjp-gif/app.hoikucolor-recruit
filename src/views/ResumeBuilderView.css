@@ -112,3 +112,13 @@
   .rb-create { grid-template-columns: 1fr 1fr; }
   .rb-nav { position: static; }
 }
+
+/* Optional AI draft per writing field: never applied without「この下書きを使う」. */
+.rb-assist { display: grid; gap: 8px; min-width: 0; margin-top: -6px; }
+.rb-assist-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; }
+.rb-assist-error { margin: 0; font-size: 14px; font-weight: 700; line-height: 1.6; color: #b63b50; }
+.rb-assist-draft { display: grid; gap: 10px; min-width: 0; padding: 14px; border: 1px dashed var(--hc-accent); border-radius: 14px; background: var(--hc-accent-soft); }
+.rb-assist-title { margin: 0; font-size: 14px; font-weight: 800; color: var(--hc-accent-dark); }
+.rb-assist-text { margin: 0; font-size: 15px; line-height: 1.8; color: var(--hc-ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rb-assist-actions { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 8px; }
+.rb-assist-actions button { min-width: 0; padding-left: 10px; padding-right: 10px; white-space: nowrap; }
