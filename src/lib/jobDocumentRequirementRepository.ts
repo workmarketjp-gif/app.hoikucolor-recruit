@@ -7,7 +7,7 @@ function db() {
 }
 
 /**
- * The RPC is added by 20261017120000_hc_jobseeker_qualification_documents_v1.
+ * The RPC is added by 20261017101147_hc_jobseeker_qualification_documents_v1.
  * Until that migration is applied, PostgREST answers "function not found";
  * no requirement can exist in that state, so it is the same as "not configured".
  */

@@ -30,7 +30,7 @@ for (const pii of ["'name'", "'name_kana'", "'email'", "'phone'", "'clerk_user_i
 expect(panel.includes('大切にしたい保育観'), 'profile must collect structured childcare values');
 expect(panel.includes('勤務できる曜日'), 'profile must collect availability');
 expect(panel.includes('希望月給の下限'), 'profile must collect compensation preference');
-expect(panel.includes('入力度'), 'profile must show preference completion');
+expect(!panel.includes('入力度') && !panel.includes('completion}%'), 'profile must not grade the candidate with a completion percentage');
 expect(panel.includes('available_time_from >= draft.available_time_to'), 'client must reject inverted time range before save');
 expect(rpcBoundary.includes('public.hc_jobseeker_get_matching_preferences()'), 'matching preference read RPC source must be versioned in Git');
 expect(rpcBoundary.includes('public.hc_jobseeker_upsert_matching_preferences('), 'matching preference write RPC source must be versioned in Git');

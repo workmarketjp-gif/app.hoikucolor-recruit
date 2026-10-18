@@ -129,12 +129,12 @@ export function DocumentVaultPanel({ qualifications }: { qualifications?: string
   return <>
     <section className="form-section" aria-labelledby="document-vault-heading">
       <div className="form-section-head">
-        <h3 id="document-vault-heading">応募書類</h3>
+        <h2 id="document-vault-heading">応募書類</h2>
         <p>一度保存した履歴書や資格証を、次の応募でも再利用できます。ファイルは非公開で保存され、応募した園にだけ提出用コピーが共有されます。</p>
       </div>
-      <div style={{ display: 'grid', gap: 12 }}>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <select value={documentType} onChange={(e) => setDocumentType(e.target.value as JobseekerDocumentType)} style={{ minHeight: 44, flex: '1 1 190px' }}>
+      <div className="doc-vault">
+        <div className="doc-vault-add">
+          <select value={documentType} onChange={(e) => setDocumentType(e.target.value as JobseekerDocumentType)} aria-label="追加する書類の種類">
             {DOCUMENT_TYPE_ORDER.map((value) => <option key={value} value={value}>{labels[value]}</option>)}
           </select>
           <input ref={fileRef} type="file" accept="application/pdf,image/jpeg,image/png" hidden onChange={(e) => {
@@ -151,12 +151,13 @@ export function DocumentVaultPanel({ qualifications }: { qualifications?: string
             <Icon name="upload" size={16} /> {busy ? '保存しています…' : '書類を追加'}
           </button>
         </div>
-        <small>PDF・画像（JPEG / PNG）、1ファイル10MBまで。各種類の「応募時に使う」を1件選べます。</small>
-        <div aria-live="polite" role="status" style={{ display: 'grid', gap: 8 }}>
+        <small className="doc-vault-hint">PDF・画像（JPEG / PNG）、1ファイル10MBまで。各種類の「応募時に使う」を1件選べます。</small>
+        <a className="secondary-button" href="/resume"><Icon name="file" size={16} /> 履歴書・職務経歴書をアプリで作る</a>
+        <div aria-live="polite" role="status" className="doc-vault-status">
           {busy && <span>書類を保存しています。画面を閉じずにお待ちください。</span>}
           {notice && <span className="form-success">{notice}</span>}
         </div>
-        {error && <div role="alert" style={{ display: 'grid', gap: 8, justifyItems: 'start' }}>
+        {error && <div role="alert" className="doc-vault-status is-error">
           <span className="form-error">{error}</span>
           {failedUpload && !busy && <button type="button" className="secondary-button" onClick={() => void upload(failedUpload.file, failedUpload.intent)}>
             同じファイルでもう一度保存する
@@ -184,16 +185,16 @@ export function DocumentVaultPanel({ qualifications }: { qualifications?: string
           </ul> : <p style={{ margin: 0, fontSize: 14 }}>プロフィールで資格を登録すると、ここに証明書類の保存状況が表示されます。</p>}
         </div>}
         {loading ? <div className="empty-state"><p>応募書類を読み込んでいます。</p></div> : documents.length ? (
-          <div style={{ display: 'grid', gap: 10 }}>
-            {documents.map((document) => <article key={document.id} style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', border: '1px solid var(--border, #e8e8ee)', borderRadius: 14, padding: '12px 14px', minWidth: 0 }}>
-              <button type="button" onClick={() => void open(document)} style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, flex: '1 1 240px', textAlign: 'left', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}>
-                <span className="metric-icon"><Icon name="file" size={17} /></span>
-                <span style={{ display: 'grid', minWidth: 0 }}>
-                  <strong>{labels[document.document_type]} {document.is_default ? '・応募時に使用' : ''}</strong>
-                  <small style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{document.title}{document.file_size ? ` ・ ${formatBytes(document.file_size)}` : ''}</small>
+          <div className="doc-vault-list">
+            {documents.map((document) => <article key={document.id} className="doc-vault-item">
+              <button type="button" className="doc-vault-open" onClick={() => void open(document)}>
+                <span className="doc-vault-icon"><Icon name="file" size={20} /></span>
+                <span className="doc-vault-text">
+                  <strong>{labels[document.document_type]}{document.is_default && <span className="doc-vault-default">応募時に使用</span>}</strong>
+                  <small>{document.title}{document.file_size ? ` ・ ${formatBytes(document.file_size)}` : ''}</small>
                 </span>
               </button>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div className="doc-vault-actions">
                 {document.is_default
                   ? <button type="button" className="secondary-button" disabled={busy} onClick={() => chooseFile({ documentType: document.document_type, makeDefault: true, replacement: true })}>差し替え</button>
                   : <button type="button" className="secondary-button" disabled={busy} onClick={() => void makeDefault(document)}>応募時に使う</button>}

@@ -12,7 +12,7 @@ type Props = {
   onNavigate: (target: string) => void;
 };
 
-const ALLOWED_PATHS = new Set(['/', '/jobs', '/saved', '/applications', '/profile', '/scouts', '/spot-jobs', '/visits', '/matches', '/compare']);
+const ALLOWED_PATHS = new Set(['/', '/jobs', '/saved', '/applications', '/messages', '/profile', '/scouts', '/spot-jobs', '/visits', '/matches', '/compare']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const INTERVIEW_NOTIFICATION_TYPES = new Set(['interview_scheduled', 'interview_cancelled']);
 const SPOT_NOTIFICATION_TYPES = new Set(['spot_confirmed', 'spot_cancelled', 'spot_completed', 'spot_no_show']);

@@ -1,20 +1,22 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { type ReactNode } from 'react';
 import { Brand } from './Brand';
 import { Icon } from './Icon';
 
-export type ShellTab = 'home' | 'jobs' | 'saved' | 'applications' | 'profile';
+export type ShellTab = 'jobs' | 'saved' | 'applications' | 'messages' | 'profile';
 
-/** The five fixed candidate destinations. Everything else is reached from these screens. */
+/**
+ * The five fixed candidate destinations, identical on every screen size: a bottom tab
+ * bar on mobile, the first group of the sidebar on desktop. Home (/) is the logo.
+ */
 export const shellTabs: { id: ShellTab; label: string; href: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
-  { id: 'home', label: 'ホーム', href: '/', icon: 'home' },
-  { id: 'jobs', label: '求人', href: '/jobs', icon: 'search' },
+  { id: 'jobs', label: '求人を探す', href: '/jobs', icon: 'search' },
   { id: 'saved', label: '気になる', href: '/saved', icon: 'heart' },
-  { id: 'applications', label: '応募', href: '/applications', icon: 'briefcase' },
+  { id: 'applications', label: '応募管理', href: '/applications', icon: 'briefcase' },
+  { id: 'messages', label: 'メッセージ', href: '/messages', icon: 'chat' },
   { id: 'profile', label: 'マイページ', href: '/profile', icon: 'user' },
 ];
 
-/** Secondary destinations: desktop sidebar only; on mobile they live on Home / My page. */
+/** Secondary destinations: desktop sidebar only; on mobile they live on My page and in context. */
 export const secondaryLinks: { href: string; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
   { href: '/scouts', label: 'スカウト', icon: 'sparkles' },
   { href: '/visits', label: '見学・体験', icon: 'map' },
@@ -25,20 +27,19 @@ export const secondaryLinks: { href: string; label: string; icon: Parameters<typ
 
 /*
  * Layout contract (candidate-shell.css):
- *   < 900px   header + content + fixed 5-tab bottom nav; no sidebar.
- *   >= 900px  240px sidebar (icon + label rows, every destination) + fluid main; no bottom nav.
- * The shell uses only hc-* classes so legacy dashboard rules (.sidebar, .nav-item,
- * .main-column, .content) can never leak into it.
+ *   < 900px   header (logo or back, title, notifications) + content + fixed 5-tab bottom nav; no sidebar.
+ *   >= 900px  240px sidebar (logo, the same 5 destinations, secondary links, sign-out) + fluid main; no bottom nav.
+ * Each destination appears once per layout. The shell uses only hc-* classes so legacy
+ * dashboard rules (.sidebar, .nav-item, .main-column, .content) can never leak into it.
  */
 
 type Props = {
   active: ShellTab | null;
   title: string;
   name: string;
-  email?: string | null;
   notification: ReactNode;
   badges?: Partial<Record<ShellTab, number>>;
-  onNavigate?: (tab: ShellTab) => void;
+  onNavigate?: (target: string) => void;
   /** Screens below a tab (details, secondary screens) show a back button in the header. */
   onBack?: () => void;
   onSignOut: () => void | Promise<void>;
@@ -46,105 +47,80 @@ type Props = {
   children: ReactNode;
 };
 
-export function CandidateShell({ active, title, name, email, notification, badges = {}, onNavigate, onBack, onSignOut, className, children }: Props) {
-  const [accountOpen, setAccountOpen] = useState(false);
+export function confirmSignOut(onSignOut: () => void | Promise<void>) {
+  if (window.confirm('Hoiku Colorからログアウトしますか？')) void onSignOut();
+}
 
-  const go = (tab: ShellTab) => (event: React.MouseEvent<HTMLAnchorElement>) => {
+export function CandidateShell({ active, title, name, notification, badges = {}, onNavigate, onBack, onSignOut, className, children }: Props) {
+  const go = (href: string) => (event: React.MouseEvent<HTMLAnchorElement>) => {
     if (!onNavigate || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
     event.preventDefault();
-    onNavigate(tab);
+    onNavigate(href);
   };
 
   const secondaryActive = secondaryLinks.find((link) => window.location.pathname.startsWith(link.href)) ?? null;
-
-  const sideLink = (key: string, href: string, label: string, icon: Parameters<typeof Icon>[0]['name'], isActive: boolean, count = 0, onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void) => (
-    <a key={key} href={href} className={`hc-sidenav-item ${isActive ? 'is-active' : ''}`} aria-current={isActive ? 'page' : undefined} onClick={onClick}>
-      <Icon name={icon} size={20} />
-      <span className="hc-sidenav-label">{label}</span>
-      {count > 0 && <em className="hc-sidenav-badge" aria-label={`${count}件`}>{count > 99 ? '99+' : count}</em>}
-    </a>
-  );
-
-  const bottomTab = (tab: (typeof shellTabs)[number]) => {
-    const count = badges[tab.id] ?? 0;
-    const isActive = active === tab.id;
-    return (
-      <a key={tab.id} href={tab.href} className={`hc-tab ${isActive ? 'is-active' : ''}`} aria-current={isActive ? 'page' : undefined} onClick={go(tab.id)}>
-        <Icon name={tab.icon} size={22} />
-        <span>{tab.label}</span>
-        {count > 0 && <i className="hc-tab-badge" aria-label={`${count}件`}>{count > 99 ? '99+' : count}</i>}
-      </a>
-    );
-  };
+  const badge = (count: number, className: string) => count > 0
+    ? <em className={className} aria-label={`${count}件`}>{count > 99 ? '99+' : count}</em>
+    : null;
 
   return (
     <div className={`hc-shell ${className ?? ''}`}>
       <aside className="hc-sidebar" aria-label="メニュー">
-        <a className="hc-sidebar-brand" href="/" onClick={go('home')}><Brand /></a>
-        <nav className="hc-sidenav" aria-label="マイページ">
-          {shellTabs.map((tab) => sideLink(tab.id, tab.href, tab.label, tab.icon, !secondaryActive && active === tab.id, badges[tab.id] ?? 0, go(tab.id)))}
-          <span className="hc-sidenav-divider" role="separator" />
-          {secondaryLinks.map((link) => {
-            const isActive = window.location.pathname.startsWith(link.href);
-            return sideLink(link.href, link.href, link.label, link.icon, isActive);
+        <a className="hc-sidebar-brand" href="/" onClick={go('/')} aria-label="ホームへ"><Brand /></a>
+        <nav className="hc-sidenav" aria-label="メインメニュー">
+          {shellTabs.map((tab) => {
+            const isActive = !secondaryActive && active === tab.id;
+            return (
+              <a key={tab.id} href={tab.href} className={`hc-sidenav-item ${isActive ? 'is-active' : ''}`} aria-current={isActive ? 'page' : undefined} onClick={go(tab.href)}>
+                <Icon name={tab.icon} size={20} />
+                <span className="hc-sidenav-label">{tab.label}</span>
+                {badge(badges[tab.id] ?? 0, 'hc-sidenav-badge')}
+              </a>
+            );
           })}
         </nav>
+        <span className="hc-sidenav-divider" role="separator" />
+        <nav className="hc-sidenav" aria-label="そのほかの機能">
+          {secondaryLinks.map((link) => {
+            const isActive = secondaryActive?.href === link.href;
+            return (
+              <a key={link.href} href={link.href} className={`hc-sidenav-item is-secondary ${isActive ? 'is-active' : ''}`} aria-current={isActive ? 'page' : undefined}>
+                <Icon name={link.icon} size={20} />
+                <span className="hc-sidenav-label">{link.label}</span>
+              </a>
+            );
+          })}
+        </nav>
+        <div className="hc-sidebar-account">
+          <span className="hc-sidebar-name">{name}さん</span>
+          <button type="button" className="hc-sidebar-signout" onClick={() => confirmSignOut(onSignOut)}>
+            <Icon name="logout" size={18} /> ログアウト
+          </button>
+        </div>
       </aside>
 
       <div className="hc-main">
         <header className="hc-app-header">
           {onBack
-            ? <button type="button" className="icon-button hc-header-back" onClick={onBack} aria-label="戻る"><Icon name="chevron" size={22} /></button>
-            : <a className="hc-header-brand" href="/" onClick={go('home')} aria-label="ホームへ"><Brand compact /></a>}
+            ? <button type="button" className="hc-header-back" onClick={onBack} aria-label="戻る"><Icon name="chevron" size={22} /></button>
+            : <a className="hc-header-brand" href="/" onClick={go('/')} aria-label="ホームへ"><Brand compact /></a>}
           <h1 className="hc-header-title">{title}</h1>
-          <div className="hc-header-actions">
-            {notification}
-            <button type="button" className="icon-button hc-account-button" aria-label="アカウント" aria-haspopup="dialog" aria-expanded={accountOpen} onClick={() => setAccountOpen(true)}>
-              <Icon name="user" size={20} />
-            </button>
-          </div>
+          <div className="hc-header-actions">{notification}</div>
         </header>
         <main className="hc-content">{children}</main>
       </div>
 
       <nav className="hc-tabbar" aria-label="メインメニュー">
-        {shellTabs.map(bottomTab)}
+        {shellTabs.map((tab) => {
+          const isActive = active === tab.id;
+          return (
+            <a key={tab.id} href={tab.href} className={`hc-tab ${isActive ? 'is-active' : ''}`} aria-current={isActive ? 'page' : undefined} onClick={go(tab.href)}>
+              <span className="hc-tab-icon"><Icon name={tab.icon} size={24} />{badge(badges[tab.id] ?? 0, 'hc-tab-badge')}</span>
+              <span className="hc-tab-label">{tab.label}</span>
+            </a>
+          );
+        })}
       </nav>
-
-      {accountOpen && <AccountSheet name={name} email={email} onClose={() => setAccountOpen(false)} onSignOut={onSignOut} />}
     </div>
-  );
-}
-
-function AccountSheet({ name, email, onClose, onSignOut }: { name: string; email?: string | null; onClose: () => void; onSignOut: () => void | Promise<void> }) {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  return createPortal(
-    <div className="hc-sheet-backdrop" role="presentation" onClick={onClose}>
-      <div className="hc-sheet" role="dialog" aria-modal="true" aria-labelledby="hc-account-title" onClick={(event) => event.stopPropagation()}>
-        <div className="hc-sheet-head">
-          <strong id="hc-account-title">{name}</strong>
-          {email && <span>{email}</span>}
-        </div>
-        <a className="hc-sheet-item" href="/profile" onClick={onClose}>マイページ</a>
-        <a className="hc-sheet-item" href="/scouts" onClick={onClose}>スカウト</a>
-        <a className="hc-sheet-item" href="/visits" onClick={onClose}>見学・体験の予約</a>
-        <button
-          type="button"
-          className="hc-sheet-item is-danger"
-          onClick={() => {
-            if (window.confirm('Hoiku Colorからログアウトしますか？')) void onSignOut();
-          }}
-        >
-          ログアウト
-        </button>
-        <button type="button" className="hc-sheet-item is-subtle" onClick={onClose}>閉じる</button>
-      </div>
-    </div>,
-    document.body,
   );
 }

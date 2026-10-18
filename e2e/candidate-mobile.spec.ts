@@ -98,11 +98,15 @@ for (const width of [375, 390, 393, 430]) {
 
       const tabs = page.locator('.hc-tabbar a');
       await expect(tabs).toHaveCount(5);
-      await expect(tabs).toHaveText(['ホーム', '求人', '気になる', '1件応募', 'マイページ'].map((label) => new RegExp(label.replace('1件', ''))));
-      await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/ホーム/);
+      await expect(tabs).toHaveText(['求人を探す', '気になる', '応募管理', 'メッセージ', 'マイページ'].map((label) => new RegExp(label)));
+      // Home is the logo: an overview of all five destinations, so none is lit.
+      await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveCount(0);
+      await expect(page.locator('.hc-header-brand')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'アカウント' })).toHaveCount(0);
 
-      await expect(page.getByRole('button', { name: '求人を探す' })).toBeVisible();
-      await expect(page.locator('.hc-stat-row')).toHaveCount(3);
+      // Only actionable rows; the interview reply and pending scout surface as to-dos.
+      await expect(page.locator('.hc-stat-row')).toHaveCount(2);
+      await expect(page.locator('.hc-todo-item')).toHaveCount(2);
       await expect(page.locator('.hc-stat-row').filter({ hasText: '新着メッセージ' })).toContainText('2');
       await expect(page.getByText('おすすめ求人')).toBeVisible();
       await expect(page.locator('.hc-job-card').first()).toContainText('ひだまり保育園');
@@ -110,7 +114,6 @@ for (const width of [375, 390, 393, 430]) {
 
       await expectMinHeight(page, '.hc-tabbar a', 48);
       await expectMinHeight(page, '.hc-header-actions button', 48);
-      await expectMinHeight(page, '.hc-cta', 52);
       await expectMinHeight(page, '.hc-stat-row', 48);
       await expectNoHorizontalOverflow(page);
     });
@@ -123,6 +126,8 @@ for (const width of [375, 390, 393, 430]) {
       await expect(search).toBeVisible();
       expect(await search.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
       await expect(page.getByRole('button', { name: '勤務実績データあり' })).toBeVisible();
+      // Filter dropdowns are inputs too: below 16px iOS zooms the page on focus.
+      for (const name of ['勤務地', '雇用形態']) expect(await page.getByRole('combobox', { name }).evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
       await expect(page.getByRole('button', { name: '会計実績データあり' })).toBeVisible();
       await expect(page.locator('.hc-result-bar')).toContainText('2件');
       await expect(page.locator('.hc-job-card')).toHaveCount(2);
@@ -160,8 +165,9 @@ test('real zero results show the empty state (not an error)', async ({ page }) =
 test('home sections fail independently; other sections still render', async ({ page }) => {
   await mockApi(page, { hc_jobseeker_list_applications: serverError, hc_jobseeker_search_jobs_v2: serverError });
   await page.goto('/');
-  await expect(page.locator('.hc-stat-row').filter({ hasText: '応募中' })).toContainText('読み込めませんでした');
-  await expect(page.locator('.hc-stat-row').filter({ hasText: '気になる園' })).toContainText('1');
+  await expect(page.locator('.hc-stat-row').filter({ hasText: '選考中の応募' })).toContainText('読み込めませんでした');
+  await expect(page.locator('.hc-stat-row').filter({ hasText: '新着メッセージ' })).toContainText('2');
+  await expect(page.getByText('いま確認が必要なことはありません')).toHaveCount(0);
   await expect(page.locator('.hc-inline-error').filter({ hasText: 'おすすめ求人を読み込めませんでした' })).toBeVisible();
   await expect(page.getByText('公開中の求人はまだありません')).toHaveCount(0);
   await expect(page.locator('.error-banner')).toHaveCount(0);
@@ -297,12 +303,12 @@ test.describe('390px golden path and P1 screens', () => {
     await expect(page).toHaveURL(/\/jobs$/);
     await page.goForward();
     await expect(page).toHaveURL(new RegExp(`application_id=${application.id}`));
-    await page.locator('.hc-tabbar a', { hasText: '応募' }).click();
+    await page.locator('.hc-tabbar a', { hasText: '応募管理' }).click();
     await expect(page).toHaveURL(/\/applications$/);
     await expect(page.locator('.hc-application-row')).toHaveCount(1);
 
     await page.reload();
-    await expect(page.getByRole('heading', { level: 1, name: '応募' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: '応募管理' })).toBeVisible();
     await expect(page.locator('.hc-application-row')).toHaveCount(1);
     await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/応募/);
   });
@@ -337,7 +343,7 @@ test.describe('390px golden path and P1 screens', () => {
       ['マッチ度を見る', '/matches', 'マッチ度'],
       ['園を比較する', '/compare', '園を比較'],
     ] as const) {
-      await page.locator('.hc-menu a', { hasText: label }).click();
+      await page.locator('.hc-menu[aria-label="そのほかの機能"] a', { hasText: label }).click();
       await expect(page).toHaveURL(new RegExp(`${path}$`));
       await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
       await expect(page.locator('.hc-tabbar a')).toHaveCount(5);
@@ -355,7 +361,7 @@ test.describe('390px golden path and P1 screens', () => {
     await expect(page.getByText('スカウトはまだ届いていません')).toBeVisible();
     await expect(page.getByText('本人情報の共有はあなたが決めます')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'スカウト設定' })).toBeVisible();
-    await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/マイページ/);
+    await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/メッセージ/);
     await expectNoHorizontalOverflow(page);
   });
 
@@ -429,7 +435,7 @@ test.describe('390px golden path and P1 screens', () => {
 
 /* ------------------------------------------------------------ layout contract */
 
-const layoutRoutes = ['/', '/jobs', '/saved', '/applications', `/applications?application_id=${application.id}`, '/profile', '/scouts', '/visits', '/spot-jobs', '/matches', `/compare?job_id=${jobA.id}&job_id=${jobB.id}`];
+const layoutRoutes = ['/', '/jobs', '/saved', '/applications', '/messages', `/applications?application_id=${application.id}`, '/profile', '/scouts', '/visits', '/spot-jobs', '/matches', `/compare?job_id=${jobA.id}&job_id=${jobB.id}`];
 
 type LayoutReport = {
   overflowX: number;
@@ -466,7 +472,7 @@ async function measureLayout(page: Page): Promise<LayoutReport> {
       tabbar: {
         visible: visible(document.querySelector('.hc-tabbar')),
         count: tabs.length,
-        wrapped: tabs.map((tab) => tab.querySelector('span')!).filter((span) => span.getBoundingClientRect().height > parseFloat(getComputedStyle(span).lineHeight) * 1.5).map((span) => span.textContent || ''),
+        wrapped: tabs.map((tab) => tab.querySelector('.hc-tab-label')!).filter((span) => span.getBoundingClientRect().height > parseFloat(getComputedStyle(span).lineHeight) * 1.5).map((span) => span.textContent || ''),
       },
       titleClipped: Boolean(title && title.scrollWidth > title.clientWidth + 1),
       outside,
@@ -479,7 +485,7 @@ async function measureLayout(page: Page): Promise<LayoutReport> {
   });
 }
 
-for (const [width, height] of [[1280, 800], [1440, 900], [1536, 864]] as const) {
+for (const [width, height] of [[1024, 768], [1280, 800], [1440, 900], [1536, 864], [1920, 1080]] as const) {
   test(`layout desktop ${width}x${height}: sidebar + main, no wrapping or overflow`, async ({ page }) => {
     test.setTimeout(120_000);
     await page.setViewportSize({ width, height });
@@ -513,7 +519,7 @@ for (const [width, height] of [[1280, 800], [1440, 900], [1536, 864]] as const) 
   });
 }
 
-for (const [width, height] of [[375, 812], [390, 844], [393, 852], [430, 932]] as const) {
+for (const [width, height] of [[320, 640], [375, 812], [390, 844], [393, 852], [430, 932], [768, 1024]] as const) {
   test(`layout mobile ${width}x${height}: bottom nav only, no overflow`, async ({ page }) => {
     test.setTimeout(120_000);
     await page.setViewportSize({ width, height });
@@ -612,7 +618,7 @@ test('no internal abbreviations or developer terms are visible to job seekers', 
     for (const violation of wordingViolations(await collectUserText(page))) violations.push(`${label} → ${violation}`);
   };
 
-  for (const route of ['/', '/jobs', '/saved', '/applications', '/profile', '/scouts', '/visits', '/spot-jobs', '/matches', `/compare?job_id=${jobA.id}&job_id=${jobB.id}`]) {
+  for (const route of ['/', '/jobs', '/saved', '/applications', '/messages', '/profile', '/scouts', '/visits', '/spot-jobs', '/matches', `/compare?job_id=${jobA.id}&job_id=${jobB.id}`]) {
     await page.goto(route);
     await expect(page.locator('.hc-header-title')).toBeVisible();
     await expect(page.locator('.hc-skeleton-card')).toHaveCount(0, { timeout: 10_000 });
@@ -634,16 +640,112 @@ test('no internal abbreviations or developer terms are visible to job seekers', 
   await page.waitForTimeout(400);
   await scan('notifications');
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'アカウント' }).click();
-  await scan('account sheet');
 
   expect([...new Set(violations)]).toEqual([]);
 });
-
+
 test('salary reads naturally: unit shown, a single amount is not a range', async ({ page }) => {
   const imported = { ...jobB, id: '15151515-1515-4515-8515-151515151515', is_external: true, can_apply_direct: false, source_kind: 'hellowork', source_name: 'ハローワーク', source_url: 'https://www.hellowork.mhlw.go.jp/', salary_type: 'hourly', salary_min: 1250, salary_max: 1250, salary_note: '1,250円〜1,250円' };
   await mockApi(page, { hc_jobseeker_search_jobs_v2: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(searchRows([jobA, imported as typeof jobA])) }), hc_jobseeker_search_jobs: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(searchRows([jobA, imported as typeof jobA])) }) });
   await page.goto('/jobs');
   await expect(page.locator(`[data-job-id="${imported.id}"] .hc-job-salary`)).toHaveText('時給 1,250円');
   await expect(page.locator(`[data-job-id="${jobA.id}"] .hc-job-salary`)).toHaveText('月給 240,000〜290,000円');
+});
+
+/* ------------------------------------------ job detail: 聞きづらいことを確認 */
+
+test('interview transparency reads as stacked rows with each missing value explained once', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  await mockApi(page, {
+    hc_jobseeker_get_job_transparency: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ job_id: jobA.id, facility_claims: { overtime: '月平均5時間程度' }, published_faqs: [{ question: '残業はありますか？', answer: '月5時間程度です。' }] }) }),
+  });
+  await page.goto(`/jobs?job_id=${jobA.id}`);
+  const panel = page.locator('.interview-transparency');
+  await expect(panel.getByRole('heading', { name: '面接で聞きづらいことを、応募前に確認' })).toBeVisible();
+  await expect(panel.locator('[role="table"]')).toHaveCount(0);
+  const overtime = panel.locator('.interview-check').filter({ hasText: '残業' }).first();
+  await expect(overtime).toContainText('園の回答月平均5時間程度');
+  await expect(overtime).toContainText('勤務実績実績未公開');
+  await expect(panel.locator('.interview-check').filter({ hasText: '持ち帰り仕事' })).toContainText('公開回答なし');
+  await expect(panel.locator('.interview-missing-help dt')).toHaveText(['実績未公開', '勤務実績なし']);
+  const faq = panel.locator('details').first();
+  await expect(faq.locator('p')).toBeHidden();
+  await faq.locator('summary').click();
+  await expect(faq.locator('p')).toHaveText('月5時間程度です。');
+  for (const selector of ['.interview-check dd', '.interview-transparency-note', '.interview-missing-help dd']) {
+    const sizes = await panel.locator(selector).evaluateAll((nodes) => nodes.map((n) => parseFloat(getComputedStyle(n).fontSize)));
+    for (const size of sizes) expect(size, selector).toBeGreaterThanOrEqual(14);
+  }
+  await expectMinHeight(page, '.interview-faqs summary', 48);
+  await expectNoHorizontalOverflow(page);
+});
+
+test('messages tab lists application conversations and marks only the known newest one', async ({ page }) => {
+  await mockApi(page, {
+    hc_jobseeker_attention_summary: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...attention, next_message: { notification_id: '16161616-1616-4616-8616-161616161616', application_id: application.id, created_at: '2026-10-02T00:00:00Z', facility_name: jobA.facility_name, link_url: '/applications' } }) }),
+  });
+  await page.goto('/messages');
+  await expect(page.getByRole('heading', { level: 1, name: 'メッセージ' })).toBeVisible();
+  await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/メッセージ/);
+  await expect(page.locator('.hc-tabbar a', { hasText: 'メッセージ' }).locator('.hc-tab-badge')).toHaveText('2');
+  const thread = page.locator('.hc-list-row').filter({ hasText: 'ひだまり保育園' });
+  await expect(thread).toContainText('新着');
+  await expect(thread).toHaveAttribute('href', new RegExp(`application_id=${application.id}#application-messages`));
+  await expectNoHorizontalOverflow(page);
+});
+
+test('home with nothing to do shows one calm next action', async ({ page }) => {
+  await mockApi(page, {
+    hc_jobseeker_list_applications: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    hc_jobseeker_attention_summary: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ unanswered_interviews_count: 0, unread_messages_count: 0, pending_scouts_count: 0, next_interview: null, next_message: null, next_scout: null }) }),
+  });
+  await page.goto('/');
+  const empty = page.locator('.hc-empty').filter({ hasText: 'いま確認が必要なことはありません' });
+  await expect(empty).toBeVisible();
+  await expect(empty.getByRole('button')).toHaveText(['求人を探す']);
+  await expect(page.locator('.hc-stat-row')).toHaveCount(0);
+});
+
+test('my page is split into clear sections, without a completion score, and signs out from アカウント設定', async ({ page }) => {
+  await mockApi(page);
+  await page.goto('/profile');
+  for (const name of ['基本情報', '希望する仕事', '職歴・経験', '資格・免許', '応募書類', 'アカウント設定']) {
+    await expect(page.getByRole('heading', { level: 2, name })).toBeVisible();
+  }
+  await expect(page.getByText(/入力度|\d+%/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'ログアウト' })).toBeVisible();
+  for (const selector of ['.hc-field input', '.doc-vault-add select']) {
+    const sizes = await page.locator(selector).evaluateAll((nodes) => nodes.map((n) => parseFloat(getComputedStyle(n).fontSize)));
+    for (const size of sizes) expect(size, selector).toBeGreaterThanOrEqual(16);
+  }
+  await expectMinHeight(page, '.hc-shell .primary-button', 48);
+});
+
+/* ---------------------------------------- review screenshots (opt-in, local) */
+
+test('review screenshots at the 8 reference widths', async ({ page }) => {
+  test.skip(!process.env.HC_SCREENSHOTS, 'set HC_SCREENSHOTS=1 to capture review screenshots');
+  test.setTimeout(300_000);
+  await mockApi(page, {
+    hc_jobseeker_get_job_transparency: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ job_id: jobA.id, facility_claims: { overtime: '月平均5時間程度', break_time: '60分（交代制）' }, published_faqs: [{ question: '残業はありますか？', answer: '行事前を除き、月5時間程度です。' }, { question: '有休は取りやすいですか？', answer: '希望日の2週間前までに申請いただければ調整します。' }] }) }),
+  });
+  for (const width of [320, 375, 390, 430, 768, 1024, 1440, 1920]) {
+    await page.setViewportSize({ width, height: width >= 1024 ? 900 : 844 });
+    for (const [name, route] of [['home', '/'], ['messages', '/messages'], ['profile', '/profile'], ['job-detail', `/jobs?job_id=${jobA.id}`]] as const) {
+      await page.goto(route);
+      await expect(page.locator('.hc-header-title')).toBeVisible();
+      await expect(page.locator('.hc-skeleton-card')).toHaveCount(0, { timeout: 10_000 });
+      await page.waitForTimeout(300);
+      if (name === 'job-detail') {
+        const panel = page.locator('.interview-transparency');
+        await expect(panel.locator('.interview-check').first()).toBeVisible();
+        await panel.locator('details summary').first().click();
+        await panel.scrollIntoViewIfNeeded();
+        await page.evaluate(() => document.querySelector('.interview-transparency')?.scrollIntoView({ block: 'start' }));
+        await page.evaluate(() => window.scrollBy(0, -80));
+      }
+      await expectNoHorizontalOverflow(page);
+      await page.screenshot({ path: `test-results/screens/${name}-${width}.png` });
+    }
+  }
 });

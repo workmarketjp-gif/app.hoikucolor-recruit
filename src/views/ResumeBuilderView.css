@@ -1,0 +1,124 @@
+/* 履歴書・職務経歴書 builder. Mobile first on the candidate-shell tokens. */
+.rb { gap: 14px; }
+.rb-top { display: grid; gap: 10px; min-width: 0; }
+.rb-top .hc-lead { margin: 0; }
+.rb-progress { height: 6px; border-radius: 3px; background: var(--hc-line); overflow: hidden; }
+.rb-progress span { display: block; height: 100%; background: var(--hc-accent); border-radius: 3px; transition: width .2s ease; }
+.rb-steps { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+.rb-steps button { flex: 0 0 auto; min-height: 44px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid var(--hc-line); border-radius: 22px; background: var(--hc-surface); color: var(--hc-ink-soft); font-size: 14px; font-weight: 700; white-space: nowrap; }
+.rb-steps button span { width: 22px; height: 22px; display: inline-grid; place-items: center; border-radius: 50%; background: #f3efee; font-size: 12px; font-weight: 800; }
+.rb-steps button.is-current { border-color: var(--hc-accent); background: var(--hc-accent-soft); color: var(--hc-accent-dark); }
+.rb-steps button.is-current span { background: var(--hc-accent); color: #fff; }
+.rb-save { margin: 0; font-size: 14px; color: var(--hc-muted); }
+.rb-save.is-error { color: #b63b50; font-weight: 700; }
+.rb-link { min-height: 44px; padding: 0 4px; background: transparent; color: var(--hc-accent-dark); font-size: 15px; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
+
+.rb-step { min-width: 0; }
+.rb-step h2 { font-size: 21px; line-height: 1.45; outline: none; }
+.rb-step-count { margin: 0; font-size: 13px; font-weight: 800; color: var(--hc-accent-dark); }
+.rb-step .hc-note { margin: 0; }
+.rb-optional { margin-left: 8px; padding: 1px 8px; border-radius: 10px; background: #f3efee; color: var(--hc-muted); font-size: 12px; font-style: normal; font-weight: 700; }
+.rb-field { display: grid; gap: 6px; min-width: 0; }
+.rb-hint { font-size: 13px; font-weight: 500; line-height: 1.6; color: var(--hc-muted); }
+.rb-count { justify-self: end; font-size: 12px; font-weight: 600; color: var(--hc-muted); }
+.rb-count.is-near { color: #b63b50; }
+
+.rb-ym { margin: 0; padding: 0; border: 0; display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px; min-width: 0; }
+.rb-ym legend { padding: 0; margin-bottom: 6px; font-size: 15px; font-weight: 700; color: var(--hc-ink); }
+.rb-ym select { width: 100%; min-width: 0; min-height: 52px; padding: 0 12px; border-radius: 12px; border: 1px solid #ddd6d4; background: #fff; font-size: 16px; color: var(--hc-ink); }
+.rb-ym:disabled { opacity: .5; }
+
+.rb-check { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 0; font-size: 15px; font-weight: 700; line-height: 1.5; color: var(--hc-ink); }
+.rb-check input { flex: 0 0 auto; width: 22px; height: 22px; margin: 0; accent-color: var(--hc-accent); }
+
+.rb-entry { display: grid; gap: 14px; min-width: 0; padding: 14px; border: 1px solid var(--hc-line); border-radius: 14px; background: #fdfbfb; }
+.rb-entry header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.rb-entry header strong { min-width: 0; font-size: 16px; overflow-wrap: anywhere; }
+.rb-entry header div { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.rb-icon-button { width: 44px; height: 44px; border: 1px solid var(--hc-line); border-radius: 12px; background: #fff; color: var(--hc-ink-soft); font-size: 16px; font-weight: 800; }
+.rb-icon-button:disabled { opacity: .35; }
+.rb-add { width: 100%; }
+.rb-inline { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+
+.rb-nav { position: sticky; bottom: calc(var(--hc-tabbar-h) + env(safe-area-inset-bottom, 0px)); z-index: 5; display: grid; grid-template-columns: 1fr 2fr; gap: 10px; padding: 10px 0; background: linear-gradient(rgba(251, 247, 246, 0), var(--hc-bg) 30%); }
+.rb-nav > * { width: 100%; }
+.rb-skip-note { text-align: center; }
+
+.rb-gaps { padding: 12px 14px; border-radius: 14px; background: #fff8e8; color: #6b531a; }
+.rb-gaps strong { font-size: 15px; }
+.rb-gaps p { margin: 4px 0 0; font-size: 14px; line-height: 1.7; }
+
+.rb-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 14px; background: #f3efee; }
+.rb-tabs button { min-height: 44px; border-radius: 11px; background: transparent; color: var(--hc-ink-soft); font-size: 15px; font-weight: 800; }
+.rb-tabs button.is-active { background: #fff; color: var(--hc-ink); box-shadow: 0 1px 4px rgba(31, 42, 59, .1); }
+
+.rb-photo { display: grid; gap: 8px; }
+.rb-photo strong { font-size: 15px; }
+.rb-photo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.rb-create { display: grid; gap: 10px; }
+.rb-create .primary-button { width: 100%; }
+.rb-created { display: grid; gap: 8px; padding: 14px; border-radius: 14px; background: #eaf7ef; color: #1f5a3b; }
+.rb-created strong { font-size: 16px; }
+.rb-created p { margin: 0; font-size: 14px; line-height: 1.7; }
+.rb-created .secondary-button { width: 100%; }
+
+/* Paper preview: same rows as the PDF, reflowed for narrow screens. */
+.rb-paper { display: grid; gap: 12px; min-width: 0; padding: 18px 14px; border: 1px solid #ddd6d4; border-radius: 6px; background: #fff; color: #1a1e28; box-shadow: 0 6px 20px rgba(31, 42, 59, .08); font-size: 14px; line-height: 1.6; }
+.rb-paper h3 { margin: 0; font-size: 20px; letter-spacing: .3em; }
+.rb-paper h4 { margin: 0 0 6px; font-size: 14px; }
+.rb-paper p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rb-paper-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px; }
+.rb-paper-head span, .rb-paper-meta { font-size: 12px; color: #5d6370; }
+.rb-paper-head.is-center { justify-content: center; }
+.rb-paper-meta { text-align: right; }
+.rb-paper-personal { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 10px; align-items: start; }
+.rb-paper-personal dl, .rb-facts { margin: 0; display: grid; gap: 0; border: 1px solid #c9c4c2; }
+.rb-paper-personal dl > div, .rb-facts > div { display: grid; grid-template-columns: 74px minmax(0, 1fr); border-top: 1px solid #e2dedd; }
+.rb-paper-personal dl > div:first-child, .rb-facts > div:first-child { border-top: 0; }
+.rb-paper-personal dt, .rb-facts dt { padding: 6px 8px; background: #f7f5f4; font-size: 12px; color: #5d6370; }
+.rb-paper-personal dd, .rb-facts dd { margin: 0; padding: 6px 8px; min-width: 0; overflow-wrap: anywhere; }
+.rb-paper-personal dd small { display: block; font-size: 11px; color: #5d6370; }
+.rb-paper-name { font-size: 18px; font-weight: 700; }
+.rb-break { word-break: break-all; }
+.rb-paper-photo { width: 72px; height: 96px; display: grid; place-items: center; border: 1px dashed #b8b2b0; color: #8b8f99; font-size: 12px; overflow: hidden; }
+.rb-paper-photo img { width: 100%; height: 100%; object-fit: cover; }
+.rb-paper-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.rb-paper-table th, .rb-paper-table td { border: 1px solid #c9c4c2; padding: 5px 6px; vertical-align: top; overflow-wrap: anywhere; }
+.rb-paper-table th { background: #f7f5f4; font-weight: 700; }
+.rb-paper-table th:nth-child(1), .rb-paper-table td:nth-child(1) { width: 46px; text-align: center; }
+.rb-paper-table th:nth-child(2), .rb-paper-table td:nth-child(2) { width: 30px; text-align: center; }
+.rb-paper-table td.is-center { text-align: center; }
+.rb-paper-table td.is-right { text-align: right; }
+.rb-paper-box { padding: 10px; border: 1px solid #c9c4c2; }
+.rb-paper-box h4 { font-size: 12px; font-weight: 600; color: #5d6370; }
+.rb-paper-box > div + div { margin-top: 8px; }
+.rb-paper-section h4 { padding-bottom: 4px; border-bottom: 1.5px solid #2a2f3a; }
+.rb-paper-section ul { margin: 0; padding-left: 1.2em; }
+.rb-job { display: grid; gap: 8px; margin-top: 10px; }
+.rb-job-head { display: grid; gap: 2px; padding: 8px 10px; background: #f1f1f3; border: 1px solid #dcdce0; }
+.rb-job-head strong { font-size: 15px; overflow-wrap: anywhere; }
+.rb-job-head small { font-size: 12px; color: #5d6370; }
+.rb-muted { color: #6b7080; }
+.rb-paper-end { text-align: right; }
+
+@media (max-width: 479px) {
+  .rb-paper-personal { grid-template-columns: 1fr; }
+  .rb-paper-photo { order: -1; justify-self: end; width: 60px; height: 80px; }
+}
+@media (min-width: 768px) {
+  .rb-paper { padding: 28px 30px; }
+  .rb-paper-personal { grid-template-columns: minmax(0, 1fr) 96px; }
+  .rb-paper-photo { width: 96px; height: 128px; }
+  .rb-create { grid-template-columns: 1fr 1fr; }
+  .rb-nav { position: static; }
+}
+
+/* Optional AI draft per writing field: never applied without「この下書きを使う」. */
+.rb-assist { display: grid; gap: 8px; min-width: 0; margin-top: -6px; }
+.rb-assist-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; }
+.rb-assist-error { margin: 0; font-size: 14px; font-weight: 700; line-height: 1.6; color: #b63b50; }
+.rb-assist-draft { display: grid; gap: 10px; min-width: 0; padding: 14px; border: 1px dashed var(--hc-accent); border-radius: 14px; background: var(--hc-accent-soft); }
+.rb-assist-title { margin: 0; font-size: 14px; font-weight: 800; color: var(--hc-accent-dark); }
+.rb-assist-text { margin: 0; font-size: 15px; line-height: 1.8; color: var(--hc-ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rb-assist-actions { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 8px; }
+.rb-assist-actions button { min-width: 0; padding-left: 10px; padding-right: 10px; white-space: nowrap; }

@@ -1,13 +1,13 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from './components/Icon';
 import { ApplicationDetail } from './components/ApplicationDetail';
-import { CandidateShell, type ShellTab } from './components/CandidateShell';
+import { CandidateShell, confirmSignOut, type ShellTab } from './components/CandidateShell';
 import { DocumentVaultPanel } from './components/DocumentVaultPanel';
 import { JobCard } from './components/JobCard';
 import { RankingDisclosure, rankLabels } from './components/RankingDisclosure';
 import { EmptyState, InlineError, SectionHeader, SkeletonList, Toast } from './components/StateViews';
 import { NotificationCenter } from './components/NotificationCenter';
-import { getJobseekerAttentionSummary } from './lib/attentionRepository';
+import { getJobseekerAttentionSummary, type JobseekerAttentionSummary } from './lib/attentionRepository';
 import { useCandidateSession } from './lib/candidateSession';
 import {
   getJobSearchFacets, getProfile, getRankedJob, listApplications, listFeaturedJobs, listSavedJobIds,
@@ -25,35 +25,43 @@ const MatchesView = lazy(() => import('./views/MatchesView').then((module) => ({
 const ScoutsView = lazy(() => import('./views/ScoutsView').then((module) => ({ default: module.ScoutsView })));
 const SpotJobsView = lazy(() => import('./views/SpotJobsView').then((module) => ({ default: module.SpotJobsView })));
 const VisitsView = lazy(() => import('./views/VisitsView').then((module) => ({ default: module.VisitsView })));
+const ResumeBuilderView = lazy(() => import('./views/ResumeBuilderView').then((module) => ({ default: module.ResumeBuilderView })));
 
 const viewTitles: Record<View, string> = {
   home: 'ホーム',
   jobs: '求人を探す',
   saved: '気になる',
-  applications: '応募',
+  applications: '応募管理',
+  messages: 'メッセージ',
   profile: 'マイページ',
   scouts: 'スカウト',
   visits: '見学・体験',
   spot: 'スポット勤務',
   matches: 'マッチ度',
   compare: '園を比較',
+  resume: '応募書類をつくる',
 };
 
-/** Which bottom tab a screen belongs to. Secondary screens keep their parent tab lit. */
-const parentTab: Record<View, ShellTab> = {
-  home: 'home',
+/**
+ * Which destination a screen belongs to. Secondary screens keep their parent lit; Home
+ * (the logo) is the overview of all five, so no single destination is lit there.
+ */
+const parentTab: Record<View, ShellTab | null> = {
+  home: null,
   jobs: 'jobs',
   saved: 'saved',
   applications: 'applications',
+  messages: 'messages',
   profile: 'profile',
-  scouts: 'profile',
-  visits: 'profile',
+  scouts: 'messages',
+  visits: 'applications',
   spot: 'jobs',
   matches: 'jobs',
   compare: 'saved',
+  resume: 'profile',
 };
 
-const secondaryViews = new Set<View>(['scouts', 'visits', 'spot', 'matches', 'compare']);
+const secondaryViews = new Set<View>(['scouts', 'visits', 'spot', 'matches', 'compare', 'resume']);
 const closedApplicationStatuses = ['rejected', 'withdrawn', 'hired'];
 
 type Route = { view: View; applicationId: string | null; key: number };
@@ -96,6 +104,14 @@ export function App() {
   const savedIds = useResource(`saved-ids:${userKey}`, listSavedJobIds, '気になる求人を読み込めませんでした。');
   const applications = useResource(`applications:${userKey}`, listApplications, '応募情報を読み込めませんでした。');
   const profile = useResource(`profile:${userKey}`, getProfile, 'プロフィールを読み込めませんでした。');
+  // One attention read feeds Home, the メッセージ screen and the tab badge.
+  const attention = useResource(`attention:${userKey}`, getJobseekerAttentionSummary, '新着メッセージを読み込めませんでした。');
+
+  useEffect(() => {
+    const onRefresh = () => attention.reload();
+    window.addEventListener('hc:attention-refresh', onRefresh);
+    return () => window.removeEventListener('hc:attention-refresh', onRefresh);
+  }, [attention.reload]);
 
   const refreshApplications = useCallback(async (surfaceError = false) => {
     try {
@@ -170,7 +186,8 @@ export function App() {
       window.history.back();
       return;
     }
-    navigate(view === 'applications' ? 'applications' : view === 'compare' ? 'saved' : 'home');
+    const parent = parentTab[view];
+    navigate(view === 'applications' ? 'applications' : parent ?? 'home');
   }, [navigate, view]);
 
   const savedIdList = savedIds.data ?? [];
@@ -207,9 +224,8 @@ export function App() {
       active={parentTab[view]}
       title={title}
       name={displayName}
-      email={session.email}
-      badges={{ saved: savedIdList.length, applications: activeApplications }}
-      onNavigate={(tab) => navigate(tab)}
+      badges={{ applications: activeApplications, messages: attention.data?.unread_messages_count ?? 0 }}
+      onNavigate={navigateTo}
       onBack={isDetail || secondaryViews.has(view) ? goBack : undefined}
       onSignOut={session.signOut}
       notification={<NotificationCenter onNavigate={navigateTo} />}
@@ -218,8 +234,8 @@ export function App() {
         {view === 'home' && (
           <HomeView
             name={displayName}
-            savedCount={savedIds}
             applications={applications}
+            attention={attention}
             savedIds={savedIdList}
             onNavigate={navigate}
             {...jobActions}
@@ -230,9 +246,12 @@ export function App() {
         {view === 'applications' && (selectedApplicationId
           ? <ApplicationDetail applicationId={selectedApplicationId} onBack={goBack} />
           : <ApplicationsView applications={applications} onOpen={openApplication} onNavigate={navigate} />)}
+        {view === 'messages' && <MessagesView applications={applications} attention={attention} onNavigate={navigate} />}
         {view === 'profile' && (
           <ProfileView
             profileResource={profile}
+            email={session.email}
+            onSignOut={session.signOut}
             fallback={{ userId: session.userId, email: session.email, name: session.fullName }}
             onSaved={(next) => {
               profile.setData(next);
@@ -251,6 +270,7 @@ export function App() {
             {view === 'spot' && <SpotJobsView onStartApplication={() => navigate('profile')} />}
             {view === 'matches' && <MatchesView userKey={userKey} savedIds={savedIdList} {...jobActions} />}
             {view === 'compare' && <CompareView userKey={userKey} />}
+            {view === 'resume' && <ResumeBuilderView onProfileSaved={profile.setData} />}
           </Suspense>
         )}
       </div>
@@ -269,23 +289,25 @@ type JobActions = {
   onApplied: (applicationId: string) => void;
 };
 
-function HomeView({ name, savedCount, applications, savedIds, onNavigate, ...jobActions }: {
+/** Link to the newest unread facility message, or null when the summary has none. */
+function nextMessageHref(attention: ResourceLike<JobseekerAttentionSummary>) {
+  return attention.data?.next_message && uuidPattern.test(attention.data.next_message.application_id)
+    ? `/applications?application_id=${encodeURIComponent(attention.data.next_message.application_id)}#application-messages`
+    : null;
+}
+
+/** Home lists only what the candidate can act on now, then a few jobs to look at. */
+function HomeView({ name, applications, attention, savedIds, onNavigate, ...jobActions }: {
   name: string;
-  savedCount: ResourceLike<string[]>;
   applications: ResourceLike<Application[]>;
+  attention: ResourceLike<JobseekerAttentionSummary>;
   savedIds: string[];
   onNavigate: (v: View, search?: string) => void;
 } & JobActions) {
   const featured = useResource('featured', () => listFeaturedJobs(3), 'おすすめ求人を読み込めませんでした。');
-  const attention = useResource('attention', getJobseekerAttentionSummary, '新着メッセージを読み込めませんでした。');
-
-  useEffect(() => {
-    const onRefresh = () => attention.reload();
-    window.addEventListener('hc:attention-refresh', onRefresh);
-    return () => window.removeEventListener('hc:attention-refresh', onRefresh);
-  }, [attention.reload]);
 
   const inProgress = applications.data ? applications.data.filter((a) => !closedApplicationStatuses.includes(a.status)).length : null;
+  const unreadMessages = attention.data?.unread_messages_count ?? null;
   const pendingInterviews = attention.data?.unanswered_interviews_count ?? 0;
   const pendingScouts = attention.data?.pending_scouts_count ?? 0;
   const nextInterview = attention.data?.next_interview;
@@ -293,24 +315,30 @@ function HomeView({ name, savedCount, applications, savedIds, onNavigate, ...job
     ? `/applications?application_id=${encodeURIComponent(nextInterview.application_id)}&interview_id=${encodeURIComponent(nextInterview.interview_id)}#interview-${nextInterview.interview_id}`
     : '/applications';
 
+  // Calm empty state only once both reads succeeded and truly nothing is waiting.
+  const nothingToDo = applications.status === 'success' && attention.status === 'success'
+    && inProgress === 0 && unreadMessages === 0 && pendingInterviews === 0 && pendingScouts === 0;
+
   return (
     <div className="hc-home">
       <p className="hc-greeting">こんにちは、{name}さん</p>
-      <button type="button" className="hc-cta" onClick={() => onNavigate('jobs')}>
-        <Icon name="search" size={20} /> 求人を探す
-      </button>
 
-      <div className="hc-stat-list">
-        <StatRow label="気になる園" icon="heart" resource={savedCount} value={savedCount.data?.length ?? null} onOpen={() => onNavigate('saved')} />
-        <StatRow label="応募中" icon="briefcase" resource={applications} value={inProgress} onOpen={() => onNavigate('applications')} />
-        <StatRow label="新着メッセージ" icon="bell" resource={attention} value={attention.data?.unread_messages_count ?? null} href={attention.data?.next_message && uuidPattern.test(attention.data.next_message.application_id) ? `/applications?application_id=${encodeURIComponent(attention.data.next_message.application_id)}#application-messages` : undefined} onOpen={() => onNavigate('applications')} />
-      </div>
-
-      {(pendingInterviews > 0 || pendingScouts > 0) && (
-        <div className="hc-todo">
-          {pendingInterviews > 0 && <a className="hc-todo-item" href={interviewHref}>面接の回答待ち <strong>{pendingInterviews}件</strong><Icon name="chevron" size={16} /></a>}
-          {pendingScouts > 0 && <a className="hc-todo-item" href="/scouts">届いたスカウト <strong>{pendingScouts}件</strong><Icon name="chevron" size={16} /></a>}
-        </div>
+      {nothingToDo ? (
+        <EmptyState title="いま確認が必要なことはありません" body="気になる園に応募すると、選考の状況や園からのメッセージがここに表示されます。" action="求人を探す" onAction={() => onNavigate('jobs')} />
+      ) : (
+        <section aria-labelledby="home-todo-heading">
+          <h2 id="home-todo-heading" className="hc-visually-hidden">いま確認すること</h2>
+          {(pendingInterviews > 0 || pendingScouts > 0) && (
+            <div className="hc-todo">
+              {pendingInterviews > 0 && <a className="hc-todo-item" href={interviewHref}><span>面接の日程に回答してください</span><strong>{pendingInterviews}件</strong><Icon name="chevron" size={16} /></a>}
+              {pendingScouts > 0 && <a className="hc-todo-item" href="/scouts">届いたスカウト <strong>{pendingScouts}件</strong><Icon name="chevron" size={16} /></a>}
+            </div>
+          )}
+          <div className="hc-stat-list">
+            <StatRow label="選考中の応募" icon="briefcase" resource={applications} value={inProgress} onOpen={() => onNavigate('applications')} />
+            <StatRow label="新着メッセージ" icon="chat" resource={attention} value={unreadMessages} href={nextMessageHref(attention) ?? undefined} onOpen={() => onNavigate('messages')} />
+          </div>
+        </section>
       )}
 
       <section className="hc-section">
@@ -321,12 +349,6 @@ function HomeView({ name, savedCount, applications, savedIds, onNavigate, ...job
           ? <div className="hc-job-list">{featured.data.jobs.map((job) => <JobCard key={job.id} job={job} saved={savedIds.includes(job.id)} {...jobActions} />)}</div>
           : <EmptyState title="公開中の求人はまだありません" body="園から求人が公開されると、ここに表示されます。" />)}
       </section>
-
-      <nav className="hc-menu hc-home-more" aria-label="ほかの探し方">
-        <a href="/matches">希望条件に合う順で見る<Icon name="chevron" size={16} /></a>
-        <a href="/spot-jobs">1日だけのスポット勤務<Icon name="chevron" size={16} /></a>
-        <a href="/visits">見学・体験の予定<Icon name="chevron" size={16} /></a>
-      </nav>
     </div>
   );
 }
@@ -416,7 +438,8 @@ function JobsView({ savedIds, ...jobActions }: { savedIds: string[] } & JobActio
     const card = document.getElementById(`job-${deepLinkedJobId}`);
     if (!card) return;
     focusedJobRef.current = deepLinkedJobId;
-    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) card.scrollIntoView({ block: 'start' });
+    else card.scrollIntoView({ behavior: 'smooth', block: 'start' });
     window.setTimeout(() => card.focus({ preventScroll: true }), 350);
   }, [deepLinkedJobId, jobs]);
 
@@ -492,6 +515,7 @@ function JobsView({ savedIds, ...jobActions }: { savedIds: string[] } & JobActio
           {loadingMore ? '読み込み中…' : `さらに見る（${Math.min(jobs.length, totalCount)}/${totalCount}件）`}
         </button>
       )}
+      <a className="hc-link-button hc-block-link" href="/spot-jobs">1日だけのスポット勤務を探す</a>
     </div>
   );
 }
@@ -545,6 +569,69 @@ function ApplicationsView({ applications, onOpen, onNavigate }: { applications: 
   );
 }
 
+/* -------------------------------- Messages -------------------------------- */
+
+/**
+ * Conversations live inside each application; this screen is their index. The summary
+ * only says which application holds the newest unread message, so only that row is
+ * marked 「新着」 — other rows never claim to be read or unread.
+ */
+function MessagesView({ applications, attention, onNavigate }: {
+  applications: ResourceLike<Application[]>;
+  attention: ResourceLike<JobseekerAttentionSummary>;
+  onNavigate: (v: View) => void;
+}) {
+  const unread = attention.data?.unread_messages_count ?? 0;
+  const pendingScouts = attention.data?.pending_scouts_count ?? 0;
+  const newestHref = nextMessageHref(attention);
+  const newestApplicationId = newestHref ? attention.data?.next_message?.application_id : null;
+  const threads = [...(applications.data ?? [])]
+    .filter((app) => uuidPattern.test(app.id))
+    .sort((a, b) => Number(closedApplicationStatuses.includes(a.status)) - Number(closedApplicationStatuses.includes(b.status))
+      || new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+
+  return (
+    <div className="hc-messages">
+      {attention.status === 'error' && <InlineError message={attention.error} onRetry={attention.reload} />}
+      {unread > 0 && newestHref && (
+        <div className="hc-todo">
+          <a className="hc-todo-item" href={newestHref}><span>新着メッセージを読む</span><strong>{unread}件</strong><Icon name="chevron" size={16} /></a>
+        </div>
+      )}
+
+      <section className="hc-section is-first" aria-labelledby="message-threads-heading">
+        <div className="hc-section-head"><h2 id="message-threads-heading">応募先とのやりとり</h2></div>
+        {applications.status === 'error' && <InlineError message={applications.error} onRetry={applications.reload} />}
+        {applications.status === 'loading' && !applications.data && <SkeletonList rows={2} />}
+        {applications.data && (threads.length
+          ? <div className="hc-list">
+              {threads.map((app) => (
+                <a className="hc-list-row" key={app.id} href={`/applications?application_id=${encodeURIComponent(app.id)}#application-messages`}>
+                  <span className="hc-list-main">
+                    <strong>{app.facility_name || '園'}</strong>
+                    <span>{app.job_title || '求人'} ・ {statusLabel(app.status)}</span>
+                  </span>
+                  {app.id === newestApplicationId && <span className="hc-tag is-accent">新着</span>}
+                  <Icon name="chevron" size={18} />
+                </a>
+              ))}
+            </div>
+          : <EmptyState title="メッセージはまだありません" body="応募すると、園とのやりとりがここに表示されます。" action="求人を探す" onAction={() => onNavigate('jobs')} />)}
+      </section>
+
+      <section className="hc-section" aria-labelledby="message-scouts-heading">
+        <div className="hc-section-head"><h2 id="message-scouts-heading">園からのスカウト</h2></div>
+        <div className="hc-list">
+          <a className="hc-list-row" href="/scouts">
+            <span className="hc-list-main"><strong>スカウトを見る</strong><span>{pendingScouts > 0 ? `返事を待っているスカウトが${pendingScouts}件あります` : '園から届いたお誘いを確認できます'}</span></span>
+            <Icon name="chevron" size={18} />
+          </a>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 /* --------------------------------- Profile -------------------------------- */
 
 const positionOptions = ['保育士', '保育教諭', '幼稚園教諭', '保育補助', '看護師', '栄養士', '調理師', '児童指導員', '子育て支援員'];
@@ -552,8 +639,10 @@ const employmentOptions = ['正社員', '契約社員', 'パート・アルバ�
 const qualificationOptions = ['保育士', '幼稚園教諭', '保育教諭', '看護師', '准看護師', '栄養士', '管理栄養士', '調理師', '子育て支援員'];
 const prefectureOptions = ['北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県', '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県', '新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県', '岐阜県', '静岡県', '愛知県', '三重県', '滋賀県', '京都府', '大阪府', '兵庫県', '奈良県', '和歌山県', '鳥取県', '島根県', '岡山県', '広島県', '山口県', '徳島県', '香川県', '愛媛県', '高知県', '福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'];
 
-function ProfileView({ profileResource, fallback, onSaved }: {
+function ProfileView({ profileResource, email, onSignOut, fallback, onSaved }: {
   profileResource: ResourceLike<JobseekerProfile | null>;
+  email: string | null;
+  onSignOut: () => void | Promise<void>;
   fallback: { userId: string; email: string | null; name: string | null };
   onSaved: (profile: JobseekerProfile) => void;
 }) {
@@ -576,17 +665,29 @@ function ProfileView({ profileResource, fallback, onSaved }: {
   return (
     <div className="hc-profile">
       {returnJob && <p className="hc-notice">応募に必要な項目を入力して保存すると、求人に戻ります。</p>}
-      {!returnJob && (
-        <nav className="hc-menu" aria-label="その他のメニュー">
-          <a href="/scouts">スカウト<Icon name="chevron" size={16} /></a>
-          <a href="/visits">見学・体験の予約<Icon name="chevron" size={16} /></a>
-          <a href="/spot-jobs">スポット勤務<Icon name="chevron" size={16} /></a>
-          <a href="/matches">マッチ度を見る<Icon name="chevron" size={16} /></a>
-          <a href="/compare">園を比較する<Icon name="chevron" size={16} /></a>
-        </nav>
-      )}
       <ProfileForm key={initial.clerk_user_id} initial={initial} requireForApplication={Boolean(returnJob)} onSaved={onSaved} />
       <DocumentVaultPanel qualifications={initial.qualifications} />
+      {!returnJob && (
+        <section className="hc-form-section" aria-labelledby="profile-more-heading">
+          <div className="hc-form-section-head"><h2 id="profile-more-heading">そのほかの機能</h2></div>
+          <nav className="hc-menu is-flush" aria-label="そのほかの機能">
+            <a href="/resume">履歴書・職務経歴書をつくる<Icon name="chevron" size={16} /></a>
+            <a href="/scouts">スカウト<Icon name="chevron" size={16} /></a>
+            <a href="/visits">見学・体験の予約<Icon name="chevron" size={16} /></a>
+            <a href="/spot-jobs">スポット勤務<Icon name="chevron" size={16} /></a>
+            <a href="/matches">マッチ度を見る<Icon name="chevron" size={16} /></a>
+            <a href="/compare">園を比較する<Icon name="chevron" size={16} /></a>
+          </nav>
+        </section>
+      )}
+      <section className="hc-form-section" aria-labelledby="profile-account-heading">
+        <div className="hc-form-section-head"><h2 id="profile-account-heading">アカウント設定</h2></div>
+        {email && <p className="hc-account-email"><span>ログイン中のメールアドレス</span>{email}</p>}
+        <nav className="hc-menu is-flush" aria-label="アカウント設定">
+          <a href="/scouts#scout-settings">スカウトの受け取り設定<Icon name="chevron" size={16} /></a>
+        </nav>
+        <button type="button" className="secondary-button hc-signout" onClick={() => confirmSignOut(onSignOut)}>ログアウト</button>
+      </section>
     </div>
   );
 }
@@ -610,8 +711,8 @@ function ProfileForm({ initial, requireForApplication, onSaved }: { initial: Job
 
   return (
     <form className="hc-form" onSubmit={submit} noValidate>
-      <section className="hc-form-section">
-        <h2>基本情報</h2>
+      <section className="hc-form-section" aria-labelledby="profile-basic-heading">
+        <div className="hc-form-section-head"><h2 id="profile-basic-heading">基本情報</h2><p>応募先の園に伝わる連絡先です。</p></div>
         <Field label="お名前" required><input value={draft.name || ''} onChange={(e) => update('name', e.target.value)} autoComplete="name" aria-invalid={requireForApplication && missingName} /></Field>
         <Field label="フリガナ"><input value={draft.name_kana || ''} onChange={(e) => update('name_kana', e.target.value)} /></Field>
         <Field label="メールアドレス"><input type="email" inputMode="email" autoComplete="email" value={draft.email || ''} onChange={(e) => update('email', e.target.value)} /></Field>
@@ -622,16 +723,24 @@ function ProfileForm({ initial, requireForApplication, onSaved }: { initial: Job
             {[...new Set([...(draft.prefecture && !prefectureOptions.includes(draft.prefecture) ? [draft.prefecture] : []), ...prefectureOptions])].map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         </Field>
-        <Field label="保育経験年数"><input type="number" inputMode="decimal" min="0" step="0.5" value={draft.years_of_experience ?? ''} onChange={(e) => update('years_of_experience', e.target.value ? Number(e.target.value) : null)} /></Field>
       </section>
 
-      <section className="hc-form-section">
-        <h2>希望条件</h2>
+      <section className="hc-form-section" aria-labelledby="profile-wish-heading">
+        <div className="hc-form-section-head"><h2 id="profile-wish-heading">希望する仕事</h2><p>マッチ度の計算に使います。</p></div>
         <ChipGroup label="希望職種" options={positionOptions} values={draft.desired_positions} onChange={(v) => update('desired_positions', v)} />
         <ChipGroup label="希望雇用形態" options={employmentOptions} values={draft.desired_employment_types} onChange={(v) => update('desired_employment_types', v)} />
-        <ChipGroup label="資格" options={qualificationOptions} values={draft.qualifications} onChange={(v) => update('qualifications', v)} />
         <Field label="勤務開始希望日"><input type="date" value={draft.desired_start_date || ''} onChange={(e) => update('desired_start_date', e.target.value || null)} /></Field>
+      </section>
+
+      <section className="hc-form-section" aria-labelledby="profile-career-heading">
+        <div className="hc-form-section-head"><h2 id="profile-career-heading">職歴・経験</h2></div>
+        <Field label="保育経験年数"><input type="number" inputMode="decimal" min="0" step="0.5" value={draft.years_of_experience ?? ''} onChange={(e) => update('years_of_experience', e.target.value ? Number(e.target.value) : null)} /></Field>
         <Field label="自己紹介"><textarea rows={4} value={draft.self_intro || ''} onChange={(e) => update('self_intro', e.target.value)} placeholder="大切にしている保育や、これまでの経験など" /></Field>
+      </section>
+
+      <section className="hc-form-section" aria-labelledby="profile-license-heading">
+        <div className="hc-form-section-head"><h2 id="profile-license-heading">資格・免許</h2><p>持っている資格をすべて選んでください。</p></div>
+        <ChipGroup label="資格" options={qualificationOptions} values={draft.qualifications} onChange={(v) => update('qualifications', v)} />
       </section>
 
       {error && <p className="form-error" role="alert">{error}</p>}

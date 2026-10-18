@@ -1,4 +1,4 @@
-// Applies 20261017120000_hc_jobseeker_qualification_documents_v1 to a
+// Applies 20261017101147_hc_jobseeker_qualification_documents_v1 to a
 // production-shaped PGlite database, exercises it as real roles
 // (anon / authenticated with chosen JWT claims), then runs the rollback and
 // checks that catalog and pre-existing data are back to the baseline.
@@ -9,8 +9,8 @@ import { PGlite } from '@electric-sql/pglite';
 const root = path.resolve(import.meta.dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const baselineSql = read('qa/fixtures/qualification-documents-baseline.sql');
-const migrationSql = read('supabase/migrations/20261017120000_hc_jobseeker_qualification_documents_v1.sql');
-const rollbackSql = read('supabase/ops/rollback-20261017120000-qualification-documents.sql');
+const migrationSql = read('supabase/migrations/20261017101147_hc_jobseeker_qualification_documents_v1.sql');
+const rollbackSql = read('supabase/ops/rollback-20261017101147-qualification-documents.sql');
 
 const failures = [];
 const passes = [];
@@ -120,7 +120,7 @@ const errorText = (r) => String(r.error?.message ?? '');
 
 // ---------- Apply ----------
 await db.exec(migrationSql);
-await db.exec(`insert into supabase_migrations.schema_migrations values ('20261017120000', 'hc_jobseeker_qualification_documents_v1')`);
+await db.exec(`insert into supabase_migrations.schema_migrations values ('20261017101147', 'hc_jobseeker_qualification_documents_v1')`);
 check(JSON.stringify(await dataSnapshot()) === JSON.stringify(baselineData), 'apply: every existing document, application, expectation and job row is byte-identical');
 
 const { rows: cons } = await db.query(`select conrelid::regclass::text t, pg_get_constraintdef(oid) d from pg_constraint where conname like '%document_type_check' and convalidated`);
@@ -206,7 +206,7 @@ const afterCatalog = await catalogSnapshot();
 const added = afterCatalog.filter((x) => !baselineCatalog.includes(x));
 const removed = baselineCatalog.filter((x) => !afterCatalog.includes(x));
 check(added.length === 0 && removed.length === 0, `rollback: catalog identical to baseline${added.length || removed.length ? ` (added ${added.join(' | ')}; removed ${removed.join(' | ')})` : ''}`);
-check((await db.query(`select count(*)::int n from supabase_migrations.schema_migrations where version = '20261017120000'`)).rows[0].n === 0, 'rollback removes the migration history row');
+check((await db.query(`select count(*)::int n from supabase_migrations.schema_migrations where version = '20261017101147'`)).rows[0].n === 0, 'rollback removes the migration history row');
 
 // Re-apply after rollback works (idempotent forward path).
 const reapply = await db.exec(migrationSql).then(() => true, () => false);
