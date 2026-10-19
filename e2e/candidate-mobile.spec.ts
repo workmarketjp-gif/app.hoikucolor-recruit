@@ -264,6 +264,7 @@ test.describe('390px golden path and P1 screens', () => {
         return route.fulfill({ status: 200, contentType: 'application/json', body: 'true' });
       },
       hc_jobseeker_submit_application: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(application.id) }),
+      hc_jobseeker_submit_application_v2: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(application.id) }),
     });
     await page.goto('/');
     await expect(page.getByRole('heading', { level: 1, name: 'ホーム' })).toBeVisible();
@@ -285,11 +286,14 @@ test.describe('390px golden path and P1 screens', () => {
     expect(calls).toContain('hc_jobseeker_save_job');
 
     await card.getByRole('button', { name: '応募する' }).click();
+    // Since the documents step (#66), the application is submitted after confirming documents.
+    expect(calls).not.toContain('hc_jobseeker_submit_application_v2');
+    await card.getByRole('button', { name: 'この内容で応募する' }).click();
     await expect(page).toHaveURL(new RegExp(`/applications\\?application_id=${application.id}`));
     await expect(page.getByRole('heading', { level: 1, name: '応募の詳細' })).toBeVisible();
     await expect(page.locator('.application-detail-hero')).toContainText(jobA.facility_name);
     await expect(page.locator(`#interview-${interview.id}`)).toContainText('この日時でOK');
-    expect(calls).toContain('hc_jobseeker_submit_application');
+    expect(calls).toContain('hc_jobseeker_submit_application_v2');
     await expectSameDocument(page);
 
     expect(calls).not.toContain('hc_jobseeker_mark_application_messages_read');
