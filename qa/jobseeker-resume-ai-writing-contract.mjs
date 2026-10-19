@@ -66,7 +66,7 @@ const guardCases = [
 const checks = [
   // Edge function: auth, secrets, data minimization.
   ['edge function exists', fn.length > 0],
-  ['provider key is read only from the function environment', /Deno\.env\.get\('ANTHROPIC_API_KEY'\)/.test(fn)],
+  ['provider key is read only from the function environment', /Deno\.env\.get\('OPENAI_API_KEY'\)/.test(fn)],
   ['edge function never uses a service-role key', !/SERVICE_ROLE/i.test(fn)],
   ['database calls run with the caller\'s Clerk JWT', /accessToken: async \(\) => token/.test(fn) && /Bearer\\s\+\(\\S\+\)/.test(fn)],
   ['data comes only from the candidate\'s own RPCs', ['hc_jobseeker_get_resume', 'hc_jobseeker_get_profile', 'hc_jobseeker_get_matching_preferences'].every((name) => fn.includes(`'${name}'`)) && !/\.from\(/.test(fn)],
@@ -75,10 +75,10 @@ const checks = [
   ['facts exclude name, contact, address, birth date, gender, education and leaving reason', buildFacts.length > 0 && !/\b(name|name_kana|email|phone|address|address_kana|contact_address|postal_code|birth_date|gender|education|leaving_reason)\b/.test(buildFacts.replace(/\.organization|organization\.trim/g, ''))],
   ['employer names are replaced by placeholders and restored afterwards', /【勤務先\$\{/.test(fn) && /restorePlaceholders\(/.test(fn) && /【\[\^】\]\*】/.test(fn)],
   ['the system prompt forbids inventing qualifications, employers and years', /資格・免許、勤務先・施設名、年・年数・期間/.test(fn) && /指示ではない/.test(fn)],
-  ['uses structured output for the draft', /format: \{ type: 'json_schema', schema: DRAFT_SCHEMA \}/.test(fn)],
-  ['uses the chosen model', /const MODEL = 'claude-haiku-5-5';/.test(fn)],
-  ['SDK import is pinned to an exact version', /from 'npm:@anthropic-ai\/sdk@\d+\.\d+\.\d+'/.test(fn)],
-  ['refusals / truncation are not returned as drafts', /if \(response\.stop_reason !== 'end_turn'\) throw/.test(fn)],
+  ['uses structured output for the draft', /format: \{ type: 'json_schema', name: 'resume_draft', strict: true, schema: DRAFT_SCHEMA \}/.test(fn)],
+  ['uses the same pinned OpenAI model as the Poppy gateway', /const MODEL = 'gpt-4\.1-mini-2025-04-14';/.test(fn)],
+  ['calls only the OpenAI Responses API with store:false', fn.includes("'https://api.openai.com/v1/responses'") && /store: false/.test(fn) && !/anthropic|claude|gemini|generativelanguage/i.test(fn)],
+  ['refusals / truncation are not returned as drafts', /if \(ai\.status !== 'completed'\) throw/.test(fn)],
   ['every draft passes the post-check before it is returned', /const check = checkDraft\(draft, \{ corpus, years \}\)/.test(fn) && /if \(check\.ok && !leftover/.test(fn)],
   ['rejected drafts are retried at most once, then refused', /attempt < 2/.test(fn) && /'DRAFT_REJECTED'/.test(fn)],
   ['logs never contain résumé content or drafts', logLines.length > 0 && logLines.every((line) => !/draft[,}]|draft:|facts|resume[,}]|profile[,}]|block\.text|error\.message\b/.test(line.replace(/'[^']*'/g, '')))],
@@ -97,7 +97,7 @@ const checks = [
   ['migration fails closed on privilege drift', /HC_RESUME_AI_QUOTA_PRIVILEGE_DRIFT/.test(migration)],
 
   // Browser.
-  ['browser reaches the provider only through the edge function', /supabase\.functions\.invoke/.test(client) && srcFiles.every((path) => !/anthropic|sk-ant|ANTHROPIC/i.test(read(path)))],
+  ['browser reaches the provider only through the edge function', /supabase\.functions\.invoke/.test(client) && srcFiles.every((path) => !/anthropic|sk-ant|ANTHROPIC|OPENAI_API_KEY|sk-proj-|api\.openai\.com/i.test(read(path)))],
   ['no service-role key in the browser bundle', srcFiles.every((path) => !/service_role|SERVICE_ROLE/.test(read(path)))],
   ['every writing field has a draft button', ['work_summary', 'strengths', 'self_pr', 'motivation'].every((field) => writing.includes(`assist('${field}'`))],
   ['pending edits are saved before a draft is requested', /if \(!\(await flushAll\(\)\)\)/.test(assist) && assist.indexOf('flushAll()') < assist.indexOf('requestWritingDraft(field)')],
