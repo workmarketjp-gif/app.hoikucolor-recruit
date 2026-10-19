@@ -37,8 +37,24 @@ async function rpc(url, id, method, params, modern) {
   assert.equal(response.status, 200, `${method}: HTTP ${response.status}`);
   assert.equal(response.headers.get('mcp-session-id'), null, 'stateless mode must not issue session IDs');
   const ctype = response.headers.get('content-type') || '';
-  assert.match(ctype, /application\/json/);
-  const body = await response.json();
+  let body;
+  if (/^application\/json(?:\s*;|$)/i.test(ctype)) {
+    body = await response.json();
+  } else if (/^text\/event-stream(?:\s*;|$)/i.test(ctype)) {
+    // Streamable HTTP may use SSE for valid replies despite JSON response mode.
+    // Require exactly one matching JSON-RPC envelope for this request.
+    const frames = (await response.text()).split(/\r?\n\r?\n/);
+    const responses = frames.flatMap(frame => {
+      const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:'))
+        .map(line => line.slice(5).replace(/^ /, ''));
+      return data.length ? [JSON.parse(data.join('\n'))] : [];
+    });
+    const matches = responses.filter(reply => reply?.jsonrpc === '2.0' && reply.id === id);
+    assert.equal(matches.length, 1, method + ': expected one matching SSE reply');
+    body = matches[0];
+  } else {
+    assert.fail(method + ': unsupported MCP response type ' + ctype);
+  }
   assert.equal(body.id, id);
   assert.equal(body.jsonrpc, '2.0');
   assert.equal(body.error, undefined, `${method}: JSON-RPC error`);
