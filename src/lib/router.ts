@@ -101,6 +101,8 @@ export function rememberReturnTarget() {
     const direct = normalizeReturnTarget(`${window.location.pathname}${window.location.search}${window.location.hash}`);
     const target = explicit || direct;
     if (target) sessionStorage.setItem(returnStorageKey, target);
+    // A copy with an expiry survives a closed tab (e.g. the email code opened later).
+    if (target) localStorage.setItem(returnStorageKey, JSON.stringify({ target, at: Date.now() }));
   } catch {
     // Storage can be unavailable (private mode); the visitor simply lands on Home.
   }
@@ -112,10 +114,25 @@ export function rememberReturnTarget() {
  */
 export function restoreReturnTarget() {
   try {
-    const stored = normalizeReturnTarget(sessionStorage.getItem(returnStorageKey));
+    const stored = normalizeReturnTarget(sessionStorage.getItem(returnStorageKey)) || durableReturnTarget();
     sessionStorage.removeItem(returnStorageKey);
+    localStorage.removeItem(returnStorageKey);
     if (stored && pathToView(window.location.pathname) === 'home') window.history.replaceState(window.history.state, '', stored);
   } catch {
     // Ignore storage failures; Home is a safe default.
+  }
+}
+
+const durableReturnTtlMs = 24 * 60 * 60 * 1000;
+
+/** The localStorage copy of the return target, re-validated and only within its expiry. */
+function durableReturnTarget(): string | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem(returnStorageKey) || 'null') as { target?: unknown; at?: unknown } | null;
+    if (!raw || typeof raw.target !== 'string' || typeof raw.at !== 'number') return null;
+    const age = Date.now() - raw.at;
+    return age >= 0 && age <= durableReturnTtlMs ? normalizeReturnTarget(raw.target) : null;
+  } catch {
+    return null;
   }
 }

@@ -10,11 +10,18 @@ import logoMark from './logo/logom_hoikucolor.png';
 import { loadHoikuColorClerkPublishableKey } from './lib/clerkConfig';
 import { rememberReturnTarget, restoreReturnTarget } from './lib/router';
 import { setSupabaseAccessTokenGetter } from './lib/supabase';
+import { reportVerifiedSignup, track } from './lib/analytics';
+import { captureHandoffFromLocation, readPendingHandoff } from './lib/preferenceHandoff';
+import { getJobseekerMatchingPreferences } from './lib/profilePreferencesRepository';
 import './auth-overrides.css';
 import './auth-custom.css';
 
 // Test-only harness. `import.meta.env.MODE` is replaced at build time, so production
 // bundles drop this branch (and the e2e module) entirely.
+// Finder choices from hoikucolor.jp (?hc_values=…) are stored before anything renders,
+// so they survive the login screen, email codes, the Google redirect and refreshes.
+captureHandoffFromLocation();
+
 const E2ERoot = import.meta.env.MODE === 'e2e' ? lazy(() => import('./e2e/E2ERoot')) : null;
 
 const publicUrl = (import.meta.env.VITE_HOIKU_COLOR_PUBLIC_URL || 'https://hoikucolor.jp').replace(/\/$/, '');
@@ -102,6 +109,21 @@ function AuthGate() {
     signOut: () => clerk.signOut({ redirectUrl: '/login' }),
   } : null, [user, clerk]);
 
+  useEffect(() => {
+    if (!user) return;
+    const fromAuthScreen = consumeAuthAttempt();
+    const evidence = {
+      userId: user.id,
+      createdAt: user.createdAt ?? null,
+      emailVerified: user.primaryEmailAddress?.verification?.status === 'verified',
+      method: (user.externalAccounts?.length ? 'google' : 'email') as 'google' | 'email',
+    };
+    // sign_up needs a verified Clerk account AND a successful authenticated Supabase call.
+    void reportVerifiedSignup(evidence, getJobseekerMatchingPreferences).then((reported) => {
+      if (!reported && fromAuthScreen) track('login', { method: evidence.method });
+    });
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!isLoaded) return <AppLoading />;
   if (window.location.pathname.startsWith('/sso-callback')) return <OAuthCallback />;
   if (!isSignedIn) return <LoginScreen />;
@@ -148,6 +170,7 @@ function LoginScreen() {
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [error, setError] = useState<string | null>(null);
   const busy = signInFetchStatus === 'fetching' || signUpFetchStatus === 'fetching';
+  const [handoff] = useState(() => readPendingHandoff());
 
   // A signed-out visit to a candidate deep link (e.g. a Google job posting) returns
   // to that exact screen after login; App validates the target again before using it.
@@ -179,6 +202,8 @@ function LoginScreen() {
 
   const startGoogle = async () => {
     setError(null);
+    markAuthAttempt();
+    track('hc_auth_start', { method: 'google', screen: isSignup ? 'signup' : 'login' });
     try {
       const { error: ssoError } = await signIn.sso({
         strategy: 'oauth_google',
@@ -210,6 +235,8 @@ function LoginScreen() {
         setError(authErrorMessage(sendError, '確認コードを送信できませんでした。'));
         return;
       }
+      markAuthAttempt();
+      track('hc_auth_start', { method: 'email', screen: isSignup ? 'signup' : 'login' });
       setStep('code');
     } catch (err) {
       setError(authErrorMessage(err, '確認コードを送信できませんでした。'));
@@ -289,6 +316,8 @@ function LoginScreen() {
             <h2>{isSignup ? '求職者アカウントを作成' : '求職者ログイン'}</h2>
             <p>Googleアカウントまたはメールアドレスで続けられます。</p>
           </header>
+
+          {handoff && <p className="hc-auth-handoff" role="note">ホームページで選んだ保育観（{handoff.childcareValues.join('・')}）は、ログイン後に確認してから保存できます。</p>}
 
           <div className="hc-auth-form-area">
             {step === 'email' ? (
@@ -376,4 +405,20 @@ function CenteredState({ title, body, action, onAction, loading, secondary }: { 
       {secondary}
     </section></main>
   );
+}
+
+/* An attempt started on the login screen lets AuthGate tell a fresh login from a restored
+   session. sessionStorage survives the same-tab Google redirect. */
+const authAttemptKey = 'hc_auth_attempt_v1';
+function markAuthAttempt() {
+  try { sessionStorage.setItem(authAttemptKey, String(Date.now())); } catch { /* ignore */ }
+}
+function consumeAuthAttempt() {
+  try {
+    const value = sessionStorage.getItem(authAttemptKey);
+    sessionStorage.removeItem(authAttemptKey);
+    return Boolean(value);
+  } catch {
+    return false;
+  }
 }
