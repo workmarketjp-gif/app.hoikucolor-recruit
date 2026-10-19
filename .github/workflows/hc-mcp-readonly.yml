@@ -1,0 +1,40 @@
+name: HC MCP read-only adapter
+
+on:
+  push:
+    paths:
+      - 'mcp/**'
+      - '.github/workflows/hc-mcp-readonly.yml'
+  pull_request:
+    paths:
+      - 'mcp/**'
+      - '.github/workflows/hc-mcp-readonly.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  public-catalog-contract:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # No customer data, environment secrets, production DB or deployment.
+      # The official SDK tests must run: a missing npm dependency is not a pass.
+      - name: Install public MCP SDK and Zod
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Verify SDK dependency resolution
+        run: npm ls @modelcontextprotocol/server @modelcontextprotocol/node zod
+      - name: MCP isolated tests (including official SDK TCP E2E)
+        run: npm test
+      - name: Syntax checks
+        run: |
+          node --check public-jobs.mjs
+          node --check sdk-bridge.mjs
+          node --check serve-local.mjs
