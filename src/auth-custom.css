@@ -26,3 +26,14 @@
 .hc-auth-page .hc-email-form label{font-size:15px}
 .hc-auth-page .hc-google-button,.hc-auth-page .hc-auth-primary{min-height:52px;font-size:16px}
 .hc-auth-page .hc-auth-heading p,.hc-auth-page .hc-auth-error{font-size:15px}
+
+.hc-auth-handoff {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fff1f3;
+  color: #8f1b33;
+  font-size: 14px;
+  line-height: 1.7;
+  font-weight: 600;
+}
