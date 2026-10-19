@@ -19,7 +19,8 @@ assert(router.includes("if (!view || view === 'home') return null;"), 'return ta
 assert(router.includes('uuidPattern.test(value)'), 'deep-link ids (job_id etc.) must be UUIDs');
 assert(router.includes("get('return_to')"), 'explicit login/signup return_to must be captured');
 assert(router.includes('sessionStorage.setItem(returnStorageKey'), 'safe return target must survive the authentication redirect');
-assert(router.includes('const stored = normalizeReturnTarget(sessionStorage.getItem(returnStorageKey));') && router.includes('sessionStorage.removeItem(returnStorageKey);'), 'stored target must be re-validated and always cleared');
+assert(router.includes('const stored = normalizeReturnTarget(sessionStorage.getItem(returnStorageKey)) || durableReturnTarget();') && router.includes('sessionStorage.removeItem(returnStorageKey);') && router.includes('localStorage.removeItem(returnStorageKey);'), 'stored target must be re-validated and always cleared');
+assert(router.includes('? normalizeReturnTarget(raw.target) : null') && router.includes('durableReturnTtlMs'), 'the durable (closed-tab) copy must be re-validated and expire');
 assert(router.includes("pathToView(window.location.pathname) === 'home'") && router.includes('window.history.replaceState(window.history.state, \'\', stored)'), 'authentication completion (landing on Home) must restore the validated target');
 assert(appRoot.includes('useEffect(() => { rememberReturnTarget(); }, []);'), 'the unauthenticated login screen must remember the deep link');
 assert(app.includes('restoreReturnTarget();'), 'the signed-in app must restore the remembered target before its first route read');

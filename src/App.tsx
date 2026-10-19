@@ -7,6 +7,8 @@ import { JobCard } from './components/JobCard';
 import { RankingDisclosure, rankLabels } from './components/RankingDisclosure';
 import { EmptyState, InlineError, SectionHeader, SkeletonList, Toast } from './components/StateViews';
 import { NotificationCenter } from './components/NotificationCenter';
+import { PreferenceHandoffPrompt } from './components/PreferenceHandoffPrompt';
+import { trackPageView } from './lib/analytics';
 import { getJobseekerAttentionSummary, type JobseekerAttentionSummary } from './lib/attentionRepository';
 import { useCandidateSession } from './lib/candidateSession';
 import {
@@ -101,6 +103,8 @@ export function App() {
   const { view, applicationId: selectedApplicationId } = route;
 
   const userKey = session.userId;
+  // Path-only page views (no ids or query strings); see lib/analytics.ts.
+  useEffect(() => { trackPageView(); }, [route.key]);
   const savedIds = useResource(`saved-ids:${userKey}`, listSavedJobIds, '気になる求人を読み込めませんでした。');
   const applications = useResource(`applications:${userKey}`, listApplications, '応募情報を読み込めませんでした。');
   const profile = useResource(`profile:${userKey}`, getProfile, 'プロフィールを読み込めませんでした。');
@@ -274,6 +278,7 @@ export function App() {
           </Suspense>
         )}
       </div>
+      <PreferenceHandoffPrompt userKey={userKey} onNavigate={navigateTo} />
       <Toast message={toast?.message ?? null} tone={toast?.tone} onClose={closeToast} />
     </CandidateShell>
   );
