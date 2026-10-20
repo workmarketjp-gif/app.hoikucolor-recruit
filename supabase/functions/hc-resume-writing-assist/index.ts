@@ -7,8 +7,9 @@
 // service-role key: every database call runs as the candidate through PostgREST, which
 // validates the Clerk JWT (third-party auth) and scopes each RPC to the JWT `sub`. An
 // invalid or missing token therefore fails at the first RPC, before the AI provider is
-// ever called. The provider key (ANTHROPIC_API_KEY) lives only in this function's
-// secrets.
+// ever called. It uses the same OpenAI API key (OPENAI_API_KEY) and pinned model as the
+// Hoiku Poppy AI gateway; no other AI provider is used. Changing the provider or model
+// requires the owner's prior approval.
 //
 // Safety:
 // - Only facts needed for writing are sent; name, contact, address, birth date, gender,
@@ -21,13 +22,16 @@
 // - Per-candidate and service-wide rate limits: hc_jobseeker_claim_resume_ai_draft_v1.
 // - Résumé content and drafts are never logged.
 
-import Anthropic from 'npm:@anthropic-ai/sdk@0.130.0';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { allowedYears, buildCorpus, checkDraft } from './draftGuard.mjs';
 
 type Field = 'work_summary' | 'self_pr' | 'strengths' | 'motivation';
 
-const MODEL = 'claude-haiku-5-5';
+// Same pinned model as Hoiku Poppy (supabase/functions/poppy-ai-gateway/policy.ts).
+const MODEL = 'gpt-4.1-mini-2025-04-14';
+const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
+
+class ProviderError extends Error {}
 
 const FIELDS: Record<Field, { label: string; max: number; target: string; guide: string }> = {
   work_summary: {
@@ -170,28 +174,36 @@ const DRAFT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-async function requestDraft(client: Anthropic, field: Field, facts: unknown, rejected: string[]) {
+async function requestDraft(apiKey: string, field: Field, facts: unknown, rejected: string[]) {
   const spec = FIELDS[field];
   const retryNote = rejected.length
     ? `\n\n前回の下書きには、入力にない次の語が含まれていたため使えませんでした: ${rejected.join('、')}\nこれらを使わずに書き直してください。`
     : '';
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 8000,
-    system: SYSTEM_PROMPT,
-    output_config: {
-      effort: 'medium',
-      format: { type: 'json_schema', schema: DRAFT_SCHEMA },
-    },
-    messages: [{
-      role: 'user',
-      content: `書く欄: ${spec.label}（目安 ${spec.target}、最大 ${spec.max}文字）\n${spec.guide}\n「いま書いてある内容」にこの欄の文章があれば、それを本人のメモとして生かして整えてください。\n\n求職者が保存した情報:\n${JSON.stringify(facts, null, 2)}${retryNote}`,
-    }],
+  // OpenAI Responses API, same request shape as the Poppy gateway: store:false and a strict schema.
+  const response = await fetch(OPENAI_RESPONSES_URL, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+    signal: AbortSignal.timeout(45_000),
+    body: JSON.stringify({
+      model: MODEL,
+      store: false,
+      max_output_tokens: 2000,
+      instructions: SYSTEM_PROMPT,
+      input: `書く欄: ${spec.label}（目安 ${spec.target}、最大 ${spec.max}文字）
+${spec.guide}
+「いま書いてある内容」にこの欄の文章があれば、それを本人のメモとして生かして整えてください。
+
+求職者が保存した情報:
+${JSON.stringify(facts, null, 2)}${retryNote}`,
+      text: { format: { type: 'json_schema', name: 'resume_draft', strict: true, schema: DRAFT_SCHEMA } },
+    }),
   });
-  if (response.stop_reason !== 'end_turn') throw new Error(`STOP_${response.stop_reason}`);
-  const block = response.content.find((item) => item.type === 'text');
-  if (!block || block.type !== 'text') throw new Error('NO_TEXT');
-  const parsed = JSON.parse(block.text) as { status: 'ok' | 'insufficient'; draft: string };
+  if (!response.ok) throw new ProviderError(response.status === 429 ? 'PROVIDER_BUSY' : `PROVIDER_${response.status}`);
+  const ai = await response.json();
+  if (ai.status !== 'completed') throw new Error(`STOP_${ai.status ?? 'unknown'}`);
+  const text = ai.output?.flatMap((item: Record<string, any>) => item.content || []).find((part: Record<string, any>) => part.type === 'output_text')?.text;
+  if (typeof text !== 'string') throw new Error('NO_TEXT');
+  const parsed = JSON.parse(text) as { status: 'ok' | 'insufficient'; draft: string };
   return parsed;
 }
 
@@ -207,7 +219,7 @@ Deno.serve(async (request) => {
   const field = body?.field as Field | undefined;
   if (!field || !(field in FIELDS)) return failure(origin, 400, 'BAD_REQUEST', '下書きを作る欄を選んでください。');
 
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY')?.trim();
+  const apiKey = Deno.env.get('OPENAI_API_KEY')?.trim();
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const publicKey = Deno.env.get('HC_SUPABASE_PUBLISHABLE_KEY')?.trim() || Deno.env.get('SUPABASE_ANON_KEY');
   if (!apiKey || !supabaseUrl || !publicKey) {
@@ -259,11 +271,10 @@ Deno.serve(async (request) => {
 
   const corpus = buildCorpus(resume, profile, preferences);
   const years = allowedYears({ resume, profile });
-  const client = new Anthropic({ apiKey, maxRetries: 1, timeout: 45_000 });
   let rejected: string[] = [];
   try {
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const result = await requestDraft(client, field, facts, rejected);
+      const result = await requestDraft(apiKey, field, facts, rejected);
       if (result.status === 'insufficient' || !result.draft.trim()) {
         return failure(origin, 422, 'INSUFFICIENT_INPUT', 'この欄の下書きを書くための材料が足りません。職歴の業務内容や、保育で大切にしたいことを入力してからお試しください。');
       }
@@ -279,8 +290,7 @@ Deno.serve(async (request) => {
       if (draft.length > FIELDS[field].max) rejected.push(`${FIELDS[field].max}文字を超える長さ`);
     }
   } catch (error) {
-    const code = error instanceof Anthropic.RateLimitError ? 'PROVIDER_BUSY'
-      : error instanceof Anthropic.APIError ? `PROVIDER_${error.status ?? 'ERROR'}`
+    const code = error instanceof ProviderError ? error.message
         // Fixed codes only: a JSON SyntaxError message would quote the draft text.
         : error instanceof Error && /^(STOP_\w+|NO_TEXT)$/.test(error.message) ? error.message
           : error instanceof SyntaxError ? 'BAD_JSON' : 'UNKNOWN';
