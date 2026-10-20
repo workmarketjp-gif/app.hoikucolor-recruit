@@ -11,6 +11,7 @@ import { publicCatalogToolHandlers, publicJobToolDefinitions } from './public-jo
 import { PublicMcpBodyError, readBoundedPublicMcpBody } from './request-body-deadline.mjs';
 import { runPolicyWithDeadline } from './policy-deadline.mjs';
 import { dispatchWithDeadline } from './dispatch-deadline.mjs';
+import { ensurePublicToolAuthWire } from './tool-list-auth-wire.mjs';
 
 const MAX_TOOL_TEXT_BYTES = 50_000;
 const TOOL_ERRORS = new Map([
@@ -246,7 +247,8 @@ export function createColorMcpGateway({ McpServer, createMcpHandler, z }, config
         method: 'POST', headers, body, signal: request.signal,
       });
       try {
-        return await dispatchWithDeadline(handler, forwarded, { deadlineMs: toolDeadlineMs });
+        const response = await dispatchWithDeadline(handler, forwarded, { deadlineMs: toolDeadlineMs });
+        return await ensurePublicToolAuthWire(body, response);
       } catch {
         // Never forward an SDK exception, partial result or late tool output.
         return new Response('Service Unavailable', {
