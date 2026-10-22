@@ -2,7 +2,7 @@
 // *-database-contract files. Guards population, privilege surface, owner scoping and "no estimates".
 import fs from 'node:fs';
 
-const sql = fs.readFileSync('supabase/migrations/20261023090000_hc_jobseeker_career_market_v1.sql', 'utf8');
+const sql = fs.readFileSync('supabase/migrations/20261022230200_hc_jobseeker_career_market_v1.sql', 'utf8');
 const doc = fs.readFileSync('docs/career-data-contract.md', 'utf8');
 
 function assert(condition, message) {

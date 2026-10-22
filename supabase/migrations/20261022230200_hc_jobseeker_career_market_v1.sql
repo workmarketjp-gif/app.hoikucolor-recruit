@@ -1,5 +1,6 @@
 -- Hoiku Color Candidate Web — 転職シミュレーター data contract v1.
--- NOT applied to production. Review, then apply with explicit approval.
+-- Production migration version: 20261022230200 (applied 2026-10-23 with the user's approval).
+-- Production already has this migration. Repository sync must NOT re-apply it there.
 --
 -- 1. Posted-salary aggregates over the SAME population the job search shows
 --    (hc_jobseeker_job_feed ∪ hc_external_job_public_feed), computed in SQL, never in the browser.
