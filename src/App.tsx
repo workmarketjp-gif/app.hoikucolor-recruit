@@ -27,6 +27,7 @@ const MatchesView = lazy(() => import('./views/MatchesView').then((module) => ({
 const ScoutsView = lazy(() => import('./views/ScoutsView').then((module) => ({ default: module.ScoutsView })));
 const SpotJobsView = lazy(() => import('./views/SpotJobsView').then((module) => ({ default: module.SpotJobsView })));
 const VisitsView = lazy(() => import('./views/VisitsView').then((module) => ({ default: module.VisitsView })));
+const CareerView = lazy(() => import('./views/CareerView').then((module) => ({ default: module.CareerView })));
 const ResumeBuilderView = lazy(() => import('./views/ResumeBuilderView').then((module) => ({ default: module.ResumeBuilderView })));
 
 const viewTitles: Record<View, string> = {
@@ -42,6 +43,7 @@ const viewTitles: Record<View, string> = {
   matches: 'マッチ度',
   compare: '園を比較',
   resume: '応募書類をつくる',
+  career: '転職シミュレーター',
 };
 
 /**
@@ -61,9 +63,10 @@ const parentTab: Record<View, ShellTab | null> = {
   matches: 'jobs',
   compare: 'saved',
   resume: 'profile',
+  career: 'jobs',
 };
 
-const secondaryViews = new Set<View>(['scouts', 'visits', 'spot', 'matches', 'compare', 'resume']);
+const secondaryViews = new Set<View>(['scouts', 'visits', 'spot', 'matches', 'compare', 'resume', 'career']);
 const closedApplicationStatuses = ['rejected', 'withdrawn', 'hired'];
 
 type Route = { view: View; applicationId: string | null; key: number };
@@ -274,6 +277,7 @@ export function App() {
             {view === 'spot' && <SpotJobsView onStartApplication={() => navigate('profile')} />}
             {view === 'matches' && <MatchesView userKey={userKey} savedIds={savedIdList} {...jobActions} />}
             {view === 'compare' && <CompareView userKey={userKey} />}
+            {view === 'career' && <CareerView userKey={userKey} />}
             {view === 'resume' && <ResumeBuilderView onProfileSaved={profile.setData} />}
           </Suspense>
         )}
@@ -345,6 +349,11 @@ function HomeView({ name, applications, attention, savedIds, onNavigate, ...jobA
           </div>
         </section>
       )}
+
+      <a className="hc-career-entry" href="/career">
+        <span><strong>転職シミュレーター</strong>今の給与と休日を、公開求人と並べて考えてみる</span>
+        <Icon name="chevron" size={18} />
+      </a>
 
       <section className="hc-section">
         <SectionHeader title="おすすめ求人" action={<button type="button" className="hc-link-button" onClick={() => onNavigate('jobs')}>すべて見る</button>} />
@@ -680,6 +689,7 @@ function ProfileView({ profileResource, email, onSignOut, fallback, onSaved }: {
             <a href="/scouts">スカウト<Icon name="chevron" size={16} /></a>
             <a href="/visits">見学・体験の予約<Icon name="chevron" size={16} /></a>
             <a href="/spot-jobs">スポット勤務<Icon name="chevron" size={16} /></a>
+            <a href="/career">転職シミュレーター<Icon name="chevron" size={16} /></a>
             <a href="/matches">マッチ度を見る<Icon name="chevron" size={16} /></a>
             <a href="/compare">園を比較する<Icon name="chevron" size={16} /></a>
           </nav>

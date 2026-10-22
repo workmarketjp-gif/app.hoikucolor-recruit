@@ -190,3 +190,9 @@
   .compare-row-label { width: 112px; }
   .compare-table td { width: 160px; }
 }
+
+/* Home entry to 転職シミュレーター. */
+.hc-career-entry { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; margin-top: 20px; padding: 14px 16px; border: 1px solid #f0d6dc; border-radius: var(--hc-radius); background: linear-gradient(120deg, #fff 0, #fff7f9 100%); }
+.hc-career-entry span { display: grid; gap: 2px; font-size: 14px; line-height: 1.6; color: var(--hc-ink-soft); }
+.hc-career-entry strong { font-size: 17px; color: var(--hc-ink); }
+.hc-career-entry:focus-visible { outline: 3px solid var(--hc-focus); outline-offset: 2px; }
