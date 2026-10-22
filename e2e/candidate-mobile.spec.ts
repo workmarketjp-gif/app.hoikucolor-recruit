@@ -503,7 +503,7 @@ for (const [width, height] of [[1024, 768], [1280, 800], [1440, 900], [1536, 864
       expect(report.overflowX, `${route} horizontal overflow`).toBeLessThanOrEqual(0);
       expect(report.sidebar.visible, `${route} sidebar visible`).toBe(true);
       expect(report.sidebar.width, `${route} sidebar width`).toBeGreaterThanOrEqual(220);
-      expect(report.labels).toHaveLength(10);
+      expect(report.labels).toHaveLength(11);
       for (const label of report.labels) {
         expect(label.width, `${route} "${label.text}" label width`).toBeGreaterThanOrEqual(48);
         expect(label.height, `${route} "${label.text}" wraps beyond 2 lines`).toBeLessThanOrEqual(label.lineHeight * 2 + 1);

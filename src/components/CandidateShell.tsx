@@ -21,6 +21,7 @@ export const secondaryLinks: { href: string; label: string; icon: Parameters<typ
   { href: '/scouts', label: 'スカウト', icon: 'sparkles' },
   { href: '/visits', label: '見学・体験', icon: 'map' },
   { href: '/spot-jobs', label: 'スポット勤務', icon: 'clock' },
+  { href: '/career', label: '転職シミュレーター', icon: 'yen' },
   { href: '/matches', label: 'マッチ度', icon: 'shield' },
   { href: '/compare', label: '園を比較', icon: 'file' },
 ];

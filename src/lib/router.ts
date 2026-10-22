@@ -4,7 +4,7 @@ import { useEffect } from 'react';
  * Every candidate screen lives in one app under one session. This module owns the
  * URL ⇄ screen mapping, in-app link handling, and the post-login return target.
  */
-export type View = 'home' | 'jobs' | 'saved' | 'applications' | 'messages' | 'profile' | 'scouts' | 'visits' | 'spot' | 'matches' | 'compare' | 'resume';
+export type View = 'home' | 'jobs' | 'saved' | 'applications' | 'messages' | 'profile' | 'scouts' | 'visits' | 'spot' | 'matches' | 'compare' | 'resume' | 'career';
 
 export const viewPaths: Record<View, string> = {
   home: '/',
@@ -19,6 +19,7 @@ export const viewPaths: Record<View, string> = {
   matches: '/matches',
   compare: '/compare',
   resume: '/resume',
+  career: '/career',
 };
 
 export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
