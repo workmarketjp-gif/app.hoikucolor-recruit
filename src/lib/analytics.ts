@@ -21,7 +21,10 @@ export type CandidateEvent =
   | 'hc_pref_handoff_shown'
   | 'hc_pref_handoff_saved'
   | 'hc_pref_handoff_declined'
-  | 'hc_pref_handoff_failed';
+  | 'hc_pref_handoff_failed'
+  | 'hc_career_started'
+  | 'hc_career_saved'
+  | 'hc_career_job_opened';
 
 function enabled() {
   if (import.meta.env?.MODE === 'e2e' || !measurementId) return false;

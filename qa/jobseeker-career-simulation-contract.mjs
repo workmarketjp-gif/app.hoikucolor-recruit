@@ -1,10 +1,7 @@
-// 転職シミュレーター: posted-condition arithmetic only. Unknown pay or holidays must never be
-// filled with estimates, and the screen must keep its data-source disclosures and privacy rules.
+// 転職シミュレーター: market numbers come from SQL aggregates, never from the ranked shortlist;
+// three sources stay separate; personal pay never reaches the URL, storage or analytics.
 import fs from 'node:fs';
-import {
-  annualHolidays, monthlyRange, toPostedJobs, summarizeSalaries, salaryHistogram, salaryPosition,
-  scenarioKeepIncome, scenarioMoreHolidays, scenarioBalance, emptySimulationInput, minimumSampleSize,
-} from '../src/lib/careerSimulation.ts';
+import { differenceFromMedian, formatMan, manText, parseDays, parseManYen, withYourPosition } from '../src/lib/careerSimulation.ts';
 
 function assert(condition, message) {
   if (!condition) {
@@ -13,65 +10,53 @@ function assert(condition, message) {
   }
 }
 
-const job = (id, min, max, holidays, extra = {}) => ({
-  id, salary_type: 'monthly', salary_min: min, salary_max: max, holidays, prefecture: '東京都', employment_type: '正社員', ...extra,
-});
-
-assert(annualHolidays('年間休日120日 (土日祝)') === 120, 'annual holidays must be read from the posting text');
-assert(annualHolidays('年間休日：１２５日') === 125, 'full-width digits must be read');
-assert(annualHolidays('週休2日制 祝日') === null, 'weekly rules are not annual holidays');
-assert(annualHolidays('年間休日 5日') === null && annualHolidays(null) === null, 'implausible or missing holidays stay unknown');
-assert(monthlyRange({ ...job('x', 1200, 1500, null), salary_type: 'hourly' }) === null, 'hourly pay must never enter a monthly comparison');
-assert(monthlyRange(job('x', 0, 0, null)) === null, 'zero pay is not a posted salary');
-
-const pool = [
-  job('a', 200000, 240000, '年間休日110日'),
-  job('b', 220000, 220000, '年間休日120日'),
-  job('c', 250000, 300000, '年間休日125日'),
-  job('d', 230000, 260000, '土日祝休み'),
-  job('e', 210000, 250000, '年間休日115日'),
-  job('f', 180000, 200000, '年間休日130日'),
-  job('g', 190000, 210000, null, { prefecture: '大阪府' }),
-];
-const posted = toPostedJobs(pool, { prefecture: '東京都', employmentType: '' });
-assert(posted.length === 6, 'region filter must apply');
-assert(posted.find((p) => p.job.id === 'd').annualHolidays === null, 'unreadable holidays stay null');
-
-const summary = summarizeSalaries(posted);
-assert(summary && summary.count === 6 && summary.median === 215000, 'median of posted lower bounds');
-assert(summarizeSalaries(posted.slice(0, minimumSampleSize - 1)) === null, 'too few postings must not produce a median');
-assert(salaryPosition(posted, 230000) === 67 && salaryPosition(posted.slice(0, 2), 230000) === null, 'position needs enough postings');
-const bins = salaryHistogram(posted, 230000);
-assert(bins.reduce((sum, bin) => sum + bin.count, 0) === posted.length, 'histogram must account for every posting');
-assert(bins.filter((bin) => bin.containsYou).length === 1, 'exactly one bar holds the person');
-
-const keep = scenarioKeepIncome(posted, { ...emptySimulationInput, currentMonthlySalary: 230000 });
-assert(keep.ready && keep.matches.map((m) => m.posted.job.id).join() === 'c,d,e,a', 'keep-income order');
-assert(keep.matches.find((m) => m.posted.job.id === 'a').reach === 'upper-bound-only', 'a range that only reaches the line at its top must be labelled, not promised');
-assert(!scenarioKeepIncome(posted, emptySimulationInput).ready, 'keep-income needs a pay line');
-
-const more = scenarioMoreHolidays(posted, { ...emptySimulationInput, currentMonthlySalary: 230000, currentAnnualHolidays: 110, tolerableSalaryDrop: 20000 });
-assert(more.salaryLine === 210000, 'tolerable drop lowers the line');
-assert(more.matches.map((m) => m.posted.job.id).join() === 'c,b,e', 'only jobs above current holidays, most holidays first');
-assert(more.holidayUnknown === 1, 'jobs with unreadable holidays are counted, not ranked');
-assert(more.matches[0].holidayGain === 15, 'holiday gain is measured against the current holidays');
-assert(!scenarioMoreHolidays(posted, emptySimulationInput).ready, 'holiday scenario needs current pay');
-
-const balance = scenarioBalance(posted, { ...emptySimulationInput, salaryWeight: 100 });
-assert(balance.ready && balance.matches[0].posted.job.id === 'c', 'pay-first balance leads with the highest pay');
-assert(scenarioBalance(posted, { ...emptySimulationInput, salaryWeight: 0 }).matches[0].posted.job.id === 'f', 'holiday-first balance leads with the most holidays');
-assert(balance.holidayUnknown === 1, 'balance excludes unknown holidays');
-assert(!scenarioBalance(posted.slice(0, 3), emptySimulationInput).ready, 'balance needs enough readable holidays');
+// Presentation arithmetic.
+assert(parseManYen('23') === 230000 && parseManYen('22.5') === 225000, '万円 input converts to yen');
+assert(parseManYen('') === null && parseManYen('-1') === null && parseManYen('abc') === null && parseManYen('999') === null, 'empty or implausible pay is "not entered", never 0');
+assert(parseDays('110') === 110 && parseDays('') === null && parseDays('400') === null, 'holiday input bounds');
+assert(formatMan(215000) === '21.5万円' && formatMan(200000) === '20万円', 'formatting');
+assert(manText(230000) === '23' && manText(null) === '', 'saved yen returns to the field unchanged');
+assert(differenceFromMedian(230000, 198000) === 32000 && differenceFromMedian(null, 198000) === null, 'difference from median is exact');
+const bars = withYourPosition([{ from: 160000, to: 180000, count: 6 }, { from: 200000, to: 220000, count: 16 }], 230000);
+assert(bars.map((b) => b.from).join() === '160000,180000,200000,220000', 'gaps become empty bars and your bar is added');
+assert(bars.find((b) => b.containsYou).from === 220000 && bars.find((b) => b.from === 180000).count === 0, 'one bar holds you; gaps stay empty');
+assert(bars.reduce((sum, b) => sum + b.count, 0) === 22, 'bars never change server counts');
+assert(withYourPosition([], 230000).length === 0, 'no postings, no chart');
 
 const lib = fs.readFileSync('src/lib/careerSimulation.ts', 'utf8');
+const repo = fs.readFileSync('src/lib/careerRepository.ts', 'utf8');
 const view = fs.readFileSync('src/views/CareerView.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const router = fs.readFileSync('src/lib/router.ts', 'utf8');
-assert(!/Math\.random|fetch\(|supabase|localStorage|sessionStorage/.test(lib), 'simulation logic must stay pure');
-assert(!/localStorage|sessionStorage|URLSearchParams|history\.(push|replace)State/.test(view), 'personal pay must never reach storage or the URL');
-assert(!/track\(|gtag/.test(view), 'personal pay must never reach analytics');
-assert(view.includes('保証するものではありません') && view.includes('e-Stat') && view.includes('参考件数'), 'source and no-guarantee disclosures are required');
-assert(view.includes('listJobs') && view.includes('getJobseekerMatchingPreferences'), 'must reuse the existing ranked shortlist and saved preferences');
+const analytics = fs.readFileSync('src/lib/analytics.ts', 'utf8');
+const recruitRepo = fs.readFileSync('src/lib/recruitRepository.ts', 'utf8');
+
+// Population: aggregates only. The ranked shortlist is not a market.
+assert(!view.includes('listJobs') && !repo.includes('listJobs') && !lib.includes('listJobs'), 'the ranked shortlist must never be a salary population');
+assert(!/\.holidays\b|annualHolidays|年間休日[^日]{0,4}\(/.test(lib + repo), 'annual holidays are never parsed in the app; verified days come from the server');
+assert(repo.includes('hc_jobseeker_salary_market_v1') && repo.includes('hc_jobseeker_career_scenario_jobs_v1') && repo.includes('hc_jobseeker_official_wage_stats_v1'), 'repository must use the aggregate contracts');
+assert(!/percentile|median\s*=[^=]|\.sort\(\(a, b\) => a - b\)/.test(lib + view), 'no market statistics are computed in the browser');
+assert(repo.includes('CareerApiUnavailableError') && repo.includes('PGRST202'), 'a not-yet-deployed API is 準備中, not a failure');
+
+// Three measures, kept apart and labelled.
+assert(view.includes('is-posted') && view.includes('is-official') && view.includes('is-own'), 'three differently labelled measures');
+assert(view.includes('組み合わせていません'), 'regional and experience statistics must be stated as separate');
+assert(!/national_by_experience[\s\S]{0,200}prefecture_all_experience[\s\S]{0,80}\*/.test(view), 'no arithmetic across statistics');
+assert(view.includes('全国や、ほかの地域の相場ではありません') && view.includes('職種の区別はまだできておらず'), 'coverage and occupation limits must be stated');
+assert(view.includes('保証するものではありません') && view.includes('価値や能力を示すものではありません'), 'no-guarantee / no-judgement disclosures');
+assert(view.includes('参考件数が足りません') && view.includes('準備中'), 'thin data and unavailable states');
+
+// Privacy.
+assert(!/localStorage|sessionStorage|URLSearchParams|history\.(push|replace)State|console\./.test(view + repo + lib), 'personal pay must never reach storage, the URL or logs');
+const trackCalls = view.match(/track\([^)]*\)/g) ?? [];
+assert(trackCalls.length > 0 && trackCalls.every((call) => /^track\('hc_career_(started|saved|job_opened)'\)$/.test(call)), 'analytics events carry no parameters');
+assert(analytics.includes("'hc_career_started'") && analytics.includes("'hc_career_saved'") && analytics.includes("'hc_career_job_opened'"), 'events must be registered in the typed list');
+assert(!repo.includes('p_clerk_user_id') && !repo.includes('clerk_user_id'), 'identity is never sent by the browser');
+assert(repo.includes('Object.keys(conditions)') && repo.includes('getCareerConditions()'), 'saving must be verified by re-reading');
+assert(recruitRepo.includes('hc_jobseeker_upsert_profile') && !view.includes('upsertProfile'), 'profile is not re-asked or rewritten here');
+
+// Reuse and wiring.
+assert(view.includes('getJobseekerMatchingPreferences') && view.includes('getProfile'), 'must reuse saved preferences and profile');
 assert(router.includes("career: '/career'") && app.includes("view === 'career'") && app.includes('CareerView'), 'career must be a regular lazy view of the candidate app');
 
 console.log('jobseeker-career-simulation-contract: PASS');
