@@ -107,7 +107,7 @@ test('official MCP v2 serves actual HC anonymous catalog tools and strict public
     const rejectedTraffic = [
       ['GET is disabled in stateless mode', url, { method: 'GET' }, 405],
       ['DELETE is disabled in stateless mode', url, { method: 'DELETE' }, 405],
-      ['non-MCP endpoint is unavailable', url.replace(/\\/mcp$/, '/private'), {
+      ['non-MCP endpoint is unavailable', new URL('/private', url).href, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
       }, 404],
       ['untrusted browser Origin is forbidden', url, {
