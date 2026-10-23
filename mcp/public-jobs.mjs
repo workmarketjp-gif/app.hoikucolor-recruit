@@ -284,6 +284,13 @@ export async function getPublicChildcareJob(args, config) {
     id: `eq.${args.job_id}`,
     limit: '1',
   });
+  // An anomaly in the public view, proxy, or cache must never turn an exact
+  // UUID lookup into a different job's result. Public-only is necessary but
+  // not sufficient: preserve the caller's requested resource identity.
+  if (rows.length > 1 || (rows.length === 1 &&
+      (typeof rows[0]?.id !== 'string' || rows[0].id.toLowerCase() !== args.job_id.toLowerCase()))) {
+    throw new Error('PUBLIC_JOB_SOURCE_ROW_MISMATCH');
+  }
   const now = config.now ? config.now() : Date.now();
   return { job: rows.length ? publicProjection(rows[0], now, true) : null, note: PROTOCOL_NOTE };
 }
