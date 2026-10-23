@@ -89,7 +89,7 @@ function configuredOrigin(config) {
 // unstructured email addresses or phone numbers through the MCP tool boundary.
 // This is a privacy backstop, not an authorization or publisher-compliance gate.
 const EMAIL_IN_TEXT = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
-const JAPANESE_PHONE_IN_TEXT = /(?<![\da-z])(?:\+81[\s().-]?|0)(?:\d[\s().-]?){8,12}(?!\d)/gi;
+const JAPANESE_PHONE_IN_TEXT = /(?<![\da-z])(?:\+81[\s().-]?|0)(?:\d[\s().-]?){7,11}\d(?!\d)/gi;
 // External listings can disguise direct recruiter email addresses as
 // "alice [at] example [dot] jp". Detect the full address in a Unicode NFKC
 // shadow while preserving non-contact text and original UTF-16 positions.
