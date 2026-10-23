@@ -59,6 +59,11 @@ assert(lastVerifiedWrites.length === 2 && importer.includes('last_verified_at: f
 assert(importer.includes('failing = urls.length >= 10 && errors.length * 2 >= urls.length') && importer.includes('REVERIFY_BACKOFF_MS'), 'failure backoff');
 assert(importer.includes('hc_hellowork_pick_reverify_batch_v1') && importer.includes('REVERIFY_MAX_LIMIT = 50'), 'bounded fair batch');
 
+// --- discovery: new postings are fetched, known fresh ones are not re-fetched
+assert(importer.includes('selectDiscoveryFetches(urls)') && importer.includes('DISCOVERY_SKIP_ACTIVE_MS = 12 * 60 * 60 * 1000'), 'discovery must skip detail requests for recently verified known postings');
+assert(!/selectDiscoveryFetches[\s\S]{0,1500}last_verified_at:/.test(importer.split('async function importUrls')[0].split('async function selectDiscoveryFetches')[1] || ''), 'seeing a posting in a search list must not renew last_verified_at');
+assert(importer.includes('const lastPage = urls.length < DISCOVERY_PAGE_SIZE'), 'paging must follow the search list, not the fetched subset');
+
 // --- scheduler
 assert(ops.includes("'*/5 * * * *'") && ops.includes('"limit":40') && ops.includes('"reverify":true'), 'steady-state cadence is 40 pages / 5 minutes');
 assert(read('supabase/ops/hellowork-fair-reverify-cron.sql').includes('limit 50') && read('supabase/ops/hellowork-fair-reverify-cron.sql').includes('*/3 * * * *'), 'the temporary catch-up cadence must be documented');

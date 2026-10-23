@@ -546,6 +546,46 @@ async function upsertNormalized(row: Normalized) {
   if (error) throw new Error(`UPSERT_FAILED:${error.code || 'unknown'}:${String(error.message || '').slice(0, 160)}`);
 }
 
+const DISCOVERY_SKIP_ACTIVE_MS = 12 * 60 * 60 * 1000;
+const DISCOVERY_SKIP_BLOCKED_MS = 7 * 24 * 60 * 60 * 1000;
+const DISCOVERY_SKIP_REMOVED_MS = 24 * 60 * 60 * 1000;
+
+function sourceJobIdFromUrl(url: string) {
+  const raw = (new URL(url).searchParams.get('kJNo') || '').replace(/\D/g, '');
+  return raw.length === 13 ? `${raw.slice(0, 5)}-${raw.slice(5)}` : null;
+}
+
+// A search page lists up to 50 postings. Only postings we do not know yet, or whose stored verification is
+// old enough to be worth renewing, get a detail-page request; everything else is left to the fair
+// re-verification. Seeing a posting in a search list never renews last_verified_at by itself.
+async function selectDiscoveryFetches(urls: string[]) {
+  const ids = urls.map((url) => sourceJobIdFromUrl(url));
+  const lookup = ids.filter((id): id is string => Boolean(id));
+  const known = new Map<string, { status: string; verifiedAt: number }>();
+  if (lookup.length) {
+    const { data, error } = await supabase
+      .from('hc_external_job_sources')
+      .select('source_job_id,source_status,last_verified_at')
+      .eq('source', SOURCE)
+      .in('source_job_id', lookup);
+    if (error) throw new Error('DISCOVERY_KNOWN_LOOKUP_FAILED');
+    for (const row of data || []) {
+      known.set(row.source_job_id as string, { status: row.source_status as string, verifiedAt: new Date(row.last_verified_at as string).getTime() });
+    }
+  }
+  const now = Date.now();
+  return urls.filter((_, index) => {
+    const id = ids[index];
+    const entry = id ? known.get(id) : undefined;
+    if (!entry) return true;
+    const age = now - entry.verifiedAt;
+    if (entry.status === 'active') return age >= DISCOVERY_SKIP_ACTIVE_MS;
+    if (entry.status === 'blocked') return age >= DISCOVERY_SKIP_BLOCKED_MS;
+    if (entry.status === 'removed' || entry.status === 'expired') return age >= DISCOVERY_SKIP_REMOVED_MS;
+    return true;
+  });
+}
+
 async function importUrls(urls: string[]) {
   const results: Array<Record<string, unknown>> = [];
   for (let offset = 0; offset < urls.length; offset += DISCOVERY_CONCURRENCY) {
@@ -661,7 +701,8 @@ async function discoverBatch() {
       throw new Error('HELLOWORK_SEARCH_PARSE_EMPTY');
     }
 
-    const results = await importUrls(urls);
+    const toFetch = await selectDiscoveryFetches(urls);
+    const results = await importUrls(toFetch);
     const published = results.filter((item) => item.published === true).length;
     const errorRows = results.filter((item) => item.status === 'error');
     const errors = errorRows.length;
@@ -717,6 +758,8 @@ async function discoverBatch() {
       prefecture,
       page,
       discovered: urls.length,
+      fetched: toFetch.length,
+      skipped_known: urls.length - toFetch.length,
       imported: results.length - errors,
       published,
       errors,
