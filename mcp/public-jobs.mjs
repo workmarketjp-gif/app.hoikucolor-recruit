@@ -25,7 +25,7 @@ export const publicJobToolDefinitions = Object.freeze([
   {
     name: 'search_public_childcare_jobs',
     title: '保育の公開求人を検索',
-    description: 'Hoiku Colorで現時点で公開中の保育求人を検索します。ハローワーク掲載求人を含む場合があります。ログインや応募は行いません。地域・雇用形態・キーワードで絞り込み、ページ送りができます。募集状況は変動するため応募前に最新情報をご確認ください。',
+    description: 'Hoiku Colorで現時点で公開中の保育求人を検索します。ハローワーク掲載求人を含む場合があります。ログインや応募は行いません。地域・雇用形態・キーワードで絞り込み、ページ送りができます。次のページは返却されたnext_offsetをoffsetに指定してください。表示0件でもpossible_more_source_rowsがtrueなら検索を続けられます。reported_totalは鮮度確認前の参考値です。募集状況は変動するため応募前に最新情報をご確認ください。',
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     inputSchema: {
       type: 'object', additionalProperties: false,
