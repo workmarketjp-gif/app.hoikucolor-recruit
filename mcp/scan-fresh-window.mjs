@@ -20,6 +20,9 @@ export async function scanFreshWindow({ fetchPage, project, limit, offset, maxWi
   for (let window = 0; window < maxWindows && cursor <= maxOffset && jobs.length < limit; window++) {
     const rows = await fetchPage(cursor, limit);
     if (!Array.isArray(rows) || rows.length > limit) throw new Error('PUBLIC_JOB_SOURCE_INVALID_SHAPE');
+    // Keep the preexisting public API contract for an empty FIRST page.
+    // An empty later page at a nonzero offset does not establish total = 0.
+    if (offset === 0 && cursor === 0 && rows.length === 0) reportedTotal = 0;
     if (reportedTotal === null && rows.length) {
       const total = Number(rows[0]?.total_count);
       if (Number.isSafeInteger(total) && total >= 0) reportedTotal = total;
