@@ -14,6 +14,9 @@ export class CareerApiUnavailableError extends Error {
   }
 }
 
+/** Posted pay is compared inside one occupation: jobs whose title names 保育士 (classified in the database). */
+const careerOccupation = 'hoikushi';
+
 function client() {
   if (!supabase) throw new Error('Supabaseの接続設定がありません。');
   return supabase;
@@ -51,7 +54,7 @@ export function getSalaryMarket(prefecture: string, employmentType: string): Pro
   return call<SalaryMarket>('hc_jobseeker_salary_market_v1', {
     p_prefecture: prefecture || null,
     p_employment_type: employmentType || null,
-    p_occupation: null,
+    p_occupation: careerOccupation,
   });
 }
 
@@ -90,7 +93,7 @@ export function getScenarioJobs(request: ScenarioRequest): Promise<ScenarioRespo
     p_holiday_floor: request.holidayFloor,
     p_salary_weight: request.salaryWeight,
     p_limit: 5,
-    p_occupation: null,
+    p_occupation: careerOccupation,
   });
 }
 
