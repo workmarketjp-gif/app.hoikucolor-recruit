@@ -63,4 +63,11 @@ assert(importer.includes('hc_hellowork_pick_reverify_batch_v1') && importer.incl
 assert(ops.includes("'*/5 * * * *'") && ops.includes('"limit":40') && ops.includes('"reverify":true'), 'steady-state cadence is 40 pages / 5 minutes');
 assert(read('supabase/ops/hellowork-fair-reverify-cron.sql').includes('limit 50') && read('supabase/ops/hellowork-fair-reverify-cron.sql').includes('*/3 * * * *'), 'the temporary catch-up cadence must be documented');
 
+// --- holiday boundary: 「N日以上」 and 「N日を超える」 are different conditions
+const boundary = strip(read('supabase/migrations/20261023020217_hc_career_holiday_boundary_v1.sql'));
+assert(boundary.includes('annual_holidays_days > p_holiday_floor') && boundary.includes('annual_holidays_days >= p_holiday_at_least'), 'strict and inclusive holiday conditions must stay separate');
+assert(boundary.includes('drop function if exists public.hc_jobseeker_career_scenario_jobs_v1(text, text, text, integer, integer, integer, integer, text);'), 'the old overload must be dropped (PostgREST cannot resolve overloads)');
+const scenarioFn = 'function public.hc_jobseeker_career_scenario_jobs_v1(text, text, text, integer, integer, integer, integer, text, integer)';
+assert(boundary.includes(`revoke all on ${scenarioFn} from public, anon, authenticated, service_role;`) && boundary.includes(`grant execute on ${scenarioFn} to authenticated;`), 'authenticated only');
+
 console.log('hellowork-structured-data-contract: PASS');
