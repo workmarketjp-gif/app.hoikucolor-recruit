@@ -38,7 +38,7 @@ test('all three read-only tools advertise typed, strict output schemas', () => {
 });
 test('search output contract has no candidate, employer-admin or application fields', () => {
   const search = registered()[0].descriptor.outputSchema;
-  assert.deepEqual(Object.keys(search.shape), ['jobs','returned','reported_total','offset','requested_limit','note']);
+  assert.deepEqual(Object.keys(search.shape), ['jobs','returned','reported_total','offset','requested_limit','next_offset','possible_more_source_rows','scanned_source_rows','note']);
   const jobSchema = search.shape.jobs.shape;
   assert.equal(jobSchema.kind, 'object');
   assert.equal(jobSchema.strictMode, true);
