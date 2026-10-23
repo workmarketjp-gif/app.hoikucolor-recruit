@@ -89,13 +89,45 @@ function configuredOrigin(config) {
 // This is a privacy backstop, not an authorization or publisher-compliance gate.
 const EMAIL_IN_TEXT = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const JAPANESE_PHONE_IN_TEXT = /(?<![\da-z])(?:\+81[\s().-]?|0)(?:\d[\s().-]?){8,12}(?!\d)/gi;
+// External listings can disguise direct recruiter email addresses as
+// "alice [at] example [dot] jp". Detect the full address in a Unicode NFKC
+// shadow while preserving non-contact text and original UTF-16 positions.
+// This is defense in depth; anonymous tools still only query public RPCs.
+const OBFUSCATED_EMAIL_IN_TEXT = /(?<![\p{L}\p{N}._%+-])[\p{L}\p{N}._%+-]{1,64}[ \t]{0,6}(?:\[[ \t]{0,4}at[ \t]{0,4}\]|\([ \t]{0,4}at[ \t]{0,4}\))[ \t]{0,6}[\p{L}\p{N}-]{1,63}(?:[ \t]{0,6}(?:\[[ \t]{0,4}dot[ \t]{0,4}\]|\([ \t]{0,4}dot[ \t]{0,4}\)|\.)[ \t]{0,6}[\p{L}\p{N}-]{1,63}){1,5}(?![\p{L}\p{N}.-])/giu;
+function redactObfuscatedEmails(value) {
+  const units = [];
+  let offset = 0;
+  for (const symbol of value) {
+    const start = offset;
+    offset += symbol.length;
+    for (const char of symbol.normalize('NFKC')) {
+      for (let index = 0; index < char.length; index++) {
+        units.push({ char: char[index], start, end: offset });
+      }
+    }
+  }
+  const shadow = units.map(unit => unit.char).join('');
+  const spans = [...shadow.matchAll(OBFUSCATED_EMAIL_IN_TEXT)].map(match => [
+    units[match.index].start,
+    units[match.index + match[0].length - 1].end,
+  ]);
+  if (!spans.length) return value;
+  let output = '';
+  let cursor = 0;
+  for (const [start, end] of spans) {
+    if (start < cursor) continue;
+    output += value.slice(cursor, start) + '[連絡先省略]';
+    cursor = end;
+  }
+  return output + value.slice(cursor);
+}
 function cleanText(value, limit = 160) {
   if (typeof value !== 'string') return null;
-  return value
+  const filtered = value
     .replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, ' ')
     .replace(EMAIL_IN_TEXT, '[連絡先省略]')
-    .replace(JAPANESE_PHONE_IN_TEXT, '[連絡先省略]')
-    .trim().slice(0, limit);
+    .replace(JAPANESE_PHONE_IN_TEXT, '[連絡先省略]');
+  return redactObfuscatedEmails(filtered).trim().slice(0, limit);
 }
 function nonnegativeNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
