@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createPreviewGateway, createPreviewSecurity, parsePreviewConfig } from '../preview/preview-policy.mjs';
+import { bindWorkerMcpSdk, createPreviewGateway, createPreviewSecurity, parsePreviewConfig } from '../preview/preview-policy.mjs';
 
 const makeEnv = (overrides = {}) => ({
   HC_MCP_PREVIEW_ENABLED: 'true',
@@ -82,4 +82,43 @@ test('preview integrates existing gateway without widening MCP tool permissions'
     publishableKey: 'sb_publishable_example1234',
   });
   assert.deepEqual(captured.security.allowedHosts, ['hc-preview.example.workers.dev']);
+});
+
+test('Cloudflare Agents handler receives trusted Worker env/ctx and closed CORS policy', async () => {
+  const env = makeEnv();
+  const ctx = { waitUntil() {} };
+  const request = new Request('https://hc-preview.example.workers.dev/mcp', { method: 'POST' });
+  const observed = {};
+  const bound = bindWorkerMcpSdk({
+    McpServer: class StubServer {}, z: {},
+    createMcpHandler(factory, options) {
+      observed.factory = factory;
+      observed.options = options;
+      return async (actualRequest, actualEnv, actualCtx) => {
+        observed.request = actualRequest;
+        observed.env = actualEnv;
+        observed.ctx = actualCtx;
+        return new Response('ok');
+      };
+    },
+  }, env, ctx);
+  const factory = () => ({});
+  const gatewayHandler = bound.createMcpHandler(factory, { responseMode: 'json' });
+  assert.equal((await gatewayHandler(request)).status, 200);
+  assert.equal(observed.factory, factory);
+  assert.equal(observed.request, request);
+  assert.equal(observed.env, env);
+  assert.equal(observed.ctx, ctx);
+  assert.equal(observed.options.corsOptions, false);
+  assert.deepEqual(observed.options.allowedHostnames, ['hc-preview.example.workers.dev']);
+  assert.deepEqual(observed.options.allowedOriginHostnames, ['chatgpt.com']);
+  assert.equal(observed.options.responseMode, 'json');
+});
+test('Cloudflare handler rejects noncallable transports instead of falling back', () => {
+  const env = makeEnv();
+  const sdk = bindWorkerMcpSdk({
+    McpServer: class Stub {}, z: {},
+    createMcpHandler: () => ({ fetch() {} }),
+  }, env, {});
+  assert.throws(() => sdk.createMcpHandler(() => ({}), {}), /HC_PREVIEW_HANDLER_INVALID/);
 });
