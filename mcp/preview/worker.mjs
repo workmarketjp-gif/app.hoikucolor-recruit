@@ -6,13 +6,14 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { createMcpHandler } from 'agents/mcp/server';
 import { z } from 'zod/v4';
 import { createColorMcpGateway } from '../sdk-bridge.mjs';
-import { createPreviewGateway } from './preview-policy.mjs';
+import { bindWorkerMcpSdk, createPreviewGateway } from './preview-policy.mjs';
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     try {
       const gateway = createPreviewGateway(
-        { McpServer, createMcpHandler, z }, env, createColorMcpGateway,
+        bindWorkerMcpSdk({ McpServer, createMcpHandler, z }, env, ctx),
+        env, createColorMcpGateway,
       );
       return await gateway.fetch(request);
     } catch {
