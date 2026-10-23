@@ -164,10 +164,13 @@ function publicProjection(row, now, longDescription = false) {
   if (!row || typeof row !== 'object' || Array.isArray(row) || typeof row.id !== 'string' || !UUID.test(row.id)) return null;
   if (row.is_external !== true && row.is_external !== false) return null;
   const firstPublished = validDate(row.published_at);
-  if (!firstPublished || Date.parse(firstPublished) > now + 5 * 60_000) return null;
+  // Publication timestamps are an access boundary, not a freshness hint:
+  // never expose a scheduled job before its exact publish instant.
+  if (!firstPublished || Date.parse(firstPublished) > now) return null;
   const closingAt = validDate(row.closing_at);
   if (row.closing_at != null && !closingAt) return null;
-  if (closingAt && Date.parse(closingAt) < now) return null;
+  // Closing is exclusive: a job is no longer available at closing_at itself.
+  if (closingAt && Date.parse(closingAt) <= now) return null;
   const verifiedAt = validDate(row.source_last_verified_at);
   if (row.is_external && (!verifiedAt || Date.parse(verifiedAt) < now - EXTERNAL_MAX_AGE_MS || Date.parse(verifiedAt) > now + 5 * 60_000)) return null;
   const title = cleanText(row.title, 180);
