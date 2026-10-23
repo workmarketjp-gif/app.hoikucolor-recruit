@@ -74,3 +74,28 @@ export function createPreviewGateway(sdk, env, createGateway, log = console.info
     publishableKey: config.publishableKey,
   }, createPreviewSecurity(env, config, log));
 }
+
+/**
+ * Cloudflare's Agents handler is called with (request, env, ctx), while the
+ * shared SDK gateway dispatches a single Request. Bind the trusted Worker
+ * context here; do not allow the request to provide env or ctx.
+ */
+export function bindWorkerMcpSdk({ McpServer, createMcpHandler, z }, env, ctx) {
+  const config = parsePreviewConfig(env);
+  if (typeof createMcpHandler !== 'function') throw new Error('HC_PREVIEW_HANDLER_REQUIRED');
+  return {
+    McpServer,
+    z,
+    createMcpHandler(factory, options) {
+      const handler = createMcpHandler(factory, {
+        ...options,
+        allowedHostnames: [config.host],
+        allowedOriginHostnames: config.origins.map(origin => new URL(origin).hostname),
+        // Never emit the Agents handler's default wildcard CORS response.
+        corsOptions: false,
+      });
+      if (typeof handler !== 'function') throw new Error('HC_PREVIEW_HANDLER_INVALID');
+      return request => handler(request, env, ctx);
+    },
+  };
+}
