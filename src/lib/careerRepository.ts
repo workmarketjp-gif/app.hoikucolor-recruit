@@ -80,7 +80,10 @@ export type ScenarioRequest = {
   prefecture: string;
   employmentType: string;
   salaryLine: number | null;
-  holidayFloor: number | null;
+  /** 「今の年間休日より多い」 (strictly more than). */
+  holidayMoreThan: number | null;
+  /** 「希望の年間休日 N日以上」 (at least). */
+  holidayAtLeast: number | null;
   salaryWeight: number;
 };
 
@@ -90,7 +93,8 @@ export function getScenarioJobs(request: ScenarioRequest): Promise<ScenarioRespo
     p_prefecture: request.prefecture || null,
     p_employment_type: request.employmentType || null,
     p_salary_line: request.salaryLine,
-    p_holiday_floor: request.holidayFloor,
+    p_holiday_floor: request.holidayMoreThan,
+    p_holiday_at_least: request.holidayAtLeast,
     p_salary_weight: request.salaryWeight,
     p_limit: 5,
     p_occupation: careerOccupation,

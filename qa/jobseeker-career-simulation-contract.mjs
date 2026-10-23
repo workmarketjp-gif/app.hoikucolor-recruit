@@ -62,4 +62,7 @@ assert(router.includes("career: '/career'") && app.includes("view === 'career'")
 assert(/careerOccupation = 'hoikushi'/.test(repo) && (repo.match(/p_occupation: careerOccupation/g) ?? []).length === 2, 'market and scenarios must compare inside one structured occupation');
 assert(view.includes('求人タイトルから分類した「保育士」の求人です'), 'the occupation scope must be stated on screen');
 
+assert(repo.includes('p_holiday_floor: request.holidayMoreThan') && repo.includes('p_holiday_at_least: request.holidayAtLeast'), '「今より多い」(超える) and 「希望N日以上」 must be separate parameters');
+assert(view.includes('holidayMoreThan = input.holidays') && view.includes('holidayAtLeast = input.wishHolidays'), 'current holidays mean more-than, desired holidays mean at-least');
+
 console.log('jobseeker-career-simulation-contract: PASS');

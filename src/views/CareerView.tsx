@@ -108,11 +108,12 @@ export function CareerView({ userKey }: { userKey: string }) {
   const salaryLine = scenario === 'more-holidays'
     ? (input.salary === null ? null : Math.max(0, input.salary - (input.drop ?? 0)))
     : input.salary ?? input.wishSalary;
-  const holidayFloor = input.wishHolidays ?? input.holidays;
+  const holidayMoreThan = input.holidays;
+  const holidayAtLeast = input.wishHolidays;
 
   const scenarioState = useScenario(
     hydrated && marketData !== null,
-    { scenario, prefecture: area.prefecture, employmentType: area.employmentType, salaryLine, holidayFloor, salaryWeight },
+    { scenario, prefecture: area.prefecture, employmentType: area.employmentType, salaryLine, holidayMoreThan, holidayAtLeast, salaryWeight },
   );
 
   return (
