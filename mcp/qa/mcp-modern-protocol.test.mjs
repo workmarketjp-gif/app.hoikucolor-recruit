@@ -30,7 +30,9 @@ function fixture({ jobs = [sampleJob], tools = toolList, sse = false, wrongResul
     if (input.method === 'server/discover') result = { capabilities: { tools: {} } };
     else if (input.method === 'tools/list') result = { tools };
     else if (input.method === 'tools/call' && input.params.name === 'search_public_childcare_jobs') {
-      result = { structuredContent: { jobs, returned: jobs.length, offset: 0, requested_limit: 1 } };
+      result = { structuredContent: { jobs, returned: jobs.length,
+        reported_total: jobs.length, offset: 0, requested_limit: 1, next_offset: null,
+        possible_more_source_rows: false, scanned_source_rows: jobs.length, note: '公開情報のみ' } };
       result.content = [{ type: 'text', text: JSON.stringify(result.structuredContent) }];
     } else if (input.method === 'tools/call' && input.params.name === 'list_public_childcare_job_filters') {
       result = { structuredContent: { prefectures: ['東京都'], employment_types: ['正社員'] } };
