@@ -50,16 +50,18 @@ async function rpc(url, id, method, params = {}) {
   return data.result;
 }
 
-test('official MCP v2 serves actual HC anonymous catalog tools and strict public projection', async () => {
+test('official MCP v2 serves actual HC anonymous catalog tools and strict public projection', async (t) => {
   const listener = http.createServer();
   listener.listen(0, '127.0.0.1');
   await once(listener, 'listening');
   const port = listener.address().port;
+  let upstreamCalls = 0;
   const config = {
     supabaseUrl: 'https://kcmmpjyngcysdfbumchk.supabase.co',
     publishableKey: 'sb_publishable_fixture',
     now: () => now,
     fetcher: async target => {
+      upstreamCalls++;
       const path = new URL(target).pathname;
       if (path.endsWith('/hc_public_job_search_facets_v2')) {
         return Response.json([{ prefectures: ['東京都'], employment_types: ['full_time'] }]);
@@ -99,6 +101,38 @@ test('official MCP v2 serves actual HC anonymous catalog tools and strict public
     });
     assert.equal(detail.structuredContent.job.id, jobId);
     assert.equal(JSON.stringify(detail).includes('applicant_email'), false);
+    // These are genuine requests to the installed SDK-backed HTTP gateway, not
+    // fake handlers. None may reach even the synthetic public upstream RPC.
+    const callsBeforeDenials = upstreamCalls;
+    const rejectedTraffic = [
+      ['GET is disabled in stateless mode', url, { method: 'GET' }, 405],
+      ['DELETE is disabled in stateless mode', url, { method: 'DELETE' }, 405],
+      ['non-MCP endpoint is unavailable', url.replace(/\\/mcp$/, '/private'), {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+      }, 404],
+      ['untrusted browser Origin is forbidden', url, {
+        method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://evil.example' }, body: '{}',
+      }, 403],
+      ['bearer credentials cannot unlock private data', url, {
+        method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer synthetic-token' }, body: '{}',
+      }, 403],
+      ['cookies cannot unlock private data', url, {
+        method: 'POST', headers: { 'content-type': 'application/json', cookie: 'hc_session=synthetic' }, body: '{}',
+      }, 403],
+      ['non-JSON content type is rejected', url, {
+        method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}',
+      }, 415],
+      ['oversized anonymous request is rejected', url, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: 'x'.repeat(65_537),
+      }, 413],
+    ];
+    for (const [name, target, init, status] of rejectedTraffic) {
+      await t.test(name, async () => {
+        const denied = await fetch(target, { ...init, signal: AbortSignal.timeout(5_000) });
+        assert.equal(denied.status, status, name);
+        assert.equal(upstreamCalls, callsBeforeDenials, 'denied request must not query public RPC');
+      });
+    }
   } finally {
     listener.closeAllConnections();
     await new Promise(resolve => listener.close(resolve));
