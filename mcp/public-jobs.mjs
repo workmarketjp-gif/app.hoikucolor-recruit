@@ -150,6 +150,15 @@ function boundedInteger(value, fallback, max, key) {
   if (!Number.isInteger(value) || value < (key === 'limit' ? 1 : 0) || value > max) throw new Error(`INVALID_${key.toUpperCase()}`);
   return value;
 }
+// Clock controls publication, closure and external-source expiry. Invalid
+// dates used to bypass comparisons because all NaN comparisons return false.
+function checkedNow(config) {
+  const now = config?.now === undefined ? Date.now() :
+    (typeof config.now === 'function' ? config.now() : NaN);
+  if (!Number.isSafeInteger(now) || now <= 0) throw new Error('PUBLIC_CLOCK_INVALID');
+  return now;
+}
+
 function publicProjection(row, now, longDescription = false) {
   if (!row || typeof row !== 'object' || Array.isArray(row) || typeof row.id !== 'string' || !UUID.test(row.id)) return null;
   if (row.is_external !== true && row.is_external !== false) return null;
@@ -226,7 +235,7 @@ export async function searchPublicChildcareJobs(args = {}, config) {
     p_limit: limit,
     p_offset: offset,
   }, { select: PUBLIC_JOB_FIELDS.join(',') });
-  const now = config.now ? config.now() : Date.now();
+  const now = checkedNow(config);
   const jobs = rows.map((row) => publicProjection(row, now)).filter(Boolean).slice(0, limit);
   const total = rows.length ? Number(rows[0].total_count) : 0;
   return {
@@ -291,7 +300,7 @@ export async function getPublicChildcareJob(args, config) {
       (typeof rows[0]?.id !== 'string' || rows[0].id.toLowerCase() !== args.job_id.toLowerCase()))) {
     throw new Error('PUBLIC_JOB_SOURCE_ROW_MISMATCH');
   }
-  const now = config.now ? config.now() : Date.now();
+  const now = checkedNow(config);
   return { job: rows.length ? publicProjection(rows[0], now, true) : null, note: PROTOCOL_NOTE };
 }
 
