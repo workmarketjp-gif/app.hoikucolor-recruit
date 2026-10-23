@@ -33,6 +33,9 @@ function fixture({ listTools = tools, catalogJobs = [job], responseType = 'appli
         if (body.params.name === 'search_public_childcare_jobs') result = { structuredContent: {
           jobs: catalogJobs.map(j => addPrivateField ? { ...j, candidate_email: 'PRIVATE@example.com' } : j),
           returned: catalogJobs.length,
+          reported_total: catalogJobs.length, offset: 0, requested_limit: 1,
+          next_offset: null, possible_more_source_rows: false,
+          scanned_source_rows: catalogJobs.length, note: '公開情報のみ',
         } };
         else result = { structuredContent: { prefectures: ['東京都'], employment_types: ['正社員'] } };
         break;
