@@ -30,7 +30,9 @@ test('real loopback HTTP handshake/tools/list/tools/call probe', async () => {
         ].map(name => ({ name, annotations: { readOnlyHint: true, destructiveHint: false } })) }; break;
         case 'tools/call': {
           const data = message.params.name === 'search_public_childcare_jobs'
-            ? { jobs: [], returned: 0 }
+            ? { jobs: [], returned: 0, reported_total: 0, offset: 0, requested_limit: 1,
+              next_offset: null, possible_more_source_rows: false, scanned_source_rows: 0,
+              note: '公開情報のみ' }
             : { prefectures: [], employment_types: [] };
           result = { structuredContent: data, content: [{ type: 'text', text: JSON.stringify(data) }] };
           break;
