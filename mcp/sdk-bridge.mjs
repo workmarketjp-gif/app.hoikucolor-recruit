@@ -78,6 +78,9 @@ function publicToolOutputSchema(name, z) {
       reported_total: z.number().int().min(0).nullable(),
       offset: z.number().int().min(0).max(500),
       requested_limit: z.number().int().min(1).max(20),
+      next_offset: z.number().int().min(0).max(500).nullable(),
+      possible_more_source_rows: z.boolean(),
+      scanned_source_rows: z.number().int().min(0).max(80),
       note: z.string(),
     }).strict();
   }
