@@ -95,6 +95,11 @@ const JAPANESE_PHONE_IN_TEXT = /(?<![\da-z])(?:\+81[\s().-]?|0)(?:\d[\s().-]?){8
 // shadow while preserving non-contact text and original UTF-16 positions.
 // This is defense in depth; anonymous tools still only query public RPCs.
 const OBFUSCATED_EMAIL_IN_TEXT = /(?<![\p{L}\p{N}._%+-])[\p{L}\p{N}._%+-]{1,64}[ \t]{0,6}(?:\[[ \t]{0,4}at[ \t]{0,4}\]|\([ \t]{0,4}at[ \t]{0,4}\))[ \t]{0,6}[\p{L}\p{N}-]{1,63}(?:[ \t]{0,6}(?:\[[ \t]{0,4}dot[ \t]{0,4}\]|\([ \t]{0,4}dot[ \t]{0,4}\)|\.)[ \t]{0,6}[\p{L}\p{N}-]{1,63}){1,5}(?![\p{L}\p{N}.-])/giu;
+// NFKC also turns compatibility-width @, dots and digits into regular ASCII.
+// Keep matching on a shadow so redaction removes the ORIGINAL Unicode span,
+// rather than echoing full-width contact details into a public tool result.
+// This additionally covers mixed formats such as "alice@example[dot]jp".
+const NFKC_MIXED_EMAIL_IN_TEXT = /(?<![a-z0-9._%+-])[a-z0-9._%+-]{1,64}[ \\t]{0,6}(?:@|\\[[ \\t]{0,4}at[ \\t]{0,4}\\]|\\([ \\t]{0,4}at[ \\t]{0,4}\\))[ \\t]{0,6}[a-z0-9-]{1,63}(?:[ \\t]{0,6}(?:\\[[ \\t]{0,4}dot[ \\t]{0,4}\\]|\\([ \\t]{0,4}dot[ \\t]{0,4}\\)|\\.)[ \\t]{0,6}[a-z0-9-]{1,63}){1,5}(?![a-z0-9.-])/gi;
 function redactObfuscatedEmails(value) {
   const units = [];
   let offset = 0;
@@ -108,14 +113,25 @@ function redactObfuscatedEmails(value) {
     }
   }
   const shadow = units.map(unit => unit.char).join('');
-  const spans = [...shadow.matchAll(OBFUSCATED_EMAIL_IN_TEXT)].map(match => [
-    units[match.index].start,
-    units[match.index + match[0].length - 1].end,
-  ]);
+  // All patterns run against the normalized shadow, but output is sourced
+  // only from original input spans; overlapping formats are merged first.
+  const spans = [OBFUSCATED_EMAIL_IN_TEXT, NFKC_MIXED_EMAIL_IN_TEXT,
+    EMAIL_IN_TEXT, JAPANESE_PHONE_IN_TEXT]
+    .flatMap(pattern => [...shadow.matchAll(pattern)].map(match => [
+      units[match.index].start,
+      units[match.index + match[0].length - 1].end,
+    ]))
+    .sort((a, b) => a[0] - b[0]);
   if (!spans.length) return value;
+  const merged = [];
+  for (const [start, end] of spans) {
+    const previous = merged[merged.length - 1];
+    if (previous && start <= previous[1]) previous[1] = Math.max(previous[1], end);
+    else merged.push([start, end]);
+  }
   let output = '';
   let cursor = 0;
-  for (const [start, end] of spans) {
+  for (const [start, end] of merged) {
     if (start < cursor) continue;
     output += value.slice(cursor, start) + '[連絡先省略]';
     cursor = end;
