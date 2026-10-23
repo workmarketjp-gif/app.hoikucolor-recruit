@@ -12,6 +12,7 @@ import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import * as z from 'zod/v4';
 import { createColorMcpGateway } from '../sdk-bridge.mjs';
+import { runModernHttpMcpProbe } from './mcp-protocol-probe.mjs';
 
 const jobId = '11111111-1111-4111-8111-000000000001';
 const now = Date.parse('2026-10-16T00:00:00Z');
@@ -101,6 +102,14 @@ test('official MCP v2 serves actual HC anonymous catalog tools and strict public
     });
     assert.equal(detail.structuredContent.job.id, jobId);
     assert.equal(JSON.stringify(detail).includes('applicant_email'), false);
+    // Run the *same* anonymous acceptance probe intended for the isolated HTTPS
+    // Preview against this real SDK/HTTP gateway, not a synthetic JSON-RPC peer.
+    // Previously, its metadata allowlist rejected genuine MCP search results.
+    const acceptance = await runModernHttpMcpProbe({ url, now: () => now });
+    assert.equal(acceptance.status, 'PASS');
+    assert.equal(acceptance.protocol, '2026-07-28');
+    assert.equal(acceptance.anonymous_search_returned, 1);
+    assert.equal(acceptance.public_prefectures, 1);
     // These are genuine requests to the installed SDK-backed HTTP gateway, not
     // fake handlers. None may reach even the synthetic public upstream RPC.
     const callsBeforeDenials = upstreamCalls;
