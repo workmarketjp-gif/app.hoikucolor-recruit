@@ -1,4 +1,5 @@
 import { readBoundedPublicJson } from './response-limit.mjs';
+import { scanFreshWindow } from './scan-fresh-window.mjs';
 
 /**
  * Hoiku Color: anonymous, read-only public job tool adapter.
@@ -228,23 +229,38 @@ export async function searchPublicChildcareJobs(args = {}, config) {
   const limit = boundedInteger(args.limit, 10, 20, 'limit');
   const offset = boundedInteger(args.offset, 0, 500, 'offset');
   const now = checkedNow(config);
-  const rows = await apiRequest(config, 'rpc/hc_public_search_jobs_v2', 'POST', {
-    p_query: keyword,
-    p_prefecture: prefecture,
-    p_employment_type: employment,
-    p_ho_verified: false,
-    p_limit: limit,
-    p_offset: offset,
-  }, { select: PUBLIC_JOB_FIELDS.join(',') });
-  const jobs = rows.map((row) => publicProjection(row, now)).filter(Boolean).slice(0, limit);
-  const total = rows.length ? Number(rows[0].total_count) : 0;
+  // The upstream public RPC paginates before the MCP's strict 12-hour
+  // external-job freshness gate. Look ahead at most four *public* RPC pages,
+  // returning the next raw offset so later pages never repeat a displayed job.
+  // This does NOT change SQL, RLS, source freshness, or publisher rights.
+  const scan = await scanFreshWindow({
+    fetchPage: (pageOffset, pageLimit) => apiRequest(config, 'rpc/hc_public_search_jobs_v2', 'POST', {
+      p_query: keyword,
+      p_prefecture: prefecture,
+      p_employment_type: employment,
+      p_ho_verified: false,
+      p_limit: pageLimit,
+      p_offset: pageOffset,
+    }, { select: PUBLIC_JOB_FIELDS.join(',') }),
+    project: row => publicProjection(row, now),
+    limit,
+    offset,
+  });
   return {
-    jobs,
-    returned: jobs.length,
-    reported_total: Number.isFinite(total) && total >= 0 ? Math.floor(total) : null,
+    jobs: scan.jobs,
+    returned: scan.jobs.length,
+    reported_total: scan.reported_total,
     offset,
     requested_limit: limit,
-    note: PROTOCOL_NOTE,
+    next_offset: scan.next_offset,
+    possible_more_source_rows: scan.possible_more_source_rows,
+    scanned_source_rows: scan.scanned_source_rows,
+    note: PROTOCOL_NOTE + ' 総件数は検索元APIの参考件数であり、12時間以内の確認条件で除外する前の数です。'
+      + (scan.possible_more_source_rows
+        ? (scan.next_offset === null
+          ? ' 公開検索の探索上限に達したため、一部の求人を確認できていません。条件を絞って再検索してください。'
+          : ' 対象求人がさらに存在する可能性があります。次ページはnext_offsetをoffsetに指定してください。')
+        : ''),
   };
 }
 
