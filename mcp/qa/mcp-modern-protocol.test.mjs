@@ -151,3 +151,45 @@ test('real modern HTTP loopback sockets exchange only stateless MCP 2026 request
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+function tamperedSearchResult(mutator) {
+  const original = fixture().fetcher;
+  return async (...args) => {
+    const response = await original(...args);
+    const input = JSON.parse(args[1].body);
+    if (input.method !== 'tools/call' || input.params.name !== 'search_public_childcare_jobs') return response;
+    const packet = await response.json();
+    mutator(packet.result.structuredContent);
+    packet.result.content[0].text = JSON.stringify(packet.result.structuredContent);
+    return Response.json(packet);
+  };
+}
+
+test('real search contract: pagination metadata is mandatory, not a false-positive fixture', async () => {
+  const missing = tamperedSearchResult(result => { delete result.next_offset; });
+  await assert.rejects(probe(missing), /PROBE_PRIVATE_FIELD_DETECTED/);
+  const invalid = tamperedSearchResult(result => { result.next_offset = 501; });
+  await assert.rejects(probe(invalid), /PROBE_SEARCH_METADATA_INVALID/);
+  const applicant = tamperedSearchResult(result => { result.applicant_profiles = ['private']; });
+  await assert.rejects(probe(applicant), /PROBE_PRIVATE_FIELD_DETECTED/);
+});
+
+test('preview probe rejects publication even one millisecond early and closing at exact instant', async () => {
+  await assert.rejects(
+    probe(fixture({ jobs: [{ ...sampleJob, published_at: new Date(now + 1).toISOString() }] }).fetcher),
+    /PROBE_JOB_PUBLICATION_INVALID/,
+  );
+  await assert.rejects(
+    probe(fixture({ jobs: [{ ...sampleJob, closing_at: new Date(now).toISOString() }] }).fetcher),
+    /PROBE_CLOSED_JOB_LEAK/,
+  );
+});
+
+test('preview probe accepts publication at exact instant and closure strictly afterward', async () => {
+  const exact = {
+    ...sampleJob,
+    published_at: new Date(now).toISOString(),
+    closing_at: new Date(now + 1).toISOString(),
+  };
+  assert.equal((await probe(fixture({ jobs: [exact] }).fetcher)).anonymous_search_returned, 1);
+});
