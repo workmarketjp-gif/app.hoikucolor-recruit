@@ -39,14 +39,15 @@ export async function scanFreshWindow({ fetchPage, project, limit, offset, maxWi
   }
   // Upstream count precedes the MCP 12-hour check; never claim it is the
   // number of fresh jobs. Resume only at a valid upstream row offset.
-  const nextOffset = !sourceEndReached && lastWindowFull && cursor > offset &&
-    cursor <= maxOffset && (reportedTotal === null || cursor < reportedTotal)
-    ? cursor : null;
+  const morePossible = !sourceEndReached && lastWindowFull && cursor > offset &&
+    (reportedTotal === null || cursor < reportedTotal);
+  const nextOffset = morePossible && cursor <= maxOffset ? cursor : null;
   return {
     jobs,
     scanned_source_rows: scanned,
     reported_total: reportedTotal,
     next_offset: nextOffset,
-    possible_more_source_rows: nextOffset !== null,
+    // May be true even if the public tool's 500-row offset cap is reached.
+    possible_more_source_rows: morePossible,
   };
 }
