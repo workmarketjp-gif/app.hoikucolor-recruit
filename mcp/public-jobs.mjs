@@ -227,6 +227,7 @@ export async function searchPublicChildcareJobs(args = {}, config) {
   const employment = optionalText(args, 'employment_type', 50);
   const limit = boundedInteger(args.limit, 10, 20, 'limit');
   const offset = boundedInteger(args.offset, 0, 500, 'offset');
+  const now = checkedNow(config);
   const rows = await apiRequest(config, 'rpc/hc_public_search_jobs_v2', 'POST', {
     p_query: keyword,
     p_prefecture: prefecture,
@@ -235,7 +236,6 @@ export async function searchPublicChildcareJobs(args = {}, config) {
     p_limit: limit,
     p_offset: offset,
   }, { select: PUBLIC_JOB_FIELDS.join(',') });
-  const now = checkedNow(config);
   const jobs = rows.map((row) => publicProjection(row, now)).filter(Boolean).slice(0, limit);
   const total = rows.length ? Number(rows[0].total_count) : 0;
   return {
@@ -288,6 +288,7 @@ export async function listPublicChildcareJobFilters(args = {}, config) {
 export async function getPublicChildcareJob(args, config) {
   checkedInput(args, ['job_id']);
   if (typeof args.job_id !== 'string' || !UUID.test(args.job_id)) throw new Error('INVALID_JOB_ID');
+  const now = checkedNow(config);
   const rows = await apiRequest(config, 'hc_public_job_feed_v2', 'GET', null, {
     select: DETAIL_FIELDS.join(','),
     id: `eq.${args.job_id}`,
@@ -300,7 +301,6 @@ export async function getPublicChildcareJob(args, config) {
       (typeof rows[0]?.id !== 'string' || rows[0].id.toLowerCase() !== args.job_id.toLowerCase()))) {
     throw new Error('PUBLIC_JOB_SOURCE_ROW_MISMATCH');
   }
-  const now = checkedNow(config);
   return { job: rows.length ? publicProjection(rows[0], now, true) : null, note: PROTOCOL_NOTE };
 }
 
