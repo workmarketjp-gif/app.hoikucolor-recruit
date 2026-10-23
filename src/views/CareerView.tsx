@@ -108,11 +108,12 @@ export function CareerView({ userKey }: { userKey: string }) {
   const salaryLine = scenario === 'more-holidays'
     ? (input.salary === null ? null : Math.max(0, input.salary - (input.drop ?? 0)))
     : input.salary ?? input.wishSalary;
-  const holidayFloor = input.wishHolidays ?? input.holidays;
+  const holidayMoreThan = input.holidays;
+  const holidayAtLeast = input.wishHolidays;
 
   const scenarioState = useScenario(
     hydrated && marketData !== null,
-    { scenario, prefecture: area.prefecture, employmentType: area.employmentType, salaryLine, holidayFloor, salaryWeight },
+    { scenario, prefecture: area.prefecture, employmentType: area.employmentType, salaryLine, holidayMoreThan, holidayAtLeast, salaryWeight },
   );
 
   return (
@@ -255,7 +256,8 @@ function PostedSalary({ market, you, loading }: { market: SalaryMarket; you: num
       <p className="hc-note hc-career-source">
         出典：Hoiku Colorに公開中の求人の月給の下限（{asOf}時点）。{population.scope_count}件のうち、月給の求人は{population.monthly_count}件で、
         時給などの{population.not_monthly_count}件は含みません。
-        {population.occupation_verified_count === 0 && '職種の区別はまだできておらず、保育士以外（看護師・調理員など）の募集も含みます。'}
+        {market.scope.occupation === 'hoikushi' && '職種は求人タイトルから分類した「保育士」の求人です（保育士と他の職種を併記した求人を含み、看護師・調理員などだけの求人は含みません）。'}
+        {market.scope.occupation !== 'hoikushi' && population.occupation_verified_count === 0 && '職種の区別はまだできておらず、保育士以外（看護師・調理員など）の募集も含みます。'}
       </p>
     </div>
   );

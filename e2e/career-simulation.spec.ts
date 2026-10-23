@@ -23,8 +23,8 @@ const akitaStats = {
   count: 53, median: 198000, q1: 188000, q3: 209000, min: 175000, max: 285600,
   histogram: [{ from: 160000, to: 180000, count: 6 }, { from: 180000, to: 200000, count: 21 }, { from: 200000, to: 220000, count: 16 }, { from: 220000, to: 240000, count: 8 }, { from: 240000, to: 260000, count: 1 }, { from: 280000, to: 300000, count: 1 }],
 };
-const market = (prefecture: string | null) => ({
-  scope: { prefecture, employment_type: null, occupation: null },
+const market = (prefecture: string | null, occupation: string | null = null) => ({
+  scope: { prefecture, employment_type: null, occupation },
   as_of: '2026-10-23T03:00:00Z',
   population: prefecture === '東京都'
     ? { total_count: 151, scope_count: 0, monthly_count: 0, not_monthly_count: 0, occupation_verified_count: 0, implausible_count: 0 }
@@ -62,7 +62,7 @@ async function mockApi(page: Page, mode: Mode = {}) {
       case 'hc_jobseeker_salary_market_v1':
         if (mode.market === 'missing') return missing();
         if (mode.market === 'fail') return json({ code: 'XX000', message: 'boom' }, 500);
-        return json(market((body.p_prefecture as string | null) ?? null));
+        return json(market((body.p_prefecture as string | null) ?? null, (body.p_occupation as string | null) ?? null));
       case 'hc_jobseeker_career_scenario_jobs_v1':
         if (mode.market === 'missing') return missing();
         if (body.p_scenario === 'more-holidays') return json({ ready: true, total: 0, unknown_holidays: 26, jobs: [] });
@@ -108,7 +108,7 @@ for (const width of [320, 375, 390, 768, 1440]) {
     await expect(page.getByRole('heading', { name: /秋田県の募集給与/ })).toBeVisible();
     await expect(page.getByLabel('希望の最低月給')).toHaveValue('20');
     await expect(page.getByText('全国や、ほかの地域の相場ではありません')).toBeVisible();
-    await expect(page.getByText('職種の区別はまだできておらず')).toBeVisible();
+    await expect(page.getByText('職種は求人タイトルから分類した「保育士」の求人です')).toBeVisible();
     await expect(page.getByText('19.8万円').first()).toBeVisible();
 
     await page.getByLabel('今の月給（額面）').fill('23');
