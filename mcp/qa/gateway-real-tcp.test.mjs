@@ -62,7 +62,13 @@ async function withTcpGateway(callback) {
           const tools = factory().tools;
           let result;
           if (p.method === 'tools/list') {
-            result = { tools: [...tools].map(([name, { meta }]) => ({ name, description: meta.description })) };
+            // SDK-shaped fixture: preserve security policy validation in the adapter.
+            result = { tools: [...tools].map(([name, { meta }]) => ({
+              name, title: meta.title, description: meta.description,
+              inputSchema: { type: 'object', properties: {} },
+              outputSchema: { type: 'object', properties: {} },
+              annotations: meta.annotations,
+            })) };
           } else if (p.method === 'tools/call') {
             const tool = tools.get(p.params?.name);
             if (!tool) return Response.json({ jsonrpc: '2.0', id: p.id, error: { code: -32601, message: 'Unknown test tool' } });
@@ -131,6 +137,14 @@ test('real HTTP listener reaches all three allowlisted public tools, never priva
     assert.deepEqual(JSON.parse(listing.body).result.tools.map(x => x.name), [
       'search_public_childcare_jobs', 'list_public_childcare_job_filters', 'get_public_childcare_job',
     ]);
+    for (const tool of JSON.parse(listing.body).result.tools) {
+      assert.deepEqual(tool.securitySchemes, [{ type: 'noauth' }]);
+      assert.deepEqual(tool._meta.securitySchemes, [{ type: 'noauth' }]);
+      assert.equal(tool.inputSchema?.type, 'object');
+      assert.equal(tool.outputSchema?.type, 'object');
+      assert.equal(tool.annotations?.readOnlyHint, true);
+      assert.notEqual(tool.annotations?.destructiveHint, true);
+    }
     const search = await call(url, 'tools/call', { name: 'search_public_childcare_jobs', arguments: { keyword: '保育士' } });
     assert.equal(search.status, 200);
     const jobs = JSON.parse(search.body).result.structuredContent.jobs;
