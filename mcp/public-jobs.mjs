@@ -99,7 +99,7 @@ const OBFUSCATED_EMAIL_IN_TEXT = /(?<![\p{L}\p{N}._%+-])[\p{L}\p{N}._%+-]{1,64}[
 // Keep matching on a shadow so redaction removes the ORIGINAL Unicode span,
 // rather than echoing full-width contact details into a public tool result.
 // This additionally covers mixed formats such as "alice@example[dot]jp".
-const NFKC_MIXED_EMAIL_IN_TEXT = /(?<![a-z0-9._%+-])[a-z0-9._%+-]{1,64}[ \\t]{0,6}(?:@|\\[[ \\t]{0,4}at[ \\t]{0,4}\\]|\\([ \\t]{0,4}at[ \\t]{0,4}\\))[ \\t]{0,6}[a-z0-9-]{1,63}(?:[ \\t]{0,6}(?:\\[[ \\t]{0,4}dot[ \\t]{0,4}\\]|\\([ \\t]{0,4}dot[ \\t]{0,4}\\)|\\.)[ \\t]{0,6}[a-z0-9-]{1,63}){1,5}(?![a-z0-9.-])/gi;
+const NFKC_MIXED_EMAIL_IN_TEXT = /(?<![a-z0-9._%+-])[a-z0-9._%+-]{1,64}[ \t]{0,6}(?:@|\[[ \t]{0,4}at[ \t]{0,4}\]|\([ \t]{0,4}at[ \t]{0,4}\))[ \t]{0,6}[a-z0-9-]{1,63}(?:[ \t]{0,6}(?:\[[ \t]{0,4}dot[ \t]{0,4}\]|\([ \t]{0,4}dot[ \t]{0,4}\)|\.)[ \t]{0,6}[a-z0-9-]{1,63}){1,5}(?![a-z0-9.-])/gi;
 function redactObfuscatedEmails(value) {
   const units = [];
   let offset = 0;
