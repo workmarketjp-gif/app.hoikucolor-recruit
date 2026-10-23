@@ -135,7 +135,9 @@ test('real modern HTTP loopback sockets exchange only stateless MCP 2026 request
       if (input.method === 'server/discover') result = { capabilities: { tools: {} } };
       else if (input.method === 'tools/list') result = { tools: toolList };
       else if (input.method === 'tools/call') {
-        const data = input.params.name === 'search_public_childcare_jobs' ? { jobs: [], returned: 0 } : { prefectures: [], employment_types: [] };
+        const data = input.params.name === 'search_public_childcare_jobs' ? { jobs: [], returned: 0, reported_total: 0, offset: 0, requested_limit: 1,
+            next_offset: null, possible_more_source_rows: false, scanned_source_rows: 0,
+            note: '公開情報のみ' } : { prefectures: [], employment_types: [] };
         result = { structuredContent: data, content: [{ type: 'text', text: JSON.stringify(data) }] };
       }
       res.writeHead(200, { 'content-type': 'application/json' });
