@@ -9,6 +9,10 @@
 -- when half of a batch fails, throttled/overload pages leave rows untouched, a 「該当する情報は見つかりませんでした」
 -- page withdraws the job without overwriting its stored content.
 --
+-- Catch-up (2026-10-23 → until ~95% of active jobs were re-verified): schedule '*/3 * * * *', limit 50 (≈24,000 / day;
+-- a full pass in ~1.1 days). Return to the steady state afterwards:
+--   select cron.alter_job(22, schedule := '*/5 * * * *');   -- and body {"reverify":true,"limit":40} below
+--
 -- Pause:   select cron.alter_job(22, active := false);
 -- Resume:  select cron.alter_job(22, active := true);
 -- Remove:  select cron.unschedule('hc-hellowork-reverify');

@@ -60,6 +60,7 @@ assert(importer.includes('failing = urls.length >= 10 && errors.length * 2 >= ur
 assert(importer.includes('hc_hellowork_pick_reverify_batch_v1') && importer.includes('REVERIFY_MAX_LIMIT = 50'), 'bounded fair batch');
 
 // --- scheduler
-assert(ops.includes("'*/5 * * * *'") && ops.includes('"limit":40') && ops.includes('"reverify":true'), 'conservative cadence');
+assert(ops.includes("'*/5 * * * *'") && ops.includes('"limit":40') && ops.includes('"reverify":true'), 'steady-state cadence is 40 pages / 5 minutes');
+assert(read('supabase/ops/hellowork-fair-reverify-cron.sql').includes('limit 50') && read('supabase/ops/hellowork-fair-reverify-cron.sql').includes('*/3 * * * *'), 'the temporary catch-up cadence must be documented');
 
 console.log('hellowork-structured-data-contract: PASS');
