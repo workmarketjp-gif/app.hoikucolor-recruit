@@ -32,7 +32,7 @@ const RESTRICTED_MARKERS = [
   '掲載はお断り',
 ];
 
-type ImportBody = { urls?: string[]; refresh?: boolean; discover?: boolean };
+type ImportBody = { urls?: string[]; refresh?: boolean; discover?: boolean; reverify?: boolean; limit?: number };
 
 type Normalized = {
   source: typeof SOURCE;
@@ -55,6 +55,7 @@ type Normalized = {
   salary_note: string | null;
   working_hours: string | null;
   holidays: string | null;
+  annual_holidays_field_text: string | null;
   required_qualification: string | null;
   benefits: string | null;
   number_of_positions: number;
@@ -277,6 +278,27 @@ async function sha256(value: string) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Hello Work answers HTTP 200 with this notice when a posting was filled, withdrawn or re-issued.
+const GONE_NOTICE = '該当する情報は見つかりませんでした';
+
+class JobGoneError extends Error {
+  constructor() {
+    super('HELLOWORK_JOB_GONE');
+  }
+}
+
+// The posting is gone at the source: withdraw it from every public feed, but keep the stored
+// content (an empty notice page must never overwrite what we know about the job).
+async function markGone(url: URL) {
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from('hc_external_job_sources')
+    .update({ source_status: 'removed', public_republication_allowed: false, fetched_at: now, last_verified_at: now, updated_at: now })
+    .eq('source', SOURCE)
+    .eq('source_url', url.toString());
+  if (error) throw new Error(`MARK_GONE_FAILED:${error.code || 'unknown'}`);
+}
+
 async function normalize(url: URL): Promise<Normalized> {
   const fetchedAt = new Date().toISOString();
   const response = await fetch(url, {
@@ -287,12 +309,21 @@ async function normalize(url: URL): Promise<Normalized> {
     redirect: 'follow',
   });
 
+  // A throttled or failing source is not evidence that the job is gone: leave the row untouched.
+  if (response.status === 429 || response.status >= 500) {
+    throw new Error(`HELLOWORK_TRANSIENT_HTTP_${response.status}`);
+  }
+
   const html = await response.text();
   const text = htmlToText(html);
+  if (response.ok && text.includes(GONE_NOTICE)) throw new JobGoneError();
   const sourceJobId = jobNumberFrom(text, url);
   if (!sourceJobId) throw new Error('HELLOWORK_JOB_NUMBER_NOT_FOUND');
 
   const restricted = RESTRICTED_MARKERS.some((marker) => text.includes(marker));
+  // A 200 page that is neither a restriction notice nor a real posting (no displayed 求人番号) is an
+  // error/overload page, not a verdict on the job: leave the row untouched instead of blocking it.
+  if (response.ok && !restricted && !text.includes('求人番号')) throw new Error('HELLOWORK_UNEXPECTED_PAGE');
   const lines = normalizedLines(text);
 
   const employmentIndex = exactIndex(lines, '雇用形態');
@@ -345,6 +376,13 @@ async function normalize(url: URL): Promise<Normalized> {
   const holidaysIndex = exactIndex(lines, '休日等', laborIndex + 1);
   const holidays = holidaysIndex >= 0
     ? sliceUntilExact(lines, holidaysIndex, ['その他の労働条件等'])
+    : null;
+
+  // The page's formal 「年間休日数」 row (e.g. 「107日」) sits just before 「休日等」. It is stored as-is; the
+  // database trigger interprets it (formal row first, then posting text) and never derives a number.
+  const annualHolidaysIndex = exactIndex(lines, '年間休日数', laborIndex + 1);
+  const annualHolidaysFieldText = annualHolidaysIndex >= 0 && (holidaysIndex < 0 || annualHolidaysIndex < holidaysIndex)
+    ? clean(lines[annualHolidaysIndex + 1])
     : null;
 
   const qualificationIndex = exactIndex(lines, '必要な免許・資格');
@@ -403,6 +441,7 @@ async function normalize(url: URL): Promise<Normalized> {
     ...salary,
     working_hours: workingHours,
     holidays,
+    annual_holidays_field_text: annualHolidaysFieldText,
     required_qualification: qualification,
     benefits,
     number_of_positions: Math.max(1, positions),
@@ -521,6 +560,14 @@ async function importUrls(urls: string[]) {
           published: row.public_republication_allowed,
         } as Record<string, unknown>;
       } catch (error) {
+        if (error instanceof JobGoneError) {
+          try {
+            await markGone(new URL(value));
+            return { url: value, status: 'removed', published: false } as Record<string, unknown>;
+          } catch (goneError) {
+            return { url: value, status: 'error', code: String((goneError as Error)?.message || 'MARK_GONE_FAILED').slice(0, 120) } as Record<string, unknown>;
+          }
+        }
         return {
           url: value,
           status: 'error',
@@ -697,11 +744,84 @@ async function refreshUrls() {
   return (data || []).map((row) => row.source_url).filter((value): value is string => typeof value === 'string');
 }
 
+const REVERIFY_DEFAULT_LIMIT = 40;
+const REVERIFY_MAX_LIMIT = 50;
+const REVERIFY_LEASE_MS = 5 * 60 * 1000;
+const REVERIFY_BACKOFF_MS = 30 * 60 * 1000;
+
+// Fair re-verification of already-known public jobs. The database picks the batch (proportionally from
+// every prefecture, oldest verification first, see hc_hellowork_pick_reverify_batch_v1); each URL is fetched
+// from the official Hello Work page again and only what that page actually shows is written. A job is
+// republished by this path only when its page was fetched successfully and is still public and open.
+async function reverifyBatch(requestedLimit: number) {
+  const limit = Math.min(REVERIFY_MAX_LIMIT, Math.max(1, Math.floor(requestedLimit) || REVERIFY_DEFAULT_LIMIT));
+  const now = new Date();
+  const { data: lease, error: leaseError } = await supabase
+    .from('hc_external_source_sync_control')
+    .update({ reverify_lease_until: new Date(now.getTime() + REVERIFY_LEASE_MS).toISOString() })
+    .eq('source', SOURCE)
+    .eq('enabled', true)
+    .or(`reverify_lease_until.is.null,reverify_lease_until.lt.${now.toISOString()}`)
+    .select('source')
+    .maybeSingle();
+  if (leaseError) throw new Error('REVERIFY_LEASE_ACQUIRE_FAILED');
+  if (!lease) return { skipped: true, reason: 'REVERIFY_BUSY_OR_BACKOFF_OR_DISABLED' };
+
+  try {
+    const { data: picked, error: pickError } = await supabase.rpc('hc_hellowork_pick_reverify_batch_v1', { p_limit: limit });
+    if (pickError) throw new Error(`REVERIFY_PICK_FAILED:${pickError.code || 'unknown'}`);
+    const urls = ((picked || []) as Array<{ source_url: string }>)
+      .map((row) => officialHelloWorkUrl(row.source_url)?.toString())
+      .filter((value): value is string => Boolean(value));
+    const results = urls.length ? await importUrls(urls) : [];
+
+    const errors = results.filter((item) => item.status === 'error');
+    const stillPublic = results.filter((item) => item.published === true).length;
+    const withdrawn = results.filter((item) => item.status !== 'error' && item.published !== true).length;
+    const errorCodes = [...new Set(errors.map((item) => String(item.code || 'IMPORT_FAILED')))].slice(0, 5);
+    // A source that fails or throttles most of a batch gets 30 minutes of quiet instead of more requests.
+    const failing = urls.length >= 10 && errors.length * 2 >= urls.length;
+    const finished = new Date();
+
+    await supabase
+      .from('hc_external_source_sync_control')
+      .update({
+        reverify_lease_until: failing ? new Date(finished.getTime() + REVERIFY_BACKOFF_MS).toISOString() : null,
+        last_reverify_at: finished.toISOString(),
+        last_reverify_picked: urls.length,
+        last_reverify_verified: stillPublic,
+        last_reverify_withdrawn: withdrawn,
+        last_reverify_errors: errors.length,
+        last_reverify_error: errors.length ? `${errors.length}_ERRORS:${errorCodes.join(',')}` : null,
+      })
+      .eq('source', SOURCE);
+
+    return { skipped: false, picked: urls.length, verified_public: stillPublic, withdrawn, errors: errors.length, error_codes: errorCodes, backoff: failing };
+  } catch (error) {
+    await supabase
+      .from('hc_external_source_sync_control')
+      .update({ reverify_lease_until: null, last_reverify_at: new Date().toISOString(), last_reverify_error: String((error as Error)?.message || 'REVERIFY_FAILED').slice(0, 120) })
+      .eq('source', SOURCE);
+    throw error;
+  }
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method !== 'POST') return json(405, { ok: false, code: 'METHOD_NOT_ALLOWED' });
   if (!(await requireAuthorizedSync(request))) return json(403, { ok: false, code: 'SYNC_AUTH_REQUIRED' });
 
   const body = await request.json().catch(() => ({})) as ImportBody;
+
+  if (body.reverify) {
+    try {
+      return json(200, { ok: true, reverify: await reverifyBatch(Number(body.limit) || REVERIFY_DEFAULT_LIMIT) });
+    } catch (error) {
+      return json(502, {
+        ok: false,
+        code: String((error as Error)?.message || 'REVERIFY_FAILED').slice(0, 120),
+      });
+    }
+  }
 
   if (body.discover) {
     try {

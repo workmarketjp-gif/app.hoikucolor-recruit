@@ -92,3 +92,16 @@ Production Supabase already has:
 - scheduled nationwide discovery
 
 Before the public frontend is released, confirm the Hoiku Color operating business name, address and phone are visibly available from the site as required by the Hello Work republication conditions.
+
+## Fair re-verification (2026-10-23)
+
+Public visibility needs `last_verified_at` within 168 hours, and `last_verified_at` is only written after the official page was fetched.
+Daily discovery (cron job 18, one page) cannot keep ~26,000 known jobs fresh, so cron job 22 `hc-hellowork-reverify` runs every 5 minutes:
+
+- `hc-hellowork-import {"reverify":true,"limit":40}` takes a batch from `hc_hellowork_pick_reverify_batch_v1` (service_role only).
+- The batch is proportionally fair: each job is ranked by age inside its prefecture and the lowest rank / prefecture size goes first, so every prefecture's backlog shrinks at the same rate. Jobs verified in the last 24 hours are skipped; a picked job is stamped (`reverify_attempted_at`) so a failing URL is not retried for 6 hours.
+- Each page is re-fetched from the official Hello Work URL. A job stays public only if the page is still public, open and relevant.
+- 「該当する情報は見つかりませんでした」 (HTTP 200) means the posting was filled, withdrawn or re-issued: the job becomes `removed` and is withdrawn from every public feed, stored content is kept.
+- HTTP 429/5xx or an overload page (no displayed 求人番号) leaves the row untouched. If half of a batch fails, the job pauses for 30 minutes.
+- Observability: `hc_external_source_sync_control.last_reverify_*`. Pause with `select cron.alter_job(22, active := false);`.
+- The page's own 「年間休日数」 row is stored as `annual_holidays_field_text`; the database trigger structures it (see docs/career-data-contract.md).
