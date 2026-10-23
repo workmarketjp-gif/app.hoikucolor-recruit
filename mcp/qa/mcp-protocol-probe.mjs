@@ -17,6 +17,10 @@ const TOOL_NAMES = Object.freeze([
   'list_public_childcare_job_filters',
   'get_public_childcare_job',
 ]);
+const CATALOG_KEYS = new Set([
+  'jobs', 'returned', 'reported_total', 'offset', 'requested_limit',
+  'next_offset', 'possible_more_source_rows', 'scanned_source_rows', 'note',
+]);
 const JOB_KEYS = new Set([
   'id', 'title', 'facility_name', 'organization_name', 'facility_type',
   'prefecture', 'city', 'employment_type', 'salary_type', 'salary_min',
@@ -127,10 +131,10 @@ function validateJob(job, now) {
   check(job.url === `https://hoikucolor.jp/jobs/${job.id}`, 'PROBE_JOB_URL_INVALID');
   check(job.is_external === true || job.is_external === false, 'PROBE_JOB_VISIBILITY_INVALID');
   const published = Date.parse(job.published_at);
-  check(Number.isFinite(published) && published <= now + 300_000, 'PROBE_JOB_PUBLICATION_INVALID');
+  check(Number.isFinite(published) && published <= now, 'PROBE_JOB_PUBLICATION_INVALID');
   if (job.closing_at !== null) {
     const closing = Date.parse(job.closing_at);
-    check(Number.isFinite(closing) && closing >= now, 'PROBE_CLOSED_JOB_LEAK');
+    check(Number.isFinite(closing) && closing > now, 'PROBE_CLOSED_JOB_LEAK');
   }
   if (job.is_external) {
     const verified = Date.parse(job.source_last_verified_at);
@@ -194,9 +198,17 @@ async function verifyPublicCatalog(exchange, protocolVersion, now) {
     name: 'search_public_childcare_jobs', arguments: { limit: 1, offset: 0 },
   });
   const catalog = toolContent(search, 'PROBE_SEARCH_FAILED');
-  check(Object.keys(catalog).every(k =>
-    ['jobs', 'returned', 'reported_total', 'offset', 'requested_limit', 'note'].includes(k)),
-  'PROBE_PRIVATE_FIELD_DETECTED');
+  check(Object.keys(catalog).length === CATALOG_KEYS.size &&
+    Object.keys(catalog).every(k => CATALOG_KEYS.has(k)), 'PROBE_PRIVATE_FIELD_DETECTED');
+  check(Number.isSafeInteger(catalog.offset) && catalog.offset >= 0 && catalog.offset <= 500 &&
+    Number.isSafeInteger(catalog.requested_limit) && catalog.requested_limit >= 1 && catalog.requested_limit <= 20 &&
+    Number.isSafeInteger(catalog.returned) && catalog.returned >= 0 && catalog.returned <= catalog.requested_limit &&
+    (catalog.reported_total === null || (Number.isSafeInteger(catalog.reported_total) && catalog.reported_total >= 0)) &&
+    (catalog.next_offset === null || (Number.isSafeInteger(catalog.next_offset) && catalog.next_offset >= 0 && catalog.next_offset <= 500)) &&
+    typeof catalog.possible_more_source_rows === 'boolean' &&
+    Number.isSafeInteger(catalog.scanned_source_rows) && catalog.scanned_source_rows >= 0 && catalog.scanned_source_rows <= 80 &&
+    typeof catalog.note === 'string' && catalog.note.length <= 4_000,
+  'PROBE_SEARCH_METADATA_INVALID');
   check(Array.isArray(catalog.jobs) && catalog.jobs.length <= 1 &&
     catalog.returned === catalog.jobs.length, 'PROBE_SEARCH_SHAPE_INVALID');
   for (const job of catalog.jobs) validateJob(job, now());
