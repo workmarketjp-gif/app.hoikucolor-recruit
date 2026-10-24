@@ -5,7 +5,8 @@ import { runHttpMcpProbe } from './mcp-protocol-probe.mjs';
 const nowMs = Date.parse('2026-10-16T01:00:00Z');
 const id = '11111111-1111-4111-8111-000000000001';
 const tools = ['search_public_childcare_jobs', 'list_public_childcare_job_filters', 'get_public_childcare_job']
-  .map(name => ({ name, annotations: { readOnlyHint: true, destructiveHint: false } }));
+  .map(name => ({ name, securitySchemes: [{ type: 'noauth' }],
+    annotations: { readOnlyHint: true, destructiveHint: false } }));
 const job = {
   id, title: 'Public job', url: `https://hoikucolor.jp/jobs/${id}`,
   published_at: '2026-10-15T03:00:00Z', closing_at: null,
@@ -17,7 +18,7 @@ function packet(id, result, ctype='application/json') {
   return Response.json(rpc);
 }
 function fixture({ listTools = tools, catalogJobs = [job], responseType = 'application/json', session = false,
-                   forceError = null, addPrivateField = false } = {}) {
+                   forceError = null, addPrivateField = false, detailOverride = undefined } = {}) {
   const calls = [];
   const fetcher = async (url, options) => {
     const body = JSON.parse(options.body);
@@ -36,6 +37,11 @@ function fixture({ listTools = tools, catalogJobs = [job], responseType = 'appli
           reported_total: catalogJobs.length, offset: 0, requested_limit: 1,
           next_offset: null, possible_more_source_rows: false,
           scanned_source_rows: catalogJobs.length, note: '公開情報のみ',
+        } };
+        else if (body.params.name === 'get_public_childcare_job') result = { structuredContent: {
+          job: detailOverride !== undefined ? detailOverride :
+            (catalogJobs.find(x => x.id === body.params.arguments.job_id) ?? null),
+          note: '公開情報のみ',
         } };
         else result = { structuredContent: { prefectures: ['東京都'], employment_types: ['正社員'] } };
         break;
@@ -56,9 +62,12 @@ test('real HTTP method sequence, read-only tools and minimal metrics', async () 
   const f = fixture();
   const result = await base({ fetcher: f.fetcher });
   assert.deepEqual(result, { status: 'PASS', protocol: '2025-06-18', tools: 3,
-    anonymous_search_returned: 1, public_prefectures: 1, public_employment_types: 1 });
+    anonymous_search_returned: 1, public_prefectures: 1, public_employment_types: 1,
+    detail_state: 'found' });
   assert.deepEqual(f.calls.map(c => c.body.method), ['initialize', 'notifications/initialized',
-    'tools/list', 'tools/call', 'tools/call']);
+    'tools/list', 'tools/call', 'tools/call', 'tools/call']);
+  assert.equal(f.calls.at(-1).body.params.name, 'get_public_childcare_job');
+  assert.deepEqual(f.calls.at(-1).body.params.arguments, { job_id: id });
   assert(f.calls.every(c => !Object.keys(c.options.headers).some(key => /authorization|cookie|api.?key/i.test(key))));
   assert(f.calls.every(c => c.options.redirect === 'error'));
 });
@@ -142,4 +151,25 @@ test('search metadata cannot expose applicant records as top-level fields', asyn
 test('nested private data in job fields are rejected', async () => {
   const malicious = { ...job, description: { candidate_email: 'PRIVATE@example.com' } };
   await assert.rejects(base({ fetcher: fixture({ catalogJobs: [malicious] }).fetcher }), /PROBE_PRIVATE_FIELD_DETECTED/);
+});
+
+test('legacy detail lookup rejects wrong IDs and candidate fields', async () => {
+  const mismatch = { ...job, id: '22222222-2222-4222-8222-000000000002' };
+  await assert.rejects(base({ fetcher: fixture({ detailOverride: mismatch }).fetcher }),
+    /PROBE_DETAIL_ID_MISMATCH/);
+  await assert.rejects(base({ fetcher: fixture({ detailOverride: { ...job,
+    applicant_email: 'PRIVATE@example.com' } }).fetcher }), /PROBE_PRIVATE_FIELD_DETECTED/);
+  assert.equal((await base({ fetcher: fixture({ detailOverride: null }).fetcher })).detail_state, 'disappeared');
+});
+
+test('legacy anonymous tool metadata must advertise noauth only', async () => {
+  const altered = tools.map(x => ({ ...x,
+    securitySchemes: [{ type: 'oauth2', scopes: ['candidate:read'] }] }));
+  await assert.rejects(base({ fetcher: fixture({ listTools: altered }).fetcher }),
+    /PROBE_UNEXPECTED_TOOL_EXPOSURE/);
+});
+
+test('legacy strict acceptance rejects an empty public feed', async () => {
+  await assert.rejects(base({ fetcher: fixture({ catalogJobs: [] }).fetcher,
+    requirePublished: true }), /PROBE_PUBLIC_CATALOG_EMPTY/);
 });
