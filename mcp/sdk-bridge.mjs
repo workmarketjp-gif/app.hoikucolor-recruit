@@ -187,6 +187,10 @@ export function createColorMcpGateway({ McpServer, createMcpHandler, z }, config
     async fetch(request) {
       const target = new URL(request.url);
       if (target.pathname !== '/mcp') return new Response('Not Found', { status: 404 });
+      // Never accept credentials, tracking data or transport state in the URL.
+      // Reject even an empty '?' or '#' before admission, auditing or SDK dispatch.
+      // A canonical MCP endpoint is exactly https://<dedicated-host>/mcp.
+      if (target.href !== `${target.origin}/mcp`) return forbidden();
       if (request.method === 'GET' || request.method === 'DELETE') return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'POST' } });
       if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'POST' } });
       // HTTPS at the public edge. Plain HTTP is only allowed for loopback QA.
