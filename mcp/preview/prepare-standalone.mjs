@@ -14,6 +14,22 @@ const LOCKED_FIELDS = new Set([
   'triggers', 'durable_objects', 'd1_databases', 'kv_namespaces',
   'r2_buckets', 'queues', 'services', 'tail_consumers', 'assets',
 ]);
+// Wrangler accepts additional deployment surfaces (for example build hooks
+// and unsafe bindings) that are not listed in LOCKED_FIELDS. A configuration
+// generated for this anonymous-only preview must contain *only* its reviewed
+// fields, even if a later edit uses an unfamiliar Wrangler feature.
+const STANDALONE_FIELDS = new Set([
+  'name', 'main', 'compatibility_date', 'compatibility_flags',
+  'workers_dev', 'vars', 'ratelimits',
+]);
+const RATE_LIMIT_FIELDS = new Set(['name', 'namespace_id', 'simple']);
+const RATE_LIMIT_SIMPLE_FIELDS = new Set(['limit', 'period']);
+
+function exactFields(value, allowed) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) &&
+    Object.keys(value).length === allowed.size &&
+    Object.keys(value).every(key => allowed.has(key));
+}
 
 export function makeStandalonePreviewConfig({ accountSubdomain, rateNamespaceId }) {
   if (typeof accountSubdomain !== 'string' || !SUBDOMAIN.test(accountSubdomain) ||
@@ -44,6 +60,9 @@ export function verifyStandalonePreviewConfig(config, { requireEnabled = false }
   if ([...LOCKED_FIELDS].some(field => Object.hasOwn(config, field)) || Object.hasOwn(config, 'env')) {
     throw new Error('PREVIEW_MUST_NOT_ATTACH_TO_EXISTING_SITE');
   }
+  if (Object.keys(config).some(field => !STANDALONE_FIELDS.has(field))) {
+    throw new Error('PREVIEW_UNEXPECTED_CONFIG_FIELD');
+  }
   if (config.name !== PREVIEW_WORKER_NAME || config.main !== 'worker.mjs' || config.workers_dev !== true) {
     throw new Error('PREVIEW_WORKER_IDENTITY_INVALID');
   }
@@ -67,7 +86,10 @@ export function verifyStandalonePreviewConfig(config, { requireEnabled = false }
   }
   if (requireEnabled && vars.HC_MCP_PREVIEW_ENABLED !== 'true') throw new Error('PREVIEW_DISABLED');
   const limits = config.ratelimits;
-  if (!Array.isArray(limits) || limits.length !== 1 || limits[0]?.name !== 'HC_MCP_RATE_LIMITER' ||
+  if (!Array.isArray(limits) || limits.length !== 1 ||
+      !exactFields(limits[0], RATE_LIMIT_FIELDS) ||
+      !exactFields(limits[0]?.simple, RATE_LIMIT_SIMPLE_FIELDS) ||
+      limits[0]?.name !== 'HC_MCP_RATE_LIMITER' ||
       typeof limits[0].namespace_id !== 'string' || !NAMESPACE.test(limits[0].namespace_id) ||
       !Number.isSafeInteger(Number(limits[0].namespace_id)) || limits[0].namespace_id === '1001' ||
       limits[0].simple?.limit !== 30 || limits[0].simple?.period !== 60) {

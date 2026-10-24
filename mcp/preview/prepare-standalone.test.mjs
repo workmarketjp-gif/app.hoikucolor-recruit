@@ -60,3 +60,35 @@ test('activation requires explicit true and validation still blocks production r
   });
   assert.throws(() => verifyStandalonePreviewConfig(replace(activated,{routes:['hoikucolor.jp/*']}),{requireEnabled:true}), /PREVIEW_MUST_NOT_ATTACH_TO_EXISTING_SITE/);
 });
+
+test('unknown Wrangler top-level features cannot bypass standalone Worker isolation', () => {
+  const config = valid();
+  // None are required for this Workers-only anonymous read endpoint. A future
+  // binding or deploy feature must be reviewed explicitly, not added silently.
+  for (const extra of [
+    { unsafe: { bindings: [{ name: 'SECRET_SERVICE' }] } },
+    { build: { command: 'echo unreviewed-deploy-hook' } },
+    { logpush: true },
+    { observability: { enabled: true } },
+    { placement: { mode: 'smart' } },
+    { account_id: 'other-account' },
+    { migrations: [] },
+  ]) {
+    assert.throws(() => verifyStandalonePreviewConfig(replace(config, extra)),
+      /PREVIEW_UNEXPECTED_CONFIG_FIELD/);
+  }
+});
+
+test('rate-limit object rejects unknown nested configuration fields', () => {
+  const config = valid();
+  const rate = config.ratelimits[0];
+  for (const ratelimits of [
+    [{ ...rate, extra_binding: 'PRIVATE' }],
+    [{ ...rate, simple: { ...rate.simple, hidden: true } }],
+    [{ ...rate, simple: [] }],
+    [{ ...rate, simple: null }],
+  ]) {
+    assert.throws(() => verifyStandalonePreviewConfig(replace(config, { ratelimits })),
+      /PREVIEW_RATE_LIMIT_INVALID/);
+  }
+});
