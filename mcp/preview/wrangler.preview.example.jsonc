@@ -9,7 +9,7 @@
   "vars": {
     // Change only after confirming this is an isolated preview deployment.
     "HC_MCP_PREVIEW_ENABLED": "false",
-    // Set to the exact new *.workers.dev hostname or independent preview host.
+    // Set to a dedicated hoikucolor-mcp-preview[-suffix].<account>.workers.dev host only.
     "HC_MCP_PUBLIC_HOST": "REPLACE_WITH_NEW_PREVIEW_HOST",
     // Comma-separated exact HTTPS origins if required; blank rejects all Origin headers.
     "HC_MCP_ALLOWED_ORIGINS": ""
