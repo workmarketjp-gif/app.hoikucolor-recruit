@@ -27,7 +27,8 @@ test('real loopback HTTP handshake/tools/list/tools/call probe', async () => {
         case 'initialize': result = { protocolVersion: '2025-06-18', capabilities: { tools: {} } }; break;
         case 'tools/list': result = { tools: [
           'search_public_childcare_jobs', 'list_public_childcare_job_filters', 'get_public_childcare_job',
-        ].map(name => ({ name, annotations: { readOnlyHint: true, destructiveHint: false } })) }; break;
+        ].map(name => ({ name, securitySchemes: [{ type: 'noauth' }],
+          annotations: { readOnlyHint: true, destructiveHint: false } })) }; break;
         case 'tools/call': {
           const data = message.params.name === 'search_public_childcare_jobs'
             ? { jobs: [], returned: 0, reported_total: 0, offset: 0, requested_limit: 1,
