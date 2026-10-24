@@ -1,0 +1,4 @@
+wrangler.preview.local.json
+.dev.vars*
+.env*
+.wrangler*
