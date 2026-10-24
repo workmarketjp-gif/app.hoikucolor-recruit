@@ -89,7 +89,7 @@ function configuredOrigin(config) {
 // unstructured email addresses or phone numbers through the MCP tool boundary.
 // This is a privacy backstop, not an authorization or publisher-compliance gate.
 const EMAIL_IN_TEXT = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
-const JAPANESE_PHONE_IN_TEXT = /(?<![\da-z])(?:\+81[\s().-]?|0)(?:\d[\s().-]?){7,11}\d(?!\d)/gi;
+const JAPANESE_PHONE_IN_TEXT = /(?<![\da-z])(?:\+81[\s()./・ー−\p{Pd}]?|0)(?:\d[\s()./・ー−\p{Pd}]?){7,11}\d(?!\d)/giu;
 // External listings can disguise direct recruiter email addresses as
 // "alice [at] example [dot] jp". Detect the full address in a Unicode NFKC
 // shadow while preserving non-contact text and original UTF-16 positions.
@@ -142,6 +142,7 @@ function cleanText(value, limit = 160) {
   if (typeof value !== 'string') return null;
   const filtered = value
     .replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, ' ')
+    .replace(/[\u200b-\u200d\u2060\ufeff]/g, '')
     .replace(EMAIL_IN_TEXT, '[連絡先省略]')
     .replace(JAPANESE_PHONE_IN_TEXT, '[連絡先省略]');
   return redactObfuscatedEmails(filtered).trim().slice(0, limit);
