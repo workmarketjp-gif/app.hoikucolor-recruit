@@ -61,6 +61,11 @@ export function verifyStandalonePreviewConfig(config, { requireEnabled = false }
     throw new Error('PREVIEW_MUST_NOT_ATTACH_TO_EXISTING_SITE');
   }
   if (Object.keys(config).some(field => !STANDALONE_FIELDS.has(field))) {
+    // Keep the explicit credential-leak diagnostic for unexpected fields,
+    // without allowing *any* unreviewed Wrangler field through.
+    if (/sb_(?:publishable|secret)_|service_role|HC_SUPABASE_(?:URL|PUBLISHABLE_KEY)/.test(JSON.stringify(config))) {
+      throw new Error('PREVIEW_CREDENTIAL_IN_CONFIG');
+    }
     throw new Error('PREVIEW_UNEXPECTED_CONFIG_FIELD');
   }
   if (config.name !== PREVIEW_WORKER_NAME || config.main !== 'worker.mjs' || config.workers_dev !== true) {
