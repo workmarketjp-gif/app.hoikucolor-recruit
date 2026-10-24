@@ -104,7 +104,8 @@ test('Cloudflare Agents handler receives trusted Worker env/ctx and closed CORS 
   }, env, ctx);
   const factory = () => ({});
   const gatewayHandler = bound.createMcpHandler(factory, { responseMode: 'json' });
-  assert.equal((await gatewayHandler(request)).status, 200);
+  assert.equal(typeof gatewayHandler.fetch, 'function');
+  assert.equal((await gatewayHandler.fetch(request)).status, 200);
   assert.equal(observed.factory, factory);
   assert.equal(observed.request, request);
   assert.equal(observed.env, env);
