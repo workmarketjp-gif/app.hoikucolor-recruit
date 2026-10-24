@@ -12,7 +12,8 @@ const sampleJob = {
   url: `https://hoikucolor.jp/jobs/${id}`,
 };
 const TOOL_NAMES = ['search_public_childcare_jobs', 'list_public_childcare_job_filters', 'get_public_childcare_job'];
-const toolList = TOOL_NAMES.map(name => ({ name, annotations: { readOnlyHint: true, destructiveHint: false } }));
+const toolList = TOOL_NAMES.map(name => ({ name, securitySchemes: [{ type: 'noauth' }],
+  annotations: { readOnlyHint: true, destructiveHint: false } }));
 function makeReply(id, result, sse = false) {
   const payload = { jsonrpc: '2.0', id, result: { resultType: 'complete', ...result } };
   return sse ? new Response(`event: message\ndata: ${JSON.stringify(payload)}\n\n`, {
@@ -20,7 +21,7 @@ function makeReply(id, result, sse = false) {
   }) : Response.json(payload);
 }
 function fixture({ jobs = [sampleJob], tools = toolList, sse = false, wrongResultType = false,
-                   wrongSession = false, wrongHttpStatus = null } = {}) {
+                   wrongSession = false, wrongHttpStatus = null, detailOverride = undefined } = {}) {
   const calls = [];
   const fetcher = async (_url, options) => {
     const input = JSON.parse(options.body);
@@ -36,6 +37,13 @@ function fixture({ jobs = [sampleJob], tools = toolList, sse = false, wrongResul
       result.content = [{ type: 'text', text: JSON.stringify(result.structuredContent) }];
     } else if (input.method === 'tools/call' && input.params.name === 'list_public_childcare_job_filters') {
       result = { structuredContent: { prefectures: ['東京都'], employment_types: ['正社員'] } };
+      result.content = [{ type: 'text', text: JSON.stringify(result.structuredContent) }];
+    } else if (input.method === 'tools/call' && input.params.name === 'get_public_childcare_job') {
+      result = { structuredContent: {
+        job: detailOverride !== undefined ? detailOverride :
+          (jobs.find(x => x.id === input.params.arguments.job_id) ?? null),
+        note: '公開情報のみ',
+      } };
       result.content = [{ type: 'text', text: JSON.stringify(result.structuredContent) }];
     } else throw new Error('unexpected modern method');
     const response = makeReply(input.id, result, sse);
@@ -57,8 +65,11 @@ test('2026-07-28 stateless discovery and public catalog probe uses no legacy han
   assert.deepEqual(result, {
     status: 'PASS', protocol: '2026-07-28', tools: 3,
     anonymous_search_returned: 1, public_prefectures: 1, public_employment_types: 1,
+    detail_state: 'found',
   });
-  assert.deepEqual(f.calls.map(x => x.input.method), ['server/discover', 'tools/list', 'tools/call', 'tools/call']);
+  assert.deepEqual(f.calls.map(x => x.input.method), ['server/discover', 'tools/list', 'tools/call', 'tools/call', 'tools/call']);
+  assert.equal(f.calls.at(-1).input.params.name, 'get_public_childcare_job');
+  assert.deepEqual(f.calls.at(-1).input.params.arguments, { job_id: id });
   for (const { input, headers, options } of f.calls) {
     assert.equal(input.params._meta['io.modelcontextprotocol/protocolVersion'], '2026-07-28');
     assert.equal(typeof input.params._meta['io.modelcontextprotocol/clientInfo'].name, 'string');
@@ -194,4 +205,24 @@ test('preview probe accepts publication at exact instant and closure strictly af
     closing_at: new Date(now + 1).toISOString(),
   };
   assert.equal((await probe(fixture({ jobs: [exact] }).fetcher)).anonymous_search_returned, 1);
+});
+
+test('modern search validates detail identity and applicant-field exclusion', async () => {
+  const mismatch = { ...sampleJob, id: '22222222-2222-4222-8222-000000000002' };
+  await assert.rejects(probe(fixture({ detailOverride: mismatch }).fetcher), /PROBE_DETAIL_ID_MISMATCH/);
+  await assert.rejects(probe(fixture({ detailOverride: { ...sampleJob,
+    internal_interview_notes: 'PRIVATE' } }).fetcher), /PROBE_PRIVATE_FIELD_DETECTED/);
+  assert.equal((await probe(fixture({ detailOverride: null }).fetcher)).detail_state, 'disappeared');
+});
+
+test('modern anonymous tool metadata cannot claim candidate OAuth scopes', async () => {
+  const altered = toolList.map(x => ({ ...x,
+    securitySchemes: [{ type: 'oauth2', scopes: ['candidate:read'] }] }));
+  await assert.rejects(probe(fixture({ tools: altered }).fetcher), /PROBE_UNEXPECTED_TOOL_EXPOSURE/);
+});
+
+test('modern strict acceptance must obtain at least one actual published job', async () => {
+  await assert.rejects(runModernHttpMcpProbe({ url: 'https://mcp.hoikucolor.jp/mcp',
+    fetcher: fixture({ jobs: [] }).fetcher, now: () => now, requirePublished: true }),
+    /PROBE_PUBLIC_CATALOG_EMPTY/);
 });
