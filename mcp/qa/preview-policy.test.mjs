@@ -122,3 +122,24 @@ test('Cloudflare handler rejects noncallable transports instead of falling back'
   }, env, {});
   assert.throws(() => sdk.createMcpHandler(() => ({}), {}), /HC_PREVIEW_HANDLER_INVALID/);
 });
+
+
+test('preview host cannot impersonate production domains or reuse an unrelated Worker', () => {
+  for (const host of [
+    'hoikucolor.jp', 'www.hoikucolor.jp',
+    'app.hoikupoppy.ai', 'hoikupoppy.ai',
+    'preview.hoikucolor.jp', 'mcp-preview.example.com',
+    'hoikucolor-main.example.workers.dev',
+    'hc-preview.evil.example.workers.dev',
+  ]) {
+    assert.throws(() => parsePreviewConfig(makeEnv({ HC_MCP_PUBLIC_HOST: host })), /HC_PREVIEW_HOST_INVALID/, host);
+  }
+  assert.equal(
+    parsePreviewConfig(makeEnv({ HC_MCP_PUBLIC_HOST: 'hoikucolor-mcp-preview-only.account.workers.dev' })).host,
+    'hoikucolor-mcp-preview-only.account.workers.dev',
+  );
+  assert.equal(
+    parsePreviewConfig(makeEnv({ HC_MCP_PUBLIC_HOST: 'hc-preview.account.workers.dev' })).host,
+    'hc-preview.account.workers.dev',
+  );
+});
