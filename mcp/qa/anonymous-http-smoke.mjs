@@ -34,17 +34,38 @@ function checkProjection(job, checkedAt) {
 
 export async function runAnonymousHttpSmoke({ config, requirePublished = false } = {}) {
   // Static tool parameters cannot change the source URL, privileges or RPC.
-  const [search, facets] = await Promise.all([
+  let [search, facets] = await Promise.all([
     searchPublicChildcareJobs({ limit: 5, offset: 0 }, config),
     listPublicChildcareJobFilters({}, config),
   ]);
+  // The deployed public SQL may expose a wider source-recency window than the
+  // MCP's strict 12-hour gate. A first page of stale sources is NOT proof of
+  // an empty live catalog. Follow only forward raw offsets, with a hard cap
+  // of four MCP search calls (at most 16 bounded public RPC windows).
+  const visitedOffsets = new Set([0]);
+  for (let attempt = 1;
+    attempt < 4 && search.jobs.length === 0 &&
+    search.possible_more_source_rows && search.next_offset !== null;
+    attempt++) {
+    const next = search.next_offset;
+    if (!Number.isSafeInteger(next) || next <= search.offset || visitedOffsets.has(next)) {
+      throw new Error('PUBLIC_CATALOG_PAGINATION_INVALID');
+    }
+    visitedOffsets.add(next);
+    search = await searchPublicChildcareJobs({ limit: 5, offset: next }, config);
+  }
   if (!Array.isArray(search.jobs) || search.jobs.length > 5 ||
       !Array.isArray(facets.prefectures) || !Array.isArray(facets.employment_types)) {
     throw new Error('PUBLIC_CATALOG_RESULT_INVALID');
   }
   const checkedAt = typeof config?.now === 'function' ? config.now() : Date.now();
   search.jobs.forEach(job => checkProjection(job, checkedAt));
-  if (requirePublished && search.jobs.length === 0) throw new Error('PUBLIC_CATALOG_EMPTY');
+  if (requirePublished && search.jobs.length === 0) {
+    // Never label an incomplete scan of a wider source window as definitive
+    // absence of published jobs. This is a failed acceptance, not a PASS.
+    throw new Error(search.possible_more_source_rows
+      ? 'PUBLIC_CATALOG_INCONCLUSIVE' : 'PUBLIC_CATALOG_EMPTY');
+  }
   if (Number.isInteger(search.reported_total) && search.reported_total < search.jobs.length) {
     throw new Error('PUBLIC_CATALOG_TOTAL_INCONSISTENT');
   }
