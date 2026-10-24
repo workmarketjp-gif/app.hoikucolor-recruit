@@ -245,6 +245,10 @@ async function verifyPublicCatalog(exchange, protocolVersion, now, requirePublis
       detailState = 'found';
     }
   }
+  // Non-strict monitoring reports a vanished listing without failing.
+  // Strict live acceptance, however, must prove search -> detail succeeded:
+  // a search hit alone is insufficient evidence for the ChatGPT review gate.
+  if (requirePublished) check(detailState === 'found', 'PROBE_PUBLIC_DETAIL_MISSING');
   return Object.freeze({
     status: 'PASS', protocol: protocolVersion, tools: listed.tools.length,
     anonymous_search_returned: catalog.jobs.length,

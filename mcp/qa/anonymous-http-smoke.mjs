@@ -55,6 +55,10 @@ export async function runAnonymousHttpSmoke({ config, requirePublished = false }
     checkProjection(detail.job, checkedAt);
     if (detail.job.id !== search.jobs[0].id) throw new Error('PUBLIC_CATALOG_DETAIL_MISMATCH');
   }
+  // Strict live acceptance must prove that the same published listing is
+  // still publicly readable by detail. A mid-read closure may be valid
+  // operationally, but it is not evidence of a completed positive E2E flow.
+  if (requirePublished && detail?.job == null) throw new Error('PUBLIC_CATALOG_DETAIL_UNAVAILABLE');
   // Aggregate evidence only: never log titles, IDs, names, snippets or tokens.
   return {
     mode: 'anonymous_read_only_rest',

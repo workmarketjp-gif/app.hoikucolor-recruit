@@ -170,6 +170,11 @@ test('legacy anonymous tool metadata must advertise noauth only', async () => {
     /PROBE_UNEXPECTED_TOOL_EXPOSURE/);
 });
 
+test('legacy strict acceptance requires search-to-detail success', async () => {
+  await assert.rejects(base({ fetcher: fixture({ detailOverride: null }).fetcher,
+    requirePublished: true }), /PROBE_PUBLIC_DETAIL_MISSING/);
+});
+
 test('legacy strict acceptance rejects an empty public feed', async () => {
   await assert.rejects(base({ fetcher: fixture({ catalogJobs: [] }).fetcher,
     requirePublished: true }), /PROBE_PUBLIC_CATALOG_EMPTY/);

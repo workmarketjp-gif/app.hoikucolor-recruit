@@ -65,6 +65,12 @@ test('detail disappearance between two independent reads is nonfatal and recorde
   const r = await runAnonymousHttpSmoke({ config: config({ rows: [{ ...publicJob, total_count: 1 }], detail: [] }) });
   assert.equal(r.detail_state, 'disappeared');
 });
+test('strict live REST acceptance rejects a search hit whose detail disappeared', async () => {
+  await assert.rejects(runAnonymousHttpSmoke({ config: config({
+    rows: [{ ...publicJob, total_count: 1 }], detail: [],
+  }), requirePublished: true }), /PUBLIC_CATALOG_DETAIL_UNAVAILABLE/);
+});
+
 test('filter response must respect published API schema', async () => {
   await assert.rejects(runAnonymousHttpSmoke({ config: config({ filter: { prefectures: '東京都', employment_types: [] } }) }), /PUBLIC_JOB_SOURCE_INVALID_SHAPE/);
 });

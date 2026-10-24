@@ -222,6 +222,12 @@ test('modern anonymous tool metadata cannot claim candidate OAuth scopes', async
   await assert.rejects(probe(fixture({ tools: altered }).fetcher), /PROBE_UNEXPECTED_TOOL_EXPOSURE/);
 });
 
+test('modern strict acceptance requires search-to-detail success', async () => {
+  await assert.rejects(runModernHttpMcpProbe({ url: 'https://mcp.hoikucolor.jp/mcp',
+    fetcher: fixture({ detailOverride: null }).fetcher, now: () => now,
+    requirePublished: true }), /PROBE_PUBLIC_DETAIL_MISSING/);
+});
+
 test('modern strict acceptance must obtain at least one actual published job', async () => {
   await assert.rejects(runModernHttpMcpProbe({ url: 'https://mcp.hoikucolor.jp/mcp',
     fetcher: fixture({ jobs: [] }).fetcher, now: () => now, requirePublished: true }),
