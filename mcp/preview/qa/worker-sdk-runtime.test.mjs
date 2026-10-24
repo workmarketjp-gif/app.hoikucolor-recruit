@@ -6,11 +6,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../worker.mjs';
-import { McpServer } from '@modelcontextprotocol/server';
-import { createMcpHandler } from 'agents/mcp/server';
-import * as z from 'zod/v4';
-import { bindWorkerMcpSdk } from '../preview-policy.mjs';
-import { registerPublicCatalogTools } from '../../sdk-bridge.mjs';
 
 const host = 'hoikucolor-mcp-preview-only.example.workers.dev';
 const url = `https://${host}/mcp`;
@@ -37,6 +32,7 @@ function rpc(id, method, params = {}) {
   return new Request(url, {
     method: 'POST',
     headers: {
+      host,
       accept: 'application/json, text/event-stream',
       'content-type': 'application/json',
       'mcp-protocol-version': protocolVersion,
@@ -64,25 +60,6 @@ async function call(request, env = environment()) {
 
 test('real Worker entrypoint serves modern stateless MCP discovery and public-only tools', async () => {
   const discoveryResponse = await call(rpc(1, 'server/discover'));
-  if (discoveryResponse.status !== 200) {
-    // Diagnostic for CI's synthetic environment only; never log user requests,
-    // real credentials, job descriptions, or a production Worker exception.
-    try {
-      const env = environment();
-      const sdk = bindWorkerMcpSdk({ McpServer, createMcpHandler, z }, env, { waitUntil() {} });
-      const handler = sdk.createMcpHandler(
-        () => registerPublicCatalogTools(new McpServer({ name: 'hc-preview-ci', version: '0.1.0' }), z, {
-          supabaseUrl: env.HC_SUPABASE_URL, publishableKey: env.HC_SUPABASE_PUBLISHABLE_KEY,
-        }),
-        { maxRequestBodySize: 65536, responseMode: 'json', legacy: 'stateless' },
-      );
-      const direct = await handler(rpc(100, 'server/discover'));
-      console.error('SYNTHETIC_DIRECT_HANDLER_STATUS', direct.status);
-      console.error('SYNTHETIC_DIRECT_HANDLER_BODY', (await direct.text()).slice(0, 250));
-    } catch (error) {
-      console.error('SYNTHETIC_DIRECT_HANDLER_EXCEPTION', String(error).slice(0, 250));
-    }
-  }
   assert.equal(discoveryResponse.status, 200, 'Worker SDK discovery must work without Cloudflare deployment');
   const discovery = await discoveryResponse.json();
   assert.equal(discovery.jsonrpc, '2.0');
