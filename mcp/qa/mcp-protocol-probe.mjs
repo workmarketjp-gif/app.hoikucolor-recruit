@@ -143,7 +143,7 @@ function validateJob(job, now) {
   }
 }
 
-export async function runHttpMcpProbe({ url, fetcher = globalThis.fetch, now = Date.now } = {}) {
+export async function runHttpMcpProbe({ url, fetcher = globalThis.fetch, now = Date.now, requirePublished = false } = {}) {
   const endpoint = endpointURL(url);
   check(typeof fetcher === 'function' && typeof now === 'function', 'PROBE_CONFIG_INVALID');
   let sessionId;
@@ -184,15 +184,17 @@ export async function runHttpMcpProbe({ url, fetcher = globalThis.fetch, now = D
   check(hello.protocolVersion.startsWith('2025-'), 'PROBE_PROTOCOL_UNEXPECTED');
   protocolVersion = hello.protocolVersion;
   await exchange(null, 'notifications/initialized');
-  return verifyPublicCatalog(exchange, protocolVersion, now);
+  return verifyPublicCatalog(exchange, protocolVersion, now, requirePublished);
 }
 
-async function verifyPublicCatalog(exchange, protocolVersion, now) {
+async function verifyPublicCatalog(exchange, protocolVersion, now, requirePublished = false) {
   const listed = await exchange(2, 'tools/list', {});
   check(Array.isArray(listed.tools), 'PROBE_TOOLS_INVALID');
   check(listed.tools.length === TOOL_NAMES.length &&
     TOOL_NAMES.every(name => listed.tools.some(tool => tool?.name === name)) &&
-    listed.tools.every(tool => tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint === false),
+    listed.tools.every(tool => tool.annotations?.readOnlyHint === true &&
+      tool.annotations?.destructiveHint === false &&
+      JSON.stringify(tool.securitySchemes) === '[{"type":"noauth"}]'),
   'PROBE_UNEXPECTED_TOOL_EXPOSURE');
   const search = await exchange(3, 'tools/call', {
     name: 'search_public_childcare_jobs', arguments: { limit: 1, offset: 0 },
@@ -212,6 +214,9 @@ async function verifyPublicCatalog(exchange, protocolVersion, now) {
   check(Array.isArray(catalog.jobs) && catalog.jobs.length <= 1 &&
     catalog.returned === catalog.jobs.length, 'PROBE_SEARCH_SHAPE_INVALID');
   for (const job of catalog.jobs) validateJob(job, now());
+  // Monitoring may legitimately see zero results. Live acceptance instead
+  // demands at least one real published listing over MCP.
+  if (requirePublished) check(catalog.jobs.length > 0, 'PROBE_PUBLIC_CATALOG_EMPTY');
   const filters = await exchange(4, 'tools/call', {
     name: 'list_public_childcare_job_filters', arguments: {},
   });
@@ -219,11 +224,33 @@ async function verifyPublicCatalog(exchange, protocolVersion, now) {
   check(Array.isArray(facets.prefectures) && Array.isArray(facets.employment_types), 'PROBE_FILTERS_SHAPE_INVALID');
   check(Object.keys(facets).every(k => ['prefectures', 'employment_types', 'note'].includes(k)),
     'PROBE_PRIVATE_FIELD_DETECTED');
+
+  // Cross-check public search -> public detail over the same MCP transport.
+  // The listing may close between the two anonymous reads.
+  let detailState = 'not_attempted';
+  if (catalog.jobs.length) {
+    const selected = catalog.jobs[0];
+    const detailReply = await exchange(5, 'tools/call', {
+      name: 'get_public_childcare_job', arguments: { job_id: selected.id },
+    });
+    const detail = toolContent(detailReply, 'PROBE_DETAIL_FAILED');
+    check(Object.keys(detail).length === 2 && Object.hasOwn(detail, 'job') &&
+      typeof detail.note === 'string' && detail.note.length <= 4_000,
+    'PROBE_DETAIL_SHAPE_INVALID');
+    if (detail.job === null) {
+      detailState = 'disappeared';
+    } else {
+      validateJob(detail.job, now());
+      check(detail.job.id === selected.id, 'PROBE_DETAIL_ID_MISMATCH');
+      detailState = 'found';
+    }
+  }
   return Object.freeze({
     status: 'PASS', protocol: protocolVersion, tools: listed.tools.length,
     anonymous_search_returned: catalog.jobs.length,
     public_prefectures: facets.prefectures.length,
     public_employment_types: facets.employment_types.length,
+    detail_state: detailState,
   });
 }
 
@@ -235,7 +262,7 @@ async function verifyPublicCatalog(exchange, protocolVersion, now) {
  * protocol envelope. This is intentionally a separate, non-fallback probe;
  * a legacy-only endpoint must fail rather than be declared modern-ready.
  */
-export async function runModernHttpMcpProbe({ url, fetcher = globalThis.fetch, now = Date.now } = {}) {
+export async function runModernHttpMcpProbe({ url, fetcher = globalThis.fetch, now = Date.now, requirePublished = false } = {}) {
   const endpoint = endpointURL(url);
   check(typeof fetcher === 'function' && typeof now === 'function', 'PROBE_CONFIG_INVALID');
   const protocolVersion = '2026-07-28';
@@ -274,13 +301,14 @@ export async function runModernHttpMcpProbe({ url, fetcher = globalThis.fetch, n
   }
   const discovery = await exchange(1, 'server/discover');
   check(isObject(discovery.capabilities) && isObject(discovery.capabilities.tools), 'PROBE_DISCOVERY_INVALID');
-  return verifyPublicCatalog(exchange, protocolVersion, now);
+  return verifyPublicCatalog(exchange, protocolVersion, now, requirePublished);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const runner = process.env.HC_MCP_PROTOCOL === 'legacy' ? runHttpMcpProbe : runModernHttpMcpProbe;
-    const result = await runner({ url: process.env.HC_MCP_URL || 'http://127.0.0.1:3107/mcp' });
+    const result = await runner({ url: process.env.HC_MCP_URL || 'http://127.0.0.1:3107/mcp',
+      requirePublished: process.env.HC_REQUIRE_PUBLIC_JOBS === '1' });
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {
     const code = error?.message;
