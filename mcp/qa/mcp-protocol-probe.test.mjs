@@ -154,7 +154,8 @@ test('nested private data in job fields are rejected', async () => {
 });
 
 test('legacy detail lookup rejects wrong IDs and candidate fields', async () => {
-  const mismatch = { ...job, id: '22222222-2222-4222-8222-000000000002' };
+  const mismatch = { ...job, id: '22222222-2222-4222-8222-000000000002',
+    url: 'https://hoikucolor.jp/jobs/22222222-2222-4222-8222-000000000002' };
   await assert.rejects(base({ fetcher: fixture({ detailOverride: mismatch }).fetcher }),
     /PROBE_DETAIL_ID_MISMATCH/);
   await assert.rejects(base({ fetcher: fixture({ detailOverride: { ...job,
