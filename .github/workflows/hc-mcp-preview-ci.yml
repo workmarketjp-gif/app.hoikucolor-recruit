@@ -29,6 +29,9 @@ jobs:
       - name: Install isolated Worker preview dependencies
         working-directory: mcp/preview
         run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Real Cloudflare Worker entrypoint + MCP SDK protocol (synthetic, offline)
+        working-directory: mcp/preview
+        run: node --test qa/worker-sdk-runtime.test.mjs
       - name: Validate Worker bundle without deploying or authenticating
         working-directory: mcp/preview
         run: npm run build:check
