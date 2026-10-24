@@ -30,3 +30,23 @@ The preview refuses requests until its explicit enabled flag, hostname, anonymou
 There is no externally reachable HTTPS preview from this source change. Wrangler compile, live anonymous REST/MCP response, Inspector trace, ChatGPT query, OAuth cross-candidate isolation and plugin review remain independent gates. The 7-day DB versus 12-hour MCP job-recency mismatch is untouched and needs separate no-regression remediation; no SQL/RLS changes have been authorized.
 
 References: https://developers.openai.com/plugins/build/mcp-server, https://developers.openai.com/plugins/build/plugins, https://developers.openai.com/plugins/deploy/app-review, https://developers.cloudflare.com/agents/model-context-protocol/apis/handler-api/, https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/.
+
+
+## Offline independent-Worker configuration gate (2026-10-24)
+
+To minimize the still-blocked Cloudflare setup step, generate a **local-only** Worker configuration for a single dedicated `workers.dev` name. This does **not** connect to Cloudflare, create a Worker, incur charges, deploy code or modify existing DNS/routing.
+
+```sh
+cd mcp/preview
+node --test prepare-standalone.test.mjs
+node prepare-standalone.mjs <your-workers-dev-subdomain> <unused-integer-rate-namespace>
+# Generates wrangler.preview.local.json (disabled; gitignored; fails if already present).
+npm install --ignore-scripts --no-audit --no-fund
+npx wrangler deploy --dry-run --config wrangler.preview.local.json
+```
+
+The supplied subdomain must be the **Cloudflare account's workers.dev subdomain only**, not a complete URL. Choose a rate-limit namespace integer that is genuinely unused in that account; the script rejects the example `1001` but **cannot query Cloudflare to verify uniqueness**. The dedicated Worker name is fixed as `hoikucolor-mcp-preview-only`. The generated config has `workers_dev: true`, no routes/custom domain, and `HC_MCP_PREVIEW_ENABLED=false`. It never embeds credentials. Existing HC, Poppy, or blog Cloudflare deployments are out of scope.
+
+**Do not activate or deploy without an authorized isolated Worker account connection and a separate check that this name is unused.** Only the owner should prepare the public `HC_SUPABASE_URL` root and `sb_publishable_`-only `HC_SUPABASE_PUBLISHABLE_KEY` as Cloudflare Worker secret bindings; do not store them in JSON or GitHub. The source URL must match the verified shared HC project and anonymous RPC permissions. Before any authorized deployment, revalidate exact workers.dev hostname, absence of production routes, unique rate namespace, safe account plan/cost, credential scope and no concurrent Worker deployment. Set the enable flag to `true` **only after those gates**, and rerun `verifyStandalonePreviewConfig(config, {requireEnabled:true})` from the generator module; this static check does not prove Cloudflare account isolation or genuine key validity. Keep the feature PR Draft. 
+
+CI runs the six offline safety cases, real Workers bundling with both the example and a generated inactive standalone config, and Worker MCP SDK tests **without any Cloudflare authentication or deploy**. These are preparation gates, not a live HTTPS Preview or ChatGPT test. Only the latter can satisfy the real-job-search acceptance condition.
