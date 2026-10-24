@@ -85,6 +85,42 @@ test('incomplete list or unrecognized worker metadata does not claim name availa
   }
 });
 
+test('Cloudflare Worker inventory metadata must describe a complete list', async () => {
+  const badMetadata = [
+    { count: 1 },
+    { total_count: '1' },
+    { total_count: null },
+    { total_count: -1 },
+    { total_count: 1.5 },
+    { total_count: 0 },
+    { total_count: 2 },
+    { total_count: 1, count: 0 },
+    { total_count: 1, count: '1' },
+  ];
+  for (const scriptsMeta of badMetadata) {
+    const { args } = harness({ scripts: [{ id: 'other-app' }], scriptsMeta });
+    await assert.rejects(checkCloudflareAccountReadOnly(args),
+      /CLOUDFLARE_WORKER_LIST_INCOMPLETE/, JSON.stringify(scriptsMeta));
+  }
+  const { args } = harness({
+    scripts: [{ id: 'other-app' }], scriptsMeta: { total_count: 1, count: 1 },
+  });
+  assert.equal((await checkCloudflareAccountReadOnly(args)).isolated_worker_name_available, true);
+});
+
+test('duplicate and case-variant script IDs are not accepted as a safe inventory', async () => {
+  for (const scripts of [
+    [{ id: 'existing' }, { id: 'EXISTING' }],
+    [{ id: '' }],
+    [{ id: '  ' }],
+  ]) {
+    const { args } = harness({ scripts });
+    await assert.rejects(checkCloudflareAccountReadOnly(args), /CLOUDFLARE_WORKER_LIST_INCOMPLETE/);
+  }
+  const { args } = harness({ scripts: [{ id: 'HOIKUCOLOR-MCP-PREVIEW-ONLY' }] });
+  await assert.rejects(checkCloudflareAccountReadOnly(args), /HC_PREVIEW_WORKER_NAME_ALREADY_USED/);
+});
+
 test('invalid JSON or oversized account responses fail closed', async () => {
   const oversized = new Response('x', { headers: { 'content-length': '1048577' } });
   for (const response of [new Response('{bad'), oversized]) {
