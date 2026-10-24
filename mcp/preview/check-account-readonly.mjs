@@ -53,12 +53,25 @@ export async function checkCloudflareAccountReadOnly({ accountId, apiToken, expe
     throw new Error('CLOUDFLARE_WORKERS_SUBDOMAIN_MISMATCH');
   }
   const scripts = await readCloudflare(`${root}/scripts`, apiToken, fetcher);
-  if (!Array.isArray(scripts.result) ||
-      scripts.result.some(worker => typeof worker?.id !== 'string') ||
-      (scripts.result_info && Number(scripts.result_info.total_count) > scripts.result.length)) {
+  const list = scripts.result;
+  // Cloudflare documents this endpoint as a single-page list. When it
+  // supplies result_info as well, treat ANY inconsistent or malformed
+  // metadata as incomplete; a truncated inventory must not authorize a
+  // supposedly unused Worker name. Never guess missing totals as zero.
+  const info = scripts.result_info;
+  if (!Array.isArray(list) ||
+      list.some(worker => typeof worker?.id !== 'string' || !worker.id.trim()) ||
+      new Set(Array.isArray(list) ? list.map(worker => worker.id.toLowerCase()) : []).size !== list?.length ||
+      (info !== undefined && (
+        !info || typeof info !== 'object' || Array.isArray(info) ||
+        !Number.isSafeInteger(info.total_count) || info.total_count !== list.length ||
+        (info.count !== undefined && (!Number.isSafeInteger(info.count) || info.count !== list.length))
+      ))) {
     throw new Error('CLOUDFLARE_WORKER_LIST_INCOMPLETE');
   }
-  if (scripts.result.some(worker => worker.id === WORKER)) {
+  // Fail closed on case variants as well, even if Cloudflare normalizes
+  // script IDs differently from the local configuration.
+  if (list.some(worker => worker.id.toLowerCase() === WORKER)) {
     throw new Error('HC_PREVIEW_WORKER_NAME_ALREADY_USED');
   }
   // Account-level namespace collision cannot be established from the scripts
