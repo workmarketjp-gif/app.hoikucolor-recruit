@@ -208,7 +208,8 @@ test('preview probe accepts publication at exact instant and closure strictly af
 });
 
 test('modern search validates detail identity and applicant-field exclusion', async () => {
-  const mismatch = { ...sampleJob, id: '22222222-2222-4222-8222-000000000002' };
+  const mismatch = { ...sampleJob, id: '22222222-2222-4222-8222-000000000002',
+    url: 'https://hoikucolor.jp/jobs/22222222-2222-4222-8222-000000000002' };
   await assert.rejects(probe(fixture({ detailOverride: mismatch }).fetcher), /PROBE_DETAIL_ID_MISMATCH/);
   await assert.rejects(probe(fixture({ detailOverride: { ...sampleJob,
     internal_interview_notes: 'PRIVATE' } }).fetcher), /PROBE_PRIVATE_FIELD_DETECTED/);
