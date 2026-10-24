@@ -50,3 +50,44 @@ The supplied subdomain must be the **Cloudflare account's workers.dev subdomain 
 **Do not activate or deploy without an authorized isolated Worker account connection and a separate check that this name is unused.** Only the owner should prepare the public `HC_SUPABASE_URL` root and `sb_publishable_`-only `HC_SUPABASE_PUBLISHABLE_KEY` as Cloudflare Worker secret bindings; do not store them in JSON or GitHub. The source URL must match the verified shared HC project and anonymous RPC permissions. Before any authorized deployment, revalidate exact workers.dev hostname, absence of production routes, unique rate namespace, safe account plan/cost, credential scope and no concurrent Worker deployment. Set the enable flag to `true` **only after those gates**, and rerun `verifyStandalonePreviewConfig(config, {requireEnabled:true})` from the generator module; this static check does not prove Cloudflare account isolation or genuine key validity. Keep the feature PR Draft. 
 
 CI runs the six offline safety cases, real Workers bundling with both the example and a generated inactive standalone config, and Worker MCP SDK tests **without any Cloudflare authentication or deploy**. These are preparation gates, not a live HTTPS Preview or ChatGPT test. Only the latter can satisfy the real-job-search acceptance condition.
+
+## Cloudflare account read-only inventory preflight (2026-10-25)
+
+Before approving an isolated Worker creation, confirm that the account's actual
+`workers.dev` subdomain matches the configuration and that the fixed Worker name
+`hoikucolor-mcp-preview-only` is **not** already in use. The optional script
+`check-account-readonly.mjs` uses only two Cloudflare **GET** endpoints:
+`/accounts/<id>/workers/subdomain` and `/accounts/<id>/workers/scripts`.
+A restricted token with **Workers Scripts Read** on that account is sufficient;
+do not use a global API key, put tokens in arguments, GitHub files or CI, or
+share them in chat.
+
+In a trusted shell, provide the actual account ID, the **subdomain only** (not a
+URL), and a read-only token as environment variables. Then run:
+
+```sh
+cd mcp/preview
+node --test check-account-readonly.test.mjs
+node check-account-readonly.mjs
+```
+
+Required environment names: `CLOUDFLARE_ACCOUNT_ID`,
+`HC_MCP_WORKERS_SUBDOMAIN`, `CLOUDFLARE_API_TOKEN`. Keep the token only in
+an approved secret store or ephemeral shell environment and clear it afterwards.
+The script prints no Worker inventory, credentials, account identifiers, error
+body or actual job details; only status classes. Unexpected, incomplete or
+inaccessible inventory **fails closed**. These checks never deploy, change
+DNS, invoke Wrangler write commands, enable the MCP, or create resources.
+
+**Important limitations:** A matching subdomain and unused Worker name do NOT
+establish that a proposed Cloudflare Rate Limiting `namespace_id` is unique.
+The account owner must verify the intended ID against existing Worker bindings,
+confirm the plan/cost and explicitly approve the independent Preview before
+any deploy. The checker always reports
+`rate_namespace_uniqueness: NOT_VERIFIED` and
+`approved_to_deploy: false` even on a successful inventory read.
+The complete, independent HTTPS MCP + real Supabase jobs + ChatGPT test remains
+unverified until actually run; this inventory check is **not** that proof.
+
+API sources: https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/list/
+and https://developers.cloudflare.com/api/resources/workers/subresources/subdomains/methods/get/.
