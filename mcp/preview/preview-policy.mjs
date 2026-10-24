@@ -98,7 +98,14 @@ export function bindWorkerMcpSdk({ McpServer, createMcpHandler, z }, env, ctx) {
         corsOptions: false,
       });
       if (typeof handler !== 'function') throw new Error('HC_PREVIEW_HANDLER_INVALID');
-      return request => handler(request, env, ctx);
+      // The shared deadline dispatcher requires a transport object with
+      // .fetch(Request), whereas Cloudflare Agents returns a bare function
+      // (Request, env, ctx) -> Response. Preserve the interface instead of
+      // passing a function that would fail every request with HTTP 503.
+      return {
+        fetch: request => handler(request, env, ctx),
+        close: () => handler.close?.(),
+      };
     },
   };
 }
