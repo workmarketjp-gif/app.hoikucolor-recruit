@@ -196,27 +196,45 @@ async function verifyPublicCatalog(exchange, protocolVersion, now, requirePublis
       tool.annotations?.destructiveHint === false &&
       JSON.stringify(tool.securitySchemes) === '[{"type":"noauth"}]'),
   'PROBE_UNEXPECTED_TOOL_EXPOSURE');
-  const search = await exchange(3, 'tools/call', {
-    name: 'search_public_childcare_jobs', arguments: { limit: 1, offset: 0 },
-  });
-  const catalog = toolContent(search, 'PROBE_SEARCH_FAILED');
-  check(Object.keys(catalog).length === CATALOG_KEYS.size &&
-    Object.keys(catalog).every(k => CATALOG_KEYS.has(k)), 'PROBE_PRIVATE_FIELD_DETECTED');
-  check(Number.isSafeInteger(catalog.offset) && catalog.offset >= 0 && catalog.offset <= 500 &&
-    Number.isSafeInteger(catalog.requested_limit) && catalog.requested_limit >= 1 && catalog.requested_limit <= 20 &&
-    Number.isSafeInteger(catalog.returned) && catalog.returned >= 0 && catalog.returned <= catalog.requested_limit &&
-    (catalog.reported_total === null || (Number.isSafeInteger(catalog.reported_total) && catalog.reported_total >= 0)) &&
-    (catalog.next_offset === null || (Number.isSafeInteger(catalog.next_offset) && catalog.next_offset >= 0 && catalog.next_offset <= 500)) &&
-    typeof catalog.possible_more_source_rows === 'boolean' &&
-    Number.isSafeInteger(catalog.scanned_source_rows) && catalog.scanned_source_rows >= 0 && catalog.scanned_source_rows <= 80 &&
-    typeof catalog.note === 'string' && catalog.note.length <= 4_000,
-  'PROBE_SEARCH_METADATA_INVALID');
-  check(Array.isArray(catalog.jobs) && catalog.jobs.length <= 1 &&
-    catalog.returned === catalog.jobs.length, 'PROBE_SEARCH_SHAPE_INVALID');
-  for (const job of catalog.jobs) validateJob(job, now());
-  // Monitoring may legitimately see zero results. Live acceptance instead
-  // demands at least one real published listing over MCP.
-  if (requirePublished) check(catalog.jobs.length > 0, 'PROBE_PUBLIC_CATALOG_EMPTY');
+  // The upstream public RPC may still include 7-day-old listings, while the
+  // MCP intentionally hides external jobs not verified within 12 hours. One
+  // stale-only MCP page is not evidence that public jobs do not exist.
+  // The same bounded pagination applies to legacy and modern transports.
+  let catalog;
+  let requestedOffset = 0;
+  const seenOffsets = new Set();
+  for (let searchAttempt = 0; searchAttempt < 4; searchAttempt++) {
+    check(!seenOffsets.has(requestedOffset), 'PROBE_PAGINATION_INVALID');
+    seenOffsets.add(requestedOffset);
+    const search = await exchange(searchAttempt === 0 ? 3 : 5 + searchAttempt, 'tools/call', {
+      name: 'search_public_childcare_jobs', arguments: { limit: 1, offset: requestedOffset },
+    });
+    catalog = toolContent(search, 'PROBE_SEARCH_FAILED');
+    check(Object.keys(catalog).length === CATALOG_KEYS.size &&
+      Object.keys(catalog).every(k => CATALOG_KEYS.has(k)), 'PROBE_PRIVATE_FIELD_DETECTED');
+    check(Number.isSafeInteger(catalog.offset) && catalog.offset === requestedOffset &&
+      Number.isSafeInteger(catalog.requested_limit) && catalog.requested_limit === 1 &&
+      Number.isSafeInteger(catalog.returned) && catalog.returned >= 0 && catalog.returned <= 1 &&
+      (catalog.reported_total === null || (Number.isSafeInteger(catalog.reported_total) && catalog.reported_total >= 0)) &&
+      (catalog.next_offset === null || (Number.isSafeInteger(catalog.next_offset) && catalog.next_offset >= 0 && catalog.next_offset <= 500)) &&
+      typeof catalog.possible_more_source_rows === 'boolean' &&
+      Number.isSafeInteger(catalog.scanned_source_rows) && catalog.scanned_source_rows >= 0 && catalog.scanned_source_rows <= 80 &&
+      typeof catalog.note === 'string' && catalog.note.length <= 4_000,
+    'PROBE_SEARCH_METADATA_INVALID');
+    check(Array.isArray(catalog.jobs) && catalog.jobs.length <= 1 &&
+      catalog.returned === catalog.jobs.length, 'PROBE_SEARCH_SHAPE_INVALID');
+    for (const job of catalog.jobs) validateJob(job, now());
+    if (catalog.jobs.length || !catalog.possible_more_source_rows || catalog.next_offset === null) break;
+    check(catalog.next_offset > requestedOffset, 'PROBE_PAGINATION_INVALID');
+    requestedOffset = catalog.next_offset;
+  }
+  // Strict acceptance requires a real search hit. If pagination or the
+  // documented upstream offset cap could hide one, report inconclusive,
+  // never a definitive empty catalog or a passing live integration.
+  if (requirePublished && catalog.jobs.length === 0) {
+    check(false, catalog.possible_more_source_rows
+      ? 'PROBE_PUBLIC_CATALOG_INCONCLUSIVE' : 'PROBE_PUBLIC_CATALOG_EMPTY');
+  }
   const filters = await exchange(4, 'tools/call', {
     name: 'list_public_childcare_job_filters', arguments: {},
   });
