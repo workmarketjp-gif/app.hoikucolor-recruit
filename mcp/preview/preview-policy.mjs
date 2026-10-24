@@ -4,7 +4,10 @@
  * This policy is intentionally not an OAuth implementation.
  */
 
-const REMOTE_HOST = /^(?:[a-z0-9-]+\.)+[a-z0-9-]+$/i;
+// The initial anonymous Preview is workers.dev-only: an accidental route or
+// custom-domain binding must not make an existing HC/Poppy/LP host acceptable.
+// Extend to a reviewed dedicated custom hostname in a separate PR if needed.
+const REMOTE_HOST = /^(?:hc-preview|hoikucolor-mcp-preview(?:-[a-z0-9]+)*)\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.workers\.dev$/i;
 const SECURE_ORIGIN = /^https:\/\/(?:[a-z0-9-]+\.)+[a-z0-9-]+(?::443)?$/i;
 
 export function parsePreviewConfig(env) {
