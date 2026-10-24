@@ -28,6 +28,8 @@ jobs:
         run: node --test mcp/qa/preview-policy.test.mjs
       - name: Validate standalone preview configuration and production-route exclusions
         run: node --test mcp/preview/prepare-standalone.test.mjs
+      - name: Read-only Cloudflare account-check contract (synthetic, no token or API access)
+        run: node --test mcp/preview/check-account-readonly.test.mjs
       - name: Install isolated Worker preview dependencies
         working-directory: mcp/preview
         run: npm install --ignore-scripts --no-audit --no-fund
