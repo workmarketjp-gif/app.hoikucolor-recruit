@@ -6,11 +6,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../worker.mjs';
-import { McpServer } from '@modelcontextprotocol/server';
-import { createMcpHandler } from 'agents/mcp/server';
-import * as z from 'zod/v4';
-import { bindWorkerMcpSdk } from '../preview-policy.mjs';
-import { registerPublicCatalogTools, createColorMcpGateway } from '../../sdk-bridge.mjs';
 
 const host = 'hoikucolor-mcp-preview-only.example.workers.dev';
 const url = `https://${host}/mcp`;
@@ -65,33 +60,6 @@ async function call(request, env = environment()) {
 
 test('real Worker entrypoint serves modern stateless MCP discovery and public-only tools', async () => {
   const discoveryResponse = await call(rpc(1, 'server/discover'));
-  if (discoveryResponse.status !== 200) {
-    // Diagnostic uses fixture-only inputs, never real credentials or applicant data.
-    const env = environment();
-    const sdk = bindWorkerMcpSdk({ McpServer, createMcpHandler, z }, env, { waitUntil() {} });
-    const h = sdk.createMcpHandler(
-      () => registerPublicCatalogTools(new McpServer({ name: 'hc-preview-ci', version: '0.1.0' }), z, {
-        supabaseUrl: env.HC_SUPABASE_URL, publishableKey: env.HC_SUPABASE_PUBLISHABLE_KEY,
-      }),
-      { maxRequestBodySize: 65536, responseMode: 'json', legacy: 'stateless' },
-    );
-    try {
-      const direct = await h(rpc(101, 'server/discover'));
-      console.error('SYNTHETIC_HANDLER_HTTP', direct.status);
-      console.error('SYNTHETIC_HANDLER_RESPONSE', (await direct.text()).slice(0, 350));
-    } catch (error) {
-      console.error('SYNTHETIC_HANDLER_EXCEPTION', String(error).slice(0, 350));
-    }
-    const gateway = createColorMcpGateway(sdk, {
-      supabaseUrl: env.HC_SUPABASE_URL, publishableKey: env.HC_SUPABASE_PUBLISHABLE_KEY,
-    }, {
-      allowedHosts: [host], allowedOrigins: [], allowLocalHttp: false,
-      admit: async () => true, audit: async () => {},
-    });
-    const response = await gateway.fetch(rpc(102, 'server/discover'));
-    console.error('SYNTHETIC_GATEWAY_HTTP', response.status);
-    console.error('SYNTHETIC_GATEWAY_RESPONSE', (await response.text()).slice(0, 250));
-  }
   assert.equal(discoveryResponse.status, 200, 'Worker SDK discovery must work without Cloudflare deployment');
   const discovery = await discoveryResponse.json();
   assert.equal(discovery.jsonrpc, '2.0');
