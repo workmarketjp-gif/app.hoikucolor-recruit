@@ -109,7 +109,9 @@ const CONTACT_LINK_IN_TEXT = /(?:https?:\/\/|ftps?:\/\/|\/\/(?=[a-z0-9.-]+\.)|ww
 // Scheme-less external domains are also links (e.g. example.com/apply?token=...).
 // Public job prose has no reason to expose off-site links or their query data.
 // Match the NFKC shadow so Unicode-width and Japanese IDN spellings are covered.
-const BARE_DOMAIN_LINK_IN_TEXT = /(?<![\p{L}\p{N}._%+-])(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?\.)+[a-z]{2,24}(?::\d{1,5})?(?:[/?#][^\s<>"'\[\]{}「」『』（）、。]+)?/giu;
+// Include Unicode-script TLDs and xn-- punycode; previously a punycode URL was only
+// partly hidden (e.g. example.xn), leaving /entry?candidate=... visible.
+const BARE_DOMAIN_LINK_IN_TEXT = /(?<![\p{L}\p{N}._%+-])(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?\.)+(?:xn--[a-z0-9-]{2,59}|[a-z]{2,24}|[\p{L}]{2,24}(?=$|[\s<>"'\[\]{}「」『』（）、。/?#]))(?::\d{1,5})?(?:[/?#][^\s<>"'\[\]{}「」『』（）、。]+)?/giu;
 function redactObfuscatedEmails(value) {
   const units = [];
   let offset = 0;
