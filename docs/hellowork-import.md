@@ -105,3 +105,20 @@ Daily discovery (cron job 18, one page) cannot keep ~26,000 known jobs fresh, so
 - HTTP 429/5xx or an overload page (no displayed 求人番号) leaves the row untouched. If half of a batch fails, the job pauses for 30 minutes.
 - Observability: `hc_external_source_sync_control.last_reverify_*`. Pause with `select cron.alter_job(22, active := false);`.
 - The page's own 「年間休日数」 row is stored as `annual_holidays_field_text`; the database trigger structures it (see docs/career-data-contract.md).
+
+## New-posting discovery (2026-10-23, steady since 2026-10-25)
+
+Discovery (cron job 18, `hc-hellowork-import {"discover":true}`) was once-daily (one ~50-posting search page), which could not keep pace with the site's new postings. It now runs every 5 minutes, same as re-verification, with the importer (v28) skipping a detail-page fetch for any posting already known and verified recently (12h active / 7d blocked / 24h removed) — a posting appearing in a search-result list alone never renews `last_verified_at`. Decision basis (measured 2026-10-22→25, see `supabase/ops/hellowork-fair-reverify-cron.sql`): 0 HTTP 429/5xx across ~62,000 combined discovery+re-verify requests; a sampled discovery batch fetched only 26 of 50 listed postings (the rest already fresh); one query-term × 47-prefecture pass completes well under 24h at this cadence.
+
+## Full recovery pass results (2026-10-22 → 2026-10-25, ~3.2 days)
+
+| | before | after |
+| --- | --- | --- |
+| public (within 168h) | 150 | 27,614 |
+| active | 25,827 | 27,632 |
+| removed (gone at source) | 0 | 1,872 |
+| prefectures represented in the public feed | 3 | 47 |
+| annual holidays extracted | 0 | 14,618 of 27,612 public (53%) |
+| occupation `unknown` | n/a (field didn't exist) | 24 of 27,612 (0.09%) |
+
+Cron health over the pass: jobid 18 (discovery) 817/817 runs succeeded; jobid 22 (re-verify) 1,393/1,393 runs succeeded; 0 non-2xx responses from Hello Work other than the unrelated LINE job's own failures. 16 independently-sampled `removed` jobs and 28 independently-sampled still-`active` jobs were spot-checked directly against the live Hello Work URLs; all matched the database's classification.
