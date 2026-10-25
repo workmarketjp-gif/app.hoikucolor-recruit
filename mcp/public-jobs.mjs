@@ -106,6 +106,10 @@ const NFKC_MIXED_EMAIL_IN_TEXT = /(?<![a-z0-9._%+-])[a-z0-9._%+-]{1,64}[ \t]{0,6
 // is allowed in structured output. Match URL schemes in the NFKC shadow
 // so full-width variants are also removed, preserving non-link context.
 const CONTACT_LINK_IN_TEXT = /(?:https?:\/\/|ftps?:\/\/|\/\/(?=[a-z0-9.-]+\.)|www\.|mailto:|tel:|javascript:|data:)[^\s<>"'\[\]{}「」『』（）、。]+/giu;
+// Scheme-less external domains are also links (e.g. example.com/apply?token=...).
+// Public job prose has no reason to expose off-site links or their query data.
+// Match the NFKC shadow so Unicode-width and Japanese IDN spellings are covered.
+const BARE_DOMAIN_LINK_IN_TEXT = /(?<![\p{L}\p{N}._%+-])(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?\.)+[a-z]{2,24}(?::\d{1,5})?(?:[/?#][^\s<>"'\[\]{}「」『』（）、。]+)?/giu;
 function redactObfuscatedEmails(value) {
   const units = [];
   let offset = 0;
@@ -122,13 +126,13 @@ function redactObfuscatedEmails(value) {
   // All patterns run against the normalized shadow, but output is sourced
   // only from original input spans; overlapping formats are merged first.
   const spans = [OBFUSCATED_EMAIL_IN_TEXT, NFKC_MIXED_EMAIL_IN_TEXT,
-    CONTACT_LINK_IN_TEXT, EMAIL_IN_TEXT, JAPANESE_PHONE_IN_TEXT]
+    CONTACT_LINK_IN_TEXT, BARE_DOMAIN_LINK_IN_TEXT, EMAIL_IN_TEXT, JAPANESE_PHONE_IN_TEXT]
     .flatMap(pattern => [...shadow.matchAll(pattern)].map(match => {
       // URLs may contain secret query values inside balanced parentheses.
       // Keep those parentheses in the redaction span, but preserve the
       // unmatched closing ')' of a surrounding Markdown link.
       let length = match[0].length;
-      if (pattern === CONTACT_LINK_IN_TEXT) {
+      if (pattern === CONTACT_LINK_IN_TEXT || pattern === BARE_DOMAIN_LINK_IN_TEXT) {
         let depth = 0;
         for (let index = 0; index < length; index++) {
           const char = match[0][index];
