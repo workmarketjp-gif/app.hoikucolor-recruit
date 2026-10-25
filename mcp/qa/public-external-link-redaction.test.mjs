@@ -56,7 +56,7 @@ test('markdown link is fully redacted without retaining its encoded contact argu
 
 test('facet suggestions exclude URL payloads and keep legitimate search filters', async () => {
   const result = await listPublicChildcareJobFilters({}, config({
-    prefectures: ['東京都', 'www.example.jp/private?token=secret-123', '大阪府'],
+    prefectures: ['東京都', 'www.ex.jp/?token=secret', '大阪府'],
     employment_types: ['正社員', 'ｈｔｔｐｓ：／／evil.example／private', 'パート'],
   }));
   assert.deepEqual(result.prefectures, ['東京都', '大阪府']);
