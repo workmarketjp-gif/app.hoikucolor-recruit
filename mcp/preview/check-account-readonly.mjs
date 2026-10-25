@@ -10,6 +10,52 @@ const WORKER = 'hoikucolor-mcp-preview-only';
 const ACCOUNT_ID = /^[a-f0-9]{32}$/i;
 const SUBDOMAIN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
+const NAMESPACE_ID = /^[1-9][0-9]*$/;
+const SCRIPT_ID = /^[a-z0-9][a-z0-9_-]{0,127}$/i;
+const MAX_NAMESPACE_SCAN_WORKERS = 100;
+const NAMESPACE_SCAN_CONCURRENCY = 4;
+
+function validNamespaceId(id) {
+  return typeof id === 'string' && NAMESPACE_ID.test(id) &&
+    Number.isSafeInteger(Number(id));
+}
+
+/**
+ * Cloudflare ratelimit namespaces share counters across Workers. Scan every
+ * current Worker version's binding metadata before authorizing a fresh ID.
+ * A 403, missing bindings array or oversized inventory is NOT proof of
+ * uniqueness. This is a read-only snapshot, not a deployment lease.
+ */
+async function checkNamespaceUnused({ root, scripts, rateNamespaceId, apiToken, fetcher }) {
+  if (scripts.length > MAX_NAMESPACE_SCAN_WORKERS ||
+      scripts.some(script => !SCRIPT_ID.test(script.id))) {
+    throw new Error('CLOUDFLARE_RATE_NAMESPACE_SCAN_INCOMPLETE');
+  }
+  const requested = Number(rateNamespaceId);
+  for (let index = 0; index < scripts.length; index += NAMESPACE_SCAN_CONCURRENCY) {
+    await Promise.all(scripts.slice(index, index + NAMESPACE_SCAN_CONCURRENCY).map(async script => {
+      const settings = await readCloudflare(
+        `${root}/scripts/${encodeURIComponent(script.id)}/settings`, apiToken, fetcher,
+      );
+      const bindings = settings.result?.bindings;
+      if (!Array.isArray(bindings) ||
+          bindings.some(binding => !binding || typeof binding !== 'object' ||
+            typeof binding.type !== 'string')) {
+        throw new Error('CLOUDFLARE_RATE_NAMESPACE_SCAN_INCOMPLETE');
+      }
+      for (const binding of bindings) {
+        if (binding.type !== 'ratelimit') continue;
+        if (!validNamespaceId(binding.namespace_id)) {
+          throw new Error('CLOUDFLARE_RATE_NAMESPACE_SCAN_INCOMPLETE');
+        }
+        if (Number(binding.namespace_id) === requested) {
+          throw new Error('HC_PREVIEW_RATE_NAMESPACE_ALREADY_USED');
+        }
+      }
+    }));
+  }
+}
+
 
 async function readCloudflare(path, apiToken, fetcher) {
   let response;
@@ -40,11 +86,12 @@ async function readCloudflare(path, apiToken, fetcher) {
   return json;
 }
 
-export async function checkCloudflareAccountReadOnly({ accountId, apiToken, expectedSubdomain, fetcher = fetch } = {}) {
+export async function checkCloudflareAccountReadOnly({ accountId, apiToken, expectedSubdomain, rateNamespaceId, fetcher = fetch } = {}) {
   if (typeof accountId !== 'string' || !ACCOUNT_ID.test(accountId) ||
       typeof apiToken !== 'string' || apiToken.trim().length < 10 ||
       typeof expectedSubdomain !== 'string' || !SUBDOMAIN.test(expectedSubdomain) ||
-      expectedSubdomain.includes('--') || typeof fetcher !== 'function') {
+      expectedSubdomain.includes('--') || typeof fetcher !== 'function' ||
+      (rateNamespaceId !== undefined && (!validNamespaceId(rateNamespaceId) || rateNamespaceId === '1001'))) {
     throw new Error('CLOUDFLARE_READ_CONFIG_REQUIRED');
   }
   const root = `/accounts/${accountId}/workers`;
@@ -74,13 +121,17 @@ export async function checkCloudflareAccountReadOnly({ accountId, apiToken, expe
   if (list.some(worker => worker.id.toLowerCase() === WORKER)) {
     throw new Error('HC_PREVIEW_WORKER_NAME_ALREADY_USED');
   }
-  // Account-level namespace collision cannot be established from the scripts
-  // listing API alone. Never misreport a guessed ID as independently unique.
+  // Only mark the candidate rate namespace as checked when every current
+  // Worker settings response was read and inspected successfully.
+  if (rateNamespaceId !== undefined) {
+    await checkNamespaceUnused({ root, scripts: list, rateNamespaceId, apiToken, fetcher });
+  }
   return Object.freeze({
     checks: 'read_only_cloudflare_account',
     workers_dev_subdomain_matches: true,
     isolated_worker_name_available: true,
-    rate_namespace_uniqueness: 'NOT_VERIFIED',
+    rate_namespace_uniqueness: rateNamespaceId === undefined ?
+      'NOT_VERIFIED' : 'VERIFIED_UNUSED_IN_CURRENT_WORKER_SETTINGS',
     changes_performed: false,
     approved_to_deploy: false,
   });
@@ -92,6 +143,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
       apiToken: process.env.CLOUDFLARE_API_TOKEN,
       expectedSubdomain: process.env.HC_MCP_WORKERS_SUBDOMAIN,
+      rateNamespaceId: process.env.HC_MCP_RATE_NAMESPACE_ID || undefined,
     });
     process.stdout.write(JSON.stringify(result) + '\n');
   } catch (error) {
