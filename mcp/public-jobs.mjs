@@ -100,6 +100,12 @@ const OBFUSCATED_EMAIL_IN_TEXT = /(?<![\p{L}\p{N}._%+-])[\p{L}\p{N}._%+-]{1,64}[
 // rather than echoing full-width contact details into a public tool result.
 // This additionally covers mixed formats such as "alice@example[dot]jp".
 const NFKC_MIXED_EMAIL_IN_TEXT = /(?<![a-z0-9._%+-])[a-z0-9._%+-]{1,64}[ \t]{0,6}(?:@|\[[ \t]{0,4}at[ \t]{0,4}\]|\([ \t]{0,4}at[ \t]{0,4}\))[ \t]{0,6}[a-z0-9-]{1,63}(?:[ \t]{0,6}(?:\[[ \t]{0,4}dot[ \t]{0,4}\]|\([ \t]{0,4}dot[ \t]{0,4}\)|\.)[ \t]{0,6}[a-z0-9-]{1,63}){1,5}(?![a-z0-9.-])/gi;
+// Public job prose needs no off-site links: a source URL may contain an
+// encoded email, candidate identifier, bearer-like query parameter or
+// redirect to an unreviewed collection form. Only the canonical HC job URL
+// is allowed in structured output. Match URL schemes in the NFKC shadow
+// so full-width variants are also removed, preserving non-link context.
+const CONTACT_LINK_IN_TEXT = /(?:https?:\/\/|www\.|mailto:|tel:)[^\s<>"'()[\]{}「」『』（）、。]+/giu;
 function redactObfuscatedEmails(value) {
   const units = [];
   let offset = 0;
@@ -116,7 +122,7 @@ function redactObfuscatedEmails(value) {
   // All patterns run against the normalized shadow, but output is sourced
   // only from original input spans; overlapping formats are merged first.
   const spans = [OBFUSCATED_EMAIL_IN_TEXT, NFKC_MIXED_EMAIL_IN_TEXT,
-    EMAIL_IN_TEXT, JAPANESE_PHONE_IN_TEXT]
+    CONTACT_LINK_IN_TEXT, EMAIL_IN_TEXT, JAPANESE_PHONE_IN_TEXT]
     .flatMap(pattern => [...shadow.matchAll(pattern)].map(match => [
       units[match.index].start,
       units[match.index + match[0].length - 1].end,
@@ -142,9 +148,7 @@ function cleanText(value, limit = 160) {
   if (typeof value !== 'string') return null;
   const filtered = value
     .replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, ' ')
-    .replace(/[\u200b-\u200d\u2060\ufeff]/g, '')
-    .replace(EMAIL_IN_TEXT, '[連絡先省略]')
-    .replace(JAPANESE_PHONE_IN_TEXT, '[連絡先省略]');
+    .replace(/[\u200b-\u200d\u2060\ufeff]/g, '');
   return redactObfuscatedEmails(filtered).trim().slice(0, limit);
 }
 function nonnegativeNumber(value) {
