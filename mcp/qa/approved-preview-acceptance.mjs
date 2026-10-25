@@ -18,7 +18,8 @@ export async function runApprovedPreviewAcceptance({
 } = {}) {
   // This intentionally REJECTS arbitrary HTTPS hosts, including HC/HP/LP
   // production endpoints, and credential-bearing URLs. No network before this.
-  assertBoundaryPreviewUrl(url);
+  const endpoint = assertBoundaryPreviewUrl(url);
+  if (endpoint.protocol !== 'https:') throw new Error('PREVIEW_ACCEPTANCE_REMOTE_HTTPS_REQUIRED');
   if (typeof fetcher !== 'function' || typeof now !== 'function' ||
       typeof boundaryRunner !== 'function' || typeof modernRunner !== 'function' ||
       typeof legacyRunner !== 'function') throw new Error('PREVIEW_ACCEPTANCE_CONFIG_INVALID');
@@ -46,7 +47,7 @@ export async function runApprovedPreviewAcceptance({
   // transport response bodies from artifacts and logs.
   return Object.freeze({
     status: 'PASS',
-    endpoint_class: 'isolated_preview_or_loopback',
+    endpoint_class: 'independent_https_preview',
     negative_boundary_checks: denied.checks,
     modern_protocol: results[0].protocol,
     legacy_protocol: results[1].protocol,
