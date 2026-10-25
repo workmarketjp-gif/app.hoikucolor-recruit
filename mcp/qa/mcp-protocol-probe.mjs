@@ -114,6 +114,29 @@ function toolContent(result, code) {
   return result.structuredContent;
 }
 
+// Acceptance is independent of the production redactor: even an otherwise
+// schema-correct result must not be marked safe if public prose contains
+// contact details or off-site links. Check only human-readable fields; ISO
+// timestamps and the canonical HC job URL have their own validators.
+const PUBLIC_TEXT_FIELDS = new Set([
+  'title', 'facility_name', 'organization_name', 'facility_type',
+  'prefecture', 'city', 'employment_type', 'salary_type', 'salary_note',
+  'required_qualification', 'description', 'source_name',
+]);
+function hasUnredactedContact(value) {
+  const shadow = value.normalize('NFKC').replace(/[\u200b-\u200d\u2060\ufeff]/gu, '');
+  return /(?:@|\[(?:at|dot)\]|\((?:at|dot)\)|(?:https?|ftps?):\/\/|\/\/[a-z0-9]|www\.|(?:mailto|tel|javascript|data):|[\p{L}\p{N}-]+\.(?:xn--[a-z0-9-]{2,}|[\p{L}]{2,24})(?=[/?#:]|$)|(?<![a-z0-9])(?:\+81|0)(?:[\s()./・ー−\p{Pd}]?\d){8,11}(?!\d))/iu.test(shadow);
+}
+function checkPublicFacetValues(values, maxItems, maxLength) {
+  check(values.length <= maxItems, 'PROBE_FILTERS_SHAPE_INVALID');
+  for (const value of values) {
+    check(typeof value === 'string' && value.length > 0 &&
+      value.length <= maxLength && value.trim() === value &&
+      !/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u.test(value) &&
+      !hasUnredactedContact(value), 'PROBE_PRIVATE_FIELD_DETECTED');
+  }
+}
+
 function validateJob(job, now) {
   check(isObject(job), 'PROBE_JOB_INVALID');
   check(Object.keys(job).every(key => JOB_KEYS.has(key)), 'PROBE_PRIVATE_FIELD_DETECTED');
@@ -121,7 +144,10 @@ function validateJob(job, now) {
   // smuggle applicant data inside an otherwise allowlisted field name.
   for (const [key, value] of Object.entries(job)) {
     check(value === null || ['string', 'number', 'boolean'].includes(typeof value), 'PROBE_PRIVATE_FIELD_DETECTED');
-    if (typeof value === 'string') check(value.length <= 2_000, 'PROBE_JOB_VALUE_TOO_LARGE');
+    if (typeof value === 'string') {
+      check(value.length <= 2_000, 'PROBE_JOB_VALUE_TOO_LARGE');
+      if (PUBLIC_TEXT_FIELDS.has(key)) check(!hasUnredactedContact(value), 'PROBE_PRIVATE_CONTACT_DETECTED');
+    }
     if (typeof value === 'number') check(Number.isFinite(value), 'PROBE_JOB_VALUE_INVALID');
     if (key.startsWith('salary_') && ['salary_min', 'salary_max'].includes(key)) {
       check(value === null || (typeof value === 'number' && value >= 0), 'PROBE_JOB_VALUE_INVALID');
@@ -242,6 +268,12 @@ async function verifyPublicCatalog(exchange, protocolVersion, now, requirePublis
   check(Array.isArray(facets.prefectures) && Array.isArray(facets.employment_types), 'PROBE_FILTERS_SHAPE_INVALID');
   check(Object.keys(facets).every(k => ['prefectures', 'employment_types', 'note'].includes(k)),
     'PROBE_PRIVATE_FIELD_DETECTED');
+  checkPublicFacetValues(facets.prefectures, 47, 32);
+  checkPublicFacetValues(facets.employment_types, 60, 50);
+  if (facets.note !== undefined) {
+    check(typeof facets.note === 'string' && facets.note.length <= 4_000 &&
+      !hasUnredactedContact(facets.note), 'PROBE_PRIVATE_CONTACT_DETECTED');
+  }
 
   // Cross-check public search -> public detail over the same MCP transport.
   // The listing may close between the two anonymous reads.
