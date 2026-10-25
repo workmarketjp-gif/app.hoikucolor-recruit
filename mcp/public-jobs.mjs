@@ -105,7 +105,7 @@ const NFKC_MIXED_EMAIL_IN_TEXT = /(?<![a-z0-9._%+-])[a-z0-9._%+-]{1,64}[ \t]{0,6
 // redirect to an unreviewed collection form. Only the canonical HC job URL
 // is allowed in structured output. Match URL schemes in the NFKC shadow
 // so full-width variants are also removed, preserving non-link context.
-const CONTACT_LINK_IN_TEXT = /(?:https?:\/\/|www\.|mailto:|tel:)[^\s<>"'()[\]{}「」『』（）、。]+/giu;
+const CONTACT_LINK_IN_TEXT = /(?:https?:\/\/|ftps?:\/\/|\/\/(?=[a-z0-9.-]+\.)|www\.|mailto:|tel:|javascript:|data:)[^\s<>"'\[\]{}「」『』（）、。]+/giu;
 function redactObfuscatedEmails(value) {
   const units = [];
   let offset = 0;
@@ -123,10 +123,24 @@ function redactObfuscatedEmails(value) {
   // only from original input spans; overlapping formats are merged first.
   const spans = [OBFUSCATED_EMAIL_IN_TEXT, NFKC_MIXED_EMAIL_IN_TEXT,
     CONTACT_LINK_IN_TEXT, EMAIL_IN_TEXT, JAPANESE_PHONE_IN_TEXT]
-    .flatMap(pattern => [...shadow.matchAll(pattern)].map(match => [
-      units[match.index].start,
-      units[match.index + match[0].length - 1].end,
-    ]))
+    .flatMap(pattern => [...shadow.matchAll(pattern)].map(match => {
+      // URLs may contain secret query values inside balanced parentheses.
+      // Keep those parentheses in the redaction span, but preserve the
+      // unmatched closing ')' of a surrounding Markdown link.
+      let length = match[0].length;
+      if (pattern === CONTACT_LINK_IN_TEXT) {
+        let depth = 0;
+        for (let index = 0; index < length; index++) {
+          const char = match[0][index];
+          if (char === '(') depth++;
+          else if (char === ')') {
+            if (depth === 0) { length = index; break; }
+            depth--;
+          }
+        }
+      }
+      return [units[match.index].start, units[match.index + length - 1].end];
+    }))
     .sort((a, b) => a[0] - b[0]);
   if (!spans.length) return value;
   const merged = [];
