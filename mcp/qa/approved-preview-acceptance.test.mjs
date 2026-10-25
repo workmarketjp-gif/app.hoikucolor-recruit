@@ -78,8 +78,7 @@ test('network/probe errors fail closed without fabricated success', async () => 
   }), /PROBE_PUBLIC_CATALOG_EMPTY/);
 });
 
-test('local loopback is allowed only as explicit QA and never proves deployed HTTPS', async () => {
-  const result = await runApprovedPreviewAcceptance({ ...opts, url: 'http://127.0.0.1:3107/mcp' });
-  assert.equal(result.endpoint_class, 'isolated_preview_or_loopback');
-  assert.equal(result.chatgpt_connection_tested, false);
+test('loopback QA is not eligible for independent HTTPS preview acceptance', async () => {
+  await assert.rejects(runApprovedPreviewAcceptance({ ...opts, url: 'http://127.0.0.1:3107/mcp' }),
+    /PREVIEW_ACCEPTANCE_REMOTE_HTTPS_REQUIRED/);
 });
