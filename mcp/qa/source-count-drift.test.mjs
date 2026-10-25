@@ -21,7 +21,10 @@ test('underreported total_count cannot hide fresh public jobs on the next page',
   assert.deepEqual(result.jobs.map(row => row.id), ['fresh-c', 'fresh-d']);
   assert.equal(result.scanned_source_rows, 4);
   assert.equal(result.reported_total, 2); // intentionally still labelled source-only
-  assert.equal(result.possible_more_source_rows, false);
+  // Four public rows were actually returned while the source claimed two.
+  // Another page cannot be ruled out from that stale total_count.
+  assert.equal(result.possible_more_source_rows, true);
+  assert.equal(result.next_offset, 4);
 });
 
 test('a stale full page with an underreported count stays resumable after bounded lookahead', async () => {
