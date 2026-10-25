@@ -46,7 +46,9 @@ export async function scanFreshWindow({ fetchPage, project, limit, offset, maxWi
     // signal. On a full page with too few fresh jobs, keep looking even when
     // that snapshot claims exhaustion: concurrent updates or stale counts
     // must not turn available jobs into an apparently empty MCP response.
-    if (!lastWindowFull || (reportedTotal !== null && cursor >= reportedTotal && jobs.length === limit)) {
+    // A reported total smaller than the actual row cursor is provably stale.
+    // It must never suppress pagination even after enough fresh jobs are found.
+    if (!lastWindowFull || (reportedTotal !== null && cursor === reportedTotal && jobs.length === limit)) {
       sourceEndReached = true;
       break;
     }
@@ -54,7 +56,7 @@ export async function scanFreshWindow({ fetchPage, project, limit, offset, maxWi
   // Upstream count precedes the MCP 12-hour check; never claim it is the
   // number of fresh jobs. Resume only at a valid upstream row offset.
   const morePossible = !sourceEndReached && lastWindowFull && cursor > offset &&
-    (reportedTotal === null || cursor < reportedTotal || jobs.length < limit);
+    (reportedTotal === null || cursor !== reportedTotal || jobs.length < limit);
   const nextOffset = morePossible && cursor <= maxOffset ? cursor : null;
   return {
     jobs,
