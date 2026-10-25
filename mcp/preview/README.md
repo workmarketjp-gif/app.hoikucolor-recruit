@@ -25,6 +25,22 @@ The preview refuses requests until its explicit enabled flag, hostname, anonymou
 
 **Rate limiter limitation:** Cloudflare Workers' binding is approximate and counts per Cloudflare point of presence, not a globally strict distributed limit. Add central quota/WAF controls and a retention policy before public submission. No rate limit alone is an authorization policy.
 
+
+### Optional read-only namespace collision scan (2026-10-25)
+
+Cloudflare confirms that Workers using the same rate-limit `namespace_id` can share counters across the account. A namespace chosen only from the local config is **not** guaranteed unique. The existing read-only account preflight now accepts an optional `HC_MCP_RATE_NAMESPACE_ID` to inspect every currently listed Worker using the official `GET /accounts/<id>/workers/scripts/<script>/settings` endpoint. It reads only binding types and ratelimit namespace IDs, returns no Worker names, secrets, or bindings, and refuses incomplete inventories, inaccessible settings, unrecognized namespace identifiers and existing collisions. A maximum of 100 Workers are scanned with at most four concurrent GETs. No Worker is created or modified.
+
+```sh
+# Use environment variables in a trusted terminal or authorized secure runner.
+CLOUDFLARE_ACCOUNT_ID=<account-id> \\
+HC_MCP_WORKERS_SUBDOMAIN=<account-workers-dev-subdomain> \\
+HC_MCP_RATE_NAMESPACE_ID=<candidate-integer-except-1001> \\
+CLOUDFLARE_API_TOKEN=<read-only-token-from-secret-store> \\
+node mcp/preview/check-account-readonly.mjs
+```
+
+The token must have **Workers Scripts Read** permissions. Keep it in a secret store, never in GitHub files, PR comments or chat. A successful result reports `VERIFIED_UNUSED_IN_CURRENT_WORKER_SETTINGS`, **not** authorization to deploy: new deployments and version changes can occur after the scan, and the account's plan, additional charges, Workers for Platforms namespaces, domain bindings and worker creation permissions still require separate confirmation. Recheck immediately before an expressly approved isolated Preview deployment. A result of `NOT_VERIFIED` (when `HC_MCP_RATE_NAMESPACE_ID` is omitted) is not a passing namespace gate. All calls use GET; synthetic CI tests cover collisions, missing permissions, metadata failure and zero-write behavior.
+
 ## Not yet verified
 
 There is no externally reachable HTTPS preview from this source change. Wrangler compile, live anonymous REST/MCP response, Inspector trace, ChatGPT query, OAuth cross-candidate isolation and plugin review remain independent gates. The 7-day DB versus 12-hour MCP job-recency mismatch is untouched and needs separate no-regression remediation; no SQL/RLS changes have been authorized.
