@@ -52,7 +52,7 @@ test('detail removes javascript and data URI destinations without deleting unrel
 
 test('public filter facets cannot advertise protocol-relative or script links', async () => {
   const result = await listPublicChildcareJobFilters({}, config({
-    prefectures: ['大阪府', '//external.example/path?candidate=hidden', '東京都'],
+    prefectures: ['大阪府', '//ex.jp/p?token=x', '東京都'],
     employment_types: ['正社員', 'javascript:alert(1)', 'パート'],
   }));
   assert.deepEqual(result.prefectures, ['大阪府', '東京都']);
