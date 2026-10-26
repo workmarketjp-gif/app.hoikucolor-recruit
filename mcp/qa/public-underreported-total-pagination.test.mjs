@@ -37,11 +37,15 @@ for (const total of [0, 1]) {
   });
 }
 
-test('consistent exact total still avoids a speculative next page', async () => {
+test('reported exact total cannot suppress a real next job on a full page', async () => {
   const feed = source(2);
   const result = await scanFreshWindow({ ...feed, project, limit: 2, offset: 0 });
-  assert.equal(result.next_offset, null);
-  assert.equal(result.possible_more_source_rows, false);
+  assert.equal(result.next_offset, 2);
+  assert.equal(result.possible_more_source_rows, true);
+  const next = await scanFreshWindow({ ...feed, project, limit: 2, offset: result.next_offset });
+  assert.deepEqual(next.jobs.map(job => job.id), ['c']);
+  assert.equal(next.next_offset, null);
+  assert.deepEqual(feed.calls, [[0, 2], [2, 2]]);
 });
 
 test('underreported total never changes fresh-only projection', async () => {
