@@ -49,7 +49,7 @@ test('never connects to production, arbitrary HTTPS, userinfo or off-path URLs',
 test('denied boundary failure prevents all positive HTTP calls', async () => {
   let positiveCalls = 0;
   await assert.rejects(runApprovedPreviewAcceptance({ ...opts,
-    boundaryRunner: async () => ({ status: 'PASS', checks: 6, changes_performed: false }),
+    boundaryRunner: async () => ({ status: 'PASS', checks: 10, changes_performed: false }),
     modernRunner: async () => { positiveCalls++; return ok('2026-07-28')(); },
   }), /PREVIEW_ACCEPTANCE_BOUNDARY_FAILED/);
   assert.equal(positiveCalls, 0);
