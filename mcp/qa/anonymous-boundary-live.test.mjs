@@ -8,7 +8,9 @@ const denied = ({ url: destination, options }) => {
   if (target.pathname !== '/mcp') return 404;
   if (target.search) return 403;
   if (options.method === 'GET') return 405;
-  if (options.headers.authorization || options.headers.cookie || options.headers.origin) return 403;
+  if (options.headers.authorization || options.headers.cookie || options.headers.origin ||
+      options.headers['proxy-authorization'] || options.headers['x-api-key'] ||
+      options.headers['x-auth-token'] || options.headers['x-supabase-api-key']) return 403;
   if (options.headers['content-type'] !== 'application/json') return 415;
   return 200;
 };
