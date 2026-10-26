@@ -51,7 +51,7 @@ function protocolReply(value, id) {
 }
 
 /** Decode a bounded response, including legacy Streamable HTTP SSE messages. */
-async function readReply(response, expectedId) {
+async function readReply(response, expectedId, responseDeadlineMs = MAX_TIMEOUT_MS) {
   const ctype = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
   check(ctype === 'application/json' || ctype === 'text/event-stream', 'PROBE_CONTENT_TYPE_INVALID');
   const declared = response.headers.get('content-length');
@@ -61,9 +61,16 @@ async function readReply(response, expectedId) {
   const decoder = new TextDecoder('utf-8', { fatal: true });
   let total = 0;
   let data = '';
+  // The HTTP request timeout alone does not guarantee a deadline for a
+  // streaming body (or an injected fetch transport). Reject incomplete
+  // JSON and silent SSE peers rather than allowing a hung acceptance run.
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('PROBE_RESPONSE_TIMEOUT')), responseDeadlineMs);
+  });
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await Promise.race([reader.read(), deadline]);
       if (done) break;
       check(value instanceof Uint8Array, 'PROBE_STREAM_INVALID');
       total += value.byteLength;
@@ -97,8 +104,11 @@ async function readReply(response, expectedId) {
     if (error instanceof TypeError) throw new Error('PROBE_STREAM_INVALID');
     throw error;
   } finally {
-    try { await reader.cancel(); } catch { /* already closed */ }
-    reader.releaseLock();
+    clearTimeout(timer);
+    // An untrusted SSE peer can also hang the cancellation promise itself.
+    // Initiate cleanup but never await its completion on the acceptance path.
+    try { void reader.cancel().catch(() => {}); } catch { /* already closed */ }
+    try { reader.releaseLock(); } catch { /* pending read already cancelling */ }
   }
 }
 
@@ -169,9 +179,11 @@ function validateJob(job, now) {
   }
 }
 
-export async function runHttpMcpProbe({ url, fetcher = globalThis.fetch, now = Date.now, requirePublished = false } = {}) {
+export async function runHttpMcpProbe({ url, fetcher = globalThis.fetch, now = Date.now, requirePublished = false, responseDeadlineMs = MAX_TIMEOUT_MS } = {}) {
   const endpoint = endpointURL(url);
-  check(typeof fetcher === 'function' && typeof now === 'function', 'PROBE_CONFIG_INVALID');
+  check(typeof fetcher === 'function' && typeof now === 'function' &&
+    Number.isSafeInteger(responseDeadlineMs) && responseDeadlineMs >= 1 &&
+    responseDeadlineMs <= MAX_TIMEOUT_MS, 'PROBE_CONFIG_INVALID');
   let sessionId;
   let protocolVersion;
   async function exchange(id, method, params) {
@@ -197,7 +209,7 @@ export async function runHttpMcpProbe({ url, fetcher = globalThis.fetch, now = D
       if (sessionId) check(newSessionId === sessionId, 'PROBE_SESSION_CHANGED');
       sessionId = newSessionId;
     }
-    return readReply(response, id);
+    return readReply(response, id, responseDeadlineMs);
   }
 
   const hello = await exchange(1, 'initialize', {
@@ -316,9 +328,11 @@ async function verifyPublicCatalog(exchange, protocolVersion, now, requirePublis
  * protocol envelope. This is intentionally a separate, non-fallback probe;
  * a legacy-only endpoint must fail rather than be declared modern-ready.
  */
-export async function runModernHttpMcpProbe({ url, fetcher = globalThis.fetch, now = Date.now, requirePublished = false } = {}) {
+export async function runModernHttpMcpProbe({ url, fetcher = globalThis.fetch, now = Date.now, requirePublished = false, responseDeadlineMs = MAX_TIMEOUT_MS } = {}) {
   const endpoint = endpointURL(url);
-  check(typeof fetcher === 'function' && typeof now === 'function', 'PROBE_CONFIG_INVALID');
+  check(typeof fetcher === 'function' && typeof now === 'function' &&
+    Number.isSafeInteger(responseDeadlineMs) && responseDeadlineMs >= 1 &&
+    responseDeadlineMs <= MAX_TIMEOUT_MS, 'PROBE_CONFIG_INVALID');
   const protocolVersion = '2026-07-28';
   const clientInfo = Object.freeze({ name: 'hoiku-color-modern-acceptance', version: '0.2.0' });
   async function exchange(id, method, params = {}) {
@@ -349,7 +363,7 @@ export async function runModernHttpMcpProbe({ url, fetcher = globalThis.fetch, n
     } catch { throw new Error('PROBE_TRANSPORT_FAILURE'); }
     check(response?.status === 200, 'PROBE_HTTP_STATUS_INVALID');
     check(!response.headers.has('mcp-session-id'), 'PROBE_MODERN_SESSION_INVALID');
-    const result = await readReply(response, id);
+    const result = await readReply(response, id, responseDeadlineMs);
     check(result.resultType === 'complete', 'PROBE_MODERN_RESULT_TYPE_INVALID');
     return result;
   }
