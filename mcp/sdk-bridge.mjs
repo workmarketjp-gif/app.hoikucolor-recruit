@@ -203,7 +203,15 @@ export function createColorMcpGateway({ McpServer, createMcpHandler, z }, config
       if (origin && !allowedOrigins.has(origin)) return forbidden();
       // This phase is intentionally anonymous-only. No hidden private access
       // paths should be created by supplying credentials or cookie sessions.
-      if (request.headers.has('authorization') || request.headers.has('cookie')) return forbidden();
+      // Reject alternate credential-bearing headers before admission, audit or
+      // SDK dispatch. This server intentionally supports anonymous public jobs
+      // only; forwarding credentials to a generic MCP handler is unnecessary.
+      // Candidate OAuth is a separate future endpoint and consent boundary.
+      const credentialHeaders = [
+        'authorization', 'cookie', 'proxy-authorization', 'x-api-key',
+        'x-auth-token', 'x-supabase-api-key',
+      ];
+      if (credentialHeaders.some(name => request.headers.has(name))) return forbidden();
       const ctype = request.headers.get('content-type') || '';
       if (!/^application\/json(?:\s*;|$)/i.test(ctype)) return new Response('Unsupported Media Type', { status: 415 });
       const contentLength = request.headers.get('content-length');
