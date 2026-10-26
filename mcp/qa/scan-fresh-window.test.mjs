@@ -20,7 +20,11 @@ test('stale first RPC page does not hide fresher second page', async () => {
   assert.deepEqual(result.jobs.map(x => x.id), ['c','d']);
   assert.deepEqual(source.calls, [[0,2],[2,2]]);
   assert.equal(result.scanned_source_rows, 4);
-  assert.equal(result.next_offset, null);
+  assert.equal(result.next_offset, 4);
+  assert.equal(result.possible_more_source_rows, true);
+  const end = await scanFreshWindow({ ...source, project:visible, limit:2, offset:result.next_offset });
+  assert.equal(end.next_offset, null);
+  assert.equal(end.possible_more_source_rows, false);
 });
 
 test('next_offset counts scanned upstream rows, preventing duplicate listings', async () => {
@@ -70,4 +74,47 @@ test('invalid config and excessively long upstream page fail closed', async () =
   const fetchPage = async () => [{ fresh:true },{ fresh:true }];
   await assert.rejects(scanFreshWindow({fetchPage,project:visible,limit:1,offset:0}),/PUBLIC_JOB_SOURCE_INVALID_SHAPE/);
   await assert.rejects(scanFreshWindow({fetchPage,project:visible,limit:0,offset:0}),/PUBLIC_SCAN_CONFIG_INVALID/);
+});
+
+// SQL total_count can lag new published records on a concurrent update. It
+// is a display hint only: never use equality with the current cursor as proof
+// that no further public job is available. This regression previously failed
+// when the first page was exactly full and reported_total === cursor.
+test('full page preserves next_offset when reported_total equals cursor but jobs continue', async () => {
+  const rows = [{ id: 'a', fresh: true }, { id: 'b', fresh: true }, { id: 'c', fresh: true }];
+  const calls = [];
+  const fetchPage = async (offset, limit) => {
+    calls.push([offset, limit]);
+    return rows.slice(offset, offset + limit).map(row => ({ ...row, total_count: 1 }));
+  };
+  const first = await scanFreshWindow({ fetchPage, project: visible, limit: 1, offset: 0 });
+  assert.deepEqual(first.jobs, [{ id: 'a' }]);
+  assert.equal(first.reported_total, 1);
+  assert.equal(first.next_offset, 1);
+  assert.equal(first.possible_more_source_rows, true);
+  const second = await scanFreshWindow({ fetchPage, project: visible, limit: 1, offset: first.next_offset });
+  assert.deepEqual(second.jobs, [{ id: 'b' }]);
+  assert.equal(second.next_offset, 2);
+  const third = await scanFreshWindow({ fetchPage, project: visible, limit: 1, offset: second.next_offset });
+  assert.deepEqual(third.jobs, [{ id: 'c' }]);
+  assert.equal(third.next_offset, 3);
+  const exhausted = await scanFreshWindow({ fetchPage, project: visible, limit: 1, offset: third.next_offset });
+  assert.equal(exhausted.next_offset, null);
+  assert.equal(exhausted.possible_more_source_rows, false);
+  assert.deepEqual(calls, [[0,1], [1,1], [2,1], [3,1]]);
+});
+
+test('reported_total equal to cursor never disables continuation after stale-only page', async () => {
+  const calls = [];
+  const rows = [{ id: 'old', fresh: false }, { id: 'new', fresh: true }];
+  const fetchPage = async (offset, limit) => {
+    calls.push([offset, limit]);
+    return rows.slice(offset, offset + limit).map(row => ({ ...row, total_count: 1 }));
+  };
+  const result = await scanFreshWindow({ fetchPage, project: visible, limit: 1, offset: 0, maxWindows: 1 });
+  assert.deepEqual(result.jobs, []);
+  assert.equal(result.next_offset, 1);
+  const continued = await scanFreshWindow({ fetchPage, project: visible, limit: 1, offset: result.next_offset });
+  assert.deepEqual(continued.jobs, [{ id: 'new' }]);
+  assert.deepEqual(calls, [[0,1], [1,1]]);
 });
