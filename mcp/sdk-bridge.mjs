@@ -97,12 +97,26 @@ function publicToolOutputSchema(name, z) {
   throw new Error('UNKNOWN_TOOL');
 }
 
-function publicToolResult(result) {
-  const text = JSON.stringify(result);
+// Upstream public text redaction can hide an IDN domain yet leave an
+// SMTPUTF8 (Japanese) mailbox local part, such as "山田@[連絡先省略]".
+// Fail closed at the MCP serialization boundary for BOTH tool response forms.
+const RESIDUAL_UNICODE_MAILBOX = /[\p{L}\p{N}._%+-]{1,64}[@＠]\[連絡先省略\]/gu;
+function scrubResidualPublicContacts(value) {
+  if (typeof value === 'string') return value.replace(RESIDUAL_UNICODE_MAILBOX, '[連絡先省略]');
+  if (Array.isArray(value)) return value.map(scrubResidualPublicContacts);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) =>
+      [key, scrubResidualPublicContacts(item)]));
+  }
+  return value;
+}
+export function publicToolResult(result) {
+  const safeResult = scrubResidualPublicContacts(result);
+  const text = JSON.stringify(safeResult);
   if (Buffer.byteLength(text, 'utf8') > MAX_TOOL_TEXT_BYTES) throw new Error('OUTPUT_TOO_LARGE');
   return {
     content: [{ type: 'text', text }],
-    structuredContent: result,
+    structuredContent: safeResult,
   };
 }
 
