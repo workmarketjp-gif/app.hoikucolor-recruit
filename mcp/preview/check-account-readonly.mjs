@@ -57,12 +57,68 @@ async function checkNamespaceUnused({ root, scripts, rateNamespaceId, apiToken, 
 }
 
 
+/**
+ * Cloudflare's JSON inventory is untrusted network input. Content-Length can
+ * be absent or false; bound ACTUAL streamed bytes and body completion time.
+ * Do not buffer response.text() before enforcing the limit.
+ */
+export async function readBoundedCloudflareJson(response, { deadlineMs = 8_000 } = {}) {
+  if (!Number.isSafeInteger(deadlineMs) || deadlineMs < 1 || deadlineMs > 30_000) {
+    throw new Error('CLOUDFLARE_RESPONSE_INVALID');
+  }
+  const declaredLength = response?.headers?.get?.('content-length');
+  if (declaredLength != null &&
+      (!/^\d+$/.test(declaredLength) || BigInt(declaredLength) > BigInt(MAX_RESPONSE_BYTES))) {
+    throw new Error('CLOUDFLARE_RESPONSE_TOO_LARGE');
+  }
+  if (!response?.body || typeof response.body.getReader !== 'function') {
+    throw new Error('CLOUDFLARE_RESPONSE_INVALID');
+  }
+
+  let reader;
+  let timer;
+  let complete = false;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('CLOUDFLARE_RESPONSE_TIMEOUT')), deadlineMs);
+  });
+  try {
+    reader = response.body.getReader();
+    const chunks = [];
+    let received = 0;
+    while (true) {
+      const { done, value } = await Promise.race([reader.read(), deadline]);
+      if (done) { complete = true; break; }
+      if (!(value instanceof Uint8Array)) throw new Error('CLOUDFLARE_RESPONSE_INVALID');
+      received += value.byteLength;
+      if (received > MAX_RESPONSE_BYTES) throw new Error('CLOUDFLARE_RESPONSE_TOO_LARGE');
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch (error) {
+    if (error?.message === 'CLOUDFLARE_RESPONSE_TOO_LARGE' ||
+        error?.message === 'CLOUDFLARE_RESPONSE_TIMEOUT') throw error;
+    throw new Error('CLOUDFLARE_RESPONSE_INVALID');
+  } finally {
+    clearTimeout(timer);
+    if (reader) {
+      if (!complete) {
+        // Cancellation may itself stall; do not wait for an untrusted stream.
+        try { void reader.cancel().catch(() => {}); } catch { /* already closed */ }
+      }
+      try { reader.releaseLock(); } catch { /* pending read cancellation */ }
+    }
+  }
+}
+
 async function readCloudflare(path, apiToken, fetcher) {
   let response;
   try {
-    response = await fetcher(`${API}${path}`, {
+    response = await fetcher(API + path, {
       method: 'GET',
-      headers: { authorization: `Bearer ${apiToken}`, accept: 'application/json' },
+      headers: { authorization: 'Bearer ' + apiToken, accept: 'application/json' },
       redirect: 'error',
       signal: AbortSignal.timeout(8_000),
     });
@@ -70,18 +126,7 @@ async function readCloudflare(path, apiToken, fetcher) {
     throw new Error('CLOUDFLARE_READ_UNAVAILABLE');
   }
   if (!response?.ok) throw new Error('CLOUDFLARE_READ_UNAVAILABLE');
-  const declaredLength = response.headers?.get('content-length');
-  if (declaredLength && Number(declaredLength) > MAX_RESPONSE_BYTES) {
-    throw new Error('CLOUDFLARE_RESPONSE_TOO_LARGE');
-  }
-  let json;
-  try {
-    const raw = await response.text();
-    if (Buffer.byteLength(raw, 'utf8') > MAX_RESPONSE_BYTES) throw new Error('too large');
-    json = JSON.parse(raw);
-  } catch {
-    throw new Error('CLOUDFLARE_RESPONSE_INVALID');
-  }
+  const json = await readBoundedCloudflareJson(response);
   if (!json || json.success !== true) throw new Error('CLOUDFLARE_READ_UNAVAILABLE');
   return json;
 }
