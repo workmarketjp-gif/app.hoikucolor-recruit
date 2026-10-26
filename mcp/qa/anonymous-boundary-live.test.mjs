@@ -15,7 +15,7 @@ const denied = ({ url: destination, options }) => {
   return 200;
 };
 
-test('checks seven remote negative HTTP boundaries without an access token or mutation', async () => {
+test('checks eleven remote negative HTTP boundaries without a real token or mutation', async () => {
   const calls = [];
   const fetcher = async (destination, options) => {
     calls.push({ url: destination, options });
