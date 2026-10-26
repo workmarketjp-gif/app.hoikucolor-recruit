@@ -4,11 +4,17 @@ on:
   pull_request:
     paths:
       - 'mcp/preview/**'
+      # Worker imports mcp/*.mjs via preview-policy -> sdk-bridge.
+      # Compile on shared-runtime changes too, not only on preview folder edits.
+      - 'mcp/*.mjs'
       - 'mcp/qa/preview-policy.test.mjs'
       - '.github/workflows/hc-mcp-preview-ci.yml'
   push:
     paths:
       - 'mcp/preview/**'
+      # Worker imports mcp/*.mjs via preview-policy -> sdk-bridge.
+      # Compile on shared-runtime changes too, not only on preview folder edits.
+      - 'mcp/*.mjs'
       - 'mcp/qa/preview-policy.test.mjs'
       - '.github/workflows/hc-mcp-preview-ci.yml'
 
