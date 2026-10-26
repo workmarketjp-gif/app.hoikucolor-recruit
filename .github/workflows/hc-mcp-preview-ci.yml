@@ -8,6 +8,9 @@ on:
       # Compile on shared-runtime changes too, not only on preview folder edits.
       - 'mcp/*.mjs'
       - 'mcp/qa/preview-policy.test.mjs'
+      # Live-preview MCP protocol acceptance is a deployment gate, not
+      # just an optional local script. Validate its defensive reader in CI.
+      - 'mcp/qa/mcp-protocol-*.mjs'
       - '.github/workflows/hc-mcp-preview-ci.yml'
   push:
     paths:
@@ -16,6 +19,9 @@ on:
       # Compile on shared-runtime changes too, not only on preview folder edits.
       - 'mcp/*.mjs'
       - 'mcp/qa/preview-policy.test.mjs'
+      # Live-preview MCP protocol acceptance is a deployment gate, not
+      # just an optional local script. Validate its defensive reader in CI.
+      - 'mcp/qa/mcp-protocol-*.mjs'
       - '.github/workflows/hc-mcp-preview-ci.yml'
 
 permissions:
@@ -32,6 +38,8 @@ jobs:
           node-version: '22'
       - name: Fail-closed preview policy tests
         run: node --test mcp/qa/preview-policy.test.mjs
+      - name: Verify bounded MCP JSON/SSE response handling
+        run: node --test mcp/qa/mcp-protocol-stream-deadline.test.mjs
       - name: Validate standalone preview configuration and production-route exclusions
         run: node --test mcp/preview/prepare-standalone.test.mjs
       - name: Read-only Cloudflare account-check contract (synthetic, no token or API access)
