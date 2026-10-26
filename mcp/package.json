@@ -1,0 +1,20 @@
+{
+  "name": "hoikucolor-mcp-public-catalog",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "test": "node --test qa/*.test.mjs",
+    "start:local": "node serve-local.mjs",
+    "test:anon-http": "node qa/anonymous-http-smoke.mjs",
+    "test:protocol": "node qa/mcp-protocol-probe.mjs",
+    "test:protocol:legacy": "HC_MCP_PROTOCOL=legacy node qa/mcp-protocol-probe.mjs",
+    "test:sdk": "node --test qa/official-sdk-network.test.mjs qa/official-sdk-color-catalog-network.test.mjs",
+    "test:preview-live-acceptance": "node qa/approved-preview-acceptance.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "@modelcontextprotocol/node": "^2.0.0",
+    "zod": "^4.0.0"
+  }
+}

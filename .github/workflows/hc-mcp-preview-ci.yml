@@ -1,0 +1,48 @@
+name: HC MCP isolated preview compile
+
+on:
+  pull_request:
+    paths:
+      - 'mcp/preview/**'
+      - 'mcp/qa/preview-policy.test.mjs'
+      - '.github/workflows/hc-mcp-preview-ci.yml'
+  push:
+    paths:
+      - 'mcp/preview/**'
+      - 'mcp/qa/preview-policy.test.mjs'
+      - '.github/workflows/hc-mcp-preview-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  preview-dry-run-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fail-closed preview policy tests
+        run: node --test mcp/qa/preview-policy.test.mjs
+      - name: Validate standalone preview configuration and production-route exclusions
+        run: node --test mcp/preview/prepare-standalone.test.mjs
+      - name: Read-only Cloudflare account-check contract (synthetic, no token or API access)
+        run: node --test mcp/preview/check-account-*.test.mjs
+      - name: Install isolated Worker preview dependencies
+        working-directory: mcp/preview
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Real Cloudflare Worker entrypoint + MCP SDK protocol (synthetic, offline)
+        working-directory: mcp/preview
+        run: node --test qa/worker-sdk-runtime.test.mjs
+      - name: Validate Worker bundle without deploying or authenticating
+        working-directory: mcp/preview
+        run: npm run build:check
+      - name: Compile a generated inactive, standalone workers.dev configuration
+        working-directory: mcp/preview
+        run: |
+          node prepare-standalone.mjs hc-ci-preview 24680
+          npx wrangler deploy --dry-run --config wrangler.preview.local.json --outdir .wrangler-generated-dry-run
+      # Deliberately no secrets, Cloudflare API tokens, wrangler deploy,
+      # Supabase writes, environment changes or production releases.

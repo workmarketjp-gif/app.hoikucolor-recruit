@@ -1,0 +1,27 @@
+{
+  // Standalone Worker ONLY: do not configure routes/custom_domains or reuse
+  // the HC Web/Native/LP/Blog Worker names. Deploying needs explicit approval.
+  "name": "hoikucolor-mcp-preview-only",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "vars": {
+    // Change only after confirming this is an isolated preview deployment.
+    "HC_MCP_PREVIEW_ENABLED": "false",
+    // Set to a dedicated hoikucolor-mcp-preview[-suffix].<account>.workers.dev host only.
+    "HC_MCP_PUBLIC_HOST": "REPLACE_WITH_NEW_PREVIEW_HOST",
+    // Comma-separated exact HTTPS origins if required; blank rejects all Origin headers.
+    "HC_MCP_ALLOWED_ORIGINS": ""
+  },
+  "ratelimits": [
+    {
+      "name": "HC_MCP_RATE_LIMITER",
+      // Choose a unique integer namespace_id for the Cloudflare account.
+      "namespace_id": "1001",
+      "simple": { "limit": 30, "period": 60 }
+    }
+  ]
+  // HC_SUPABASE_URL and HC_SUPABASE_PUBLISHABLE_KEY are required runtime
+  // bindings. Supply a public sb_publishable_* key, NEVER a service-role key.
+}
