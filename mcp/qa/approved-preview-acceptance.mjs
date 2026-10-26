@@ -25,7 +25,7 @@ export async function runApprovedPreviewAcceptance({
       typeof legacyRunner !== 'function') throw new Error('PREVIEW_ACCEPTANCE_CONFIG_INVALID');
 
   const denied = await boundaryRunner({ url, fetcher });
-  if (denied?.status !== 'PASS' || denied.checks !== 7 || denied.changes_performed !== false) {
+  if (denied?.status !== 'PASS' || denied.checks !== 11 || denied.changes_performed !== false) {
     throw new Error('PREVIEW_ACCEPTANCE_BOUNDARY_FAILED');
   }
   // Run the modern and legacy transports independently, in strict positive
