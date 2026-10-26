@@ -63,7 +63,10 @@ test('known source count remains a pagination hint once the requested fresh page
     ],
   });
   assert.deepEqual(result.jobs.map(row => row.id), ['one', 'two']);
-  assert.equal(result.next_offset, null);
+  // An exact upstream total is not proof that another published row cannot
+  // exist after a concurrent update. The next page is only a possibility.
+  assert.equal(result.next_offset, 2);
+  assert.equal(result.possible_more_source_rows, true);
 });
 
 test('later source failure cannot be mistaken for a zero-result response after count drift', async () => {
