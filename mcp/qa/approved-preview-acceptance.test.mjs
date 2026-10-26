@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { runApprovedPreviewAcceptance } from './approved-preview-acceptance.mjs';
 
 const url = 'https://hoikucolor-mcp-preview-only.hc-workspace.workers.dev/mcp';
-const okBoundary = async () => ({ status: 'PASS', checks: 7, changes_performed: false });
+const okBoundary = async () => ({ status: 'PASS', checks: 11, changes_performed: false });
 const ok = protocol => async () => ({ status: 'PASS', protocol, tools: 3,
   anonymous_search_returned: 1, detail_state: 'found' });
 const opts = { url, boundaryRunner: okBoundary,
@@ -49,7 +49,7 @@ test('never connects to production, arbitrary HTTPS, userinfo or off-path URLs',
 test('denied boundary failure prevents all positive HTTP calls', async () => {
   let positiveCalls = 0;
   await assert.rejects(runApprovedPreviewAcceptance({ ...opts,
-    boundaryRunner: async () => ({ status: 'PASS', checks: 6, changes_performed: false }),
+    boundaryRunner: async () => ({ status: 'PASS', checks: 10, changes_performed: false }),
     modernRunner: async () => { positiveCalls++; return ok('2026-07-28')(); },
   }), /PREVIEW_ACCEPTANCE_BOUNDARY_FAILED/);
   assert.equal(positiveCalls, 0);

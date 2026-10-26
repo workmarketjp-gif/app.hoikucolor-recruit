@@ -9,6 +9,10 @@ const PREVIEW_HOST = /^hoikucolor-mcp-preview-only\.[a-z0-9](?:[a-z0-9-]*[a-z0-9
 const FAILURES = Object.freeze([
   ['bearer', '/mcp', 'POST', { authorization: 'Bearer hc-invalid-test-only' }, 403],
   ['cookie', '/mcp', 'POST', { cookie: 'hc-invalid-test-cookie=1' }, 403],
+  ['proxy_authorization', '/mcp', 'POST', { 'proxy-authorization': 'Basic hc-test-only' }, 403],
+  ['api_key', '/mcp', 'POST', { 'x-api-key': 'hc-test-only' }, 403],
+  ['auth_token', '/mcp', 'POST', { 'x-auth-token': 'hc-test-only' }, 403],
+  ['supabase_key', '/mcp', 'POST', { 'x-supabase-api-key': 'hc-test-only' }, 403],
   ['foreign_origin', '/mcp', 'POST', { origin: 'https://untrusted.invalid' }, 403],
   ['query', '/mcp?canary=hc-test-only', 'POST', {}, 403],
   ['wrong_route', '/admin', 'POST', {}, 404],
