@@ -42,8 +42,15 @@ test('real public RPC adapter scans past stale rows but never outputs private co
   assert.equal(result.reported_total,4);
   assert.equal(result.scanned_source_rows,4);
   assert.deepEqual(config.calls,[{offset:0,limit:2},{offset:2,limit:2}]);
-  assert.equal(result.next_offset,null);
+  assert.equal(result.next_offset,4);
+  assert.equal(result.possible_more_source_rows,true);
   assert.equal(JSON.stringify(result).includes('PRIVATE'),false);
+  // Exact totals may be stale. The next genuinely empty public RPC page is
+  // what proves exhaustion, without echoing excluded or private columns.
+  const end=await searchPublicChildcareJobs({limit:2,offset:result.next_offset},config);
+  assert.equal(end.returned,0);
+  assert.equal(end.next_offset,null);
+  assert.equal(JSON.stringify(end).includes('PRIVATE'),false);
 });
 
 test('visible continuation reuses upstream cursor and never repeats filtered jobs', async () => {
