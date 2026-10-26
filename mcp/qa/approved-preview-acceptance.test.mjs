@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { runApprovedPreviewAcceptance } from './approved-preview-acceptance.mjs';
 
 const url = 'https://hoikucolor-mcp-preview-only.hc-workspace.workers.dev/mcp';
-const okBoundary = async () => ({ status: 'PASS', checks: 7, changes_performed: false });
+const okBoundary = async () => ({ status: 'PASS', checks: 11, changes_performed: false });
 const ok = protocol => async () => ({ status: 'PASS', protocol, tools: 3,
   anonymous_search_returned: 1, detail_state: 'found' });
 const opts = { url, boundaryRunner: okBoundary,
