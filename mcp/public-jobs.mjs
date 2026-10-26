@@ -179,8 +179,26 @@ function cleanText(value, limit = 160) {
 function nonnegativeNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
+// Publication, closure and external verification timestamps are visibility gates.
+// Date.parse accepts ambiguous date-only/local-time strings and even normalizes
+// impossible days (e.g. February 30). Public API timestamps must include an
+// explicit RFC3339 offset so ambiguous or malformed upstream rows fail closed.
+const PUBLIC_RFC3339_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 function validDate(value) {
-  return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : null;
+  if (typeof value !== 'string') return null;
+  const match = PUBLIC_RFC3339_TIMESTAMP.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  // Check the original calendar date, not the timezone-shifted UTC day.
+  const calendar = new Date(0);
+  calendar.setUTCFullYear(year, month - 1, day);
+  calendar.setUTCHours(0, 0, 0, 0);
+  if (calendar.getUTCFullYear() !== year ||
+      calendar.getUTCMonth() !== month - 1 ||
+      calendar.getUTCDate() !== day) return null;
+  return Number.isFinite(Date.parse(value)) ? value : null;
 }
 function checkedInput(args, allowed) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('INVALID_ARGUMENTS');
