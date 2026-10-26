@@ -24,8 +24,11 @@ export function assertBoundaryPreviewUrl(value) {
   let parsed;
   try { parsed = new URL(value); } catch { throw new Error('BOUNDARY_URL_INVALID'); }
   const loopback = ['localhost', '127.0.0.1'].includes(parsed.hostname);
-  if (!((parsed.protocol === 'https:' && PREVIEW_HOST.test(parsed.hostname)) ||
-      (parsed.protocol === 'http:' && loopback)) ||
+  // Workers.dev Preview is only approved on the canonical HTTPS port.
+  // An alternate port must not be accepted as the same reviewed endpoint.
+  const approvedRemote = parsed.protocol === 'https:' &&
+    PREVIEW_HOST.test(parsed.hostname) && !parsed.port;
+  if (!(approvedRemote || (parsed.protocol === 'http:' && loopback)) ||
       parsed.pathname !== '/mcp' || parsed.username || parsed.password ||
       parsed.search || parsed.hash || parsed.href !== parsed.origin + '/mcp') {
     throw new Error('BOUNDARY_URL_NOT_APPROVED_PREVIEW');
@@ -33,26 +36,52 @@ export function assertBoundaryPreviewUrl(value) {
   return parsed;
 }
 
-export async function probeAnonymousMcpBoundary({ url, fetcher = globalThis.fetch } = {}) {
+export async function probeAnonymousMcpBoundary({
+  url, fetcher = globalThis.fetch, timeoutMs = 10_000,
+} = {}) {
   const endpoint = assertBoundaryPreviewUrl(url);
   if (typeof fetcher !== 'function') throw new Error('BOUNDARY_FETCH_UNAVAILABLE');
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 10_000) {
+    throw new Error('BOUNDARY_TIMEOUT_INVALID');
+  }
   const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
   for (const [name, path, method, extraHeaders, expected] of FAILURES) {
-    let response;
+    const controller = new AbortController();
+    let timer;
     try {
-      response = await fetcher(endpoint.origin + path, {
-        method,
-        headers: { 'content-type': 'application/json', ...extraHeaders },
-        ...(method === 'POST' ? { body } : {}),
-        redirect: 'error', signal: AbortSignal.timeout(10_000),
+      // AbortSignal alone is insufficient when an injected fetch transport
+      // ignores cancellation. Bound every negative check by wall-clock time.
+      const deadline = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error('BOUNDARY_TRANSPORT_FAILED'));
+        }, timeoutMs);
       });
-    } catch { throw new Error('BOUNDARY_TRANSPORT_FAILED'); }
-    // Never read or print an unexpected response body: it could contain PII,
-    // credentials, injected instructions or an upstream error trace.
-    if (response?.status !== expected) {
-      throw new Error('BOUNDARY_' + name.toUpperCase() + '_NOT_DENIED');
+      const response = await Promise.race([
+        fetcher(endpoint.origin + path, {
+          method,
+          headers: { 'content-type': 'application/json', ...extraHeaders },
+          ...(method === 'POST' ? { body } : {}),
+          redirect: 'error', signal: controller.signal,
+        }),
+        deadline,
+      ]);
+      // Never read or print an unexpected response body: it may contain
+      // applicant information, credentials or injected instructions.
+      if (response?.status !== expected) {
+        throw new Error('BOUNDARY_' + name.toUpperCase() + '_NOT_DENIED');
+      }
+      // A hostile stream can keep cancel() pending indefinitely. Initiate
+      // cleanup without waiting; also abort the transport in finally.
+      try { void Promise.resolve(response.body?.cancel()).catch(() => {}); }
+      catch { /* body already closed or unusable */ }
+    } catch (error) {
+      if (error?.message === 'BOUNDARY_' + name.toUpperCase() + '_NOT_DENIED') throw error;
+      throw new Error('BOUNDARY_TRANSPORT_FAILED');
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
     }
-    try { await response.body?.cancel(); } catch { /* no content required */ }
   }
   return Object.freeze({ status: 'PASS', checks: FAILURES.length, changes_performed: false });
 }

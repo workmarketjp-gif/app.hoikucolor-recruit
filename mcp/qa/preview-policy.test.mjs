@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { bindWorkerMcpSdk, createPreviewGateway, createPreviewSecurity, parsePreviewConfig } from '../preview/preview-policy.mjs';
+import { assertBoundaryPreviewUrl, probeAnonymousMcpBoundary } from './anonymous-boundary-live.mjs';
 
 const makeEnv = (overrides = {}) => ({
   HC_MCP_PREVIEW_ENABLED: 'true',
@@ -143,4 +144,73 @@ test('preview host cannot impersonate production domains or reuse an unrelated W
     parsePreviewConfig(makeEnv({ HC_MCP_PUBLIC_HOST: 'hc-preview.account.workers.dev' })).host,
     'hc-preview.account.workers.dev',
   );
+});
+
+test('anonymous live-boundary probe aborts even when fetch ignores AbortSignal', async () => {
+  let signal;
+  const started = Date.now();
+  await assert.rejects(probeAnonymousMcpBoundary({
+    url: 'https://hoikucolor-mcp-preview-only.hc-workspace.workers.dev/mcp',
+    timeoutMs: 35,
+    fetcher: async (_destination, options) => {
+      signal = options.signal;
+      return new Promise(() => {});
+    },
+  }), /BOUNDARY_TRANSPORT_FAILED/);
+  assert.equal(signal.aborted, true);
+  assert(Date.now() - started < 1500);
+});
+
+test('unsettled response cancellation cannot hang eleven preview denial checks', async () => {
+  const url = 'https://hoikucolor-mcp-preview-only.hc-workspace.workers.dev/mcp';
+  let requests = 0;
+  let cancellations = 0;
+  const fetcher = async (destination, options) => {
+    requests++;
+    const target = new URL(destination);
+    const headers = options.headers;
+    let status = 200;
+    if (target.pathname === '/admin') status = 404;
+    else if (target.search || Object.keys(headers).some(key =>
+      ['authorization', 'cookie', 'proxy-authorization', 'x-api-key', 'x-auth-token',
+        'x-supabase-api-key', 'origin'].includes(key))) status = 403;
+    else if (options.method === 'GET') status = 405;
+    else if (headers['content-type'] !== 'application/json') status = 415;
+    return {
+      status,
+      body: { cancel: () => { cancellations++; return new Promise(() => {}); } },
+    };
+  };
+  let watchdog;
+  try {
+    const result = await Promise.race([
+      probeAnonymousMcpBoundary({ url, fetcher, timeoutMs: 100 }),
+      new Promise((_, reject) => {
+        watchdog = setTimeout(() => reject(new Error('HUNG_CANCELLATION')), 1000);
+      }),
+    ]);
+    assert.deepEqual(result, { status: 'PASS', checks: 11, changes_performed: false });
+  } finally { clearTimeout(watchdog); }
+  assert.equal(requests, 11);
+  assert.equal(cancellations, 11);
+});
+
+test('anonymous preview probe refuses nonstandard HTTPS ports before network', () => {
+  const url = 'https://hoikucolor-mcp-preview-only.hc-workspace.workers.dev/mcp';
+  for (const port of ['8443', '2053', '8080']) {
+    assert.throws(() => assertBoundaryPreviewUrl(url.replace('/mcp', ':' + port + '/mcp')),
+      /BOUNDARY_URL_NOT_APPROVED_PREVIEW/);
+  }
+  assert.equal(assertBoundaryPreviewUrl(url.replace('/mcp', ':443/mcp')).port, '');
+});
+
+test('negative acceptance callers cannot disable or extend the HTTP deadline', async () => {
+  const url = 'https://hoikucolor-mcp-preview-only.hc-workspace.workers.dev/mcp';
+  let requests = 0;
+  for (const timeoutMs of [0, -1, 10_001, Infinity, NaN, 1.5]) {
+    await assert.rejects(probeAnonymousMcpBoundary({ url, timeoutMs,
+      fetcher: async () => { requests++; throw Error('UNEXPECTED_NETWORK'); },
+    }), /BOUNDARY_TIMEOUT_INVALID/);
+  }
+  assert.equal(requests, 0);
 });
