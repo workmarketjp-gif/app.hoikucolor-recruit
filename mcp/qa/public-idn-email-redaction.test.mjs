@@ -67,3 +67,12 @@ test('ordinary Japanese descriptions remain unchanged', async () => {
   const result = await searchPublicChildcareJobs({}, sourceConfig({ ...row, description }));
   assert.equal(result.jobs[0].description, description);
 });
+
+test('ASCII TLD next to Japanese grammatical suffix is not over-redacted', async () => {
+  const result = await searchPublicChildcareJobs({}, sourceConfig({
+    ...row,
+    description: '🌸お問い合わせalice＠example．jpへ。休日は週休2日です🌼',
+  }));
+  assert.equal(result.jobs[0].description,
+    '🌸お問い合わせ[連絡先省略]へ。休日は週休2日です🌼');
+});
