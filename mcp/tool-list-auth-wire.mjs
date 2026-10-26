@@ -15,6 +15,34 @@ const MAX_DISCOVERY_REPLY_BYTES = 256 * 1024;
 const RESPONSE_DEADLINE_MS = 1_500;
 const EXPECTED_NAMES = publicJobToolDefinitions.map(tool => tool.name);
 
+// Tool schemas are an authorization-adjacent public contract: adding a
+// candidate field to tools/list must not be silently advertised as noauth.
+// Check the SDK-emitted JSON Schema envelope against independently reviewed
+// public-only field names before decorating either auth metadata location.
+// Nested job/output structure remains protected by the strict Zod schemas and
+// the runtime's publicProjection allowlist.
+const REVIEWED_PROPERTIES = Object.freeze({
+  search_public_childcare_jobs: Object.freeze({
+    input: ['keyword', 'prefecture', 'employment_type', 'limit', 'offset'],
+    output: ['jobs', 'returned', 'reported_total', 'offset', 'requested_limit',
+      'next_offset', 'possible_more_source_rows', 'scanned_source_rows', 'note'],
+  }),
+  list_public_childcare_job_filters: Object.freeze({
+    input: [], output: ['prefectures', 'employment_types', 'note'],
+  }),
+  get_public_childcare_job: Object.freeze({
+    input: ['job_id'], output: ['job', 'note'],
+  }),
+});
+function hasReviewedProperties(schema, expected) {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema) ||
+      schema.type !== 'object' ||
+      !schema.properties || typeof schema.properties !== 'object' ||
+      Array.isArray(schema.properties)) return false;
+  const actual = Object.keys(schema.properties);
+  return actual.length === expected.length && expected.every(key => Object.hasOwn(schema.properties, key));
+}
+
 function isToolListRequest(bytes) {
   try {
     const request = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
@@ -84,8 +112,14 @@ function decorateEnvelope(envelope, requestId) {
     throw new Error('MCP_DISCOVERY_TOOLS_UNEXPECTED');
   }
   const decorated = tools.map(tool => {
-    if (!tool.inputSchema || !tool.outputSchema || tool.annotations?.readOnlyHint !== true ||
-      tool.annotations?.destructiveHint === true ||
+    const contract = REVIEWED_PROPERTIES[tool.name];
+    if (!contract || !hasReviewedProperties(tool.inputSchema, contract.input) ||
+      !hasReviewedProperties(tool.outputSchema, contract.output)) {
+      throw new Error('MCP_DISCOVERY_SCHEMA_DRIFT');
+    }
+    if (tool.annotations?.readOnlyHint !== true ||
+      tool.annotations?.destructiveHint !== false ||
+      tool.annotations?.openWorldHint !== true ||
       (tool._meta != null && (typeof tool._meta !== 'object' || Array.isArray(tool._meta)))) {
       throw new Error('MCP_DISCOVERY_METADATA_INVALID');
     }

@@ -24,13 +24,22 @@ const fixtures = [{
 }];
 
 function zStub() {
-  const chain = () => ({
+  // Preserve declared field names when simulating SDK JSON Schema emission.
+  // An all-empty object fixture would now correctly be rejected by the
+  // anonymous tools/list schema-drift guard.
+  const chain = (type, properties) => ({
+    type, properties,
     max() { return this; }, min() { return this; }, int() { return this; },
     optional() { return this; }, strict() { return this; }, uuid() { return this; },
     nullable() { return this; }, finite() { return this; }, nonnegative() { return this; },
     url() { return this; },
   });
-  return { object: chain, string: chain, number: chain, boolean: chain, array: chain };
+  return {
+    object: shape => chain('object', Object.fromEntries(
+      Object.keys(shape).map(name => [name, { type: 'string' }]))),
+    string: () => chain('string'), number: () => chain('number'),
+    boolean: () => chain('boolean'), array: () => chain('array'),
+  };
 }
 
 async function withTcpGateway(callback) {
@@ -65,8 +74,8 @@ async function withTcpGateway(callback) {
             // SDK-shaped fixture: preserve security policy validation in the adapter.
             result = { tools: [...tools].map(([name, { meta }]) => ({
               name, title: meta.title, description: meta.description,
-              inputSchema: { type: 'object', properties: {} },
-              outputSchema: { type: 'object', properties: {} },
+              inputSchema: { type: 'object', properties: meta.inputSchema.properties, additionalProperties: false },
+              outputSchema: { type: 'object', properties: meta.outputSchema.properties, additionalProperties: false },
               annotations: meta.annotations,
             })) };
           } else if (p.method === 'tools/call') {
