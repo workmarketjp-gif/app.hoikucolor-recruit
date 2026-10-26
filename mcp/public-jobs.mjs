@@ -88,6 +88,11 @@ function configuredOrigin(config) {
 // details, even when the database columns themselves are public. Never forward
 // unstructured email addresses or phone numbers through the MCP tool boundary.
 // This is a privacy backstop, not an authorization or publisher-compliance gate.
+// ASCII mailbox names can use IDN/Punycode domains. The ASCII-only matcher
+// below does not remove the mailbox when the top-level domain is Japanese;
+// matching just the bare domain would leave the local part in public output.
+// This pattern runs on the NFKC shadow, so width variants are also covered.
+const IDN_EMAIL_IN_TEXT = /(?<![a-z0-9._%+-])[a-z0-9._%+-]{1,64}@(?!-)(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?\.)+(?:xn--[a-z0-9-]{2,59}|[\p{L}]{2,24})(?![\p{L}\p{N}.-])/giu;
 const EMAIL_IN_TEXT = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const JAPANESE_PHONE_IN_TEXT = /(?<![\da-z])(?:\+81[\s()./・ー−\p{Pd}]?|0)(?:\d[\s()./・ー−\p{Pd}]?){7,11}\d(?!\d)/giu;
 // External listings can disguise direct recruiter email addresses as
@@ -128,7 +133,7 @@ function redactObfuscatedEmails(value) {
   // All patterns run against the normalized shadow, but output is sourced
   // only from original input spans; overlapping formats are merged first.
   const spans = [OBFUSCATED_EMAIL_IN_TEXT, NFKC_MIXED_EMAIL_IN_TEXT,
-    CONTACT_LINK_IN_TEXT, BARE_DOMAIN_LINK_IN_TEXT, EMAIL_IN_TEXT, JAPANESE_PHONE_IN_TEXT]
+    CONTACT_LINK_IN_TEXT, BARE_DOMAIN_LINK_IN_TEXT, IDN_EMAIL_IN_TEXT, EMAIL_IN_TEXT, JAPANESE_PHONE_IN_TEXT]
     .flatMap(pattern => [...shadow.matchAll(pattern)].map(match => {
       // URLs may contain secret query values inside balanced parentheses.
       // Keep those parentheses in the redaction span, but preserve the
