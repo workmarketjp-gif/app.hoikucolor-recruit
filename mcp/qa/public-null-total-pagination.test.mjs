@@ -42,14 +42,18 @@ test('unavailable or malformed totals do not falsely end a complete result page'
   }
 });
 
-test('genuine numeric and PostgREST bigint-string counts retain normal exhaustion hints', async () => {
+test('genuine numeric and PostgREST bigint-string counts remain advisory until actual exhaustion', async () => {
   for (const count of [2, '2']) {
     const feed = source([{ id: 'a', visible: true }, { id: 'b', visible: true }], count);
     const result = await scanFreshWindow({ ...feed, project, limit: 2, offset: 0 });
     assert.deepEqual(result.jobs.map(row => row.id), ['a', 'b']);
     assert.equal(result.reported_total, 2);
-    assert.equal(result.next_offset, null);
-    assert.equal(result.possible_more_source_rows, false);
+    assert.equal(result.next_offset, 2);
+    assert.equal(result.possible_more_source_rows, true);
+    const exhausted = await scanFreshWindow({ ...feed, project, limit: 2, offset: result.next_offset });
+    assert.deepEqual(exhausted.jobs, []);
+    assert.equal(exhausted.next_offset, null);
+    assert.equal(exhausted.possible_more_source_rows, false);
   }
 });
 
