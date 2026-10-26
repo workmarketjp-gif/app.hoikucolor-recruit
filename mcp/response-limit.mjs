@@ -24,10 +24,16 @@ export async function readBoundedPublicJson(response, { deadlineMs = DEFAULT_BOD
       throw new Error('PUBLIC_JOB_SOURCE_TOO_LARGE');
     }
     if (!response.body || typeof response.body.getReader !== 'function') {
-      // Legacy test doubles: still bound completion, despite no byte stream.
+      // Legacy test doubles have no readable stream, so their json() method
+      // cannot be byte-bounded before parsing. Still reject an oversized
+      // serialized result rather than silently bypass the public size cap.
+      // Production Node/Workers Fetch Responses use the streamed path above.
       const value = await Promise.race([Promise.resolve().then(() => response.json()), deadline]);
-      // This code path is not used by Node/Workers Fetch Responses; do not
-      // mistake JSON size in characters for a dependable streamed byte cap.
+      const serialized = JSON.stringify(value);
+      if (typeof serialized !== 'string') throw new Error('PUBLIC_JOB_SOURCE_INVALID_JSON');
+      if (new TextEncoder().encode(serialized).byteLength > MAX_PUBLIC_RESPONSE_BYTES) {
+        throw new Error('PUBLIC_JOB_SOURCE_TOO_LARGE');
+      }
       return value;
     }
     reader = response.body.getReader();
