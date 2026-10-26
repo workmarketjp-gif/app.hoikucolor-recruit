@@ -22,8 +22,8 @@ test('checks eleven remote negative HTTP boundaries without a real token or muta
     return new Response(null, { status: denied({ url: destination, options }) });
   };
   const result = await probeAnonymousMcpBoundary({ url, fetcher });
-  assert.deepEqual(result, { status: 'PASS', checks: 7, changes_performed: false });
-  assert.equal(calls.length, 7);
+  assert.deepEqual(result, { status: 'PASS', checks: 11, changes_performed: false });
+  assert.equal(calls.length, 11);
   assert(calls.every(c => c.options.redirect === 'error' && c.options.signal));
   assert(calls.every(c => c.options.method === 'GET' || c.options.method === 'POST'));
   assert(calls.every(c => !/service_role|sb_secret_|candidate:read/.test(JSON.stringify(c))));
