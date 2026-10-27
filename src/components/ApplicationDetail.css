@@ -74,6 +74,14 @@
 .interview-response-error { margin: 0; color: var(--hc-accent-ink); font-size: 15px; font-weight: 700; }
 .interview-response-closed { font-size: 14px; color: var(--hc-muted); }
 
+.application-decision-card { display: grid; gap: 10px; margin: 0 0 12px; }
+.application-decision-card .application-card-head, .application-decision-card .application-empty-copy { margin: 0; }
+.application-decision-card.is-offer { border-color: var(--hc-accent); box-shadow: 0 0 0 1px var(--hc-accent-soft); }
+.application-decision-actions { display: flex; }
+.application-withdraw-form { padding: 12px; border-radius: 12px; background: #faf6f5; }
+.application-withdraw-warning { font-size: 15px; color: var(--hc-accent-ink); }
+.hc-shell .application-decision-card .primary-button, .hc-shell .application-decision-card .secondary-button { min-height: 52px !important; }
+
 @media (min-width: 901px) {
   .application-detail-hero { grid-template-columns: minmax(0, 1fr) 260px; align-items: start; }
 }
@@ -84,4 +92,5 @@
   .interview-response-actions { grid-template-columns: 1fr; }
   .interview-response-actions .primary-button, .interview-response-actions .secondary-button { width: 100%; }
   .interview-reschedule-form .primary-button { flex: 1; }
+  .application-decision-actions .secondary-button { width: 100%; }
 }
