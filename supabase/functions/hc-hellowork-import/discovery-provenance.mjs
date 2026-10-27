@@ -26,6 +26,23 @@ function priorProvenance(previousPayload) {
   return prior && typeof prior === 'object' && prior.version === 1 ? prior : null;
 }
 
+// A re-fetched search result can arrive after a newer observation. Preserve
+// chronological first/last evidence even when requests complete out of order.
+function orderedTimestamp(a, b, earliest) {
+  const aMs = typeof a === 'string' ? Date.parse(a) : NaN;
+  const bMs = typeof b === 'string' ? Date.parse(b) : NaN;
+  if (!Number.isFinite(aMs)) return Number.isFinite(bMs) ? b : null;
+  if (!Number.isFinite(bMs)) return a;
+  return (earliest ? aMs <= bMs : aMs >= bMs) ? a : b;
+}
+
+function latestSearch(prior, observation) {
+  if (!observation) return prior || null;
+  if (!prior || !Number.isFinite(Date.parse(prior.observed_at))) return observation;
+  return Date.parse(observation.observed_at) >= Date.parse(prior.observed_at)
+    ? observation : prior;
+}
+
 export function mergeSourcePayloadProvenance(freshPayload, previousPayload, observation = null) {
   const prior = priorProvenance(previousPayload);
   if (!prior && !observation) return freshPayload;
@@ -45,9 +62,9 @@ export function mergeSourcePayloadProvenance(freshPayload, previousPayload, obse
       // These sets are naturally bounded to 47 prefectures and 4 approved terms.
       observed_prefecture_codes: [...codes].sort(),
       observed_search_terms: [...terms].sort(),
-      first_observed_at: prior?.first_observed_at || observation?.observed_at || null,
-      last_observed_at: observation?.observed_at || prior?.last_observed_at || null,
-      last_search: observation || prior?.last_search || null,
+      first_observed_at: orderedTimestamp(orderedTimestamp(prior?.first_observed_at, prior?.last_observed_at, true), observation?.observed_at, true),
+      last_observed_at: orderedTimestamp(orderedTimestamp(prior?.first_observed_at, prior?.last_observed_at, false), observation?.observed_at, false),
+      last_search: latestSearch(prior?.last_search, observation),
       // Critically, this is NOT a verified workplace address or prefecture.
       evidence_kind: 'search_filter_only',
     },

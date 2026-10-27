@@ -26,6 +26,26 @@ assert.equal(second.discovery_search.first_observed_at, t1.observed_at);
 assert.equal(second.discovery_search.last_observed_at, t2.observed_at);
 assert.equal(second.discovery_search.last_search.prefecture_code, '47');
 
+// A slower request may finish after a newer search. Never move the last timestamp
+// backwards or overwrite last_search with the older observation.
+const earlier = createSearchObservation(13, '保育補助', 3, '2026-10-27T12:20:00Z');
+const outOfOrder = mergeSourcePayloadProvenance({ parser_version: 'older' }, second, earlier);
+assert.deepEqual(outOfOrder.discovery_search.observed_prefecture_codes, ['01', '13', '47']);
+assert.equal(outOfOrder.discovery_search.first_observed_at, earlier.observed_at);
+assert.equal(outOfOrder.discovery_search.last_observed_at, t2.observed_at);
+assert.deepEqual(outOfOrder.discovery_search.last_search, t2);
+assert.equal(outOfOrder.prefecture, undefined, 'a search filter is never worksite evidence');
+
+const newest = createSearchObservation(47, '幼稚園教諭', 4, '2026-10-27T12:50:00Z');
+const advanced = mergeSourcePayloadProvenance({ parser_version: 'newest' }, outOfOrder, newest);
+assert.equal(advanced.discovery_search.first_observed_at, earlier.observed_at);
+assert.equal(advanced.discovery_search.last_observed_at, newest.observed_at);
+assert.deepEqual(advanced.discovery_search.last_search, newest);
+assert.deepEqual(advanced.discovery_search.observed_search_terms,
+  ['保育士', '保育教諭', '保育補助', '幼稚園教諭'].sort());
+assert.deepEqual(mergeSourcePayloadProvenance({ parser_version: 'reverify' }, advanced)
+  .discovery_search, advanced.discovery_search);
+
 const verifiedAgain = mergeSourcePayloadProvenance({ parser_version: 'z' }, second);
 assert.deepEqual(verifiedAgain.discovery_search, second.discovery_search,
   're-verification must preserve search evidence');
@@ -46,4 +66,4 @@ assert.match(importer, /const \{ prefecture, city, address \} = locationParts\(l
   'workplace must still be determined only from the official job detail');
 assert.doesNotMatch(importer, /prefecture:\s*observation\.prefecture_code/,
   'never promote discovery search prefecture to verified workplace');
-console.log('Hello Work search provenance: 15 assertions / cases PASS (source contract).');
+console.log('Hello Work search provenance: chronology / dedup / source-contract assertions PASS (source contract).');
