@@ -258,6 +258,7 @@ function ApplicationDecisionCard({ application, onChanged }: { application: Appl
   const [error, setError] = useState<string | null>(null);
   const offered = application.status === 'offered';
   const accepted = offered && application.candidate_offer_response === 'accepted';
+  const canAccept = offered && !accepted;
   const canWithdraw = (WITHDRAWABLE_APPLICATION_STATUSES as readonly string[]).includes(application.status);
 
   if (!canWithdraw) return null;
@@ -311,13 +312,14 @@ function ApplicationDecisionCard({ application, onChanged }: { application: Appl
         ? '内定を承諾するか、辞退するかを選んでください。回答は園にもすぐに届きます。'
         : '選考を続けない場合は、ここから応募を辞退できます。予定している面接・見学・体験も、あわせてキャンセルされます。'}</p>
 
-    {offered && !accepted && <div className="interview-reschedule-form">
+    {canAccept && !withdrawOpen && <div className="interview-reschedule-form">
       <label><span>園への連絡事項（任意）</span><textarea rows={3} maxLength={1000} value={offerMessage} onChange={(event) => setOfferMessage(event.target.value)} placeholder="例：内定ありがとうございます。入職日についてご相談させてください。" /></label>
-      <div><small>{offerMessage.length}/1000</small><button className="primary-button" type="button" disabled={busy !== null} onClick={() => void submitAccept()}>{busy === 'accept' ? '送信中…' : '内定を承諾する'}</button></div>
+      <small>{offerMessage.length}/1000</small>
     </div>}
 
-    {!withdrawOpen && <div className="application-decision-actions">
+    {!withdrawOpen && <div className={`application-decision-actions ${canAccept ? '' : 'is-single'}`}>
       <button className="secondary-button" type="button" disabled={busy !== null} onClick={() => { setWithdrawOpen(true); setError(null); }}>{withdrawLabel}</button>
+      {canAccept && <button className="primary-button" type="button" disabled={busy !== null} onClick={() => void submitAccept()}>{busy === 'accept' ? '送信中…' : '内定を承諾する'}</button>}
     </div>}
 
     {withdrawOpen && <div className="interview-reschedule-form application-withdraw-form">
