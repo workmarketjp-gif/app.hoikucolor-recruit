@@ -11,6 +11,8 @@
 -- within that row update. Concurrent upserts must serialize on that key.
 --
 -- SCOPE: solely source_payload.discovery_search, source='hellowork'.
+-- Both INSERT and UPDATE require input-version validation: an INSERT bypass
+-- in the earlier candidate could poison a newly created row with v2/invalid JSON.
 -- No location inference; never touch prefecture/city, publication, status,
 -- annual_holidays_*, occupation_*, RLS or any source_payload siblings.
 -- The current hc_hw_structure_before_write trigger must remain installed.
@@ -33,12 +35,15 @@ declare
   v_new_search_time timestamptz;
   v_last_search jsonb;
 begin
-  if old.source is distinct from 'hellowork'
-     or new.source is distinct from 'hellowork' then
+  -- OLD is undefined on INSERT. Validate the incoming envelope on both paths,
+  -- then use OLD only on UPDATE when row locking makes the merge atomic.
+  if new.source is distinct from 'hellowork' then
+    return new;
+  end if;
+  if tg_op = 'UPDATE' and old.source is distinct from 'hellowork' then
     return new;
   end if;
 
-  v_old := old.source_payload -> 'discovery_search';
   v_incoming := new.source_payload -> 'discovery_search';
 
   -- Validate incoming evidence BEFORE the no-prior-evidence fast path.
@@ -51,6 +56,11 @@ begin
     raise exception 'HC_HW_DISCOVERY_PROVENANCE_VERSION_CONFLICT'
       using errcode = '22023';
   end if;
+
+  if tg_op = 'INSERT' then
+    return new; -- No OLD row: input was already validated above.
+  end if;
+  v_old := old.source_payload -> 'discovery_search';
 
   if v_old is null or v_old = 'null'::jsonb then
     return new; -- No prior observation to merge (including JSON null).
@@ -165,6 +175,11 @@ $fn$;
 revoke all on function hc_private.hw_search_provenance_before_update_v1()
   from public, anon, authenticated;
 
+create trigger hc_hw_search_provenance_before_insert
+before insert on public.hc_external_job_sources
+for each row
+execute function hc_private.hw_search_provenance_before_update_v1();
+
 create trigger hc_hw_search_provenance_before_update
 before update of source_payload on public.hc_external_job_sources
 for each row
@@ -180,7 +195,8 @@ execute function hc_private.hw_search_provenance_before_update_v1();
 --    override, no fabricated 'verified' or public revival; provenance survives.
 -- 4. Reverify with no discovery_search retains old; unsupported existing
 --    OR incoming version raises a controlled error instead of silently
---    discarding any previously stored observation.
+--    discarding any previously stored observation. Validate malformed INSERT
+--    as well as UPDATE/ON CONFLICT paths so the first write cannot poison row.
 -- 5. Check unchanged pre-existing trigger hc_hw_structure_before_write:
 --    annual_holidays_*, occupation_*, canonical prefecture/city source semantics.
 -- 6. Ensure source_payload remains absent from public feed, RLS/ACL intact,
