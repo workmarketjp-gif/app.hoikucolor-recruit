@@ -1,0 +1,50 @@
+name: HC HelloWork PG17 isolated provenance QA
+
+on:
+  pull_request:
+    paths:
+      - 'qa/review/hellowork-discovery-search-atomic-merge-CANDIDATE.sql'
+      - 'qa/review/hellowork-provenance-pg17-concurrency.sh'
+      - 'qa/hellowork-discovery-provenance-contract.mjs'
+      - 'supabase/functions/hc-hellowork-import/**'
+      - '.github/workflows/hc-hellowork-pg17-race.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  postgres17-two-writers:
+    name: PG17 two writers (disposable local DB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: local-only-qa
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGDATABASE: postgres
+      PGUSER: postgres
+      PGPASSWORD: local-only-qa
+      PGCONNECT_TIMEOUT: '5'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure local-only PostgreSQL client
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y postgresql-client
+          fi
+      - name: Execute review-only candidate in disposable PG17 and assert two real locks
+        run: bash qa/review/hellowork-provenance-pg17-concurrency.sh
