@@ -79,6 +79,8 @@
 .application-decision-card.is-offer { border-color: var(--hc-accent); box-shadow: 0 0 0 1px var(--hc-accent-soft); }
 .application-decision-actions { display: flex; }
 .application-withdraw-form { padding: 12px; border-radius: 12px; background: #faf6f5; }
+/* Beats `.interview-reschedule-form > div` (flex, space-between), which squeezed the confirm button on mobile. */
+.application-withdraw-form > .interview-response-actions { display: grid; }
 .application-withdraw-warning { font-size: 15px; color: var(--hc-accent-ink); }
 .hc-shell .application-decision-card .primary-button, .hc-shell .application-decision-card .secondary-button { min-height: 52px !important; }
 
