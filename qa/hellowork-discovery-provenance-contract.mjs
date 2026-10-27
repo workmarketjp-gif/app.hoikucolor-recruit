@@ -81,4 +81,17 @@ assert.ok(incomingValidationIndex >= 0 && missingOldFastPathIndex >= 0 &&
 assert.match(atomicReviewSql, /pg_catalog\.jsonb_typeof\(v_incoming\) is distinct from 'object'/);
 assert.match(atomicReviewSql, /v_incoming ->> 'version' is distinct from '1'/);
 
+// INSERT (including the attempted INSERT phase of UPSERT) has no OLD row.
+// Validate incoming evidence before the INSERT fast path as well as UPDATE.
+const insertFastPathIndex = atomicReviewSql.indexOf("if tg_op = 'INSERT' then");
+assert.ok(insertFastPathIndex > incomingValidationIndex,
+  'an INSERT must validate incoming version/type before returning NEW');
+assert.match(atomicReviewSql,
+  /create trigger hc_hw_search_provenance_before_insert\\s+before insert on public\\.hc_external_job_sources/,
+  'a BEFORE UPDATE-only trigger does not protect brand-new rows');
+assert.match(atomicReviewSql,
+  /create trigger hc_hw_search_provenance_before_update\\s+before update of source_payload/,
+  'retain row-locked UPDATE merging for concurrent UPSERT paths');
+
+
 console.log('Hello Work search provenance: chronology / dedup / source-contract assertions PASS (source contract).');
