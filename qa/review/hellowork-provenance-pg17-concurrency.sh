@@ -201,3 +201,92 @@ fi
 grep -q HC_HW_DISCOVERY_PROVENANCE_OLD_VERSION_UNSUPPORTED "$tmp/bad-old.log"
 test "$("${PSQL[@]}" -Atc "SELECT source_payload->'discovery_search'->>'version' FROM public.hc_external_job_sources WHERE source_job_id='bad-existing'")" = 2
 echo "PASS: PG17 candidate DDL, two real lock-contention races, chronology, data isolation, removed/reverify, malformed INSERT/UPDATE"
+
+
+# Compatibility smoke test: actual deployed hc_hw_structure_trigger_v1 body,
+# but its dependent helper functions are deliberately synthetic QA stubs.
+# Only disposable PG17. This is not production-function integration E2E.
+"${PSQL[@]}" <<'SQL'
+ALTER TABLE public.hc_external_job_sources
+ ADD COLUMN annual_holidays_field_text text,
+ ADD COLUMN holidays text,
+ ADD COLUMN description text,
+ ADD COLUMN title text,
+ ADD COLUMN required_qualification text,
+ ADD COLUMN address text,
+ ADD COLUMN annual_holidays_source text,
+ ADD COLUMN occupation_groups text[],
+ ADD COLUMN occupation_source text,
+ ADD COLUMN structured_parser_version text;
+CREATE FUNCTION hc_private.hw_annual_holidays_v1(text,text,text,text)
+RETURNS TABLE(days smallint,basis text,source text)
+LANGUAGE sql IMMUTABLE SET search_path='' AS $q$
+ SELECT CASE WHEN $1='120日' THEN 120::smallint END,
+        CASE WHEN $1='120日' THEN 'exact'::text END,
+        CASE WHEN $1='120日' THEN 'hellowork_field'::text END
+$q$;
+CREATE FUNCTION hc_private.hw_occupation_v1(text,text)
+RETURNS TABLE(occupation_group text,occupation_groups text[],source text)
+LANGUAGE sql IMMUTABLE SET search_path='' AS $q$
+ SELECT CASE WHEN $1='保育士' THEN 'hoikushi' ELSE 'unknown' END,
+        CASE WHEN $1='保育士' THEN ARRAY['hoikushi'] ELSE ARRAY[]::text[] END,
+        'title'::text
+$q$;
+CREATE FUNCTION hc_private.hw_prefecture_v1(text,text)
+RETURNS text LANGUAGE sql IMMUTABLE SET search_path='' AS $q$
+ SELECT CASE WHEN position('北海道' in coalesce($1,'')||coalesce($2,''))>0
+             THEN '北海道' END
+$q$;
+
+-- Body below matches production pg_get_functiondef at this review.
+CREATE OR REPLACE FUNCTION hc_private.hw_structure_trigger_v1()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO ''
+AS $function$
+declare
+  h record;
+  o record;
+  v_pref text;
+begin
+  select * into h from hc_private.hw_annual_holidays_v1(new.annual_holidays_field_text, new.holidays, new.description, new.title);
+  new.annual_holidays_days := h.days;
+  new.annual_holidays_basis := h.basis;
+  new.annual_holidays_source := h.source;
+  select * into o from hc_private.hw_occupation_v1(new.title, new.required_qualification);
+  new.occupation_group := o.occupation_group;
+  new.occupation_groups := o.occupation_groups;
+  new.occupation_source := o.source;
+  v_pref := hc_private.hw_prefecture_v1(new.prefecture, new.address);
+  if v_pref is not null then new.prefecture := v_pref; end if;
+  new.structured_parser_version := 'hw-structure-v1';
+  return new;
+end;
+$function$;
+CREATE TRIGGER hc_hw_structure_before_write
+BEFORE INSERT OR UPDATE ON public.hc_external_job_sources
+FOR EACH ROW EXECUTE FUNCTION hc_private.hw_structure_trigger_v1();
+
+INSERT INTO public.hc_external_job_sources
+ (source,source_job_id,source_payload,title,annual_holidays_field_text)
+VALUES ('hellowork','structure-fixture',
+        hc_private.qa_payload('47','保育士','2026-10-27T13:00:00Z'),
+        '保育士','120日');
+UPDATE public.hc_external_job_sources
+ SET source_payload='{"parser_version":"v29"}'::jsonb,source_status='removed'
+WHERE source_job_id='structure-fixture';
+DO $verify$
+BEGIN
+ IF NOT EXISTS(
+ SELECT 1 FROM public.hc_external_job_sources
+ WHERE source_job_id='structure-fixture'
+   AND source_status='removed'
+   AND prefecture IS NULL
+   AND annual_holidays_days=120 AND annual_holidays_basis='exact'
+   AND occupation_group='hoikushi'
+   AND structured_parser_version='hw-structure-v1'
+   AND source_payload->>'parser_version'='v29'
+   AND source_payload->'discovery_search'->'observed_prefecture_codes'='["47"]'::jsonb
+ ) THEN RAISE EXCEPTION 'Structure/provenance BEFORE trigger coexistence failed'; END IF;
+END
+$verify$;
+SQL
+echo 'PASS: PG17 two BEFORE triggers coexist; synthetic helpers preserve derived fields and never infer worksite from search filter'
