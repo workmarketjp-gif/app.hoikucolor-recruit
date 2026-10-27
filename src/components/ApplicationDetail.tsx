@@ -4,8 +4,12 @@ import { Icon } from './Icon';
 import { EmptyState, InlineError, SkeletonList } from './StateViews';
 import { errorMessage } from '../lib/useResource';
 import {
+  acceptOffer,
   getJobseekerApplicationDetail,
   respondToInterview,
+  withdrawApplication,
+  WITHDRAWABLE_APPLICATION_STATUSES,
+  type Application,
   type JobseekerApplicationDetail,
   type JobseekerInterview,
   type JobseekerVisit,
@@ -165,6 +169,8 @@ function ApplicationDetailBody({ detail, onBack, onRefresh }: { detail: Jobseeke
       {terminal && <div className="selection-terminal"><strong>{statusLabel(application.status)}</strong><span>{application.status === 'withdrawn' ? '応募を辞退しました。' : '今回の選考は終了しました。'}</span></div>}
     </section>
 
+    <ApplicationDecisionCard application={application} onChanged={onRefresh} />
+
     <div className="application-detail-grid">
       <section className="application-detail-card">
         <div className="application-card-head"><div><h2>応募内容</h2></div></div>
@@ -242,6 +248,90 @@ function InterviewCard({ interview, onRespond }: { interview: JobseekerInterview
       {!canRespond && interview.candidate_response_status && <small className="interview-response-closed">面接の状態が更新されたため、回答の変更はできません。</small>}
     </div>
   </article>;
+}
+
+function ApplicationDecisionCard({ application, onChanged }: { application: Application; onChanged: (quiet?: boolean) => Promise<void> }) {
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [offerMessage, setOfferMessage] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState<'accept' | 'withdraw' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const offered = application.status === 'offered';
+  const accepted = offered && application.candidate_offer_response === 'accepted';
+  const canWithdraw = (WITHDRAWABLE_APPLICATION_STATUSES as readonly string[]).includes(application.status);
+
+  if (!canWithdraw) return null;
+
+  const refreshAll = async () => {
+    await onChanged(true);
+    for (const name of ['hc:applications-refresh', 'hc:attention-refresh', 'hc:notifications-refresh', 'hc:messages-refresh']) {
+      window.dispatchEvent(new CustomEvent(name));
+    }
+  };
+
+  const submitAccept = async () => {
+    setBusy('accept');
+    setError(null);
+    try {
+      await acceptOffer(application.id, offerMessage);
+      setOfferMessage('');
+      await refreshAll();
+    } catch (err) {
+      setError(errorMessage(err, '内定を承諾できませんでした。'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const submitWithdraw = async () => {
+    setBusy('withdraw');
+    setError(null);
+    try {
+      await withdrawApplication(application.id, reason);
+      setReason('');
+      setWithdrawOpen(false);
+      await refreshAll();
+    } catch (err) {
+      setError(errorMessage(err, offered ? '内定を辞退できませんでした。' : '応募を辞退できませんでした。'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const withdrawLabel = accepted ? '承諾を取り消して辞退する' : offered ? '内定を辞退する' : '応募を辞退する';
+
+  return <section className={`application-detail-card application-decision-card ${offered ? 'is-offer' : ''}`} aria-label={offered ? '内定への回答' : '応募の辞退'}>
+    <div className="application-card-head"><div><h2>{accepted ? '内定を承諾済み' : offered ? '内定への回答' : '応募の辞退'}</h2></div></div>
+
+    {accepted && <div className="interview-response-status is-accepted"><strong>✓ この内定を承諾しました</strong>{application.candidate_offer_message && <p>{application.candidate_offer_message}</p>}{application.candidate_offer_responded_at && <small>{formatDateTime(application.candidate_offer_responded_at)} 回答</small>}</div>}
+
+    <p className="application-empty-copy">{accepted
+      ? 'これからの案内は、園とのやり取りで確認できます。事情が変わったときは、ここから辞退することもできます。'
+      : offered
+        ? '内定を承諾するか、辞退するかを選んでください。回答は園にもすぐに届きます。'
+        : '選考を続けない場合は、ここから応募を辞退できます。予定している面接・見学・体験も、あわせてキャンセルされます。'}</p>
+
+    {offered && !accepted && <div className="interview-reschedule-form">
+      <label><span>園への連絡事項（任意）</span><textarea rows={3} maxLength={1000} value={offerMessage} onChange={(event) => setOfferMessage(event.target.value)} placeholder="例：内定ありがとうございます。入職日についてご相談させてください。" /></label>
+      <div><small>{offerMessage.length}/1000</small><button className="primary-button" type="button" disabled={busy !== null} onClick={() => void submitAccept()}>{busy === 'accept' ? '送信中…' : '内定を承諾する'}</button></div>
+    </div>}
+
+    {!withdrawOpen && <div className="application-decision-actions">
+      <button className="secondary-button" type="button" disabled={busy !== null} onClick={() => { setWithdrawOpen(true); setError(null); }}>{withdrawLabel}</button>
+    </div>}
+
+    {withdrawOpen && <div className="interview-reschedule-form application-withdraw-form">
+      <strong className="application-withdraw-warning">{offered ? '辞退すると、この内定は取り消せません。' : '辞退すると、この応募は取り消せません。'}</strong>
+      <label><span>辞退の理由・園への連絡（任意）</span><textarea rows={3} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="例：一身上の都合により辞退いたします。" /></label>
+      <div><small>{reason.length}/1000</small></div>
+      <div className="interview-response-actions">
+        <button className="secondary-button" type="button" disabled={busy !== null} onClick={() => { setWithdrawOpen(false); setReason(''); setError(null); }}>やめる</button>
+        <button className="primary-button application-withdraw-confirm" type="button" disabled={busy !== null} onClick={() => void submitWithdraw()}>{busy === 'withdraw' ? '送信中…' : '辞退を確定する'}</button>
+      </div>
+    </div>}
+
+    {error && <p className="interview-response-error" role="alert">{error}</p>}
+  </section>;
 }
 
 function VisitCard({ visit }: { visit: JobseekerVisit }) {

@@ -128,6 +128,9 @@ export type Application = {
   facility_name: string;
   prefecture: string | null;
   city: string | null;
+  candidate_offer_response?: 'accepted' | 'declined' | null;
+  candidate_offer_responded_at?: string | null;
+  candidate_offer_message?: string | null;
 };
 
 export type JobseekerInterviewResponseStatus = 'accepted' | 'reschedule_requested';
@@ -444,6 +447,47 @@ export async function respondToInterview(
     p_candidate_message: candidateMessage?.trim() || null,
   });
   if (error) throw error;
+}
+
+/** Statuses the withdrawal RPC accepts; anything else is already decided by the facility. */
+export const WITHDRAWABLE_APPLICATION_STATUSES = ['new', 'reviewing', 'interview', 'offered'] as const;
+
+/** Plain-Japanese reasons for the offer / withdrawal RPC guards. */
+function applicationDecisionError(error: unknown): Error | null {
+  const message = error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string'
+    ? (error as { message: string }).message
+    : '';
+  if (message.includes('HC_SPOT_APPLICATION_USE_SPOT_LIFECYCLE')) {
+    return new Error('スポット求人の応募は、スポット勤務の画面から取り消してください。');
+  }
+  if (message.includes('HC_OFFER_ACCEPTANCE_NOT_ALLOWED') || message.includes('HC_APPLICATION_WITHDRAWAL_NOT_ALLOWED')) {
+    return new Error('選考の状態が変わったため、この操作はできません。最新の状態に更新して確認してください。');
+  }
+  if (message.includes('MESSAGE_TOO_LONG') || message.includes('REASON_TOO_LONG')) return new Error('1000文字以内で入力してください。');
+  if (message.includes('APPLICATION_NOT_FOUND')) return new Error('この応募を確認できませんでした。応募一覧から開き直してください。');
+  return null;
+}
+
+export async function acceptOffer(applicationId: string, candidateMessage: string | null = null): Promise<void> {
+  const { data, error } = await client().rpc('hc_jobseeker_accept_offer', {
+    p_application_id: applicationId,
+    p_message: candidateMessage?.trim() || null,
+  });
+  if (error) throw applicationDecisionError(error) || error;
+  if ((data as { offer_response?: unknown } | null)?.offer_response !== 'accepted') {
+    throw new Error('内定承諾の結果を確認できませんでした。最新の状態に更新して確認してください。');
+  }
+}
+
+export async function withdrawApplication(applicationId: string, reason: string | null = null): Promise<void> {
+  const { data, error } = await client().rpc('hc_jobseeker_withdraw_application', {
+    p_application_id: applicationId,
+    p_reason: reason?.trim() || null,
+  });
+  if (error) throw applicationDecisionError(error) || error;
+  if ((data as { status?: unknown } | null)?.status !== 'withdrawn') {
+    throw new Error('辞退の結果を確認できませんでした。最新の状態に更新して確認してください。');
+  }
 }
 
 /** Plain-Japanese reasons for the v2 submission guards (see the migration). */
