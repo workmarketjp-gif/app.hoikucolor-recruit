@@ -66,4 +66,19 @@ assert.match(importer, /const \{ prefecture, city, address \} = locationParts\(l
   'workplace must still be determined only from the official job detail');
 assert.doesNotMatch(importer, /prefecture:\s*observation\.prefecture_code/,
   'never promote discovery search prefecture to verified workplace');
+
+// Review-only SQL source contract: unsupported incoming provenance must be
+// rejected even if OLD has no discovery_search. This is not a trigger E2E.
+const atomicReviewSql = fs.readFileSync(
+  'qa/review/hellowork-discovery-search-atomic-merge-CANDIDATE.sql', 'utf8');
+const incomingValidationIndex = atomicReviewSql.indexOf(
+  "raise exception 'HC_HW_DISCOVERY_PROVENANCE_VERSION_CONFLICT'");
+const missingOldFastPathIndex = atomicReviewSql.indexOf(
+  "if v_old is null or v_old = 'null'::jsonb then");
+assert.ok(incomingValidationIndex >= 0 && missingOldFastPathIndex >= 0 &&
+  incomingValidationIndex < missingOldFastPathIndex,
+  'validate unsupported incoming provenance before empty OLD fast path');
+assert.match(atomicReviewSql, /pg_catalog\.jsonb_typeof\(v_incoming\) is distinct from 'object'/);
+assert.match(atomicReviewSql, /v_incoming ->> 'version' is distinct from '1'/);
+
 console.log('Hello Work search provenance: chronology / dedup / source-contract assertions PASS (source contract).');
