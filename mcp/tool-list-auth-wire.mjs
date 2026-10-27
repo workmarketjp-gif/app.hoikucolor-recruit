@@ -37,6 +37,11 @@ const REVIEWED_PROPERTIES = Object.freeze({
 function hasReviewedProperties(schema, expected) {
   if (!schema || typeof schema !== 'object' || Array.isArray(schema) ||
       schema.type !== 'object' ||
+      // An SDK/schema drift must never publish an open-ended JSON object as
+      // noauth, even if its currently enumerated property names still match.
+      schema.additionalProperties !== false ||
+      Object.hasOwn(schema, 'patternProperties') ||
+      Object.hasOwn(schema, 'unevaluatedProperties') ||
       !schema.properties || typeof schema.properties !== 'object' ||
       Array.isArray(schema.properties)) return false;
   const actual = Object.keys(schema.properties);
