@@ -39,6 +39,19 @@ begin
   end if;
 
   v_old := old.source_payload -> 'discovery_search';
+  v_incoming := new.source_payload -> 'discovery_search';
+
+  -- Validate incoming evidence BEFORE the no-prior-evidence fast path.
+  -- Otherwise a malformed/v2 envelope could be written into a previously
+  -- empty row, poisoning subsequent re-verification (which would then fail).
+  if v_incoming is not null
+     and v_incoming <> 'null'::jsonb
+     and (pg_catalog.jsonb_typeof(v_incoming) is distinct from 'object'
+          or v_incoming ->> 'version' is distinct from '1') then
+    raise exception 'HC_HW_DISCOVERY_PROVENANCE_VERSION_CONFLICT'
+      using errcode = '22023';
+  end if;
+
   if v_old is null or v_old = 'null'::jsonb then
     return new; -- No prior observation to merge (including JSON null).
   end if;
@@ -50,14 +63,6 @@ begin
      or v_old ->> 'version' is distinct from '1' then
     raise exception 'HC_HW_DISCOVERY_PROVENANCE_OLD_VERSION_UNSUPPORTED'
       using errcode = '22023';
-  end if;
-
-  v_incoming := new.source_payload -> 'discovery_search';
-  if v_incoming is not null
-     and v_incoming <> 'null'::jsonb
-     and (pg_catalog.jsonb_typeof(v_incoming) is distinct from 'object'
-          or v_incoming ->> 'version' is distinct from '1') then
-    raise exception 'HC_HW_DISCOVERY_PROVENANCE_VERSION_CONFLICT';
   end if;
 
   if v_incoming is null or v_incoming = 'null'::jsonb then
