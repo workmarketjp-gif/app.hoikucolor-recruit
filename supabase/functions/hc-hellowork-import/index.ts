@@ -7,6 +7,7 @@
 // is never exposed through hc_external_job_public_feed.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createSearchObservation, mergeSourcePayloadProvenance } from './discovery-provenance.mjs';
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -586,13 +587,30 @@ async function selectDiscoveryFetches(urls: string[]) {
   });
 }
 
-async function importUrls(urls: string[]) {
+async function importUrls(urls: string[], observation: ReturnType<typeof createSearchObservation> | null = null) {
   const results: Array<Record<string, unknown>> = [];
+  // One bounded SELECT per import batch, not an extra DB lookup for every URL.
+  // Re-verification must not erase the original discovery evidence.
+  const ids = [...new Set(urls.map((url) => sourceJobIdFromUrl(url)).filter((id): id is string => Boolean(id)))];
+  const existingPayloads = new Map<string, Record<string, unknown>>();
+  if (ids.length) {
+    const { data, error } = await supabase
+      .from('hc_external_job_sources')
+      .select('source_job_id,source_payload')
+      .eq('source', SOURCE)
+      .in('source_job_id', ids);
+    if (error) throw new Error('DISCOVERY_PROVENANCE_LOOKUP_FAILED');
+    for (const existing of data || []) {
+      existingPayloads.set(String(existing.source_job_id), (existing.source_payload || {}) as Record<string, unknown>);
+    }
+  }
   for (let offset = 0; offset < urls.length; offset += DISCOVERY_CONCURRENCY) {
     const slice = urls.slice(offset, offset + DISCOVERY_CONCURRENCY);
     const batch = await Promise.all(slice.map(async (value) => {
       try {
         const row = await normalize(new URL(value));
+        const existingPayload = existingPayloads.get(row.source_job_id) || null;
+        row.source_payload = mergeSourcePayloadProvenance(row.source_payload, existingPayload, observation);
         await upsertNormalized(row);
         return {
           source_job_id: row.source_job_id,
@@ -702,7 +720,8 @@ async function discoverBatch() {
     }
 
     const toFetch = await selectDiscoveryFetches(urls);
-    const results = await importUrls(toFetch);
+    const observation = createSearchObservation(prefecture, queryTerm, page, new Date().toISOString());
+    const results = await importUrls(toFetch, observation);
     const published = results.filter((item) => item.published === true).length;
     const errorRows = results.filter((item) => item.status === 'error');
     const errors = errorRows.length;
