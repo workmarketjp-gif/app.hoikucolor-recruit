@@ -91,3 +91,21 @@ test('rejects missing or inaccurate read-only tool annotations', async () => {
     assert.equal((await ensurePublicToolAuthWire(request, response(envelope(list)))).status, 503);
   }
 });
+
+test('refuses open-ended JSON Schemas even when all reviewed property names match', async () => {
+  const mutations = [
+    list => { list[0].inputSchema.additionalProperties = true; },
+    list => { delete list[1].outputSchema.additionalProperties; },
+    list => { list[2].inputSchema.additionalProperties = { type: 'string' }; },
+    list => { list[0].outputSchema.patternProperties = { '^private_': { type: 'string' } }; },
+    list => { list[1].outputSchema.unevaluatedProperties = true; },
+  ];
+  for (const change of mutations) {
+    const list = tools();
+    change(list);
+    const guarded = await ensurePublicToolAuthWire(request, response(envelope(list)));
+    assert.equal(guarded.status, 503, 'a permissive discovery schema must fail closed');
+    assert.equal(guarded.headers.get('cache-control'), 'no-store');
+    assert.equal((await guarded.text()).includes('private_'), false);
+  }
+});
