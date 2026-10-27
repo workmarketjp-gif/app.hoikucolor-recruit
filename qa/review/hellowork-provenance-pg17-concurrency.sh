@@ -62,7 +62,7 @@ race_case() {
     "${PSQL[@]}" <<SQL
 BEGIN;
 $sql_a
-\\! touch "$signal"
+\! touch "$signal"
 SELECT pg_sleep(3);
 COMMIT;
 SQL
