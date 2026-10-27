@@ -24,21 +24,26 @@ const fixtures = [{
 }];
 
 function zStub() {
-  // Preserve declared field names when simulating SDK JSON Schema emission.
-  // An all-empty object fixture would now correctly be rejected by the
-  // anonymous tools/list schema-drift guard.
-  const chain = (type, properties) => ({
-    type, properties,
-    max() { return this; }, min() { return this; }, int() { return this; },
-    optional() { return this; }, strict() { return this; }, uuid() { return this; },
-    nullable() { return this; }, finite() { return this; }, nonnegative() { return this; },
+  // This intentionally remains a synthetic SDK dispatcher. Preserve nested
+  // public object/array/nullable schemas, however, so it cannot mistakenly
+  // pass or fail the exact same noauth boundary with flattened fake strings.
+  const chain = (type, extra = {}) => ({
+    type, ...extra,
+    max() { return this; }, min() { return this; },
+    int() { this.type = 'integer'; return this; },
+    optional() { return this; },
+    strict() { this.additionalProperties = false; return this; },
+    uuid() { return this; },
+    nullable() { return { anyOf: [this, { type: 'null' }] }; },
+    finite() { return this; }, nonnegative() { return this; },
     url() { return this; },
   });
   return {
-    object: shape => chain('object', Object.fromEntries(
-      Object.keys(shape).map(name => [name, { type: 'string' }]))),
-    string: () => chain('string'), number: () => chain('number'),
-    boolean: () => chain('boolean'), array: () => chain('array'),
+    object: shape => chain('object', { properties: shape, additionalProperties: false }),
+    string: () => chain('string'),
+    number: () => chain('number'),
+    boolean: () => chain('boolean'),
+    array: inner => chain('array', { items: inner }),
   };
 }
 

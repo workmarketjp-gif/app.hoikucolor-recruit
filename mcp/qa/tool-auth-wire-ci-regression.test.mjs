@@ -26,12 +26,33 @@ const schema = names => ({
   properties:Object.fromEntries(names.map(name=>[name,{type:'string'}])),
   additionalProperties:false,
 });
-const tools = () => publicJobToolDefinitions.map(({name}) => ({
-  name,
-  inputSchema: schema(contracts[name].input),
-  outputSchema: schema(contracts[name].output),
-  annotations: {readOnlyHint:true, destructiveHint:false, openWorldHint:true},
-}));
+// Separate fixture from the runtime schema definitions so an accidental
+// SDK output change cannot silently authorize new nested candidate fields.
+const reviewedJobFields = [
+  'id','title','facility_name','organization_name','facility_type','prefecture',
+  'city','employment_type','salary_type','salary_min','salary_max','salary_note',
+  'required_qualification','description','published_at','closing_at',
+  'is_external','source_name','source_last_verified_at',
+  'has_verified_workplace_metrics','url',
+];
+const tools = () => publicJobToolDefinitions.map(({name}) => {
+  const inputSchema = schema(contracts[name].input);
+  const outputSchema = schema(contracts[name].output);
+  if (name === 'search_public_childcare_jobs') {
+    inputSchema.properties.limit = { type:'integer' };
+    inputSchema.properties.offset = { type:'integer' };
+    outputSchema.properties.jobs = { type:'array', items:schema(reviewedJobFields) };
+  }
+  if (name === 'list_public_childcare_job_filters') {
+    for (const key of ['prefectures', 'employment_types'])
+      outputSchema.properties[key] = { type:'array', items:{ type:'string' } };
+  }
+  if (name === 'get_public_childcare_job') {
+    outputSchema.properties.job = { anyOf:[schema(reviewedJobFields), { type:'null' }] };
+  }
+  return { name, inputSchema, outputSchema,
+    annotations: {readOnlyHint:true, destructiveHint:false, openWorldHint:true} };
+});
 const envelope = (list = tools()) => ({jsonrpc:'2.0', id:21, result:{tools:list}});
 const response = (payload) => Response.json(payload);
 
@@ -108,4 +129,49 @@ test('refuses open-ended JSON Schemas even when all reviewed property names matc
     assert.equal(guarded.headers.get('cache-control'), 'no-store');
     assert.equal((await guarded.text()).includes('private_'), false);
   }
+});
+
+test('public noauth discovery rejects unreviewed nested job fields and open-ended objects', async () => {
+  const mutations = [
+    list => { list[0].outputSchema.properties.jobs.items.properties.applicant_email = { type:'string' }; },
+    list => { list[2].outputSchema.properties.job.anyOf[0].properties.internal_interview_notes = { type:'string' }; },
+    list => { list[0].outputSchema.properties.jobs.items.additionalProperties = true; },
+    list => { list[2].outputSchema.properties.job.anyOf[0].patternProperties = { '^private_': { type:'string' } }; },
+    list => { list[0].outputSchema.properties.jobs.items.properties.description = {
+      type:'object', properties:{ nested:{ type:'string' } }, additionalProperties:true,
+    }; },
+    list => { list[0].outputSchema.properties.jobs.items = { $ref:'#/$defs/job' }; },
+    list => { list[0].outputSchema.properties.jobs.items = { allOf:[schema(reviewedJobFields),
+      { type:'object', properties:{candidate_id:{type:'string'}}, additionalProperties:false }] }; },
+    list => { list[0].inputSchema.properties.keyword = {
+      type:'object', properties:{ candidate_token:{type:'string'} }, additionalProperties:false,
+    }; },
+    list => { list[0].inputSchema.properties.limit.type = 'string'; },
+    list => { list[1].outputSchema.properties.prefectures.items = {
+      type:'object', properties:{ hidden_tenant:{type:'string'} }, additionalProperties:false,
+    }; },
+  ];
+  for (const change of mutations) {
+    const list = tools();
+    change(list);
+    const guarded = await ensurePublicToolAuthWire(request, response(envelope(list)));
+    assert.equal(guarded.status, 503, 'all nested schema drift must fail closed');
+    assert.equal(guarded.headers.get('cache-control'), 'no-store');
+    const text = await guarded.text();
+    for (const marker of ['applicant_email','internal_interview_notes','candidate_token',
+      'hidden_tenant','private_']) assert.equal(text.includes(marker), false);
+  }
+});
+
+test('public noauth discovery permits only the reviewed nullable-job representations', async () => {
+  const list = tools();
+  list[2].outputSchema.properties.job = {
+    type:['object','null'],
+    properties:schema(reviewedJobFields).properties,
+    additionalProperties:false,
+  };
+  assert.equal((await ensurePublicToolAuthWire(request, response(envelope(list)))).status, 200);
+  // An unknown object in the nullable union is not an allowed public-job shape.
+  list[2].outputSchema.properties.job.properties.applicant_id = { type:'string' };
+  assert.equal((await ensurePublicToolAuthWire(request, response(envelope(list)))).status, 503);
 });
