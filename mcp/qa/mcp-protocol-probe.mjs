@@ -261,6 +261,20 @@ async function verifyPublicCatalog(exchange, protocolVersion, now, requirePublis
     'PROBE_SEARCH_METADATA_INVALID');
     check(Array.isArray(catalog.jobs) && catalog.jobs.length <= 1 &&
       catalog.returned === catalog.jobs.length, 'PROBE_SEARCH_SHAPE_INVALID');
+    // The raw source cursor is independent of the visible job count. Even
+    // when the first page contains a valid job, reject malformed continuation
+    // metadata: otherwise ChatGPT can loop over the same listings or skip
+    // unexamined public rows while this acceptance probe falsely passes.
+    // A null cursor with possible_more_source_rows=true is valid only when
+    // the adapter exhausted its documented maximum offset.
+    const scanned = catalog.scanned_source_rows;
+    const next = catalog.next_offset;
+    check(scanned >= catalog.returned &&
+      (!catalog.possible_more_source_rows
+        ? next === null
+        : scanned > 0 && (next === null ||
+          (next > requestedOffset && next === requestedOffset + scanned))),
+    'PROBE_PAGINATION_INVALID');
     for (const job of catalog.jobs) validateJob(job, now());
     if (catalog.jobs.length || !catalog.possible_more_source_rows || catalog.next_offset === null) break;
     check(catalog.next_offset > requestedOffset, 'PROBE_PAGINATION_INVALID');
