@@ -39,9 +39,17 @@ begin
   end if;
 
   v_old := old.source_payload -> 'discovery_search';
+  if v_old is null or v_old = 'null'::jsonb then
+    return new; -- No prior observation to merge (including JSON null).
+  end if;
+
+  -- Do not silently discard an existing unsupported provenance envelope.
+  -- Failing this one write is safer than corrupting history; investigate
+  -- version drift and keep the existing row intact until an owner reviews it.
   if pg_catalog.jsonb_typeof(v_old) is distinct from 'object'
      or v_old ->> 'version' is distinct from '1' then
-    return new; -- First recorded observation: NEW is already self-contained.
+    raise exception 'HC_HW_DISCOVERY_PROVENANCE_OLD_VERSION_UNSUPPORTED'
+      using errcode = '22023';
   end if;
 
   v_incoming := new.source_payload -> 'discovery_search';
@@ -165,8 +173,9 @@ execute function hc_private.hw_search_provenance_before_update_v1();
 -- 2. Repeat with a newly inserted row racing an ON CONFLICT update.
 -- 3. Interleave removed/blocked and HTTP429/5xx paths. No source_status
 --    override, no fabricated 'verified' or public revival; provenance survives.
--- 4. Reverify with no discovery_search retains old; malformed future version
---    raises controlled error instead of silently truncating history.
+-- 4. Reverify with no discovery_search retains old; unsupported existing
+--    OR incoming version raises a controlled error instead of silently
+--    discarding any previously stored observation.
 -- 5. Check unchanged pre-existing trigger hc_hw_structure_before_write:
 --    annual_holidays_*, occupation_*, canonical prefecture/city source semantics.
 -- 6. Ensure source_payload remains absent from public feed, RLS/ACL intact,
