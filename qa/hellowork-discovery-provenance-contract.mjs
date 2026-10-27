@@ -87,10 +87,10 @@ const insertFastPathIndex = atomicReviewSql.indexOf("if tg_op = 'INSERT' then");
 assert.ok(insertFastPathIndex > incomingValidationIndex,
   'an INSERT must validate incoming version/type before returning NEW');
 assert.match(atomicReviewSql,
-  /create trigger hc_hw_search_provenance_before_insert\\s+before insert on public\\.hc_external_job_sources/,
+  /create trigger hc_hw_search_provenance_before_insert\s+before insert on public\.hc_external_job_sources/,
   'a BEFORE UPDATE-only trigger does not protect brand-new rows');
 assert.match(atomicReviewSql,
-  /create trigger hc_hw_search_provenance_before_update\\s+before update of source_payload/,
+  /create trigger hc_hw_search_provenance_before_update\s+before update of source_payload/,
   'retain row-locked UPDATE merging for concurrent UPSERT paths');
 
 
