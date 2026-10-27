@@ -725,6 +725,43 @@ test('my page is split into clear sections, without a completion score, and sign
   await expectMinHeight(page, '.hc-shell .primary-button', 48);
 });
 
+/* --------------------------------------------- offer / withdrawal decision row */
+
+for (const width of [375, 390, 393, 430, 940, 1280, 1440, 1536]) {
+  test(`offer decision buttons stay aligned at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width >= 940 ? 900 : 844 });
+    const offered = { ...application, status: 'offered', candidate_offer_response: null, candidate_offer_responded_at: null, candidate_offer_message: null };
+    await mockApi(page, {
+      hc_jobseeker_get_application_detail: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ application: offered, interviews: [], visits: [] }) }),
+    });
+    await page.goto(`/applications?application_id=${application.id}`);
+    const card = page.locator('.application-decision-card');
+    await expect(card).toBeVisible();
+
+    const rowOf = async (names: string[]) => Promise.all(names.map(async (name) => {
+      const box = await card.getByRole('button', { name, exact: true }).boundingBox();
+      if (!box) throw new Error(`${name} not laid out`);
+      return box;
+    }));
+    const expectAligned = async (names: string[]) => {
+      const [first, second] = await rowOf(names);
+      for (const box of [first, second]) expect(box.height, `${names} height`).toBeGreaterThanOrEqual(48);
+      expect(Math.abs(first.width - second.width), `${names} equal width`).toBeLessThanOrEqual(1);
+      if (width <= 620) expect(Math.abs(first.x - second.x), `${names} stacked`).toBeLessThanOrEqual(1);
+      else expect(Math.abs(first.y - second.y), `${names} side by side`).toBeLessThanOrEqual(1);
+    };
+
+    await expectAligned(['内定を辞退する', '内定を承諾する']);
+    await expectNoHorizontalOverflow(page);
+    if (process.env.HC_SCREENSHOTS) await card.screenshot({ path: `test-results/screens/offer-decision-${width}.png` });
+    await card.getByRole('button', { name: '内定を辞退する', exact: true }).click();
+    await expectAligned(['やめる', '辞退を確定する']);
+    await expectNoHorizontalOverflow(page);
+    await card.getByRole('button', { name: 'やめる', exact: true }).click();
+    await expect(card.getByRole('button', { name: '内定を承諾する', exact: true })).toBeVisible();
+  });
+}
+
 /* ---------------------------------------- review screenshots (opt-in, local) */
 
 test('review screenshots at the 8 reference widths', async ({ page }) => {

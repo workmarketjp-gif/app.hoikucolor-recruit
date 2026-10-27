@@ -32,6 +32,7 @@ requireMatch(detail, /承諾を取り消して辞退する/, 'accepted offers mu
 requireMatch(detail, /maxLength=\{1000\}/, 'candidate decision message limit missing in UI')
 requireMatch(css, /\.application-decision-card/, 'candidate decision styles missing')
 requireMatch(css, /@media\(max-width:620px\)[\s\S]*application-decision-actions/, 'candidate decision mobile layout guard missing')
+requireMatch(css, /\.application-decision-actions \{ display: grid; grid-template-columns: 1fr 1fr;/, 'offer accept and decline buttons must share one aligned row')
 requireMatch(css, /\.application-withdraw-form > \.interview-response-actions \{ display: grid; \}/, 'withdraw confirm buttons must stay a grid; the reschedule-form flex row squeezes them on mobile')
 
 console.log('jobseeker offer and withdrawal contract passed')

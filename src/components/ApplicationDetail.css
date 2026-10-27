@@ -77,7 +77,9 @@
 .application-decision-card { display: grid; gap: 10px; margin: 0 0 12px; }
 .application-decision-card .application-card-head, .application-decision-card .application-empty-copy { margin: 0; }
 .application-decision-card.is-offer { border-color: var(--hc-accent); box-shadow: 0 0 0 1px var(--hc-accent-soft); }
-.application-decision-actions { display: flex; }
+/* Secondary first, primary last — the same order as the withdraw confirm row below. */
+.application-decision-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.application-decision-actions.is-single { grid-template-columns: minmax(0, 320px); }
 .application-withdraw-form { padding: 12px; border-radius: 12px; background: #faf6f5; }
 /* Beats `.interview-reschedule-form > div` (flex, space-between), which squeezed the confirm button on mobile. */
 .application-withdraw-form > .interview-response-actions { display: grid; }
@@ -94,5 +96,5 @@
   .interview-response-actions { grid-template-columns: 1fr; }
   .interview-response-actions .primary-button, .interview-response-actions .secondary-button { width: 100%; }
   .interview-reschedule-form .primary-button { flex: 1; }
-  .application-decision-actions .secondary-button { width: 100%; }
+  .application-decision-actions, .application-decision-actions.is-single { grid-template-columns: 1fr; }
 }
