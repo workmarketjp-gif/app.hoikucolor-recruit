@@ -76,3 +76,18 @@ const scenarioFn = 'function public.hc_jobseeker_career_scenario_jobs_v1(text, t
 assert(boundary.includes(`revoke all on ${scenarioFn} from public, anon, authenticated, service_role;`) && boundary.includes(`grant execute on ${scenarioFn} to authenticated;`), 'authenticated only');
 
 console.log('hellowork-structured-data-contract: PASS');
+
+// Removal and transient HTTP observations must be attributable by a hashed source,
+// without leaking raw job URLs/HTML, and logging failures must never change state.
+const evidenceHelper = importer.split('async function logUpstreamEvidence(')[1]?.split(
+  '// Hello Work answers HTTP 200')[0] ?? '';
+assert(evidenceHelper.includes("event: 'hc_hellowork_upstream_evidence_v1'"), 'source evidence event must be versioned');
+assert(evidenceHelper.includes('source_url_sha256: await sha256(url.toString())'), 'correlate incident evidence by hash only');
+assert(evidenceHelper.includes('http_status: httpStatus') && evidenceHelper.includes('observed_at: observedAt'), 'include upstream code and observation time');
+assert(evidenceHelper.includes("console.warn('HC_HELLOWORK_EVIDENCE_LOG_FAILED')"), 'logger failures must not affect job states');
+assert(!/\bsource_url\s*:|\bhtml\s*:|\brequest_headers\s*:|\bdescription\s*:/.test(evidenceHelper),
+  'no raw URL, response content, or job text in operational logs');
+assert(importer.includes("await logUpstreamEvidence(url, response.status, response.status === 429 ? 'rate_limited' : 'upstream_5xx', fetchedAt)"),
+  'log 429/5xx before existing fail-preserving exception');
+assert(importer.includes("await logUpstreamEvidence(url, response.status, 'gone_notice', fetchedAt)"),
+  'log the HTTP 200 gone notice before withdrawing');
