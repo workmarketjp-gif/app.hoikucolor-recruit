@@ -250,6 +250,7 @@ export function App() {
             savedIds={savedIdList}
             userKey={userKey}
             profile={profile.data ?? null}
+            profileLoaded={profile.status !== 'loading' || profile.data !== null}
             onNavigate={navigate}
             {...jobActions}
           />
@@ -312,10 +313,11 @@ function nextMessageHref(attention: ResourceLike<JobseekerAttentionSummary>) {
 }
 
 /** Home lists only what the candidate can act on now, then a few jobs to look at. */
-function HomeView({ name, applications, attention, savedIds, userKey, profile, onNavigate, ...jobActions }: {
+function HomeView({ name, applications, attention, savedIds, userKey, profile, profileLoaded, onNavigate, ...jobActions }: {
   name: string;
   userKey: string;
   profile: JobseekerProfile | null;
+  profileLoaded: boolean;
   applications: ResourceLike<Application[]>;
   attention: ResourceLike<JobseekerAttentionSummary>;
   savedIds: string[];
@@ -359,7 +361,7 @@ function HomeView({ name, applications, attention, savedIds, userKey, profile, o
       )}
 
       <Suspense fallback={<SkeletonList rows={2} />}>
-        <CareerDashboard userKey={userKey} profile={profile} />
+        <CareerDashboard userKey={userKey} profile={profile} profileLoaded={profileLoaded} />
       </Suspense>
 
       <section className="hc-section">

@@ -39,7 +39,8 @@ export function profileState(profile: JobseekerProfile | null, preferences: Jobs
   return known === 0 ? 'empty' : known === facts.length ? 'complete' : 'partial';
 }
 
-export function CareerDashboard({ userKey, profile }: { userKey: string; profile: JobseekerProfile | null }) {
+/** `profileLoaded`: the profile read has finished (a failed read counts, the facts then show 未登録). */
+export function CareerDashboard({ userKey, profile, profileLoaded }: { userKey: string; profile: JobseekerProfile | null; profileLoaded: boolean }) {
   const base = useResource(
     `dashboard-base:${userKey}`,
     async () => {
@@ -54,7 +55,8 @@ export function CareerDashboard({ userKey, profile }: { userKey: string; profile
   const preferences = base.data?.preferences ?? null;
   const conditions: CareerConditions | null = base.data?.conditions.kind === 'ready' ? base.data.conditions.data : null;
   const prefecture = preferences?.desired_prefectures[0] ?? profile?.prefecture ?? '';
-  const ready = Boolean(base.data);
+  // Everything below is derived from both reads, so nothing renders (or is counted) from half the picture.
+  const ready = Boolean(base.data) && profileLoaded;
 
   const market = useResource(ready ? `dashboard-market:${userKey}:${prefecture}` : null, () => maybe(() => getSalaryMarket(prefecture, '')), '求人の相場を読み込めませんでした。');
   const holidays = useResource(ready ? `dashboard-holidays:${userKey}:${prefecture}` : null, () => maybe(() => getHolidayMarket(prefecture)), '年間休日の分布を読み込めませんでした。');
@@ -84,9 +86,9 @@ export function CareerDashboard({ userKey, profile }: { userKey: string; profile
   return (
     <div className="hc-dash">
       {base.status === 'error' && !base.data && <InlineError message={base.error} onRetry={base.reload} />}
-      {base.status === 'loading' && !base.data && <SkeletonList rows={2} />}
+      {!ready && base.status !== 'error' && <SkeletonList rows={2} />}
 
-      {base.data && (
+      {ready && base.data && (
         <>
           <section className="hc-dash-hero" aria-labelledby="dash-career-heading">
             <h2 id="dash-career-heading">あなたのキャリア</h2>

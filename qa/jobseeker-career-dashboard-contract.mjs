@@ -63,7 +63,7 @@ assert(sim.includes('export function scenarioSalaryLine') && sim.includes('expor
 assert(career.includes('scenarioSalaryLine(scenario, input.salary, input.drop, input.wishSalary)') && view.includes('scenarioSalaryLine('), 'Home and /career share the scenario rule');
 assert(!career.includes("const scenarioCopy") && !view.includes("const scenarioCopy"), 'scenario copy is not duplicated');
 assert(view.includes('href="/career"'), 'the dashboard hands off to the existing simulator');
-assert(app.includes("import('./views/CareerDashboard')") && app.includes('<CareerDashboard userKey={userKey} profile={profile} />'), 'Home renders the dashboard lazily');
+assert(app.includes("import('./views/CareerDashboard')") && app.includes('<CareerDashboard userKey={userKey} profile={profile} profileLoaded={profileLoaded} />') && view.includes('Boolean(base.data) && profileLoaded'), 'Home renders the dashboard lazily');
 
 // ---------------------------------------------------------------- privacy
 assert(view.includes("{shown ? formatMan(own) : '非表示'}") && view.includes('aria-pressed={shown}'), 'own pay is hidden until the person shows it');
