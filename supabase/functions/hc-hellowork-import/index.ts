@@ -286,7 +286,7 @@ async function sha256(value: string) {
 async function logUpstreamEvidence(
   url: URL,
   httpStatus: number,
-  outcome: 'gone_notice' | 'rate_limited' | 'upstream_5xx',
+  outcome: 'gone_notice' | 'rate_limited' | 'upstream_5xx' | 'access_or_timeout_4xx',
   observedAt: string,
 ) {
   try {
@@ -333,6 +333,13 @@ async function normalize(url: URL): Promise<Normalized> {
     },
     redirect: 'follow',
   });
+
+  // Authentication blocks (401/403) and client timeouts (408/425) do not prove withdrawal.
+  // Keep the existing job unchanged, just as for 429/5xx. The 168h feed freshness gate still applies.
+  if ([401, 403, 408, 425].includes(response.status)) {
+    await logUpstreamEvidence(url, response.status, 'access_or_timeout_4xx', fetchedAt);
+    throw new Error(`HELLOWORK_TRANSIENT_HTTP_${response.status}`);
+  }
 
   // A throttled or failing source is not evidence that the job is gone: leave the row untouched.
   if (response.status === 429 || response.status >= 500) {
