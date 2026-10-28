@@ -59,7 +59,7 @@ assert(recruitRepo.includes('hc_jobseeker_upsert_profile') && !view.includes('up
 assert(view.includes('getJobseekerMatchingPreferences') && view.includes('getProfile'), 'must reuse saved preferences and profile');
 assert(router.includes("career: '/career'") && app.includes("view === 'career'") && app.includes('CareerView'), 'career must be a regular lazy view of the candidate app');
 
-assert(/careerOccupation = 'hoikushi'/.test(repo) && (repo.match(/p_occupation: careerOccupation/g) ?? []).length === 2, 'market and scenarios must compare inside one structured occupation');
+assert(/careerOccupation = 'hoikushi'/.test(repo) && (repo.match(/p_occupation: careerOccupation/g) ?? []).length === 3, 'market, holidays and scenarios must compare inside one structured occupation');
 assert(view.includes('求人タイトルから分類した「保育士」の求人です'), 'the occupation scope must be stated on screen');
 
 assert(repo.includes('p_holiday_floor: request.holidayMoreThan') && repo.includes('p_holiday_at_least: request.holidayAtLeast'), '「今より多い」(超える) and 「希望N日以上」 must be separate parameters');

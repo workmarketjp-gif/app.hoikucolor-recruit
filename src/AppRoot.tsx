@@ -8,7 +8,7 @@ import { Brand } from './components/Brand';
 import googleMark from './logo/google-g.svg';
 import logoMark from './logo/logom_hoikucolor.png';
 import { loadHoikuColorClerkPublishableKey } from './lib/clerkConfig';
-import { rememberReturnTarget, restoreReturnTarget } from './lib/router';
+import { authEntryFromUrl, rememberReturnTarget, restoreReturnTarget } from './lib/router';
 import { setSupabaseAccessTokenGetter } from './lib/supabase';
 import { reportVerifiedSignup, track } from './lib/analytics';
 import { captureHandoffFromLocation, readPendingHandoff } from './lib/preferenceHandoff';
@@ -161,8 +161,20 @@ function OAuthCallback() {
   return <AppLoading />;
 }
 
+/**
+ * What the visitor came for, by return screen. One promise per screen; registration itself
+ * still needs only an email address or Google (career details are optional, after login).
+ */
+const entryPromises: Partial<Record<string, { title: string; body: string }>> = {
+  career: { title: 'あなたの給与と休日を、地域の求人と比べる。', body: '無料登録のあと、そのまま比較の画面に戻ります。給与の入力は任意で、あなただけが見られます。' },
+  jobs: { title: '気になる求人を、保存して比べる。', body: '無料登録のあと、見ていた求人に戻ります。' },
+  compare: { title: '給与・休日・働き方を、無料で比較する。', body: '無料登録のあと、比較の画面に戻ります。' },
+  saved: { title: '気になる園を、保存しておく。', body: '無料登録のあと、気になるリストに戻ります。' },
+};
+
 function LoginScreen() {
   const isSignup = authModeFromPath(window.location.pathname) === 'signup';
+  const [promise] = useState(() => entryPromises[authEntryFromUrl(window.location.pathname, window.location.search).entry ?? ''] ?? null);
   const { signIn, fetchStatus: signInFetchStatus } = useSignIn();
   const { signUp, fetchStatus: signUpFetchStatus } = useSignUp();
   const [email, setEmail] = useState('');
@@ -302,8 +314,9 @@ function LoginScreen() {
         <aside className="hc-auth-story">
           <a className="hc-auth-logo" href={publicUrl}><Brand /></a>
           <div className="hc-auth-story-copy">
-            <h1>自分に合う保育園と、<br />もっと自然につながる。</h1>
-            <p>求人の保存、応募、見学・体験勤務まで。あなたの転職活動をHoiku Colorでまとめて管理できます。</p>
+            {promise
+              ? <><h1>{promise.title}</h1><p>{promise.body}</p></>
+              : <><h1>自分に合う保育園と、<br />もっと自然につながる。</h1><p>求人の保存、応募、見学・体験勤務まで。あなたの転職活動をHoiku Colorでまとめて管理できます。</p></>}
             <div className="hc-auth-pills"><span>求人検索</span><span>気になる保存</span><span>応募管理</span></div>
           </div>
         </aside>
@@ -314,7 +327,8 @@ function LoginScreen() {
           <header className="hc-auth-heading">
             <span>求職者</span>
             <h2>{isSignup ? '求職者アカウントを作成' : '求職者ログイン'}</h2>
-            <p>Googleアカウントまたはメールアドレスで続けられます。</p>
+            {promise && <p className="hc-auth-promise">{promise.title}</p>}
+            <p>{isSignup || promise ? '登録は無料です。' : ''}Googleアカウントまたはメールアドレスで続けられます。</p>
           </header>
 
           {handoff && <p className="hc-auth-handoff" role="note">ホームページで選んだ保育観（{handoff.childcareValues.join('・')}）は、ログイン後に確認してから保存できます。</p>}

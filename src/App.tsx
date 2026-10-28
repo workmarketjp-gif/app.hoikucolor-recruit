@@ -8,7 +8,7 @@ import { RankingDisclosure, rankLabels } from './components/RankingDisclosure';
 import { EmptyState, InlineError, SectionHeader, SkeletonList, Toast } from './components/StateViews';
 import { NotificationCenter } from './components/NotificationCenter';
 import { PreferenceHandoffPrompt } from './components/PreferenceHandoffPrompt';
-import { trackPageView } from './lib/analytics';
+import { track, trackPageView } from './lib/analytics';
 import { getJobseekerAttentionSummary, type JobseekerAttentionSummary } from './lib/attentionRepository';
 import { useCandidateSession } from './lib/candidateSession';
 import {
@@ -28,6 +28,7 @@ const ScoutsView = lazy(() => import('./views/ScoutsView').then((module) => ({ d
 const SpotJobsView = lazy(() => import('./views/SpotJobsView').then((module) => ({ default: module.SpotJobsView })));
 const VisitsView = lazy(() => import('./views/VisitsView').then((module) => ({ default: module.VisitsView })));
 const CareerView = lazy(() => import('./views/CareerView').then((module) => ({ default: module.CareerView })));
+const CareerDashboard = lazy(() => import('./views/CareerDashboard').then((module) => ({ default: module.CareerDashboard })));
 const ResumeBuilderView = lazy(() => import('./views/ResumeBuilderView').then((module) => ({ default: module.ResumeBuilderView })));
 
 const viewTitles: Record<View, string> = {
@@ -203,6 +204,7 @@ export function App() {
     savedIds.setData(wasSaved ? savedIdList.filter((id) => id !== jobId) : [jobId, ...savedIdList]);
     try {
       if (wasSaved) await unsaveJob(jobId); else await saveJob(jobId, session.userId);
+      if (!wasSaved) track('hc_job_saved', { surface: view });
       setToast({ message: wasSaved ? '気になるから外しました' : '気になるに保存しました', tone: 'info' });
       window.dispatchEvent(new CustomEvent('hc:saved-refresh'));
     } catch (err) {
@@ -214,6 +216,8 @@ export function App() {
   const startApplication = (jobId: string) => navigate('profile', `?return_job=${encodeURIComponent(jobId)}`);
 
   const applied = (applicationId: string) => {
+    // Called only after the application RPC succeeded.
+    track('hc_apply_complete', { surface: view });
     setToast({ message: '応募しました。園からの連絡をお待ちください。', tone: 'info' });
     void refreshApplications(false);
     openApplication(applicationId);
@@ -244,6 +248,8 @@ export function App() {
             applications={applications}
             attention={attention}
             savedIds={savedIdList}
+            userKey={userKey}
+            profile={profile.data ?? null}
             onNavigate={navigate}
             {...jobActions}
           />
@@ -306,8 +312,10 @@ function nextMessageHref(attention: ResourceLike<JobseekerAttentionSummary>) {
 }
 
 /** Home lists only what the candidate can act on now, then a few jobs to look at. */
-function HomeView({ name, applications, attention, savedIds, onNavigate, ...jobActions }: {
+function HomeView({ name, applications, attention, savedIds, userKey, profile, onNavigate, ...jobActions }: {
   name: string;
+  userKey: string;
+  profile: JobseekerProfile | null;
   applications: ResourceLike<Application[]>;
   attention: ResourceLike<JobseekerAttentionSummary>;
   savedIds: string[];
@@ -333,7 +341,7 @@ function HomeView({ name, applications, attention, savedIds, onNavigate, ...jobA
       <p className="hc-greeting">こんにちは、{name}さん</p>
 
       {nothingToDo ? (
-        <EmptyState title="いま確認が必要なことはありません" body="気になる園に応募すると、選考の状況や園からのメッセージがここに表示されます。" action="求人を探す" onAction={() => onNavigate('jobs')} />
+        <p className="hc-note hc-home-calm" role="status">いま確認が必要なことはありません。応募すると、選考の状況や園からのメッセージがここに表示されます。</p>
       ) : (
         <section aria-labelledby="home-todo-heading">
           <h2 id="home-todo-heading" className="hc-visually-hidden">いま確認すること</h2>
@@ -350,10 +358,9 @@ function HomeView({ name, applications, attention, savedIds, onNavigate, ...jobA
         </section>
       )}
 
-      <a className="hc-career-entry" href="/career">
-        <span><strong>転職シミュレーター</strong>今の給与と休日を、公開求人と並べて考えてみる</span>
-        <Icon name="chevron" size={18} />
-      </a>
+      <Suspense fallback={<SkeletonList rows={2} />}>
+        <CareerDashboard userKey={userKey} profile={profile} />
+      </Suspense>
 
       <section className="hc-section">
         <SectionHeader title="おすすめ求人" action={<button type="button" className="hc-link-button" onClick={() => onNavigate('jobs')}>すべて見る</button>} />

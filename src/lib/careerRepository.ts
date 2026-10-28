@@ -32,6 +32,12 @@ async function call<T>(name: string, args?: Record<string, unknown>): Promise<T>
   return data as T;
 }
 
+/** A response that is not the documented object is a failed read, never an empty market. */
+function expectShape<T>(name: string, data: unknown, key: string): T {
+  if (!data || typeof data !== 'object' || Array.isArray(data) || !(key in data)) throw new Error(`${name} returned an unexpected shape`);
+  return data as T;
+}
+
 export type HistogramBar = { from: number; to: number; count: number };
 
 export type SalaryMarket = {
@@ -50,12 +56,12 @@ export type SalaryMarket = {
   facets: { coverage: { prefecture: string; count: number }[]; employment_types: string[] };
 };
 
-export function getSalaryMarket(prefecture: string, employmentType: string): Promise<SalaryMarket> {
-  return call<SalaryMarket>('hc_jobseeker_salary_market_v1', {
+export async function getSalaryMarket(prefecture: string, employmentType: string): Promise<SalaryMarket> {
+  return expectShape<SalaryMarket>('hc_jobseeker_salary_market_v1', await call<unknown>('hc_jobseeker_salary_market_v1', {
     p_prefecture: prefecture || null,
     p_employment_type: employmentType || null,
     p_occupation: careerOccupation,
-  });
+  }), 'population');
 }
 
 export type ScenarioJob = {
@@ -161,9 +167,41 @@ export type OfficialWageStats = {
   prefecture_all_experience: { prefecture: string; monthly_scheduled_cash_yen: number | null; worker_count_thousand: number | null } | null;
 };
 
-export function getOfficialWageStats(prefecture: string): Promise<OfficialWageStats | null> {
-  return call<OfficialWageStats | null>('hc_jobseeker_official_wage_stats_v1', {
+export async function getOfficialWageStats(prefecture: string): Promise<OfficialWageStats | null> {
+  const data = await call<unknown>('hc_jobseeker_official_wage_stats_v1', {
     p_prefecture: prefecture || null,
     p_occupation: '保育士',
   });
+  return data === null ? null : expectShape<OfficialWageStats>('hc_jobseeker_official_wage_stats_v1', data, 'national_by_experience');
+}
+
+/** Stated annual-holiday bands from postings; see docs/career-data-contract.md. */
+export type HolidayBand = { from: number; to: number; label: string; exact_count: number; minimum_count: number };
+
+export type HolidayMarket = {
+  scope: { prefecture: string | null; employment_type: string | null; occupation: string | null };
+  as_of: string;
+  population: { scope_count: number; stated_count: number; exact_count: number; minimum_count: number; unstated_count: number };
+  /** null when fewer than five postings state a number. */
+  bands: HolidayBand[] | null;
+};
+
+export async function getHolidayMarket(prefecture: string): Promise<HolidayMarket> {
+  return expectShape<HolidayMarket>('hc_jobseeker_holiday_market_v1', await call<unknown>('hc_jobseeker_holiday_market_v1', {
+    p_prefecture: prefecture || null,
+    p_employment_type: null,
+    p_occupation: careerOccupation,
+  }), 'population');
+}
+
+/** A read that may simply not be deployed yet: 「準備中」 is a state, not an error. */
+export type Maybe<T> = { kind: 'ready'; data: T } | { kind: 'unavailable' };
+
+export async function maybe<T>(read: () => Promise<T>): Promise<Maybe<T>> {
+  try {
+    return { kind: 'ready', data: await read() };
+  } catch (error) {
+    if (error instanceof CareerApiUnavailableError) return { kind: 'unavailable' };
+    throw error;
+  }
 }

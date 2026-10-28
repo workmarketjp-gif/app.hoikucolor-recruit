@@ -2,33 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { EmptyState, InlineError, SkeletonList } from '../components/StateViews';
 import { track } from '../lib/analytics';
 import {
-  CareerApiUnavailableError, deleteCareerConditions, getCareerConditions, getOfficialWageStats, getSalaryMarket, getScenarioJobs,
-  saveCareerConditions, type CareerConditions, type OfficialWageStats, type SalaryMarket, type ScenarioResponse,
+  CareerApiUnavailableError, deleteCareerConditions, getCareerConditions, getOfficialWageStats, getSalaryMarket, getScenarioJobs, maybe,
+  saveCareerConditions, type CareerConditions, type Maybe, type OfficialWageStats, type SalaryMarket, type ScenarioResponse,
 } from '../lib/careerRepository';
 import {
-  differenceFromMedian, formatMan, manText, minimumSampleSize, parseDays, parseManYen, withYourPosition, type ScenarioId,
+  differenceFromMedian, formatMan, manText, minimumSampleSize, parseDays, parseManYen, scenarioCopy, scenarioSalaryLine, withYourPosition, type ScenarioId,
 } from '../lib/careerSimulation';
 import { getJobseekerMatchingPreferences } from '../lib/profilePreferencesRepository';
 import { getProfile } from '../lib/recruitRepository';
 import { errorMessage, useResource } from '../lib/useResource';
 import './CareerView.css';
-
-const scenarioCopy: Record<ScenarioId, { label: string; lead: string }> = {
-  'keep-income': { label: '収入を保つ', lead: '今の月給（なければ希望の最低月給）に、募集の給与が届く求人です。' },
-  'more-holidays': { label: '休みを増やす', lead: '許容できる減額の範囲で、年間休日が確認できて、今より多い求人です。' },
-  balance: { label: 'バランス', lead: '年間休日が確認できた求人を、給与と休日の優先度で並べます。' },
-};
-
-/** A read that may simply not be deployed yet: 「準備中」 is a state, not an error. */
-type Maybe<T> = { kind: 'ready'; data: T } | { kind: 'unavailable' };
-async function maybe<T>(read: () => Promise<T>): Promise<Maybe<T>> {
-  try {
-    return { kind: 'ready', data: await read() };
-  } catch (error) {
-    if (error instanceof CareerApiUnavailableError) return { kind: 'unavailable' };
-    throw error;
-  }
-}
 
 const emptyFields = { salary: '', holidays: '', drop: '', wishHolidays: '', wishSalary: '' };
 
@@ -105,9 +88,7 @@ export function CareerView({ userKey }: { userKey: string }) {
     return [...options.entries()].sort(([a], [b]) => a.localeCompare(b, 'ja'));
   }, [facets, area.prefecture]);
 
-  const salaryLine = scenario === 'more-holidays'
-    ? (input.salary === null ? null : Math.max(0, input.salary - (input.drop ?? 0)))
-    : input.salary ?? input.wishSalary;
+  const salaryLine = scenarioSalaryLine(scenario, input.salary, input.drop, input.wishSalary);
   const holidayMoreThan = input.holidays;
   const holidayAtLeast = input.wishHolidays;
 

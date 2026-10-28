@@ -704,10 +704,10 @@ test('home with nothing to do shows one calm next action', async ({ page }) => {
     hc_jobseeker_attention_summary: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ unanswered_interviews_count: 0, unread_messages_count: 0, pending_scouts_count: 0, next_interview: null, next_message: null, next_scout: null }) }),
   });
   await page.goto('/');
-  const empty = page.locator('.hc-empty').filter({ hasText: 'いま確認が必要なことはありません' });
-  await expect(empty).toBeVisible();
-  await expect(empty.getByRole('button')).toHaveText(['求人を探す']);
+  await expect(page.getByRole('status').filter({ hasText: 'いま確認が必要なことはありません' })).toBeVisible();
   await expect(page.locator('.hc-stat-row')).toHaveCount(0);
+  // The calm state adds no button of its own: the career dashboard holds Home's one next action.
+  await expect(page.locator('.hc-dash-primary')).toHaveCount(1);
 });
 
 test('my page is split into clear sections, without a completion score, and signs out from アカウント設定', async ({ page }) => {
