@@ -87,6 +87,17 @@ assert(evidenceHelper.includes('http_status: httpStatus') && evidenceHelper.incl
 assert(evidenceHelper.includes("console.warn('HC_HELLOWORK_EVIDENCE_LOG_FAILED')"), 'logger failures must not affect job states');
 assert(!/\bsource_url\s*:|\bhtml\s*:|\brequest_headers\s*:|\bdescription\s*:/.test(evidenceHelper),
   'no raw URL, response content, or job text in operational logs');
+// Access-denied and client timeout responses are not proof of job withdrawal.
+const protected4xxGuard = importer.indexOf('if ([401, 403, 408, 425].includes(response.status))');
+assert(protected4xxGuard >= 0 && protected4xxGuard < importer.indexOf('const html = await response.text();'),
+  'non-definitive 401/403/408/425 must be preserved before parsing or upserting');
+assert(importer.includes("await logUpstreamEvidence(url, response.status, 'access_or_timeout_4xx', fetchedAt)"),
+  '4xx access blocks and timeouts must leave content-free operational evidence');
+assert(importer.includes("outcome: 'gone_notice' | 'rate_limited' | 'upstream_5xx' | 'access_or_timeout_4xx'"),
+  'evidence outcome type must include access/timeout 4xx');
+assert(importer.slice(protected4xxGuard, importer.indexOf('const html = await response.text();'))
+  .includes('throw new Error(`HELLOWORK_TRANSIENT_HTTP_${response.status}`);'),
+  'non-definitive 4xx must fail without changing existing rows');
 assert(importer.includes("await logUpstreamEvidence(url, response.status, response.status === 429 ? 'rate_limited' : 'upstream_5xx', fetchedAt)"),
   'log 429/5xx before existing fail-preserving exception');
 assert(importer.includes("await logUpstreamEvidence(url, response.status, 'gone_notice', fetchedAt)"),
