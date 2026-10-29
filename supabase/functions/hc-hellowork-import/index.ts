@@ -279,6 +279,30 @@ async function sha256(value: string) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Operational evidence only: never log raw Hello Work URLs, response HTML, job text,
+// employer details, request headers, or credentials. Hashing makes a single public
+// source URL correlatable with a private DB record during an incident review.
+// Function logs are retention-limited and are NOT a durable status-transition ledger.
+async function logUpstreamEvidence(
+  url: URL,
+  httpStatus: number,
+  outcome: 'gone_notice' | 'rate_limited' | 'upstream_5xx' | 'access_or_timeout_4xx',
+  observedAt: string,
+) {
+  try {
+    console.info(JSON.stringify({
+      event: 'hc_hellowork_upstream_evidence_v1',
+      source_url_sha256: await sha256(url.toString()),
+      http_status: httpStatus,
+      outcome,
+      observed_at: observedAt,
+    }));
+  } catch {
+    // Observability must never affect official verification or withdrawal decisions.
+    console.warn('HC_HELLOWORK_EVIDENCE_LOG_FAILED');
+  }
+}
+
 // Hello Work answers HTTP 200 with this notice when a posting was filled, withdrawn or re-issued.
 const GONE_NOTICE = '該当する情報は見つかりませんでした';
 
@@ -310,14 +334,25 @@ async function normalize(url: URL): Promise<Normalized> {
     redirect: 'follow',
   });
 
+  // Authentication blocks (401/403) and client timeouts (408/425) do not prove withdrawal.
+  // Keep the existing job unchanged, just as for 429/5xx. The 168h feed freshness gate still applies.
+  if ([401, 403, 408, 425].includes(response.status)) {
+    await logUpstreamEvidence(url, response.status, 'access_or_timeout_4xx', fetchedAt);
+    throw new Error(`HELLOWORK_TRANSIENT_HTTP_${response.status}`);
+  }
+
   // A throttled or failing source is not evidence that the job is gone: leave the row untouched.
   if (response.status === 429 || response.status >= 500) {
+    await logUpstreamEvidence(url, response.status, response.status === 429 ? 'rate_limited' : 'upstream_5xx', fetchedAt);
     throw new Error(`HELLOWORK_TRANSIENT_HTTP_${response.status}`);
   }
 
   const html = await response.text();
   const text = htmlToText(html);
-  if (response.ok && text.includes(GONE_NOTICE)) throw new JobGoneError();
+  if (response.ok && text.includes(GONE_NOTICE)) {
+    await logUpstreamEvidence(url, response.status, 'gone_notice', fetchedAt);
+    throw new JobGoneError();
+  }
   const sourceJobId = jobNumberFrom(text, url);
   if (!sourceJobId) throw new Error('HELLOWORK_JOB_NUMBER_NOT_FOUND');
 
