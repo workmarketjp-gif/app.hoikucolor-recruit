@@ -75,7 +75,6 @@ assert(boundary.includes('drop function if exists public.hc_jobseeker_career_sce
 const scenarioFn = 'function public.hc_jobseeker_career_scenario_jobs_v1(text, text, text, integer, integer, integer, integer, text, integer)';
 assert(boundary.includes(`revoke all on ${scenarioFn} from public, anon, authenticated, service_role;`) && boundary.includes(`grant execute on ${scenarioFn} to authenticated;`), 'authenticated only');
 
-console.log('hellowork-structured-data-contract: PASS');
 
 // Removal and transient HTTP observations must be attributable by a hashed source,
 // without leaking raw job URLs/HTML, and logging failures must never change state.
@@ -102,3 +101,50 @@ assert(importer.includes("await logUpstreamEvidence(url, response.status, respon
   'log 429/5xx before existing fail-preserving exception');
 assert(importer.includes("await logUpstreamEvidence(url, response.status, 'gone_notice', fetchedAt)"),
   'log the HTTP 200 gone notice before withdrawing');
+
+// HC_NONAUTHORITATIVE_HTTP_FIXTURE: exercise the actual early response guards
+// with local synthetic status codes (no network, database writes or scraping).
+assert(importer.includes("'non_authoritative_http'"), 'content-free evidence schema covers other non-2xx');
+const guardStart = importer.indexOf('  // Authentication blocks');
+const guardEnd = importer.indexOf('  const html = await response.text();', guardStart);
+assert(guardStart >= 0 && guardEnd > guardStart, 'HTTP guards precede parsing');
+const httpGuards = new Function('response', 'logUpstreamEvidence', 'url', 'fetchedAt',
+  `return (async () => { ${importer.slice(guardStart, guardEnd)} return 'parse'; })();`);
+// Only 2xx may advance to the parser. Official HTTP 200 gone notice is handled
+// by the importer; HTTP 404/410 alone cannot overwrite/withdraw stored jobs.
+for (const [status, expectedCode, expectedOutcome] of [
+  [200, null, null],
+  [201, null, null],
+  [400, 'HELLOWORK_NONAUTHORITATIVE_HTTP_400', 'non_authoritative_http'],
+  [401, 'HELLOWORK_TRANSIENT_HTTP_401', 'access_or_timeout_4xx'],
+  [403, 'HELLOWORK_TRANSIENT_HTTP_403', 'access_or_timeout_4xx'],
+  [404, 'HELLOWORK_NONAUTHORITATIVE_HTTP_404', 'non_authoritative_http'],
+  [408, 'HELLOWORK_TRANSIENT_HTTP_408', 'access_or_timeout_4xx'],
+  [410, 'HELLOWORK_NONAUTHORITATIVE_HTTP_410', 'non_authoritative_http'],
+  [425, 'HELLOWORK_TRANSIENT_HTTP_425', 'access_or_timeout_4xx'],
+  [429, 'HELLOWORK_TRANSIENT_HTTP_429', 'rate_limited'],
+  [451, 'HELLOWORK_NONAUTHORITATIVE_HTTP_451', 'non_authoritative_http'],
+  [500, 'HELLOWORK_TRANSIENT_HTTP_500', 'upstream_5xx'],
+  [503, 'HELLOWORK_TRANSIENT_HTTP_503', 'upstream_5xx'],
+]) {
+  const events = [];
+  let actualCode = null;
+  try {
+    const result = await httpGuards(
+      { status, ok: status >= 200 && status < 300 },
+      async (_url, recordedStatus, outcome) => events.push({ recordedStatus, outcome }),
+      new URL('https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do'),
+      '2026-10-29T00:00:00.000Z',
+    );
+    assert(result === 'parse', `status ${status} should reach the parser`);
+  } catch (error) {
+    actualCode = error.message;
+  }
+  assert(actualCode === expectedCode, `status ${status}: expected ${expectedCode}, got ${actualCode}`);
+  assert(events.length === (expectedOutcome ? 1 : 0), `status ${status}: incorrect evidence count`);
+  if (expectedOutcome) {
+    assert(events[0].recordedStatus === status && events[0].outcome === expectedOutcome,
+      `status ${status}: incorrect content-free evidence category`);
+  }
+}
+console.log('hellowork-structured-data-contract: PASS');
