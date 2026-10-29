@@ -230,10 +230,13 @@ function parseDate(value: string | null) {
 }
 
 function jobNumberFrom(text: string, url: URL) {
+  // A URL-derived ID is not proof of what the returned page displays.
+  // Fail closed on missing or different displayed IDs, before any DB upsert.
   const displayed = firstMatch(text, /求人番号\s*[|｜]?\s*([0-9]{5}-[0-9]{8})/);
-  if (displayed) return displayed;
-  const raw = (url.searchParams.get('kJNo') || '').replace(/\D/g, '');
-  return raw.length === 13 ? `${raw.slice(0, 5)}-${raw.slice(5)}` : null;
+  const requested = sourceJobIdFromUrl(url.toString());
+  if (!displayed || !requested) throw new Error('HELLOWORK_JOB_NUMBER_UNVERIFIED');
+  if (displayed !== requested) throw new Error('HELLOWORK_JOB_NUMBER_MISMATCH');
+  return displayed;
 }
 
 function locationParts(value: string | null) {
