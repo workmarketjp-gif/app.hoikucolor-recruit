@@ -147,4 +147,36 @@ for (const [status, expectedCode, expectedOutcome] of [
       `status ${status}: incorrect content-free evidence category`);
   }
 }
+// Verify the actual importer job-ID guard without calling the official site or DB.
+// A returned 200 page for a different ID must never be saved under the requested URL.
+const numberFnStart = importer.indexOf('function jobNumberFrom(');
+const numberFnEnd = importer.indexOf('\nfunction locationParts(', numberFnStart);
+const sourceIdStart = importer.indexOf('function sourceJobIdFromUrl(');
+const sourceIdEnd = importer.indexOf('\n// A search page lists', sourceIdStart);
+assert(numberFnStart >= 0 && numberFnEnd > numberFnStart && sourceIdStart >= 0 && sourceIdEnd > sourceIdStart,
+  'job ID consistency helper functions must exist');
+assert(importer.indexOf('const sourceJobId = jobNumberFrom(text, url)') < importer.indexOf('const lines = normalizedLines(text);'),
+  'displayed job ID must be verified before normalization or upsert');
+const matchSourceId = new Function('firstMatch', 'URL',
+  `${importer.slice(numberFnStart, numberFnEnd).replace('text: string, url: URL', 'text, url')}
+  ${importer.slice(sourceIdStart, sourceIdEnd).replace('url: string', 'url')}
+  return jobNumberFrom;`)(
+  (text, pattern) => text.match(pattern)?.[1] ?? null, URL,
+);
+for (const [displayed, urlId, expected] of [
+  ['求人番号 12345-12345678', '1234512345678', '12345-12345678'],
+  ['求人番号 12345-12345679', '1234512345678', 'HELLOWORK_JOB_NUMBER_MISMATCH'],
+  ['求人番号 未記載', '1234512345678', 'HELLOWORK_JOB_NUMBER_UNVERIFIED'],
+  ['求人番号 12345-12345678', 'invalid', 'HELLOWORK_JOB_NUMBER_UNVERIFIED'],
+  ['求人番号 12345-12345678', '12345-12345678', '12345-12345678'],
+]) {
+  const sourceUrl = new URL('https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do');
+  sourceUrl.searchParams.set('action', 'dispDetailBtn');
+  sourceUrl.searchParams.set('kJNo', urlId);
+  let actual;
+  try { actual = matchSourceId(displayed, sourceUrl); }
+  catch (error) { actual = error.message; }
+  assert(actual === expected, `job ID fixture expected ${expected}, got ${actual}`);
+}
+
 console.log('hellowork-structured-data-contract: PASS');
