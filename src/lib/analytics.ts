@@ -7,7 +7,7 @@
  * - Private recruitment pages (/jobs/test/…) never load analytics.
  * - `sign_up` is only sent by reportVerifiedSignup(): a click is never a registration.
  */
-const measurementId = (import.meta.env?.VITE_GA_MEASUREMENT_ID as string | undefined) ?? 'G-NLBK16NC1P';
+const measurementId =(import.meta.env?.VITE_GA_MEASUREMENT_ID as string | undefined) ?? 'G-NLBK16NC1P';
 const linkedDomains = ['hoikucolor.jp', 'app.hoikucolor.jp'];
 
 type Params = Record<string, string | number | boolean | undefined>;
@@ -24,7 +24,12 @@ export type CandidateEvent =
   | 'hc_pref_handoff_failed'
   | 'hc_career_started'
   | 'hc_career_saved'
-  | 'hc_career_job_opened';
+  | 'hc_career_job_opened'
+  | 'hc_dashboard_view'
+  | 'hc_dashboard_cta'
+  | 'hc_job_saved'
+  | 'hc_apply_start'
+  | 'hc_apply_complete';
 
 function enabled() {
   if (import.meta.env?.MODE === 'e2e' || !measurementId) return false;
@@ -55,9 +60,16 @@ function gtag(): Gtag | null {
   return w.gtag ?? null;
 }
 
+/** Auth funnel events carry where the visitor came in (screen name and CTA slot only). */
+const authFunnelEvents = new Set<CandidateEvent>(['hc_auth_start', 'login', 'sign_up']);
+
 export function track(name: CandidateEvent, params: Params = {}) {
   try {
-    gtag()?.('event', name, { ...params, page_location: `${window.location.origin}${window.location.pathname}` });
+    const payload = { ...(authFunnelEvents.has(name) ? authEntry() : {}), ...params };
+    // The e2e build never loads gtag; it records events so tests can check their parameters.
+    if (import.meta.env?.MODE === 'e2e') ((window as { __hcEvents?: unknown[] }).__hcEvents ??= []).push({ name, ...payload });
+    gtag()?.('event', name, { ...payload, page_location: `${window.location.origin}${window.location.pathname}` });
+    if (name === 'login' || name === 'sign_up') clearAuthEntry();
   } catch {
     // Analytics must never break the app.
   }
@@ -112,4 +124,31 @@ export async function reportVerifiedSignup(evidence: SignupEvidence, confirmBack
   }
   track('sign_up', { method: evidence.method });
   return true;
+}
+
+/**
+ * Registration-funnel entry, written by router.rememberReturnTarget() on the sign-in
+ * screen: the return screen's name (e.g. `career`) and a lowercase CTA slot from
+ * hoikucolor.jp. Validated again here; never ids, query values or personal data.
+ */
+export const authEntryStorageKey = 'hc_auth_entry_v1';
+export const authEntrySlotPattern = /^[a-z0-9_]{1,40}$/;
+
+export type AuthEntry = { entry?: string; cta?: string };
+
+export function authEntry(): AuthEntry {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(authEntryStorageKey) || 'null') as AuthEntry | null;
+    if (!raw || typeof raw !== 'object') return {};
+    return {
+      ...(typeof raw.entry === 'string' && /^[a-z]{1,20}$/.test(raw.entry) ? { entry: raw.entry } : {}),
+      ...(typeof raw.cta === 'string' && authEntrySlotPattern.test(raw.cta) ? { cta: raw.cta } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function clearAuthEntry() {
+  try { sessionStorage.removeItem(authEntryStorageKey); } catch { /* ignore */ }
 }

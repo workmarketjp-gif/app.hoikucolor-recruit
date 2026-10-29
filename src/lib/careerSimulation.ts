@@ -52,3 +52,18 @@ export function parseDays(value: string): number | null {
 export function manText(yen: number | null): string {
   return yen === null ? '' : String(yen / 10000);
 }
+
+/**
+ * The monthly pay a scenario compares postings against. 「休みを増やす」 starts from today's pay minus
+ * the accepted drop; the others use today's pay, else the desired minimum. Shared by Home and /career.
+ */
+export function scenarioSalaryLine(scenario: ScenarioId, own: number | null, drop: number | null, wish: number | null): number | null {
+  if (scenario === 'more-holidays') return own === null ? null : Math.max(0, own - (drop ?? 0));
+  return own ?? wish;
+}
+
+export const scenarioCopy: Record<ScenarioId, { label: string; lead: string }> = {
+  'keep-income': { label: '収入を保つ', lead: '今の月給（なければ希望の最低月給）に、募集の給与が届く求人です。' },
+  'more-holidays': { label: '休みを増やす', lead: '許容できる減額の範囲で、年間休日が確認できて、今より多い求人です。' },
+  balance: { label: 'バランス', lead: '年間休日が確認できた求人を、給与と休日の優先度で並べます。' },
+};

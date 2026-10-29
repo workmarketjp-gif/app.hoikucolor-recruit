@@ -97,3 +97,37 @@ pg_cron `hc-hellowork-reverify`（5分ごと・40件）が、既知の求人を�
   `hc_jobseeker_delete_career_conditions()`。本人は JWT の `sub` で特定し、引数で識別子を受け取らない。
 - 希望地域・希望最低月給は既存の希望条件（プロフィール）をそのまま使い、複製しない。
 - 本人の給与・休日は URL・GA4・ログに出さない。
+
+## 年間休日の分布（キャリアダッシュボード, migration 20261028090000・未適用）
+
+`hc_jobseeker_holiday_market_v1(p_prefecture, p_employment_type, p_occupation)` は、求人票に**明記された**年間休日
+（`annual_holidays_days` / `annual_holidays_basis`）を 6 つの帯に数えるだけの集計で、推測・補完はしない。
+
+- 母集団は給与相場と同じ `hc_private.career_posted_jobs_v1()`。日数の記載がない求人は `unstated_count` に数え、帯には入れない。
+- `minimum`（「125日以上」）は記載された下限の帯に入れ、`minimum_count` として別に返す。A は「以上」と表示する。
+- 記載のある求人が 5 件未満なら `bands: null`（A は「件数が足りません」と表示する）。
+- 未適用のあいだ A は `CareerApiUnavailableError` を「準備中」として表示する。共有 migration の管理者のレビュー後に適用する。
+
+## 有休・残業・離職・勤続・育休（キャリアダッシュボード）
+
+2026-10-28 時点で、求職者が読める公開ソースは次のとおり。A は存在しない指標を表示・推定しない。
+
+| 指標 | 公開ソース | 状態 |
+| --- | --- | --- |
+| 年間休日 | 求人票（上記） | 提供済み（集計 RPC は未適用） |
+| 有休取得率・日数 / 月平均所定外労働時間 / 平均勤続年数 / 離職率 / 育休取得・復帰 | なし（`hc_public_workplace_profiles` は施設単位・公開同意制で、公開 0 件） | 「公表データはまだありません」と表示 |
+
+- 平均勤続年数を離職率の代わりにしない。法人全体の公表値・施設の検証済みデータ・施設の自己申告は、提供元を分けて表示する。
+- 求人の `facility_claims`（施設の記載）は自己申告で、検証済みと表示しない。
+
+## キャリアダッシュボードの計測（GA4）
+
+個人の数値・識別子・自由記述は送らない。送るのは画面上の位置と状態の区分だけ。
+
+| イベント | 送る値 |
+| --- | --- |
+| `hc_dashboard_view` | `first_view`（このブラウザで初回か）, `profile_state`（`empty`/`partial`/`complete`） |
+| `hc_dashboard_cta` | `cta`（固定のスロット名） |
+| `hc_auth_start` / `login` / `sign_up` | 既存の値に加えて `entry`（戻り先の画面名, 例 `career`）, `cta`（hoikucolor.jp から渡された英小文字のスロット名） |
+| `hc_job_saved` | `surface`（`home`/`jobs`/`saved` など） |
+| `hc_apply_start` / `hc_apply_complete` | `surface`。完了は応募 RPC が成功したときだけ |

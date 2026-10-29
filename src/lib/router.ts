@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { authEntrySlotPattern, authEntryStorageKey, type AuthEntry } from './analytics';
 
 /**
  * Every candidate screen lives in one app under one session. This module owns the
@@ -104,6 +105,9 @@ export function rememberReturnTarget() {
     if (target) sessionStorage.setItem(returnStorageKey, target);
     // A copy with an expiry survives a closed tab (e.g. the email code opened later).
     if (target) localStorage.setItem(returnStorageKey, JSON.stringify({ target, at: Date.now() }));
+    // Registration-funnel entry (screen name + CTA slot only), read back by analytics.
+    const entry = authEntryFromUrl(window.location.pathname, window.location.search);
+    if (entry.entry || entry.cta) sessionStorage.setItem(authEntryStorageKey, JSON.stringify(entry));
   } catch {
     // Storage can be unavailable (private mode); the visitor simply lands on Home.
   }
@@ -122,6 +126,21 @@ export function restoreReturnTarget() {
   } catch {
     // Ignore storage failures; Home is a safe default.
   }
+}
+
+/**
+ * Pure: the registration-funnel entry for a sign-in URL — the return screen's name and an
+ * optional lowercase CTA slot (`?return_to=/career&hc_cta=salary_compare` from hoikucolor.jp).
+ */
+export function authEntryFromUrl(pathname: string, search: string): AuthEntry {
+  const params = new URLSearchParams(search);
+  const target = normalizeReturnTarget(params.get('return_to')) ?? normalizeReturnTarget(pathname);
+  const view = target ? pathToView(target.split(/[?#]/)[0]) : null;
+  const cta = params.get('hc_cta');
+  return {
+    ...(view && view !== 'home' ? { entry: view } : {}),
+    ...(cta && authEntrySlotPattern.test(cta) ? { cta } : {}),
+  };
 }
 
 const durableReturnTtlMs = 24 * 60 * 60 * 1000;

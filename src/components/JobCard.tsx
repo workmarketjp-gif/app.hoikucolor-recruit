@@ -6,6 +6,8 @@ import { ApplyDocumentsStep } from './ApplyDocumentsStep';
 import { getProfile, type Job, type JobseekerProfile, type VerifiedWorkplaceMetric } from '../lib/recruitRepository';
 import type { SavedJobWithStatus } from '../lib/savedJobStatusRepository';
 import { errorMessage } from '../lib/useResource';
+import { track } from '../lib/analytics';
+import { pathToView } from '../lib/router';
 
 const verifiedPriority = [
   'average_monthly_overtime_hours',
@@ -51,6 +53,7 @@ export function JobCard({ job, saved, onToggleSaved, onStartApplication, onAppli
   const apply = async () => {
     if (isClosed) { setApplyError('この求人は募集を終了しています。'); return; }
     setApplying(true); setApplyError(null);
+    track('hc_apply_start', { surface: pathToView(window.location.pathname) ?? 'other' });
     try {
       const profile = await getProfile();
       if (!profile?.name?.trim()) { onStartApplication(job.id); return; }

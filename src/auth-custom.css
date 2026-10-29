@@ -37,3 +37,7 @@
   line-height: 1.7;
   font-weight: 600;
 }
+
+/* Entry promise (what the visitor came for). The story panel says it on wide screens. */
+.hc-auth-page .hc-auth-heading p.hc-auth-promise{margin:0 0 6px;color:#17253a;font-size:17px;font-weight:800;line-height:1.6}
+@media(min-width:921px){.hc-auth-page .hc-auth-heading p.hc-auth-promise{display:none}}
