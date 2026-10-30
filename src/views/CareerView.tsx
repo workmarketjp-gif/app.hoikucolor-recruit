@@ -9,7 +9,8 @@ import {
   differenceFromMedian, formatMan, manText, minimumSampleSize, parseDays, parseManYen, scenarioCopy, scenarioSalaryLine, withYourPosition, type ScenarioId,
 } from '../lib/careerSimulation';
 import { getJobseekerMatchingPreferences } from '../lib/profilePreferencesRepository';
-import { getProfile } from '../lib/recruitRepository';
+import { getProfile, type JobseekerProfile } from '../lib/recruitRepository';
+import { CareerCompanion } from './CareerCompanion';
 import { errorMessage, useResource } from '../lib/useResource';
 import './CareerView.css';
 
@@ -21,7 +22,7 @@ const emptyFields = { salary: '', holidays: '', drop: '', wishHolidays: '', wish
  * component; they are stored only when the person presses 保存 (owner-scoped), and never reach the
  * URL, browser storage, analytics or logs.
  */
-export function CareerView({ userKey }: { userKey: string }) {
+export function CareerView({ userKey, profile: shellProfile, profileLoaded }: { userKey: string; profile: JobseekerProfile | null; profileLoaded: boolean }) {
   const base = useResource(
     `career-base:${userKey}`,
     async () => {
@@ -99,7 +100,10 @@ export function CareerView({ userKey }: { userKey: string }) {
 
   return (
     <div className="hc-view hc-career">
-      <p className="hc-lead">給与も、休みも。いまの条件と、公開されている求人を並べて考えられます。入力は任意です。</p>
+      <CareerCompanion variant="page" userKey={userKey} profile={shellProfile} profileLoaded={profileLoaded} />
+
+      <h2 className="hc-career-studio">条件を細かく決めて、くわしく比べる</h2>
+      <p className="hc-lead">今の月給や年間休日、下がってもよい金額まで入れて、求人をじっくり並べられます。入力は任意です。</p>
 
       {base.status === 'error' && !base.data && <InlineError message={base.error} onRetry={base.reload} />}
       {base.status === 'loading' && !base.data && <SkeletonList rows={2} />}

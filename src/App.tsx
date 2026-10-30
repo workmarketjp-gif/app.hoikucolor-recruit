@@ -28,7 +28,7 @@ const ScoutsView = lazy(() => import('./views/ScoutsView').then((module) => ({ d
 const SpotJobsView = lazy(() => import('./views/SpotJobsView').then((module) => ({ default: module.SpotJobsView })));
 const VisitsView = lazy(() => import('./views/VisitsView').then((module) => ({ default: module.VisitsView })));
 const CareerView = lazy(() => import('./views/CareerView').then((module) => ({ default: module.CareerView })));
-const CareerDashboard = lazy(() => import('./views/CareerDashboard').then((module) => ({ default: module.CareerDashboard })));
+const CareerCompanion = lazy(() => import('./views/CareerCompanion').then((module) => ({ default: module.CareerCompanion })));
 const ResumeBuilderView = lazy(() => import('./views/ResumeBuilderView').then((module) => ({ default: module.ResumeBuilderView })));
 
 const viewTitles: Record<View, string> = {
@@ -44,7 +44,7 @@ const viewTitles: Record<View, string> = {
   matches: 'マッチ度',
   compare: '園を比較',
   resume: '応募書類をつくる',
-  career: '転職シミュレーター',
+  career: 'お給料・働き方',
 };
 
 /**
@@ -52,22 +52,23 @@ const viewTitles: Record<View, string> = {
  * (the logo) is the overview of all five, so no single destination is lit there.
  */
 const parentTab: Record<View, ShellTab | null> = {
-  home: null,
+  home: 'home',
   jobs: 'jobs',
   saved: 'saved',
-  applications: 'applications',
-  messages: 'messages',
+  applications: 'profile',
+  messages: 'profile',
   profile: 'profile',
-  scouts: 'messages',
-  visits: 'applications',
+  scouts: 'profile',
+  visits: 'profile',
   spot: 'jobs',
   matches: 'jobs',
   compare: 'saved',
   resume: 'profile',
-  career: 'jobs',
+  career: 'career',
 };
 
-const secondaryViews = new Set<View>(['scouts', 'visits', 'spot', 'matches', 'compare', 'resume', 'career']);
+// Screens below a tab show a back button. お給料・働き方 (career) is a tab of its own.
+const secondaryViews = new Set<View>(['scouts', 'visits', 'spot', 'matches', 'compare', 'resume']);
 const closedApplicationStatuses = ['rejected', 'withdrawn', 'hired'];
 
 type Route = { view: View; applicationId: string | null; key: number };
@@ -194,9 +195,9 @@ export function App() {
       window.history.back();
       return;
     }
-    const parent = parentTab[view];
-    navigate(view === 'applications' ? 'applications' : parent ?? 'home');
-  }, [navigate, view]);
+    // An application's detail goes back to the list; the list and every other screen go to their parent tab.
+    navigate(view === 'applications' && selectedApplicationId ? 'applications' : parentTab[view] ?? 'home');
+  }, [navigate, view, selectedApplicationId]);
 
   const savedIdList = savedIds.data ?? [];
   const toggleSaved = async (jobId: string) => {
@@ -235,9 +236,9 @@ export function App() {
       active={parentTab[view]}
       title={title}
       name={displayName}
-      badges={{ applications: activeApplications, messages: attention.data?.unread_messages_count ?? 0 }}
+      badges={{ applications: activeApplications, messages: attention.data?.unread_messages_count ?? 0, profile: (attention.data?.unread_messages_count ?? 0) + (attention.data?.unanswered_interviews_count ?? 0) }}
       onNavigate={navigateTo}
-      onBack={isDetail || secondaryViews.has(view) ? goBack : undefined}
+      onBack={isDetail || secondaryViews.has(view) || view === 'applications' || view === 'messages' ? goBack : undefined}
       onSignOut={session.signOut}
       notification={<NotificationCenter onNavigate={navigateTo} />}
     >
@@ -264,6 +265,8 @@ export function App() {
         {view === 'profile' && (
           <ProfileView
             profileResource={profile}
+            activeApplications={activeApplications}
+            unreadMessages={attention.data?.unread_messages_count ?? 0}
             email={session.email}
             onSignOut={session.signOut}
             fallback={{ userId: session.userId, email: session.email, name: session.fullName }}
@@ -277,14 +280,14 @@ export function App() {
             }}
           />
         )}
-        {secondaryViews.has(view) && (
+        {(secondaryViews.has(view) || view === 'career') && (
           <Suspense fallback={<SkeletonList rows={2} />}>
             {view === 'scouts' && <ScoutsView />}
             {view === 'visits' && <VisitsView />}
             {view === 'spot' && <SpotJobsView onStartApplication={() => navigate('profile')} />}
             {view === 'matches' && <MatchesView userKey={userKey} savedIds={savedIdList} {...jobActions} />}
             {view === 'compare' && <CompareView userKey={userKey} />}
-            {view === 'career' && <CareerView userKey={userKey} />}
+            {view === 'career' && <CareerView userKey={userKey} profile={profile.data ?? null} profileLoaded={profile.status !== 'loading' || profile.data !== null} />}
             {view === 'resume' && <ResumeBuilderView onProfileSaved={profile.setData} />}
           </Suspense>
         )}
@@ -342,9 +345,7 @@ function HomeView({ name, applications, attention, savedIds, userKey, profile, p
     <div className="hc-home">
       <p className="hc-greeting">こんにちは、{name}さん</p>
 
-      {nothingToDo ? (
-        <p className="hc-note hc-home-calm" role="status">いま確認が必要なことはありません。応募すると、選考の状況や園からのメッセージがここに表示されます。</p>
-      ) : (
+      {!nothingToDo && (
         <section aria-labelledby="home-todo-heading">
           <h2 id="home-todo-heading" className="hc-visually-hidden">いま確認すること</h2>
           {(pendingInterviews > 0 || pendingScouts > 0) && (
@@ -361,8 +362,15 @@ function HomeView({ name, applications, attention, savedIds, userKey, profile, p
       )}
 
       <Suspense fallback={<SkeletonList rows={2} />}>
-        <CareerDashboard userKey={userKey} profile={profile} profileLoaded={profileLoaded} />
+        <CareerCompanion variant="home" userKey={userKey} profile={profile} profileLoaded={profileLoaded} />
       </Suspense>
+
+      {nothingToDo && (
+        <nav className="hc-home-links" aria-label="応募とメッセージ">
+          <a href="/applications"><Icon name="briefcase" size={20} />応募管理<Icon name="chevron" size={16} /></a>
+          <a href="/messages"><Icon name="chat" size={20} />メッセージ<Icon name="chevron" size={16} /></a>
+        </nav>
+      )}
 
       <section className="hc-section">
         <SectionHeader title="おすすめ求人" action={<button type="button" className="hc-link-button" onClick={() => onNavigate('jobs')}>すべて見る</button>} />
@@ -662,8 +670,10 @@ const employmentOptions = ['正社員', '契約社員', 'パート・アルバ�
 const qualificationOptions = ['保育士', '幼稚園教諭', '保育教諭', '看護師', '准看護師', '栄養士', '管理栄養士', '調理師', '子育て支援員'];
 const prefectureOptions = ['北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県', '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県', '新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県', '岐阜県', '静岡県', '愛知県', '三重県', '滋賀県', '京都府', '大阪府', '兵庫県', '奈良県', '和歌山県', '鳥取県', '島根県', '岡山県', '広島県', '山口県', '徳島県', '香川県', '愛媛県', '高知県', '福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'];
 
-function ProfileView({ profileResource, email, onSignOut, fallback, onSaved }: {
+function ProfileView({ profileResource, activeApplications, unreadMessages, email, onSignOut, fallback, onSaved }: {
   profileResource: ResourceLike<JobseekerProfile | null>;
+  activeApplications: number;
+  unreadMessages: number;
   email: string | null;
   onSignOut: () => void | Promise<void>;
   fallback: { userId: string; email: string | null; name: string | null };
@@ -688,6 +698,15 @@ function ProfileView({ profileResource, email, onSignOut, fallback, onSaved }: {
   return (
     <div className="hc-profile">
       {returnJob && <p className="hc-notice">応募に必要な項目を入力して保存すると、求人に戻ります。</p>}
+      {!returnJob && (
+        <section className="hc-form-section" aria-labelledby="profile-contact-heading">
+          <div className="hc-form-section-head"><h2 id="profile-contact-heading">応募・やりとり</h2></div>
+          <nav className="hc-menu is-flush" aria-label="応募・やりとり">
+            <a href="/applications">応募管理{activeApplications > 0 && <strong className="hc-menu-count">{activeApplications}件</strong>}<Icon name="chevron" size={16} /></a>
+            <a href="/messages">メッセージ{unreadMessages > 0 && <strong className="hc-menu-count" aria-label={`新着${unreadMessages}件`}>新着{unreadMessages}</strong>}<Icon name="chevron" size={16} /></a>
+          </nav>
+        </section>
+      )}
       <ProfileForm key={initial.clerk_user_id} initial={initial} requireForApplication={Boolean(returnJob)} onSaved={onSaved} />
       <DocumentVaultPanel qualifications={initial.qualifications} />
       {!returnJob && (
@@ -698,7 +717,7 @@ function ProfileView({ profileResource, email, onSignOut, fallback, onSaved }: {
             <a href="/scouts">スカウト<Icon name="chevron" size={16} /></a>
             <a href="/visits">見学・体験の予約<Icon name="chevron" size={16} /></a>
             <a href="/spot-jobs">スポット勤務<Icon name="chevron" size={16} /></a>
-            <a href="/career">転職シミュレーター<Icon name="chevron" size={16} /></a>
+            <a href="/career">お給料・働き方を比べる<Icon name="chevron" size={16} /></a>
             <a href="/matches">マッチ度を見る<Icon name="chevron" size={16} /></a>
             <a href="/compare">園を比較する<Icon name="chevron" size={16} /></a>
           </nav>

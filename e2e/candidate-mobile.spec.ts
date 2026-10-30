@@ -98,9 +98,9 @@ for (const width of [375, 390, 393, 430]) {
 
       const tabs = page.locator('.hc-tabbar a');
       await expect(tabs).toHaveCount(5);
-      await expect(tabs).toHaveText(['求人を探す', '気になる', '応募管理', 'メッセージ', 'マイページ'].map((label) => new RegExp(label)));
-      // Home is the logo: an overview of all five destinations, so none is lit.
-      await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveCount(0);
+      await expect(tabs).toHaveText(['ホーム', '求人を探す', 'お給料', '気になる', 'マイページ'].map((label) => new RegExp(label)));
+      // Home is the first destination and is lit on Home.
+      await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/ホーム/);
       await expect(page.locator('.hc-header-brand')).toBeVisible();
       await expect(page.getByRole('button', { name: 'アカウント' })).toHaveCount(0);
 
@@ -307,14 +307,16 @@ test.describe('390px golden path and P1 screens', () => {
     await expect(page).toHaveURL(/\/jobs$/);
     await page.goForward();
     await expect(page).toHaveURL(new RegExp(`application_id=${application.id}`));
-    await page.locator('.hc-tabbar a', { hasText: '応募管理' }).click();
+    // 応募管理 lives under マイページ (the badge there is the way in when something is waiting).
+    await page.locator('.hc-tabbar a', { hasText: 'マイページ' }).click();
+    await page.getByRole('navigation', { name: '応募・やりとり' }).getByRole('link', { name: /応募管理/ }).click();
     await expect(page).toHaveURL(/\/applications$/);
     await expect(page.locator('.hc-application-row')).toHaveCount(1);
 
     await page.reload();
     await expect(page.getByRole('heading', { level: 1, name: '応募管理' })).toBeVisible();
     await expect(page.locator('.hc-application-row')).toHaveCount(1);
-    await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/応募/);
+    await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/マイページ/);
   });
 
   test('a deep-linked job is pinned, labelled 指定求人 and opened', async ({ page }) => {
@@ -365,7 +367,7 @@ test.describe('390px golden path and P1 screens', () => {
     await expect(page.getByText('スカウトはまだ届いていません')).toBeVisible();
     await expect(page.getByText('本人情報の共有はあなたが決めます')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'スカウト設定' })).toBeVisible();
-    await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/メッセージ/);
+    await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/マイページ/);
     await expectNoHorizontalOverflow(page);
   });
 
@@ -503,7 +505,7 @@ for (const [width, height] of [[1024, 768], [1280, 800], [1440, 900], [1536, 864
       expect(report.overflowX, `${route} horizontal overflow`).toBeLessThanOrEqual(0);
       expect(report.sidebar.visible, `${route} sidebar visible`).toBe(true);
       expect(report.sidebar.width, `${route} sidebar width`).toBeGreaterThanOrEqual(220);
-      expect(report.labels).toHaveLength(11);
+      expect(report.labels).toHaveLength(12); // 5 destinations + 7 more (応募管理 and メッセージ included)
       for (const label of report.labels) {
         expect(label.width, `${route} "${label.text}" label width`).toBeGreaterThanOrEqual(48);
         expect(label.height, `${route} "${label.text}" wraps beyond 2 lines`).toBeLessThanOrEqual(label.lineHeight * 2 + 1);
@@ -690,24 +692,27 @@ test('messages tab lists application conversations and marks only the known newe
   });
   await page.goto('/messages');
   await expect(page.getByRole('heading', { level: 1, name: 'メッセージ' })).toBeVisible();
-  await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/メッセージ/);
-  await expect(page.locator('.hc-tabbar a', { hasText: 'メッセージ' }).locator('.hc-tab-badge')).toHaveText('2');
+  await expect(page.locator('.hc-tabbar a[aria-current="page"]')).toHaveText(/マイページ/);
+  // マイページ, where メッセージ now lives, carries what is waiting: 2 unread messages + 1 interview reply.
+  await expect(page.locator('.hc-tabbar a', { hasText: 'マイページ' }).locator('.hc-tab-badge')).toHaveText('3');
   const thread = page.locator('.hc-list-row').filter({ hasText: 'ひだまり保育園' });
   await expect(thread).toContainText('新着');
   await expect(thread).toHaveAttribute('href', new RegExp(`application_id=${application.id}#application-messages`));
   await expectNoHorizontalOverflow(page);
 });
 
-test('home with nothing to do shows one calm next action', async ({ page }) => {
+test('home with nothing to do shows one next action and no filler', async ({ page }) => {
   await mockApi(page, {
     hc_jobseeker_list_applications: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
     hc_jobseeker_attention_summary: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ unanswered_interviews_count: 0, unread_messages_count: 0, pending_scouts_count: 0, next_interview: null, next_message: null, next_scout: null }) }),
   });
   await page.goto('/');
-  await expect(page.getByRole('status').filter({ hasText: 'いま確認が必要なことはありません' })).toBeVisible();
+  // Nothing waiting means nothing is shown for it: no to-do rows, no filler line above the hero.
   await expect(page.locator('.hc-stat-row')).toHaveCount(0);
-  // The calm state adds no button of its own: the career dashboard holds Home's one next action.
-  await expect(page.locator('.hc-dash-primary')).toHaveCount(1);
+  await expect(page.getByText('いま確認が必要なことはありません')).toHaveCount(0);
+  // The hero holds Home's one next action, and 応募管理 / メッセージ stay one tap away.
+  await expect(page.getByRole('button', { name: '私のお給料、比べてみる' })).toHaveCount(1);
+  await expect(page.getByRole('navigation', { name: '応募とメッセージ' }).getByRole('link')).toHaveText([/応募管理/, /メッセージ/]);
 });
 
 test('my page is split into clear sections, without a completion score, and signs out from アカウント設定', async ({ page }) => {

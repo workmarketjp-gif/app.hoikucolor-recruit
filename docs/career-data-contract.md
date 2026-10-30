@@ -131,3 +131,28 @@ pg_cron `hc-hellowork-reverify`（5分ごと・40件）が、既知の求人を�
 | `hc_auth_start` / `login` / `sign_up` | 既存の値に加えて `entry`（戻り先の画面名, 例 `career`）, `cta`（hoikucolor.jp から渡された英小文字のスロット名） |
 | `hc_job_saved` | `surface`（`home`/`jobs`/`saved` など） |
 | `hc_apply_start` / `hc_apply_complete` | `surface`。完了は応募 RPC が成功したときだけ |
+
+## お給料・働き方（キャリアコンパニオン, 2026-10-30）
+
+Home（ヒーロー付き）と `/career`（上部）は同じ `CareerCompanion` を描画する。画面の原則:
+
+- **見せるのは、いま役に立つものだけ。** データのない指標は空のカードにせず、描かない。「準備中」「公表データなし」を並べない。
+  利用者が求めた情報が無いときだけ、理由と次の行動（例:「全国の求人で比べる」）を示す。
+- **3つの数字を混ぜない。** 「今のお給料」（本人）/「求人票に書かれたお給料」（`hc_jobseeker_salary_market_v1`、月給の下限の中央値）/
+  「公的統計で見る実際の給与」（`hc_jobseeker_official_wage_stats_v1`）。公的統計のカードは RPC が数字を返したときだけ現れる。
+  求人票の金額を実際の給与として表示しない。
+- **統計は「詳しいデータを見る」の中。** 中央値・範囲・分布の表・定義（月給の幅は下限で数える）・出典日。主画面に統計用語を出さない。
+- **お休みは求人票に書かれた日数だけ。** `hc_jobseeker_career_scenario_jobs_v1`（`balance`, 休日の下限N日, 給与の重み 0）。
+  日数が書かれていない求人は数えず、「休みが少ない」とは扱わない。「N日以上」は `以上` と表示する。
+  休日の分布表（`hc_jobseeker_holiday_market_v1`）は、RPC が適用された後に「詳しいデータ」へ自動で現れる。
+- **残業・有休取得・離職・勤続・育休は、公開ソースができるまで画面に出さない**（推測しない）。
+- **保育観**は登録済みの値を表示し、既存の `/matches`・希望条件へつなぐ。マッチ率は作らない。AI は数値判断に使わない。
+
+### ナビゲーション
+下部タブ（5）: ホーム / 求人を探す / お給料 / 気になる / マイページ。`応募管理`・`メッセージ` は マイページ の先頭（未読・面接の返信待ちを
+バッジ表示）、Home（待機中の項目、なければ 2 行のリンク）、デスクトップのサイドバーから 1 タップで開ける。
+
+### 計測（個人情報なし）
+`hc_dashboard_view`（first_view, profile_state）/ `hc_dashboard_cta`（cta = `salary_check`, `path_salary`, `path_holidays`, `path_values`,
+`find_by_priority`, `find_higher`, `values_matches`, `values_choose`）。給与・地域・氏名は送らない。既存の `hc_career_started`,
+`hc_career_job_opened`, `hc_job_saved`, `hc_apply_*` と認証イベント（entry / cta 付き）は変更しない。
