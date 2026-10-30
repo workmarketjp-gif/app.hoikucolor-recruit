@@ -67,3 +67,21 @@ export const scenarioCopy: Record<ScenarioId, { label: string; lead: string }> =
   'more-holidays': { label: '休みを増やす', lead: '許容できる減額の範囲で、年間休日が確認できて、今より多い求人です。' },
   balance: { label: 'バランス', lead: '年間休日が確認できた求人を、給与と休日の優先度で並べます。' },
 };
+
+/** Difference under which two monthly amounts are described as roughly the same. */
+const roughlySameYen = 5000;
+
+/**
+ * One plain sentence for 「あなたのお給料」 against 「求人票の月給の真ん中あたり」. Deterministic arithmetic on two
+ * numbers; it says nothing about the person's worth, and the posted figure is never called actual pay.
+ */
+export function comparePhrase(own: number, median: number): { direction: 'higher' | 'lower' | 'same'; amount: number; text: string } {
+  const diff = own - median;
+  if (Math.abs(diff) < roughlySameYen) return { direction: 'same', amount: 0, text: '今のお給料は、求人票に書かれた月給の真ん中あたりと、ほぼ同じです。' };
+  return diff > 0
+    ? { direction: 'higher', amount: diff, text: `今のお給料は、求人票に書かれた月給の真ん中あたりより ${formatMan(diff)} 高めです。` }
+    : { direction: 'lower', amount: -diff, text: `今のお給料は、求人票に書かれた月給の真ん中あたりより ${formatMan(-diff)} 低めです。` };
+}
+
+/** 求人票の年間休日 choices offered on Home. */
+export const holidayChoices = [110, 115, 120, 125] as const;

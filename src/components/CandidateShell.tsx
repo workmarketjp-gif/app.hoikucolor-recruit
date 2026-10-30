@@ -2,26 +2,28 @@ import { type ReactNode } from 'react';
 import { Brand } from './Brand';
 import { Icon } from './Icon';
 
-export type ShellTab = 'jobs' | 'saved' | 'applications' | 'messages' | 'profile';
+export type ShellTab = 'home' | 'jobs' | 'career' | 'saved' | 'profile';
 
 /**
  * The five fixed candidate destinations, identical on every screen size: a bottom tab
- * bar on mobile, the first group of the sidebar on desktop. Home (/) is the logo.
+ * bar on mobile, the first group of the sidebar on desktop. 応募管理 and メッセージ sit under
+ * マイページ (which carries their unread badge), in Home's to-do block, and in the desktop sidebar.
  */
 export const shellTabs: { id: ShellTab; label: string; href: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
+  { id: 'home', label: 'ホーム', href: '/', icon: 'home' },
   { id: 'jobs', label: '求人を探す', href: '/jobs', icon: 'search' },
+  { id: 'career', label: 'お給料', href: '/career', icon: 'yen' },
   { id: 'saved', label: '気になる', href: '/saved', icon: 'heart' },
-  { id: 'applications', label: '応募管理', href: '/applications', icon: 'briefcase' },
-  { id: 'messages', label: 'メッセージ', href: '/messages', icon: 'chat' },
   { id: 'profile', label: 'マイページ', href: '/profile', icon: 'user' },
 ];
 
 /** Secondary destinations: desktop sidebar only; on mobile they live on My page and in context. */
-export const secondaryLinks: { href: string; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
+export const secondaryLinks: { href: string; label: string; icon: Parameters<typeof Icon>[0]['name']; badge?: 'applications' | 'messages' }[] = [
+  { href: '/applications', label: '応募管理', icon: 'briefcase', badge: 'applications' },
+  { href: '/messages', label: 'メッセージ', icon: 'chat', badge: 'messages' },
   { href: '/scouts', label: 'スカウト', icon: 'sparkles' },
   { href: '/visits', label: '見学・体験', icon: 'map' },
   { href: '/spot-jobs', label: 'スポット勤務', icon: 'clock' },
-  { href: '/career', label: '転職シミュレーター', icon: 'yen' },
   { href: '/matches', label: 'マッチ度', icon: 'shield' },
   { href: '/compare', label: '園を比較', icon: 'file' },
 ];
@@ -39,7 +41,8 @@ type Props = {
   title: string;
   name: string;
   notification: ReactNode;
-  badges?: Partial<Record<ShellTab, number>>;
+  /** `profile` is the unread / waiting total shown on マイページ; the other two badge the desktop sidebar. */
+  badges?: Partial<Record<ShellTab | 'applications' | 'messages', number>>;
   onNavigate?: (target: string) => void;
   /** Screens below a tab (details, secondary screens) show a back button in the header. */
   onBack?: () => void;
@@ -88,6 +91,7 @@ export function CandidateShell({ active, title, name, notification, badges = {},
               <a key={link.href} href={link.href} className={`hc-sidenav-item is-secondary ${isActive ? 'is-active' : ''}`} aria-current={isActive ? 'page' : undefined}>
                 <Icon name={link.icon} size={20} />
                 <span className="hc-sidenav-label">{link.label}</span>
+                {link.badge && badge(badges[link.badge] ?? 0, 'hc-sidenav-badge')}
               </a>
             );
           })}

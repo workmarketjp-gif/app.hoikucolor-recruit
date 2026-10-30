@@ -175,8 +175,10 @@ test('API not deployed shows 準備中, never numbers', async ({ page }) => {
 test('failed market read is an error with retry, not an empty market', async ({ page }) => {
   await mockApi(page, { market: 'fail' });
   await page.goto('/career');
-  await expect(page.getByRole('alert').filter({ hasText: '求人の相場を読み込めませんでした' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'もう一度' }).first()).toBeVisible();
+  // The friendly check above and the detailed simulator below each report their own read.
+  const detailed = page.getByRole('region', { name: '相場と比べる' });
+  await expect(detailed.getByRole('alert').filter({ hasText: '求人の相場を読み込めませんでした' })).toBeVisible();
+  await expect(detailed.getByRole('button', { name: 'もう一度' })).toBeVisible();
 });
 
 test('a saved region without postings says so instead of showing a median', async ({ page }) => {
