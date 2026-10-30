@@ -230,10 +230,13 @@ function parseDate(value: string | null) {
 }
 
 function jobNumberFrom(text: string, url: URL) {
+  // A URL-derived ID is not proof of what the returned page displays.
+  // Fail closed on missing or different displayed IDs, before any DB upsert.
   const displayed = firstMatch(text, /求人番号\s*[|｜]?\s*([0-9]{5}-[0-9]{8})/);
-  if (displayed) return displayed;
-  const raw = (url.searchParams.get('kJNo') || '').replace(/\D/g, '');
-  return raw.length === 13 ? `${raw.slice(0, 5)}-${raw.slice(5)}` : null;
+  const requested = sourceJobIdFromUrl(url.toString());
+  if (!displayed || !requested) throw new Error('HELLOWORK_JOB_NUMBER_UNVERIFIED');
+  if (displayed !== requested) throw new Error('HELLOWORK_JOB_NUMBER_MISMATCH');
+  return displayed;
 }
 
 function locationParts(value: string | null) {
@@ -286,7 +289,7 @@ async function sha256(value: string) {
 async function logUpstreamEvidence(
   url: URL,
   httpStatus: number,
-  outcome: 'gone_notice' | 'rate_limited' | 'upstream_5xx' | 'access_or_timeout_4xx',
+  outcome: 'gone_notice' | 'rate_limited' | 'upstream_5xx' | 'access_or_timeout_4xx' | 'non_authoritative_http',
   observedAt: string,
 ) {
   try {
@@ -345,6 +348,13 @@ async function normalize(url: URL): Promise<Normalized> {
   if (response.status === 429 || response.status >= 500) {
     await logUpstreamEvidence(url, response.status, response.status === 429 ? 'rate_limited' : 'upstream_5xx', fetchedAt);
     throw new Error(`HELLOWORK_TRANSIENT_HTTP_${response.status}`);
+  }
+
+  // A non-2xx detail response (including 404/410) is not an authoritative
+  // Hello Work withdrawal notice. Preserve the existing row and content.
+  if (!response.ok) {
+    await logUpstreamEvidence(url, response.status, 'non_authoritative_http', fetchedAt);
+    throw new Error(`HELLOWORK_NONAUTHORITATIVE_HTTP_${response.status}`);
   }
 
   const html = await response.text();
