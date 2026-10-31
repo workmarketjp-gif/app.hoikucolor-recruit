@@ -229,6 +229,15 @@ function parseDate(value: string | null) {
   return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d), 0, 0, 0)).toISOString();
 }
 
+// A Hello Work 紹介期限日 is a Japanese calendar day, not a UTC instant.
+// Keep that job eligible until the final millisecond of that day in JST.
+// Do not change the 受付年月日 conversion, which is a separate source date.
+function parseDeadline(value: string | null) {
+  const utcCalendarStart = parseDate(value);
+  if (!utcCalendarStart) return null;
+  return new Date(Date.parse(utcCalendarStart) + 15 * 60 * 60 * 1000 - 1).toISOString();
+}
+
 function jobNumberFrom(text: string, url: URL) {
   // A URL-derived ID is not proof of what the returned page displays.
   // Fail closed on missing or different displayed IDs, before any DB upsert.
@@ -441,7 +450,7 @@ async function normalize(url: URL): Promise<Normalized> {
     ? sliceUntilExact(lines, conditionsIndex, ['会社の情報'])
     : null;
 
-  const closingAt = parseDate(nextValue(lines, '紹介期限日'));
+  const closingAt = parseDeadline(nextValue(lines, '紹介期限日'));
   const sourcePublishedAt = parseDate(nextValue(lines, '受付年月日'));
 
   const positionsIndex = exactIndex(lines, '採用人数');
