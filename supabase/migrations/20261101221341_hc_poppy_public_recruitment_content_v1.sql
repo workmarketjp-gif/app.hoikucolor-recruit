@@ -17,29 +17,33 @@ as $function$
     'updated_at', greatest(h.updated_at, m.updated_at),
     'profile', jsonb_strip_nulls(jsonb_build_object(
       'nursery_name', coalesce(nullif(btrim(p.nursery_name), ''), nullif(btrim(p.name), '')),
-      'corporation_name', nullif(btrim(p.corporation_name), ''),
-      'introduction', coalesce(nullif(btrim(p.introduction), ''), nullif(btrim(p.description), '')),
-      'philosophy', nullif(btrim(p.philosophy), ''),
-      'features', coalesce(nullif(btrim(p.features), ''), nullif(btrim(p.feature_text), '')),
-      'access_info', nullif(btrim(p.access_info), ''),
+      'introduction', case when a.published_sections ? 'introduction' then
+        coalesce(nullif(btrim(p.introduction), ''), nullif(btrim(p.description), '')) end,
+      'philosophy', case when a.published_sections ? 'philosophy' then
+        nullif(btrim(p.philosophy), '') end,
+      'features', case when a.published_sections ? 'features' then
+        coalesce(nullif(btrim(p.features), ''), nullif(btrim(p.feature_text), '')) end,
+      'access_info', case when a.published_sections ? 'access' then
+        nullif(btrim(p.access_info), '') end,
       'logo_url', nullif(btrim(p.logo_url), ''),
-      'main_visual_url', nullif(btrim(p.main_visual_url), '')
+      'main_visual_url', case when a.published_sections ? 'hero' then
+        nullif(btrim(p.main_visual_url), '') end
     )),
     'page', case when c.id is null then null else jsonb_strip_nulls(jsonb_build_object(
       'main_copy', coalesce(nullif(btrim(c.catch_copy), ''), nullif(btrim(c.main_copy), '')),
       'sub_copy', nullif(btrim(c.sub_copy), ''),
-      'intro_text', nullif(btrim(c.intro_text), ''),
-      'appeal_points', nullif(btrim(c.appeal_points), ''),
-      'workplace_description', nullif(btrim(c.workplace_description), ''),
-      'ideal_candidate', nullif(btrim(c.ideal_candidate), ''),
-      'selection_flow', nullif(btrim(c.selection_flow), '')
+      'intro_text', case when a.published_sections ? 'introduction' then nullif(btrim(c.intro_text), '') end,
+      'appeal_points', case when a.published_sections ? 'workplace' then nullif(btrim(c.appeal_points), '') end,
+      'workplace_description', case when a.published_sections ? 'workplace' then nullif(btrim(c.workplace_description), '') end,
+      'ideal_candidate', case when a.published_sections ? 'workplace' then nullif(btrim(c.ideal_candidate), '') end,
+      'selection_flow', case when a.published_sections ? 'flow' then nullif(btrim(c.selection_flow), '') end
     )) end,
     'director_message', case when c.id is null or not exists (
       select 1 from public.hm_recruitment_section_settings s
       where s.nursery_id = m.nursery_id
         and s.section_key = 'section_director_message'
         and s.is_enabled
-    ) then null else jsonb_strip_nulls(jsonb_build_object(
+    ) or not (a.published_sections ? 'message') then null else jsonb_strip_nulls(jsonb_build_object(
       'director_message_title', nullif(btrim(c.director_message_title), ''),
       'director_message_body', nullif(btrim(c.director_message_body), ''),
       'director_name', nullif(btrim(c.director_name), ''),
@@ -66,6 +70,18 @@ as $function$
   join public.ho_organizations o
     on o.id = h.organization_id
    and o.status = 'active'
+  join lateral (
+    select coalesce(x.published_design -> 'sections', '[]'::jsonb) as published_sections
+    from public.hm_ai_sites x
+    where x.nursery_id = m.nursery_id
+      and x.facility_id = h.facility_id
+      and x.organization_id = h.organization_id
+      and x.website_type = 'recruitment'
+      and x.status = 'published'
+      and x.published_design is not null
+    order by x.updated_at desc, x.id
+    limit 1
+  ) a on true
   left join public.hm_nursery_profiles p on p.nursery_id = m.nursery_id
   left join lateral (
     select x.*
@@ -97,6 +113,7 @@ as $function$
     )) order by x.display_order, x.id) as items
     from public.hm_recruitment_features x
     where x.nursery_id = m.nursery_id and x.is_published
+      and (a.published_sections ? 'workplace' or a.published_sections ? 'features')
       and exists (
         select 1 from public.hm_recruitment_section_settings s
         where s.nursery_id = x.nursery_id
@@ -113,6 +130,7 @@ as $function$
     )) order by x.display_order, x.id) as items
     from public.hm_recruitment_staff_voices x
     where x.nursery_id = m.nursery_id and x.is_published
+      and a.published_sections ? 'staff'
       and exists (
         select 1 from public.hm_recruitment_section_settings s
         where s.nursery_id = x.nursery_id
@@ -126,6 +144,7 @@ as $function$
     where x.nursery_id = m.nursery_id and x.is_enabled
   ) sections on true
   where h.id = p_job_id
+    and ho_private.hm_legacy_site_is_public(m.nursery_id, 'recruitment')
     and h.status = 'published'
     and (h.closing_at is null or h.closing_at >= now())
     and m.is_published

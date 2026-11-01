@@ -12,6 +12,15 @@ for (const required of [
   'm.is_published',
   "m.recruitment_status = '募集中'",
   "l.status = 'active'",
+  "x.website_type = 'recruitment'",
+  "x.status = 'published'",
+  'x.published_design is not null',
+  "hm_legacy_site_is_public(m.nursery_id, 'recruitment')",
+  "a.published_sections ? 'philosophy'",
+  "a.published_sections ? 'access'",
+  "a.published_sections ? 'workplace'",
+  "a.published_sections ? 'staff'",
+  "a.published_sections ? 'message'",
   'x.is_published',
   'x.is_enabled',
   "s.section_key = 'section_director_message'",
@@ -34,6 +43,7 @@ for (const forbidden of [
   'admin_memo',
   'created_by',
   'billing_email',
+  "'corporation_name'",
 ]) {
   assert.ok(!migration.includes(forbidden), `private field leaked into contract: ${forbidden}`);
 }
