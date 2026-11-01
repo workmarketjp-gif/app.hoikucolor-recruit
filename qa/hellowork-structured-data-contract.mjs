@@ -179,4 +179,25 @@ for (const [displayed, urlId, expected] of [
   assert(actual === expected, `job ID fixture expected ${expected}, got ${actual}`);
 }
 
+
+const deadlineStart = importer.indexOf('function parseDate(');
+const deadlineEnd = importer.indexOf('\nfunction jobNumberFrom(', deadlineStart);
+assert(deadlineStart >= 0 && deadlineEnd > deadlineStart, 'date and deadline helper source must exist');
+assert(importer.includes("const closingAt = parseDeadline(nextValue(lines, '紹介期限日'));"), '紹介期限日 must use JST calendar-day end');
+assert(importer.includes("const sourcePublishedAt = parseDate(nextValue(lines, '受付年月日'));"), '受付年月日は別フィールドとして維持');
+const actualDateHelpers = new Function(`${importer.slice(deadlineStart, deadlineEnd).replaceAll(': string | null', '')}; return { parseDate, parseDeadline };`)();
+for (const [value, expectedStart, expectedEnd] of [
+  ['2026年10月31日', '2026-10-31T00:00:00.000Z', '2026-10-31T14:59:59.999Z'],
+  ['2026年2月28日', '2026-02-28T00:00:00.000Z', '2026-02-28T14:59:59.999Z'],
+  ['2026年1月1日', '2026-01-01T00:00:00.000Z', '2026-01-01T14:59:59.999Z'],
+  [null, null, null],
+]) {
+  assert(actualDateHelpers.parseDate(value) === expectedStart, `original date parse unexpectedly changed: ${value}`);
+  assert(actualDateHelpers.parseDeadline(value) === expectedEnd, `JST inclusive deadline incorrect: ${value}`);
+}
+assert(new Date('2026-10-31T14:59:59.998Z') <= new Date(actualDateHelpers.parseDeadline('2026年10月31日')),
+  'deadline should include final millisecond of Oct 31 JST');
+assert(new Date('2026-10-31T15:00:00.000Z') > new Date(actualDateHelpers.parseDeadline('2026年10月31日')),
+  'deadline must exclude Nov 1 JST; no expired job may be re-published');
+
 console.log('hellowork-structured-data-contract: PASS');
