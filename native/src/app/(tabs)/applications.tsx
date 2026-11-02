@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { listApplications, type JobseekerApplicationSummary } from '../../lib/applicationJourneyApi';
+import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -10,6 +11,7 @@ function formatDate(value: string) {
 }
 
 export default function ApplicationsScreen() {
+  usePrivateScreenCapture('applications');
   const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();
   const [applications, setApplications] = useState<JobseekerApplicationSummary[]>([]);

@@ -16,6 +16,7 @@ import {
   type JobseekerInterview,
   type JobseekerMessage,
 } from '../../lib/applicationJourneyApi';
+import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -127,6 +128,7 @@ function InterviewCard({
 }
 
 export default function ApplicationDetailScreen() {
+  usePrivateScreenCapture('application-detail');
   const params = useLocalSearchParams<{ id?: string | string[]; focus?: string | string[]; interviewId?: string | string[]; documentWarning?: string | string[] }>();
   const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();

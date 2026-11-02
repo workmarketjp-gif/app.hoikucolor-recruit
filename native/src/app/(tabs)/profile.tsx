@@ -12,6 +12,7 @@ import {
   upsertJobseekerProfile,
   type JobseekerProfileInput,
 } from '../../lib/jobseekerCoreApi';
+import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 
 const positionOptions = ['保育士', '保育教諭', '幼稚園教諭', '保育補助', '看護師', '栄養士', '調理師', '児童指導員', '子育て支援員'];
 const employmentOptions = ['正社員', '契約社員', 'パート・アルバイト', '派遣'];
@@ -81,6 +82,7 @@ function ChipGroup({
 }
 
 export default function ProfileScreen() {
+  usePrivateScreenCapture('profile');
   const { user } = useUser();
   const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();

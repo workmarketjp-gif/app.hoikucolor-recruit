@@ -11,6 +11,7 @@ import {
   type JobseekerVisitSettings,
   type VisitExperienceType,
 } from '../lib/applicationJourneyApi';
+import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -38,6 +39,7 @@ function allowedTypes(settings: JobseekerVisitSettings | null): VisitExperienceT
 }
 
 export default function VisitsScreen() {
+  usePrivateScreenCapture('visits');
   const params = useLocalSearchParams<{ visitId?: string | string[]; jobId?: string | string[]; applicationId?: string | string[] }>();
   const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();

@@ -1,7 +1,9 @@
 import { Pressable, ScrollView, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 
 export default function NotificationsScreen() {
+  usePrivateScreenCapture('notifications');
   const notifications = useNotifications();
 
   return (
