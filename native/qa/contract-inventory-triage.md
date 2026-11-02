@@ -24,7 +24,7 @@ actions). Missing: race and ordering behaviour. Consolidate into about six execu
 `notification-deep-link-focus`, `notification-visibility-count`, `exact-unread-badge`, `message-read-visibility`,
 `attention-summary`, `push-lifecycle`, `root-notification-scope`, `canonical-api`, `job-search-pagination`,
 `discovery-read-reliability`, `application-read-reliability`, `comparison-provenance`, `offline-save`,
-`saved-offline-snapshot`, `foreground-reconciliation-fallback`, `foreground`-related reads.
+`saved-offline-snapshot`, `foreground-reconciliation-fallback`.
 Priority for Build 4 acceptance: `signed-out-bootstrap`, `profile-auth`, `push-lifecycle`, `notification-permission-recovery`.
 
 ## 3. Intentionally deferred (Phase 5, store release)
