@@ -27,6 +27,7 @@ import {
   type ScoutBlockableOrganization,
   type ScoutPrivacySettings,
 } from '../lib/candidateParityApi';
+import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 
 const weekdays = ['月', '火', '水', '木', '金', '土', '日'];
 const classroomOptions = ['0歳児', '1歳児', '2歳児', '3歳児', '4歳児', '5歳児', 'フリー', '異年齢保育', '障害児保育'];
@@ -88,6 +89,7 @@ function ToggleChips({
 }
 
 export default function ScoutsScreen() {
+  usePrivateScreenCapture('scouts');
   const { pinCandidateAction } = usePinnedCandidateAction();
   const [scouts, setScouts] = useState<JobseekerScout[]>([]);
   const [privacy, setPrivacy] = useState<ScoutPrivacySettings | null>(null);
