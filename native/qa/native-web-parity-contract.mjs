@@ -2,6 +2,10 @@ import fs from 'node:fs';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
 const tabs = read('src/app/(tabs)/_layout.tsx');
+const webTabs = read('../src/components/CandidateShell.tsx');
+const career = read('src/app/(tabs)/career.tsx');
+const careerExperience = read('src/components/CareerExperience.tsx');
+const careerApi = read('src/lib/careerApi.ts');
 const jobs = read('src/app/(tabs)/jobs.tsx');
 const saved = read('src/app/(tabs)/saved.tsx');
 const home = read('src/app/(tabs)/home.tsx');
@@ -18,9 +22,25 @@ const matching = read('src/lib/jobMatching.ts');
 
 const checks = [
   ['five canonical bottom tabs are present',
-    ['home', 'jobs', 'saved', 'applications', 'profile'].every((name) => tabs.includes(`name="${name}"`))],
-  ['notifications are not a sixth bottom tab', tabs.includes('name="notifications"') && tabs.includes('href: null')],
-  ['tab wording mirrors Web', ['ホーム', '求人', '気になる', '応募', 'マイページ'].every((label) => tabs.includes(`title: '${label}'`))],
+    ['home', 'jobs', 'career', 'saved', 'profile'].every((name) => tabs.includes(`name="${name}"`))],
+  ['notifications and applications are secondary, not extra tabs', tabs.includes('name="notifications"') && tabs.includes('name="applications" options={{ href: null')],
+  ['Web and Native both define the same five destinations',
+    ["id: 'home'", "id: 'jobs'", "id: 'career'", "id: 'saved'", "id: 'profile'"].every((value) => webTabs.includes(value)) &&
+    !tabs.includes('name="messages"')],
+  ['Native career screen renders an owned native experience',
+    career.includes('<CareerExperience variant="page" />') &&
+    home.includes('<CareerExperience variant="home" />') &&
+    careerExperience.includes('usePinnedCandidateAction') &&
+    careerExperience.includes('candidateViewOwnerKey') &&
+    careerExperience.includes('privacy.canAccessPrivateData') &&
+    !careerExperience.includes('Linking.openURL')],
+  ['career market and owner state reuse authoritative Web RPC contracts',
+    ['hc_jobseeker_salary_market_v1', 'hc_jobseeker_official_wage_stats_v1', 'hc_jobseeker_holiday_market_v1',
+      'hc_jobseeker_career_scenario_jobs_v1', 'hc_jobseeker_get_career_conditions', 'hc_jobseeker_save_career_conditions',
+      'hc_jobseeker_delete_career_conditions'].every((name) => careerApi.includes(name)) &&
+    careerApi.includes('await getCareerConditions(client)') &&
+    careerApi.includes('await getMatchingPreferencesForCareer') === false],
+  ['tab wording mirrors Web', ['ホーム', '求人を探す', 'お給料', '気になる', 'マイページ'].every((label) => tabs.includes(`title: '${label}'`))],
   ['search uses current v2 RPC', core.includes("rpc('hc_jobseeker_search_jobs_v2'") && !core.includes("rpc('hc_jobseeker_search_jobs',")],
   ['saved jobs use v2 status read model', core.includes("rpc('hc_jobseeker_list_saved_jobs_with_status_v2'")],
   ['job detail uses v2 exact lookup', journey.includes("rpc('hc_jobseeker_get_job_v2'")],
