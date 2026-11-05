@@ -301,7 +301,8 @@ export default function JobsScreen() {
           <View style={styles.modalPanel}>
             <Text style={styles.modalTitle}>{picker === 'prefecture' ? '勤務地' : '雇用形態'}</Text>
             <ScrollView style={styles.modalOptions} keyboardShouldPersistTaps="handled">
-              {[ '', ...(picker === 'prefecture' ? facets?.prefectures ?? [] : facets?.employmentTypes ?? []) ].map((value) => (
+              {!facets ? <Text style={styles.subtle}>絞り込み条件を確認しています。読み込めない場合は再読み込みしてください。</Text> : null}
+              {['', ...new Set((picker === 'prefecture' ? facets?.prefectures ?? [] : facets?.employmentTypes ?? []).filter(Boolean))].map((value) => (
                 <Pressable key={value || 'all'} accessibilityRole="button" style={styles.modalOption} onPress={() => selectFilter(picker === 'prefecture' ? { prefecture: value } : { employmentType: value })}>
                   <Text style={styles.modalOptionText}>{value || '指定しない'}</Text>
                 </Pressable>
