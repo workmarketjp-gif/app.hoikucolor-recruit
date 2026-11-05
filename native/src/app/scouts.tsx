@@ -33,6 +33,7 @@ import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
+import { mayShowScoutError, shouldPublishScoutRead } from '../lib/scoutReadLease';
 
 const weekdays = ['月', '火', '水', '木', '金', '土', '日'];
 const classroomOptions = ['0歳児', '1歳児', '2歳児', '3歳児', '4歳児', '5歳児', 'フリー', '異年齢保育', '障害児保育'];
@@ -156,9 +157,15 @@ export default function ScoutsScreen() {
         getScoutPrivacySettings(pinned.client),
         getJobseekerMatchingPreferences(pinned.client),
       ]);
-      if (!pinned.isCurrent() || current !== generation.current || !privateQuarantine.canAccessPrivateData()) return;
       const verifiedOwner = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
-      if (!verifiedOwner || verifiedOwner !== ownerKey) return;
+      if (!shouldPublishScoutRead({
+        expectedOwnerKey: ownerKey,
+        resolvedOwnerKey: verifiedOwner,
+        requestGeneration: current,
+        activeGeneration: generation.current,
+        sessionCurrent: pinned.isCurrent(),
+        privateAccess: privateQuarantine.canAccessPrivateData(),
+      })) return;
       verifiedOwnerRef.current = verifiedOwner;
       errorOwnerRef.current = verifiedOwner;
       setScouts(nextScouts);
@@ -358,7 +365,7 @@ export default function ScoutsScreen() {
   };
 
   const verifiedVisible = privateAllowed && verifiedOwnerRef.current === ownerKey;
-  const safeError = privateAllowed && errorOwnerRef.current === ownerKey ? error : null;
+  const safeError = mayShowScoutError(ownerKey, errorOwnerRef.current, privateAllowed) ? error : null;
   if (loading || !verifiedVisible) {
     return (
       <View style={styles.center}>
