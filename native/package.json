@@ -16,6 +16,7 @@
     "test:account-isolation": "node qa/native-account-isolation-contract.mjs",
     "test:message-inbox": "node --experimental-strip-types --test qa/native-candidate-view-owner.test.mjs qa/native-message-inbox-behavior.test.mjs qa/native-message-attention-adapter.test.mjs",
     "test:profile-save-guard": "node --experimental-strip-types --test qa/native-profile-save-guard.test.mjs",
+    "test:application-detail-privacy": "node --experimental-strip-types --test qa/native-application-detail-privacy.test.mjs qa/native-application-detail-wiring.test.mjs",
     "test:saved-canonical-readback": "node --experimental-strip-types --test qa/native-saved-jobs-readback.test.mjs",
     "test:job-search-filters": "node --experimental-strip-types --test qa/native-job-search-filters.test.mjs",
     "test:job-discovery-parity": "node --experimental-strip-types --test qa/native-job-discovery-compilation.test.mjs qa/native-job-card-saved-readback.test.mjs qa/native-saved-jobs-readback.test.mjs qa/native-job-search-filters.test.mjs",
