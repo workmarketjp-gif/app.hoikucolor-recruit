@@ -38,6 +38,6 @@ export function visitReadbackConfirmsMutation(
 ): boolean {
   const visit = visits.find((row) => row.reservation_id === reservationId);
   if (mutation === 'request') return Boolean(visit);
-  // The backend can retain a cancelled record or omit it from active history.
-  return !visit || (visit.status !== 'requested' && visit.status !== 'confirmed');
+  // The canonical cancel API itself requires an explicit 'cancelled' state.
+  return visit?.status === 'cancelled';
 }
