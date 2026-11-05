@@ -570,7 +570,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
           </Section>
           <Section title="相場と比べる">
             <StateMessage state={selectedMarket} onRetry={() => void refreshMarket()} />
-            {selectedMarket?.status === 'ready' ? <MoneyMarket market={selectedMarket.data} location={area.prefecture} own={own} detailed={true} onToggleDetail={() => setDetailed(!detailed)} /> : null}
+            {selectedMarket?.status === 'ready' ? <MoneyMarket market={selectedMarket.data} location={area.prefecture} own={disclosedOwn} detailed={true} onToggleDetail={() => setDetailed(!detailed)} /> : null}
             <Text style={styles.sectionSmall}>公的統計の給与実績</Text>
             <StateMessage state={selectedOfficial} onRetry={() => void refreshMarket()} />
             {selectedOfficial?.status === 'ready' ? <OfficialWages data={selectedOfficial.data} experienceYears={current.profile?.years_of_experience ?? null} /> : null}
