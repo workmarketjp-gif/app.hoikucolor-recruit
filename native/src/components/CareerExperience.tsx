@@ -10,7 +10,7 @@ import {
   CareerApiUnavailableError, daysFromText, deleteCareerConditions, formatMan,
   getCareerConditions, getCareerScenarioJobs, getHolidayMarket, getMatchingPreferencesForCareer,
   getOfficialWageStats, getPostedSalaryMarket, manFromYen, saveCareerConditions,
-  scenarioSalaryLine, yenFromMan,
+  scenarioSalaryLine, withYourPosition, yenFromMan,
   type CareerConditions, type CareerScenarioId, type CareerScenarioResponse,
   type HolidayMarket, type MatchingPreferencesForCareer, type OfficialWageStats,
   type PostedSalaryMarket,
@@ -90,6 +90,8 @@ function MoneyMarket({ market, own, location, detailed, onToggleDetail }: {
 }) {
   const stats = market.monthly_lower_bound;
   const coverage = market.facets.coverage ?? [];
+  const bars = stats ? withYourPosition(stats.histogram ?? [], own) : [];
+  const maxCount = Math.max(1, ...bars.map((bar) => bar.count));
   return (
     <>
       <Text style={styles.source}>求人票に書かれた月給（下限）・{location || '全国'}の保育士求人</Text>
@@ -120,8 +122,12 @@ function MoneyMarket({ market, own, location, detailed, onToggleDetail }: {
             <View style={styles.detailPanel}>
               <Text style={styles.muted}>中央値 {formatMan(stats.median)} / 中央50% {formatMan(stats.q1)}〜{formatMan(stats.q3)}</Text>
               <Text style={styles.muted}>最小・最大 {formatMan(stats.min)}〜{formatMan(stats.max)} / 対象 {stats.count}件</Text>
-              {(stats.histogram ?? []).map((bar) => (
-                <View key={bar.from} style={styles.dataLine}><Text style={styles.muted}>{formatMan(bar.from)}台</Text><Text style={styles.bold}>{bar.count}件</Text></View>
+              {bars.map((bar) => (
+                <View key={bar.from} style={styles.chartRow}>
+                  <Text style={styles.chartLabel}>{formatMan(bar.from)}台</Text>
+                  <View style={styles.chartTrack}><View style={[styles.chartFill, { width: `${Math.min(100, (bar.count / maxCount) * 100)}%` }]} /></View>
+                  <Text style={styles.chartCount}>{bar.count}件{bar.containsYou ? '・あなた' : ''}</Text>
+                </View>
               ))}
             </View>
           ) : null}
@@ -631,6 +637,11 @@ const styles = StyleSheet.create({
   metricValue: { fontSize: 23, color: '#251D27', fontWeight: '800' },
   detailPanel: { gap: 8, padding: 12, borderRadius: 14, backgroundColor: '#FDF6F9' },
   dataLine: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, paddingVertical: 8, borderBottomWidth: 1, borderColor: '#F3E9ED' },
+  chartRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 28 },
+  chartLabel: { width: 75, fontSize: 12, color: '#635963', fontWeight: '600' },
+  chartTrack: { flex: 1, backgroundColor: '#F3DFE6', borderRadius: 8, height: 12, overflow: 'hidden' },
+  chartFill: { backgroundColor: '#FF2F5F', height: 12, borderRadius: 8 },
+  chartCount: { width: 72, fontSize: 12, color: '#6B4B59', fontWeight: '700', textAlign: 'right' },
   bold: { color: '#342B35', fontSize: 15, fontWeight: '800', flexShrink: 1 },
   count: { color: '#BC2450', fontSize: 17, fontWeight: '800' },
   opportunity: { borderRadius: 16, padding: 15, borderWidth: 1, borderColor: '#F0E0E7', backgroundColor: '#FFFDFE', gap: 6 },
