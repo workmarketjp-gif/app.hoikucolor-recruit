@@ -19,3 +19,16 @@ test('null or absent selection is a safe empty set', () => {
   assert.deepEqual(reconcileComparedSelection(null, ['a']), []);
   assert.deepEqual(reconcileComparedSelection(undefined, ['a']), []);
 });
+
+test('an incoming saved-jobs comparison deep link retains valid unique UUIDs', async () => {
+  const { requestedComparisonJobIds } = await import('../src/lib/comparisonSelection.ts');
+  const a = '123e4567-e89b-42d3-a456-426614174000';
+  const b = '123e4567-e89b-42d3-a456-426614174001';
+  assert.deepEqual(requestedComparisonJobIds([a, b, a]), [a, b]);
+});
+test('untrusted/injected comparison query cannot become a preselected job', async () => {
+  const { requestedComparisonJobIds } = await import('../src/lib/comparisonSelection.ts');
+  const a = '123e4567-e89b-42d3-a456-426614174000';
+  assert.deepEqual(requestedComparisonJobIds(['../../profile', a+'?admin=true', a]), [a]);
+  assert.deepEqual(requestedComparisonJobIds(undefined), []);
+});
