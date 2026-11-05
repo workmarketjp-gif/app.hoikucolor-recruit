@@ -85,7 +85,7 @@ function metricValue(job: JobseekerJob, kind: 'workplace' | 'finance', key: stri
   // Match the Web's evidence disclosure; never fabricate a sample count.
   const sample = typeof metric.sample_size === 'number' &&
     Number.isInteger(metric.sample_size) && metric.sample_size >= 0
-    ? '\\n' + metric.sample_size + '件の記録から集計'
+    ? '\n' + metric.sample_size + '件の記録から集計'
     : '';
   return `${value}${metric.unit || ''}${sample}`;
 }
