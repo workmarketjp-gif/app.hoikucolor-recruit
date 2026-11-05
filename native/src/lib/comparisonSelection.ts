@@ -17,7 +17,7 @@ export function reconcileComparedSelection(
   return output.slice(0, limit);
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 /** Resolve only valid incoming job IDs. Canonical job reads enforce publication separately. */
 export function requestedComparisonJobIds(params: string | readonly string[] | null | undefined): string[] {
   const ids = typeof params === 'string' ? [params] : Array.isArray(params) ? params : [];
