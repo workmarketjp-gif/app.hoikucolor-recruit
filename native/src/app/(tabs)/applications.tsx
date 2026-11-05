@@ -6,7 +6,7 @@ import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { listApplications, type JobseekerApplicationSummary } from '../../lib/applicationJourneyApi';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
-import { candidateViewOwnerKey, readCandidateOwnedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
+import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -25,11 +25,16 @@ export default function ApplicationsScreen() {
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const generation = useRef(0);
   const privateAllowed = privacy.canAccessPrivateData();
-  const applications = readCandidateOwnedView(ownedApplications, ownerKey, privateAllowed);
-  const error = readCandidateOwnedView(ownedError, ownerKey, privateAllowed);
+  // Invalidate synchronously when App Lock/foreground closes. A prior result
+  // must not flash on unlock before a new authorized read completes.
+  const freshlyVerifiedOwner = useRef<string | null>(null);
+  if (!privateAllowed) freshlyVerifiedOwner.current = null;
+  const applications = readCandidateFreshlyVerifiedView(ownedApplications, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
+  const error = readCandidateFreshlyVerifiedView(ownedError, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
 
   const load = useCallback(async () => {
     const current = ++generation.current;
+    freshlyVerifiedOwner.current = null;
     setLoading(true);
     setOwnedApplications(null);
     setOwnedError(null);
@@ -38,15 +43,20 @@ export default function ApplicationsScreen() {
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
       const rows = await listApplications(pinned.client);
       if (!pinned.isCurrent() || current !== generation.current) return;
-      setOwnedApplications({ ownerKey: candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)!, value: rows });
+      const verifiedOwner = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)!;
+      freshlyVerifiedOwner.current = verifiedOwner;
+      setOwnedApplications({ ownerKey: verifiedOwner, value: rows });
     } catch (loadError) {
       if (current === generation.current) {
-        if (ownerKey) setOwnedError({ ownerKey, value: String((loadError as { message?: unknown })?.message ?? loadError) });
+        if (ownerKey && privacy.canAccessPrivateData()) {
+          freshlyVerifiedOwner.current = ownerKey;
+          setOwnedError({ ownerKey, value: String((loadError as { message?: unknown })?.message ?? loadError) });
+        }
       }
     } finally {
       if (current === generation.current) setLoading(false);
     }
-  }, [ownerKey, pinCandidateAction]);
+  }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData]);
 
   useEffect(() => {
     void load();
