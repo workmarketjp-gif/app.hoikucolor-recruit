@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useSession } from '@clerk/expo';
 import {
   ActivityIndicator,
   Alert,
@@ -29,6 +30,8 @@ import {
   type ScoutPrivacySettings,
 } from '../lib/candidateParityApi';
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
+import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
+import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 
 const weekdays = ['月', '火', '水', '木', '金', '土', '日'];
@@ -93,6 +96,11 @@ function ToggleChips({
 export default function ScoutsScreen() {
   usePrivateScreenCapture('scouts');
   const { pinCandidateAction } = usePinnedCandidateAction();
+  const { session } = useSession();
+  const privacy = usePrivateDataQuarantine();
+  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
+  const verifiedOwnerRef = useRef<string | null>(null);
+  if (privacy.shieldVisible || !privacy.canAccessPrivateData()) verifiedOwnerRef.current = null;
   const [scouts, setScouts] = useState<JobseekerScout[]>([]);
   const [privacy, setPrivacy] = useState<ScoutPrivacySettings | null>(null);
   const [preferences, setPreferences] = useState<JobseekerMatchingPreferences>(emptyJobseekerMatchingPreferences);
@@ -127,6 +135,7 @@ export default function ScoutsScreen() {
 
   const load = useCallback(async () => {
     const current = ++generation.current;
+    verifiedOwnerRef.current = null;
     setLoading(true);
     setError(null);
     try {
@@ -138,6 +147,7 @@ export default function ScoutsScreen() {
         getJobseekerMatchingPreferences(pinned.client),
       ]);
       if (!pinned.isCurrent() || current !== generation.current) return;
+      verifiedOwnerRef.current = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
       setScouts(nextScouts);
       setPrivacy(nextPrivacy);
       hydratePreferences(nextPreferences);
@@ -151,7 +161,7 @@ export default function ScoutsScreen() {
   useFocusEffect(useCallback(() => {
     void load();
     return () => { generation.current += 1; };
-  }, [load]));
+  }, [load, focusedScoutId, ownerKey, privacy.shieldVisible]));
 
   const pendingCount = scouts.filter((item) => item.scout_status === 'pending').length;
 
@@ -321,8 +331,16 @@ export default function ScoutsScreen() {
     setPreferences((current) => ({ ...current, [key]: value }));
   };
 
-  if (loading) {
-    return <View style={styles.center}><ActivityIndicator /><Text style={styles.body}>スカウト設定を確認しています…</Text></View>;
+  const verifiedVisible = Boolean(ownerKey) && verifiedOwnerRef.current === ownerKey
+    && !privacy.shieldVisible && privacy.canAccessPrivateData();
+  if (loading || !verifiedVisible) {
+    return (
+      <View style={styles.center}>
+        {error ? <Text style={styles.error}>{error}</Text> : <ActivityIndicator />}
+        <Text style={styles.body}>スカウト設定を確認しています…</Text>
+        {error ? <Pressable accessibilityRole="button" onPress={() => void load()}><Text style={styles.bodyStrong}>もう一度読み込む</Text></Pressable> : null}
+      </View>
+    );
   }
 
   return (
