@@ -7,7 +7,9 @@ export type VerifiedProfile = {
   verified_metric_count?: number;
   quality_points?: number;
   transparency_pct?: number;
-  verified_metrics?: Record<string, { value?: string | number | null; label?: string; unit?: string; sample_size?: number }>;
+  period_start?: string | null;
+  period_end?: string | null;
+  verified_metrics?: Record<string, { value?: string | number | null; label?: string; unit?: string | null; sample_size?: number | null; source?: string }>;
 };
 
 export type JobseekerJob = {
