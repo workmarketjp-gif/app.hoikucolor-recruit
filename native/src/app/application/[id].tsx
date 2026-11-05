@@ -1,7 +1,11 @@
+import { useSession } from '@clerk/expo';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
+import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
+import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
+import { candidateApplicationDetailKey } from '../../lib/applicationDetailVisibility';
 import {
   acceptOffer,
   getApplicationDetail,
@@ -127,8 +131,34 @@ function InterviewCard({
   );
 }
 
+/**
+ * Keeping the data-bearing subtree keyed to both the Clerk session and route ID
+ * prevents React Navigation from reusing another candidate's application data,
+ * message drafts, offer drafts or interview answers across account/route changes.
+ * Closing App Lock/foreground quarantine unmounts that subtree immediately.
+ */
 export default function ApplicationDetailScreen() {
   usePrivateScreenCapture('application-detail');
+  const { session } = useSession();
+  const privacy = usePrivateDataQuarantine();
+  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
+  const detailKey = candidateApplicationDetailKey(
+    ownerKey,
+    params.id,
+    !privacy.shieldVisible && privacy.canAccessPrivateData(),
+  );
+  if (!detailKey) {
+    return (
+      <View testID="application-private-shield" style={styles.center}>
+        <ActivityIndicator color="#E9265A" />
+      </View>
+    );
+  }
+  return <ApplicationDetailContent key={detailKey} />;
+}
+
+function ApplicationDetailContent() {
   const params = useLocalSearchParams<{ id?: string | string[]; focus?: string | string[]; interviewId?: string | string[]; documentWarning?: string | string[] }>();
   const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();
@@ -148,9 +178,15 @@ export default function ApplicationDetailScreen() {
   const [handoffError, setHandoffError] = useState<string | null>(null);
   const generation = useRef(0);
 
-  const load = useCallback(async (quiet = false) => {
+  const load = useCallback(async (_quiet = false) => {
     const current = ++generation.current;
-    if (!quiet) setLoading(true);
+    // Fail closed on refresh or lost permission: do not keep displaying the old
+    // application, messages or submitted documents while authorization is retried.
+    setLoading(true);
+    setDetail(null);
+    setMessages([]);
+    setDocumentState(null);
+    setHandoffError(null);
     setError(null);
     try {
       const pinned = await pinCandidateAction();
@@ -167,7 +203,7 @@ export default function ApplicationDetailScreen() {
     } catch (loadError) {
       if (current === generation.current) setError(String((loadError as { message?: unknown })?.message ?? loadError));
     } finally {
-      if (current === generation.current && !quiet) setLoading(false);
+      if (current === generation.current) setLoading(false);
     }
   }, [applicationId, pinCandidateAction]);
 
