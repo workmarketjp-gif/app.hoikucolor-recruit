@@ -97,10 +97,15 @@ export default function ScoutsScreen() {
   usePrivateScreenCapture('scouts');
   const { pinCandidateAction } = usePinnedCandidateAction();
   const { session } = useSession();
-  const privacy = usePrivateDataQuarantine();
+  const privateQuarantine = usePrivateDataQuarantine();
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
+  const privateAllowed = Boolean(ownerKey) && !privateQuarantine.shieldVisible && privateQuarantine.canAccessPrivateData();
   const verifiedOwnerRef = useRef<string | null>(null);
-  if (privacy.shieldVisible || !privacy.canAccessPrivateData()) verifiedOwnerRef.current = null;
+  const errorOwnerRef = useRef<string | null>(null);
+  if (!privateAllowed) {
+    verifiedOwnerRef.current = null;
+    errorOwnerRef.current = null;
+  }
   const [scouts, setScouts] = useState<JobseekerScout[]>([]);
   const [privacy, setPrivacy] = useState<ScoutPrivacySettings | null>(null);
   const [preferences, setPreferences] = useState<JobseekerMatchingPreferences>(emptyJobseekerMatchingPreferences);
@@ -136,8 +141,13 @@ export default function ScoutsScreen() {
   const load = useCallback(async () => {
     const current = ++generation.current;
     verifiedOwnerRef.current = null;
+    errorOwnerRef.current = null;
     setLoading(true);
     setError(null);
+    setNotice(null);
+    setScouts([]);
+    setPrivacy(null);
+    setBlockResults([]);
     try {
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
@@ -146,22 +156,38 @@ export default function ScoutsScreen() {
         getScoutPrivacySettings(pinned.client),
         getJobseekerMatchingPreferences(pinned.client),
       ]);
-      if (!pinned.isCurrent() || current !== generation.current) return;
-      verifiedOwnerRef.current = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
+      if (!pinned.isCurrent() || current !== generation.current || !privateQuarantine.canAccessPrivateData()) return;
+      const verifiedOwner = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
+      if (!verifiedOwner || verifiedOwner !== ownerKey) return;
+      verifiedOwnerRef.current = verifiedOwner;
+      errorOwnerRef.current = verifiedOwner;
       setScouts(nextScouts);
       setPrivacy(nextPrivacy);
       hydratePreferences(nextPreferences);
     } catch (loadError) {
-      if (current === generation.current) setError(String((loadError as { message?: unknown })?.message ?? loadError));
+      if (current === generation.current && privateQuarantine.canAccessPrivateData()) {
+        errorOwnerRef.current = ownerKey;
+        setError(String((loadError as { message?: unknown })?.message ?? loadError));
+      }
     } finally {
       if (current === generation.current) setLoading(false);
     }
-  }, [pinCandidateAction]);
+  }, [pinCandidateAction, ownerKey, privateAllowed]);
 
   useFocusEffect(useCallback(() => {
+    if (!privateAllowed) {
+      generation.current += 1;
+      verifiedOwnerRef.current = null;
+      errorOwnerRef.current = null;
+      return;
+    }
     void load();
-    return () => { generation.current += 1; };
-  }, [load, focusedScoutId, ownerKey, privacy.shieldVisible]));
+    return () => {
+      generation.current += 1;
+      verifiedOwnerRef.current = null;
+      errorOwnerRef.current = null;
+    };
+  }, [load, focusedScoutId, privateAllowed]));
 
   const pendingCount = scouts.filter((item) => item.scout_status === 'pending').length;
 
@@ -331,14 +357,14 @@ export default function ScoutsScreen() {
     setPreferences((current) => ({ ...current, [key]: value }));
   };
 
-  const verifiedVisible = Boolean(ownerKey) && verifiedOwnerRef.current === ownerKey
-    && !privacy.shieldVisible && privacy.canAccessPrivateData();
+  const verifiedVisible = privateAllowed && verifiedOwnerRef.current === ownerKey;
+  const safeError = privateAllowed && errorOwnerRef.current === ownerKey ? error : null;
   if (loading || !verifiedVisible) {
     return (
       <View style={styles.center}>
-        {error ? <Text style={styles.error}>{error}</Text> : <ActivityIndicator />}
+        {safeError ? <Text style={styles.error}>{safeError}</Text> : <ActivityIndicator />}
         <Text style={styles.body}>スカウト設定を確認しています…</Text>
-        {error ? <Pressable accessibilityRole="button" onPress={() => void load()}><Text style={styles.bodyStrong}>もう一度読み込む</Text></Pressable> : null}
+        {safeError ? <Pressable accessibilityRole="button" onPress={() => void load()}><Text style={styles.bodyStrong}>もう一度読み込む</Text></Pressable> : null}
       </View>
     );
   }
@@ -350,7 +376,7 @@ export default function ScoutsScreen() {
         <Text style={styles.bodyMuted}>園へ個人情報を出す前に、匿名でお誘いを受け取れます。</Text>
       </View>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {safeError ? <Text style={styles.error}>{safeError}</Text> : null}
       {notice ? <Text style={styles.success}>{notice}</Text> : null}
       {focusedScoutId && !loading && !focusedScout ? (
         <Text style={styles.error}>指定されたスカウトは現在のアカウントで確認できません。</Text>
