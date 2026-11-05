@@ -208,6 +208,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     processingIds.current.add(notificationId);
     try {
       const route = await resolveNotificationRoute(pinned.client, notificationId);
+      const target = nativeNotificationHref(route, notificationId);
       if (!pinned.isCurrent()) {
         deferredResponses.current.set(notificationId, response);
         return 'deferred' as const;
@@ -220,7 +221,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       handledIds.current.add(notificationId);
       deferredResponses.current.delete(notificationId);
       setReconciliationRevision((value) => value + 1);
-      router.push(nativeNotificationHref(route, notificationId) as never);
+      router.push(target as never);
       await refresh().catch(() => undefined);
       return 'handled' as const;
     } catch (error) {
@@ -247,6 +248,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     if (!pinned) return;
     try {
       const route = await resolveNotificationRoute(pinned.client, notificationId);
+      const target = nativeNotificationHref(route, notificationId);
       if (!pinned.isCurrent()) return;
       await markNotificationRead(pinned.client, notificationId);
       if (!pinned.isCurrent()) return;
@@ -254,7 +256,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       // canonical error visible and do not infer a successful badge update.
       await refresh().catch(() => undefined);
       if (!pinned.isCurrent()) return;
-      router.push(nativeNotificationHref(route, notificationId) as never);
+      router.push(target as never);
     } catch {
       if (!pinned.isCurrent()) return;
       const key = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
