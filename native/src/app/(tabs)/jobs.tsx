@@ -1,5 +1,5 @@
 import { useSession } from '@clerk/expo';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
@@ -17,6 +17,7 @@ import {
 } from '../../lib/jobseekerCoreApi';
 import { EMPTY_JOB_SEARCH_FILTERS, createJobSearchQuery, hasActiveJobFilters, type JobSearchFilterCriteria } from '../../lib/jobSearchFilterCriteria';
 import { updateSavedJobAndConfirm } from '../../lib/savedJobsReadback';
+import { shouldRefreshJobsOnReturn, type JobSearchFocusState } from '../../lib/jobSearchFocus';
 
 function salary(job: JobseekerJob) {
   const prefix = job.salary_type === 'hourly' ? '時給' : job.salary_type === 'annual' ? '年収' : '月給';
@@ -119,6 +120,8 @@ export default function JobsScreen() {
   const keywordTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mutationBusyRef = useRef(false);
   const mutationSequence = useRef(0);
+  const focusActive = useRef(false);
+  const lastFocus = useRef<JobSearchFocusState>({ ownerKey: null, hasBlurred: false });
 
   const cancelKeywordTimer = () => {
     if (keywordTimer.current) clearTimeout(keywordTimer.current);
@@ -188,6 +191,41 @@ export default function JobsScreen() {
       if (currentGeneration === generation.current) setLoading(false);
     }
   }, [cursor, ownerKey, pinCandidateAction, query, filters, savedIds, visibleJobs]);
+
+  // The screen remains mounted under other tabs and the job detail stack.
+  // Keep the latest filters/query when navigating back, but do not present
+  // any old results until both search and bookmark readback succeed.
+  // A ref avoids linking navigation focus to load's result-dependent callback
+  // (which would otherwise trigger a repeated RPC on each state update).
+  const latestLoad = useRef(load);
+  latestLoad.current = load;
+  const latestPrivateState = useRef({ allowed: privateAllowed, shieldVisible: privacy.shieldVisible });
+  latestPrivateState.current = { allowed: privateAllowed, shieldVisible: privacy.shieldVisible };
+
+  useFocusEffect(useCallback(() => {
+    const previous = lastFocus.current;
+    lastFocus.current = { ownerKey, hasBlurred: false };
+    focusActive.current = true;
+    if (shouldRefreshJobsOnReturn(
+      previous, ownerKey, latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible,
+    )) {
+      cancelKeywordTimer();
+      void latestLoad.current(true);
+    }
+    return () => {
+      focusActive.current = false;
+      lastFocus.current = { ownerKey, hasBlurred: true };
+      cancelKeywordTimer();
+      generation.current += 1;
+      setOwnedJobs(null);
+      setOwnedSavedIds(null);
+      setOwnedError(null);
+      setCursor(null);
+      setHasMore(false);
+      setTotalCount(0);
+      setLoading(true);
+    };
+  }, [ownerKey]));
 
   // App Lock and foreground revalidation are *also* ownership boundaries.
   // Discard search drafts, results and pagination on shield entry. A fresh
@@ -274,6 +312,13 @@ export default function JobsScreen() {
       if (attempt === mutationSequence.current) {
         mutationBusyRef.current = false;
         setBusyJobId(null);
+        // If a save/unsave settled after the tab was left and revisited, the
+        // earlier focus read may predate the write. Verify canonical state again.
+        if (focusActive.current && requestGeneration !== generation.current && ownerKey &&
+            latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible) {
+          cancelKeywordTimer();
+          void latestLoad.current(true);
+        }
       }
     }
   };
