@@ -82,7 +82,12 @@ function metricValue(job: JobseekerJob, kind: 'workplace' | 'finance', key: stri
     : job.verified_finance?.verified_metrics?.[key];
   if (!metric || metric.value === null || metric.value === undefined) return '実績未公開';
   const value = typeof metric.value === 'number' ? Number(metric.value.toFixed(1)) : metric.value;
-  return `${value}${metric.unit || ''}`;
+  // Match the Web's evidence disclosure; never fabricate a sample count.
+  const sample = typeof metric.sample_size === 'number' &&
+    Number.isInteger(metric.sample_size) && metric.sample_size >= 0
+    ? '\\n' + metric.sample_size + '件の記録から集計'
+    : '';
+  return `${value}${metric.unit || ''}${sample}`;
 }
 
 function sourceLabel(source: ComparisonSource) {
