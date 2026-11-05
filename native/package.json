@@ -14,6 +14,7 @@
     "test:signed-out-bootstrap": "node qa/native-signed-out-bootstrap-contract.mjs",
     "test:interview-completion": "node qa/native-interview-completion-contract.mjs",
     "test:account-isolation": "node qa/native-account-isolation-contract.mjs",
+    "test:message-inbox": "node --experimental-strip-types --test qa/native-candidate-view-owner.test.mjs qa/native-message-inbox-behavior.test.mjs qa/native-message-attention-adapter.test.mjs",
     "test:document-vault": "node qa/native-document-vault-contract.mjs && node qa/native-document-vault-upstream-rebase-contract.mjs",
     "test:document-vault-upstream": "node qa/native-document-vault-upstream-rebase-contract.mjs",
     "test:account-deletion-execution": "node qa/native-account-deletion-execution-contract.mjs",
