@@ -6,6 +6,7 @@ import Constants from 'expo-constants';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import { getNativeReleaseIdentity } from './appIdentity';
+import { scopedNotificationHref } from './scopedNotificationRoute';
 
 const INSTALLATION_ID_KEY = 'hc.native.installation-id.v1';
 const PUSH_BINDING_QUARANTINED = 'PUSH_BINDING_QUARANTINED';
@@ -142,6 +143,10 @@ export async function resolveNotificationRoute(client: SupabaseClient, notificat
 }
 
 export function nativeNotificationHref(route: { route_key: string; route_params: Record<string, string> }, navigationKey?: string) {
+  // The RPC proves scout/spot ownership; never route from an untrusted push payload or Web link_url.
+  const scopedTarget = scopedNotificationHref(route);
+  if (scopedTarget) return scopedTarget;
+  if (route.route_key === 'scouts' || route.route_key === 'spot_assignments') return '/(tabs)/notifications';
   const applicationId = route.route_params?.applicationId;
   const visitId = route.route_params?.visitId;
   const jobId = route.route_params?.jobId;
