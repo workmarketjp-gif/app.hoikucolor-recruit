@@ -203,6 +203,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const [official, setOfficial] = useState<Owned<Loadable<OfficialWageStats | null>> | null>(null);
   const [holiday, setHoliday] = useState<Owned<Loadable<HolidayMarket>> | null>(null);
   const [results, setResults] = useState<Owned<Loadable<CareerScenarioResponse>> | null>(null);
+  const [detailsResult, setDetailsResult] = useState<Owned<Loadable<CareerScenarioResponse>> | null>(null);
   const [detailed, setDetailed] = useState(false);
   const [baseError, setBaseError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -210,6 +211,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const generation = useRef(0);
   const marketGeneration = useRef(0);
   const scenarioGeneration = useRef(0);
+  const detailsGeneration = useRef(0);
 
   const loadBase = useCallback(async () => {
     const ticket = ++generation.current;
@@ -217,7 +219,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     setBaseError(null);
     setFields(blank);
     setBasis(null);
-    setMarket(null); setOfficial(null); setHoliday(null); setResults(null);
+    setMarket(null); setOfficial(null); setHoliday(null); setResults(null); setDetailsResult(null);
     setSaveMessage(null);
     if (!ownerKey || !privacy.canAccessPrivateData()) return;
     try {
@@ -254,12 +256,12 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData]);
 
   useEffect(() => {
-    generation.current += 1; marketGeneration.current += 1; scenarioGeneration.current += 1;
-    setBase(null); setFields(blank); setMarket(null); setOfficial(null); setHoliday(null); setResults(null);
+    generation.current += 1; marketGeneration.current += 1; scenarioGeneration.current += 1; detailsGeneration.current += 1;
+    setBase(null); setFields(blank); setMarket(null); setOfficial(null); setHoliday(null); setResults(null); setDetailsResult(null);
     setBusy(false);
     if (!allowed || !ownerKey) return;
     void loadBase();
-    return () => { generation.current += 1; marketGeneration.current += 1; scenarioGeneration.current += 1; };
+    return () => { generation.current += 1; marketGeneration.current += 1; scenarioGeneration.current += 1; detailsGeneration.current += 1; };
   }, [allowed, ownerKey, loadBase]);
 
   const ready = allowed && ownerKey !== null && base?.ownerKey === ownerKey;
@@ -269,6 +271,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const selectedOfficial = ready && official?.ownerKey === ownerKey ? official.value : null;
   const selectedHoliday = ready && holiday?.ownerKey === ownerKey ? holiday.value : null;
   const selectedResults = ready && results?.ownerKey === ownerKey ? results.value : null;
+  const selectedDetails = ready && detailsResult?.ownerKey === ownerKey ? detailsResult.value : null;
 
   const refreshMarket = useCallback(async () => {
     const ticket = ++marketGeneration.current;
@@ -293,15 +296,20 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   }, [ready, ownerKey, variant, checkOpen, pinCandidateAction, area.prefecture, area.employmentType]);
 
   useEffect(() => {
-    if (ready && (checkOpen || variant === 'page')) void refreshMarket();
-    return () => { marketGeneration.current += 1; };
+    // Postpone broad market queries while someone edits a region or employment filter.
+    // Hide the old region's figures immediately; a late previous response is discarded.
+    marketGeneration.current += 1;
+    setMarket(null); setOfficial(null); setHoliday(null);
+    if (!ready || (!checkOpen && variant === 'home')) return;
+    const timer = setTimeout(() => void refreshMarket(), 350);
+    return () => { clearTimeout(timer); marketGeneration.current += 1; };
   }, [ready, checkOpen, variant, refreshMarket]);
 
   const salaryLine = scenarioSalaryLine(scenario, own, yenFromMan(fields.drop), yenFromMan(fields.wishSalary));
-  const requestedScenario = variant === 'home'
-    ? (path === 'salary' && salaryLine !== null ? 'salary' : path === 'holidays' ? 'holidays' : null)
-    : 'details';
-  const key = [ownerKey, area.prefecture, area.employmentType, requestedScenario, scenario, salaryLine, fields.holidays, fields.wishHolidays, weight, days].join('|');
+  const pathSalaryLine = scenarioSalaryLine('keep-income', own, null, yenFromMan(fields.wishSalary));
+  const requestedScenario = path === 'salary' && pathSalaryLine !== null ? 'salary' : path === 'holidays' ? 'holidays' : null;
+  const pathKey = [ownerKey, area.prefecture, requestedScenario, pathSalaryLine, days].join('|');
+  const detailsKey = [ownerKey, area.prefecture, area.employmentType, scenario, salaryLine, fields.holidays, fields.wishHolidays, weight].join('|');
 
   const refreshScenario = useCallback(async () => {
     const ticket = ++scenarioGeneration.current;
@@ -313,22 +321,47 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       const response = await getCareerScenarioJobs(pinned.client,
         requestedScenario === 'holidays'
           ? { scenario: 'balance', prefecture: area.prefecture, employmentType: '', salaryLine: null, holidayMoreThan: null, holidayAtLeast: days, salaryWeight: 0 }
-          : requestedScenario === 'salary'
-            ? { scenario: 'keep-income', prefecture: area.prefecture, employmentType: '', salaryLine, holidayMoreThan: null, holidayAtLeast: null, salaryWeight: 50 }
-            : { scenario, prefecture: area.prefecture, employmentType: area.employmentType, salaryLine, holidayMoreThan: daysFromText(fields.holidays), holidayAtLeast: daysFromText(fields.wishHolidays), salaryWeight: weight },
+          : { scenario: 'keep-income', prefecture: area.prefecture, employmentType: '', salaryLine: pathSalaryLine, holidayMoreThan: null, holidayAtLeast: null, salaryWeight: 50 },
       );
       if (pinned.isCurrent() && ticket === scenarioGeneration.current) setResults({ ownerKey, value: { status: 'ready', data: response } });
     } catch (error) {
       if (ticket === scenarioGeneration.current) setResults({ ownerKey, value: error instanceof CareerApiUnavailableError ? { status: 'unavailable' } : { status: 'error', error: failure(error) } });
     }
-  }, [ready, ownerKey, requestedScenario, pinCandidateAction, area.prefecture, area.employmentType, days, salaryLine, scenario, weight, fields.holidays, fields.wishHolidays]);
+  }, [ready, ownerKey, requestedScenario, pinCandidateAction, area.prefecture, days, pathSalaryLine]);
 
   useEffect(() => {
-    if (ready) void refreshScenario();
-    return () => { scenarioGeneration.current += 1; };
-  // Query key includes every scalar, so we refresh after changes and discard late results.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, key, refreshScenario]);
+    scenarioGeneration.current += 1;
+    setResults(null);
+    if (!ready || !requestedScenario) return;
+    const timer = setTimeout(() => void refreshScenario(), 300);
+    return () => { clearTimeout(timer); scenarioGeneration.current += 1; };
+  }, [ready, requestedScenario, pathKey, refreshScenario]);
+
+  // Advanced simulator is independent from the three quick-exploration paths.
+  const refreshDetails = useCallback(async () => {
+    const ticket = ++detailsGeneration.current;
+    if (!ready || !ownerKey || variant !== 'page') return;
+    setDetailsResult({ ownerKey, value: { status: 'loading' } });
+    try {
+      const pinned = await pinCandidateAction();
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      const response = await getCareerScenarioJobs(pinned.client, {
+        scenario, prefecture: area.prefecture, employmentType: area.employmentType, salaryLine,
+        holidayMoreThan: daysFromText(fields.holidays), holidayAtLeast: daysFromText(fields.wishHolidays), salaryWeight: weight,
+      });
+      if (pinned.isCurrent() && ticket === detailsGeneration.current) setDetailsResult({ ownerKey, value: { status: 'ready', data: response } });
+    } catch (error) {
+      if (ticket === detailsGeneration.current && privacy.canAccessPrivateData()) setDetailsResult({ ownerKey, value: error instanceof CareerApiUnavailableError ? { status: 'unavailable' } : { status: 'error', error: failure(error) } });
+    }
+  }, [ready, ownerKey, variant, pinCandidateAction, scenario, area.prefecture, area.employmentType, salaryLine, fields.holidays, fields.wishHolidays, weight, privacy.canAccessPrivateData]);
+
+  useEffect(() => {
+    detailsGeneration.current += 1;
+    setDetailsResult(null);
+    if (!ready || variant !== 'page') return;
+    const timer = setTimeout(() => void refreshDetails(), 350);
+    return () => { clearTimeout(timer); detailsGeneration.current += 1; };
+  }, [ready, variant, detailsKey, refreshDetails]);
 
   const edit = (field: keyof Fields, value: string) => {
     if (!ready) return;
@@ -512,9 +545,9 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
                 <View style={styles.chips}>{[0, 25, 50, 75, 100].map((w) => <Choice key={w} text={w + '%'} active={weight === w} onPress={() => setWeight(w)} />)}</View>
               </>
             ) : null}
-            <StateMessage state={selectedResults} onRetry={() => void refreshScenario()} />
-            {selectedResults?.status === 'ready' ? <ResultCards result={selectedResults.data} onOpenJob={openJob} /> : null}
-            <Text style={styles.footnote}>募集条件は採用時の給与を保証しません。年間休日が確認できない求人は推測で補いません。</Text>
+            <StateMessage state={selectedDetails} onRetry={() => void refreshDetails()} />
+            {selectedDetails?.status === 'ready' ? <ResultCards result={selectedDetails.data} onOpenJob={openJob} /> : null}
+            <Text style={styles.footnote}>募集条件は採用時の給与を保証しません.年間休日が確認できない求人は推測で補いません。</Text>
           </Section>
         </>
       ) : null}
