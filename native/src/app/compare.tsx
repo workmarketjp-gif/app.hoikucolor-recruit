@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { useSession } from '@clerk/expo';
+import { useFocusEffect } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
+import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
+import { candidateViewOwnerKey, readCandidateOwnedView, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
+import { reconcileComparedSelection } from '../lib/comparisonSelection';
 import { getJobseekerProfile, listRankedJobs, type JobseekerJob, type JobseekerProfile } from '../lib/jobseekerCoreApi';
 import { getJobseekerMatchingPreferences, type JobseekerMatchingPreferences } from '../lib/candidateParityApi';
 import { matchJob, type JobMatchResult } from '../lib/jobMatching';
@@ -114,64 +119,131 @@ function ComparisonRow({
   );
 }
 
+type ComparisonSnapshot = {
+  jobs: JobseekerJob[];
+  profile: JobseekerProfile | null;
+  preferences: JobseekerMatchingPreferences | null;
+};
+
 export default function CompareScreen() {
   const { pinCandidateAction } = usePinnedCandidateAction();
-  const [jobs, setJobs] = useState<JobseekerJob[]>([]);
-  const [profile, setProfile] = useState<JobseekerProfile | null>(null);
-  const [preferences, setPreferences] = useState<JobseekerMatchingPreferences | null>(null);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const { session } = useSession();
+  const privacy = usePrivateDataQuarantine();
+  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
+  const privateAllowed = !privacy.shieldVisible && privacy.canAccessPrivateData();
+  const verifiedOwnerRef = useRef<string | null>(null);
+  if (!privateAllowed) verifiedOwnerRef.current = null;
+  const [ownedSnapshot, setOwnedSnapshot] = useState<CandidateOwnedView<ComparisonSnapshot> | null>(null);
+  const [ownedSelectedIds, setOwnedSelectedIds] = useState<CandidateOwnedView<string[]> | null>(null);
+  const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+
+  // A matching Clerk identity alone is insufficient after App Lock: require a
+  // freshly pinned and authorized canonical read before rendering private rows.
+  const snapshot = readCandidateFreshlyVerifiedView(
+    ownedSnapshot, ownerKey, privateAllowed, verifiedOwnerRef.current,
+  );
+  const jobs = snapshot?.jobs ?? [];
+  const profile = snapshot?.profile ?? null;
+  const preferences = snapshot?.preferences ?? null;
+  const selectedIds = readCandidateOwnedView(ownedSelectedIds, ownerKey, privateAllowed) ?? [];
+  const error = readCandidateOwnedView(ownedError, ownerKey, privateAllowed);
 
   const load = useCallback(async () => {
     const current = ++generation.current;
+    verifiedOwnerRef.current = null;
+    setOwnedSnapshot(null);
+    setOwnedError(null);
     setLoading(true);
-    setError(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      const pinnedOwner = pinned && candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
+      if (!pinned || !pinnedOwner || pinnedOwner !== ownerKey || !pinned.isCurrent()) {
+        throw new Error('CANDIDATE_SESSION_CHANGED');
+      }
       const [nextJobs, nextProfile, nextPreferences] = await Promise.all([
         listRankedJobs(pinned.client),
         getJobseekerProfile(pinned.client),
         getJobseekerMatchingPreferences(pinned.client),
       ]);
-      if (!pinned.isCurrent() || current !== generation.current) return;
-      setJobs(nextJobs);
-      setProfile(nextProfile);
-      setPreferences(nextPreferences);
-    } catch (loadError) {
-      if (current === generation.current) setError(String((loadError as { message?: unknown })?.message ?? loadError));
+      if (!pinned.isCurrent() || current !== generation.current || pinnedOwner !== ownerKey ||
+          !privacy.canAccessPrivateData()) return;
+      setOwnedSelectedIds((previous) => ({
+        ownerKey: pinnedOwner,
+        value: reconcileComparedSelection(
+          readCandidateOwnedView(previous, pinnedOwner, true),
+          nextJobs.map((job) => job.id),
+          maxComparedJobs,
+        ),
+      }));
+      verifiedOwnerRef.current = pinnedOwner;
+      setOwnedSnapshot({ ownerKey: pinnedOwner, value: {
+        jobs: nextJobs, profile: nextProfile, preferences: nextPreferences,
+      } });
+    } catch {
+      if (current === generation.current && ownerKey && !privacy.shieldVisible &&
+          privacy.canAccessPrivateData()) {
+        setOwnedError({ ownerKey, value: '比較情報を取得できませんでした。通信環境を確認して再読み込みしてください。' });
+      }
     } finally {
       if (current === generation.current) setLoading(false);
     }
-  }, [pinCandidateAction]);
+  }, [pinCandidateAction, ownerKey, privacy.canAccessPrivateData, privacy.shieldVisible]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
+    if (!ownerKey || privacy.shieldVisible) {
+      generation.current += 1;
+      verifiedOwnerRef.current = null;
+      return;
+    }
     void load();
-    return () => { generation.current += 1; };
-  }, [load]);
+    return () => {
+      generation.current += 1;
+      verifiedOwnerRef.current = null;
+    };
+  }, [load, ownerKey, privacy.shieldVisible]));
 
   const compared = useMemo<ComparedJob[]>(() => {
-    if (!preferences) return [];
-    const byId = new Map(jobs.map((job) => [job.id, job]));
+    if (!snapshot?.preferences) return [];
+    const byId = new Map(snapshot.jobs.map((job) => [job.id, job]));
     return selectedIds.flatMap((id) => {
       const job = byId.get(id);
-      return job ? [{ job, match: matchJob({ job, profile, preferences }) }] : [];
+      return job ? [{ job, match: matchJob({ job, profile: snapshot.profile, preferences: snapshot.preferences! }) }] : [];
     });
-  }, [jobs, preferences, profile, selectedIds]);
+  }, [snapshot, selectedIds]);
 
   const toggleJob = (jobId: string) => {
-    setSelectedIds((current) => {
-      if (current.includes(jobId)) return current.filter((id) => id !== jobId);
-      if (current.length >= maxComparedJobs) {
-        setError('比較できる求人は3件までです。');
-        return current;
-      }
-      setError(null);
-      return [...current, jobId];
+    if (!snapshot || !ownerKey || !privateAllowed || !jobs.some((job) => job.id === jobId)) return;
+    if (!selectedIds.includes(jobId) && selectedIds.length >= maxComparedJobs) {
+      setOwnedError({ ownerKey, value: '比較できる求人は3件までです。' });
+      return;
+    }
+    const nextIds = selectedIds.includes(jobId)
+      ? selectedIds.filter((id) => id !== jobId)
+      : [...selectedIds, jobId];
+    setOwnedError(null);
+    setOwnedSelectedIds({
+      ownerKey,
+      value: reconcileComparedSelection(nextIds, jobs.map((job) => job.id), maxComparedJobs),
     });
   };
+
+  if (!snapshot) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#FFF8FA' }} testID="compare-private-read-gate">
+        {loading && privateAllowed ? <ActivityIndicator /> : null}
+        <Text style={{ color: '#40313A', fontWeight: '700', textAlign: 'center', marginVertical: 12 }}>
+          {error ?? (privateAllowed ? '比較する求人の情報を確認しています…' : 'ログイン状態を確認しています…')}
+        </Text>
+        {error && privateAllowed ? (
+          <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.card}>
+            <Text style={styles.sectionTitle}>もう一度読み込む</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
 
   return (
     <ScrollView contentContainerStyle={styles.page} horizontal={false}>
