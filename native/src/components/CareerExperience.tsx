@@ -1,7 +1,7 @@
 import { useSession } from '@clerk/expo';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
@@ -20,6 +20,7 @@ type Fields = { salary: string; holidays: string; drop: string; wishSalary: stri
 type Basis = 'monthly' | 'hourly' | 'none' | null;
 type Path = 'salary' | 'holidays' | 'values';
 type Owned<T> = { ownerKey: string; value: T };
+type CareerBase = { conditions: CareerConditions | null; conditionsAvailable: boolean; preferences: MatchingPreferencesForCareer; profile: JobseekerProfile | null };
 type Loadable<T> = { status: 'loading' } | { status: 'ready'; data: T } | { status: 'error'; error: string } | { status: 'unavailable' };
 const blank: Fields = { salary: '', holidays: '', drop: '', wishSalary: '', wishHolidays: '' };
 const EMPTY: CareerConditions = {
@@ -72,7 +73,7 @@ function NumberField({ label, hint, unit, value, onChange }: { label: string; hi
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return <View style={styles.card}><Text style={styles.section}>{title}</Text>{children}</View>;
 }
 
@@ -189,7 +190,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const { pinCandidateAction } = usePinnedCandidateAction();
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
   const allowed = privacy.canAccessPrivateData() && !privacy.shieldVisible;
-  const [base, setBase] = useState<Owned<{ conditions: CareerConditions | null; preferences: MatchingPreferencesForCareer; profile: JobseekerProfile | null }> | null>(null);
+  const [base, setBase] = useState<Owned<CareerBase> | null>(null);
   const [fields, setFields] = useState<Fields>(blank);
   const [basis, setBasis] = useState<Basis>(null);
   const [area, setArea] = useState({ prefecture: '', employmentType: '' });
@@ -222,12 +223,16 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     try {
       const pinned = await pinCandidateAction();
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
-      const [conditions, preferences, profile] = await Promise.all([
-        getCareerConditions(pinned.client),
+      const [conditionRead, preferences, profile] = await Promise.all([
+        getCareerConditions(pinned.client).then((data) => ({ available: true, data })).catch((error: unknown) => {
+          if (error instanceof CareerApiUnavailableError) return { available: false, data: null };
+          throw error;
+        }),
         getMatchingPreferencesForCareer(pinned.client),
         getJobseekerProfile(pinned.client),
       ]);
       if (!pinned.isCurrent() || ticket !== generation.current) return;
+      const conditions = conditionRead.data;
       setFields({
         salary: manFromYen(conditions?.current_monthly_salary ?? null),
         holidays: conditions?.current_annual_holidays == null ? '' : String(conditions.current_annual_holidays),
@@ -242,7 +247,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       setDays(conditions?.desired_annual_holidays && DAY_OPTIONS.includes(conditions.desired_annual_holidays as (typeof DAY_OPTIONS)[number])
         ? conditions.desired_annual_holidays : 120);
       setPath(conditions?.current_monthly_salary != null || preferences.desired_monthly_salary_min != null ? 'salary' : 'holidays');
-      setBase({ ownerKey, value: { conditions, preferences, profile } });
+      setBase({ ownerKey, value: { conditions, conditionsAvailable: conditionRead.available, preferences, profile } });
     } catch (error) {
       if (ticket === generation.current) setBaseError(error instanceof CareerApiUnavailableError ? '保存条件のAPIを確認できません。' : failure(error));
     }
@@ -251,6 +256,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   useEffect(() => {
     generation.current += 1; marketGeneration.current += 1; scenarioGeneration.current += 1;
     setBase(null); setFields(blank); setMarket(null); setOfficial(null); setHoliday(null); setResults(null);
+    setBusy(false);
     if (!allowed || !ownerKey) return;
     void loadBase();
     return () => { generation.current += 1; marketGeneration.current += 1; scenarioGeneration.current += 1; };
@@ -331,7 +337,9 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   };
 
   const save = async () => {
+    const launchedGeneration = generation.current;
     if (!ready || !current || busy || !ownerKey) return;
+    if (!current.conditionsAvailable) { setSaveMessage('条件の保存は現在利用できません。入力した内容は保存されていません。'); return; }
     if (fields.salary.trim() && own === null ||
         fields.holidays.trim() && daysFromText(fields.holidays) === null ||
         fields.drop.trim() && yenFromMan(fields.drop) === null ||
@@ -354,12 +362,13 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         setBase({ ownerKey, value: { ...current, conditions: saved } });
         setSaveMessage('条件を保存しました。あなただけが見られます。');
       }
-    } catch (error) { if (privacy.canAccessPrivateData()) setSaveMessage(failure(error)); }
-    finally { setBusy(false); }
+    } catch (error) { if (privacy.canAccessPrivateData() && launchedGeneration === generation.current) setSaveMessage(failure(error)); }
+    finally { if (launchedGeneration === generation.current) setBusy(false); }
   };
 
   const clear = async () => {
-    if (!ready || !current || busy || !ownerKey) return;
+    const launchedGeneration = generation.current;
+    if (!ready || !current || busy || !ownerKey || !current.conditionsAvailable) return;
     setBusy(true); setSaveMessage(null);
     try {
       const pinned = await pinCandidateAction();
@@ -371,9 +380,14 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         setScenario('keep-income'); setWeight(50); setBasis(null);
         setSaveMessage('保存した条件を削除しました。');
       }
-    } catch (error) { if (privacy.canAccessPrivateData()) setSaveMessage(failure(error)); }
-    finally { setBusy(false); }
+    } catch (error) { if (privacy.canAccessPrivateData() && launchedGeneration === generation.current) setSaveMessage(failure(error)); }
+    finally { if (launchedGeneration === generation.current) setBusy(false); }
   };
+
+  const confirmClear = () => Alert.alert('保存した条件を削除しますか？', '保存していたお給料・休日などの条件を削除します。', [
+    { text: 'キャンセル', style: 'cancel' },
+    { text: '削除する', style: 'destructive', onPress: () => void clear() },
+  ]);
 
   const openJob = (id: string) => { if (ready) router.push({ pathname: '/job/[id]', params: { id } }); };
   if (!allowed || !ownerKey) return <View style={styles.suspended}><Text style={styles.muted}>ログイン状態を確認しています…</Text></View>;
@@ -470,8 +484,9 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
               <Choice text="指定なし" active={!area.employmentType} onPress={() => setArea((p) => ({ ...p, employmentType: '' }))} />
               {(selectedMarket?.status === 'ready' ? selectedMarket.data.facets.employment_types : []).map((item) => <Choice key={item} text={item} active={area.employmentType === item} onPress={() => setArea((p) => ({ ...p, employmentType: item }))} />)}
             </View>
-            <Action label={busy ? '確認中…' : 'この条件を保存する'} disabled={busy} onPress={() => void save()} />
-            {current.conditions ? <Action label="保存した条件を削除する" secondary disabled={busy} onPress={() => void clear()} /> : null}
+            {current.conditionsAvailable ? <Action label={busy ? '確認中…' : 'この条件を保存する'} disabled={busy} onPress={() => void save()} />
+              : <Text style={styles.footnote}>入力した内容は画面を閉じると消えます。条件保存のAPIは現在利用できません。</Text>}
+            {current.conditions && current.conditionsAvailable ? <Action label="保存した条件を削除する" secondary disabled={busy} onPress={confirmClear} /> : null}
             {saveMessage ? <Text accessibilityRole="alert" style={saveMessage.includes('しました') ? styles.success : styles.error}>{saveMessage}</Text> : null}
             <Text style={styles.footnote}>保存した数値は本人だけの条件です。保存後はサーバーの値を再取得して照合します。</Text>
           </Section>
