@@ -1,9 +1,12 @@
+import { useSession } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { listApplications, type JobseekerApplicationSummary } from '../../lib/applicationJourneyApi';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
+import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
+import { candidateViewOwnerKey, readCandidateOwnedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -13,35 +16,49 @@ function formatDate(value: string) {
 export default function ApplicationsScreen() {
   usePrivateScreenCapture('applications');
   const router = useRouter();
+  const { session } = useSession();
+  const privacy = usePrivateDataQuarantine();
+  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
   const { pinCandidateAction } = usePinnedCandidateAction();
-  const [applications, setApplications] = useState<JobseekerApplicationSummary[]>([]);
+  const [ownedApplications, setOwnedApplications] = useState<CandidateOwnedView<JobseekerApplicationSummary[]> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const generation = useRef(0);
+  const privateAllowed = privacy.canAccessPrivateData();
+  const applications = readCandidateOwnedView(ownedApplications, ownerKey, privateAllowed);
+  const error = readCandidateOwnedView(ownedError, ownerKey, privateAllowed);
 
   const load = useCallback(async () => {
     const current = ++generation.current;
     setLoading(true);
-    setError(null);
+    setOwnedApplications(null);
+    setOwnedError(null);
     try {
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
       const rows = await listApplications(pinned.client);
       if (!pinned.isCurrent() || current !== generation.current) return;
-      setApplications(rows);
+      setOwnedApplications({ ownerKey: candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)!, value: rows });
     } catch (loadError) {
       if (current === generation.current) {
-        setError(String((loadError as { message?: unknown })?.message ?? loadError));
+        if (ownerKey) setOwnedError({ ownerKey, value: String((loadError as { message?: unknown })?.message ?? loadError) });
       }
     } finally {
       if (current === generation.current) setLoading(false);
     }
-  }, [pinCandidateAction]);
+  }, [ownerKey, pinCandidateAction]);
 
   useEffect(() => {
     void load();
     return () => { generation.current += 1; };
   }, [load]);
+
+  const openApplication = async (applicationId: string) => {
+    if (!privateAllowed || !applications?.some((application) => application.id === applicationId)) return;
+    const pinned = await pinCandidateAction();
+    if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+    router.push(`/application/${applicationId}` as never);
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.page}>
@@ -56,8 +73,8 @@ export default function ApplicationsScreen() {
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      {loading && applications.length === 0 ? <ActivityIndicator /> : null}
-      {!loading && applications.length === 0 ? (
+      {(loading || (applications === null && !error)) ? <ActivityIndicator /> : null}
+      {!loading && !error && applications?.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>応募はまだありません</Text>
           <Text style={styles.subtle}>求人を探して、気になる園へ応募するとここに表示されます。</Text>
@@ -67,11 +84,11 @@ export default function ApplicationsScreen() {
         </View>
       ) : null}
 
-      {applications.map((application) => (
+      {(applications ?? []).map((application) => (
         <Pressable
           key={application.id}
           style={styles.card}
-          onPress={() => router.push(`/application/${application.id}` as never)}
+          onPress={() => void openApplication(application.id)}
           accessibilityRole="button"
           accessibilityLabel={`${application.facility_name} ${application.job_title}の応募詳細`}
         >
