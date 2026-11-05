@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   ActivityIndicator,
   Alert,
@@ -28,6 +29,7 @@ import {
   type ScoutPrivacySettings,
 } from '../lib/candidateParityApi';
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
+import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 
 const weekdays = ['月', '火', '水', '木', '金', '土', '日'];
 const classroomOptions = ['0歳児', '1歳児', '2歳児', '3歳児', '4歳児', '5歳児', 'フリー', '異年齢保育', '障害児保育'];
@@ -106,6 +108,13 @@ export default function ScoutsScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+  const { scoutId: rawScoutId } = useLocalSearchParams<{ scoutId?: string }>();
+  const focusedScoutId = verifiedFocusId(rawScoutId);
+  const focusedScout = focusedOwnedItem(scouts, focusedScoutId, (item) => item.scout_id);
+  // On Native, put the exact authorized, notification-targeted card first instead of a Web anchor jump.
+  const orderedScouts = focusedScout
+    ? [focusedScout, ...scouts.filter((item) => item.scout_id !== focusedScoutId)]
+    : scouts;
 
   const hydratePreferences = (next: JobseekerMatchingPreferences) => {
     setPreferences(next);
@@ -139,10 +148,10 @@ export default function ScoutsScreen() {
     }
   }, [pinCandidateAction]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     void load();
     return () => { generation.current += 1; };
-  }, [load]);
+  }, [load]));
 
   const pendingCount = scouts.filter((item) => item.scout_status === 'pending').length;
 
@@ -325,6 +334,9 @@ export default function ScoutsScreen() {
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {notice ? <Text style={styles.success}>{notice}</Text> : null}
+      {focusedScoutId && !loading && !focusedScout ? (
+        <Text style={styles.error}>指定されたスカウトは現在のアカウントで確認できません。</Text>
+      ) : null}
 
       <View style={styles.card}>
         <View style={styles.rowBetween}>
@@ -337,8 +349,9 @@ export default function ScoutsScreen() {
         </View>
         {scouts.length === 0 ? (
           <Text style={styles.bodyMuted}>スカウトはまだ届いていません。下の設定をONにすると、希望条件や保育観を見た園からお誘いが届くことがあります。</Text>
-        ) : scouts.map((item) => (
-          <View key={item.scout_id} style={styles.innerCard}>
+        ) : orderedScouts.map((item) => (
+          <View key={item.scout_id} style={[styles.innerCard, item.scout_id === focusedScoutId && styles.targetCard]}>
+            {item.scout_id === focusedScoutId ? <Text style={styles.targetLabel}>通知から開いたスカウト</Text> : null}
             <View style={styles.rowBetween}>
               <Text style={styles.status}>{scoutStatusLabel(item.scout_status)}</Text>
               <Text style={styles.meta}>{formatDateTime(item.sent_at)}</Text>
@@ -475,6 +488,8 @@ const styles = StyleSheet.create({
   count: { fontSize: 14, fontWeight: '800', color: '#606873' },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 12 },
   innerCard: { borderWidth: 1, borderColor: '#e6e8ec', borderRadius: 14, padding: 14, gap: 8 },
+  targetCard: { borderColor: '#e8445a', borderWidth: 2, backgroundColor: '#fff8fa' },
+  targetLabel: { color: '#b4233e', fontSize: 14, fontWeight: '800' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   actionRow: { flexDirection: 'row', gap: 8 },
