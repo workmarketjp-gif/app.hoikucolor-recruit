@@ -6,6 +6,7 @@ import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
 import { candidateApplicationDetailKey } from '../../lib/applicationDetailVisibility';
+import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } from '../../lib/applicationDocumentHandoffStatus';
 import {
   acceptOffer,
   getApplicationDetail,
@@ -193,7 +194,7 @@ function ApplicationDetailContent() {
       const [nextDetail, nextMessages, nextDocumentState] = await Promise.all([
         getApplicationDetail(pinned.client, applicationId),
         listApplicationMessages(pinned.client, applicationId),
-        getApplicationDocumentHandoffState(pinned.client, applicationId).catch(() => null),
+        readApplicationDocumentHandoff(() => getApplicationDocumentHandoffState(pinned.client, applicationId)),
       ]);
       if (!pinned.isCurrent() || current !== generation.current) return;
       setDetail(nextDetail);
@@ -289,6 +290,7 @@ function ApplicationDetailContent() {
 
   const messagesFocused = focus === 'messages';
   const missingDocuments = documentState?.missingSourceDocumentIds.length ?? 0;
+  const documentReadState = classifyApplicationDocumentHandoff(documentState);
   const orderedMessages = useMemo(() => [...messages].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at)), [messages]);
 
   if (loading) {
@@ -320,14 +322,24 @@ function ApplicationDetailContent() {
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      {(warnedDocumentHandoff || missingDocuments > 0) ? (
+      {(warnedDocumentHandoff || documentReadState !== 'confirmed') ? (
         <View style={styles.warningCard}>
           <Text style={styles.sectionTitle}>提出書類を確認してください</Text>
           <Text style={styles.subtle}>
-            応募自体は完了しています。既定書類の添付に未確認項目が{missingDocuments || '一部'}あります。
+            {documentReadState === 'unverified'
+              ? '提出書類の状態を取得できませんでした。応募は完了していますが、添付状況は未確認です。通信状態を確認して再読み込みしてください。'
+              : documentReadState === 'missing'
+                ? `応募は完了しています。提出書類の添付を確認できないものが${missingDocuments}件あります。`
+                : '応募直後に書類添付の警告がありました。最新の提出状況をご確認ください。'}
           </Text>
-          <Pressable style={styles.secondaryButton} disabled={busy} onPress={() => void repairDocuments()}>
-            <Text style={styles.secondaryText}>提出書類を再確認・復旧</Text>
+          <Pressable
+            style={styles.secondaryButton}
+            disabled={busy}
+            onPress={() => void (documentReadState === 'missing' ? repairDocuments() : load())}
+          >
+            <Text style={styles.secondaryText}>
+              {documentReadState === 'missing' ? '提出書類を再確認・復旧' : '提出状況を再読み込み'}
+            </Text>
           </Pressable>
           {handoffError ? <Text style={styles.error}>{handoffError}</Text> : null}
         </View>
