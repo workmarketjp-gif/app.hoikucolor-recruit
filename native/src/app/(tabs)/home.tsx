@@ -2,6 +2,7 @@ import { useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { CareerExperience } from '../../components/CareerExperience';
+import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { useNotifications } from '../../contexts/NotificationContext';
 
 function Metric({ value, label }: { value: number; label: string }) {
@@ -14,6 +15,9 @@ function Metric({ value, label }: { value: number; label: string }) {
 }
 
 export default function HomeScreen() {
+  // Home now contains private salary conditions: apply the same best-effort
+  // platform capture boundary as the dedicated お給料 screen.
+  usePrivateScreenCapture('home-career');
   const { user } = useUser();
   const router = useRouter();
   const notifications = useNotifications();
