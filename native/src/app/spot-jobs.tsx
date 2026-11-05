@@ -1,9 +1,11 @@
-import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { getJobseekerProfile } from '../lib/jobseekerCoreApi';
 import { submitApplication } from '../lib/applicationJourneyApi';
+import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
+import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import {
   listMySpotAssignments,
   listSpotJobs,
@@ -70,6 +72,7 @@ function SpotFacts({ workDate, startTime, endTime, hourlyRate, breakMinutes }: {
 }
 
 export default function SpotJobsScreen() {
+  usePrivateScreenCapture('spot-jobs');
   const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();
   const [jobs, setJobs] = useState<SpotJobListing[]>([]);
@@ -78,6 +81,12 @@ export default function SpotJobsScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+  const { assignmentId: rawAssignmentId } = useLocalSearchParams<{ assignmentId?: string }>();
+  const focusedAssignmentId = verifiedFocusId(rawAssignmentId);
+  const focusedAssignment = focusedOwnedItem(assignments, focusedAssignmentId, (item) => item.assignment_id);
+  const orderedAssignments = focusedAssignment
+    ? [focusedAssignment, ...assignments.filter((item) => item.assignment_id !== focusedAssignmentId)]
+    : assignments;
 
   const load = useCallback(async (quiet = false) => {
     const current = ++generation.current;
@@ -100,10 +109,10 @@ export default function SpotJobsScreen() {
     }
   }, [pinCandidateAction]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     void load();
     return () => { generation.current += 1; };
-  }, [load]);
+  }, [load]));
 
   const apply = async (job: SpotJobListing) => {
     setBusyId(job.job_id);
@@ -136,15 +145,19 @@ export default function SpotJobsScreen() {
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {focusedAssignmentId && !loading && !focusedAssignment ? (
+        <Text style={styles.error}>指定されたスポット勤務は現在のアカウントで確認できません。</Text>
+      ) : null}
       {loading && jobs.length === 0 && assignments.length === 0 ? <ActivityIndicator /> : null}
 
       {assignments.length > 0 ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>あなたのスポット勤務</Text>
-          {assignments.map((assignment) => (
+          {orderedAssignments.map((assignment) => (
             <AssignmentCard
               key={assignment.assignment_id}
               assignment={assignment}
+              focused={assignment.assignment_id === focusedAssignmentId}
               onOpen={() => router.push(`/application/${assignment.application_id}` as never)}
             />
           ))}
@@ -175,13 +188,14 @@ export default function SpotJobsScreen() {
   );
 }
 
-function AssignmentCard({ assignment, onOpen }: { key?: string; assignment: SpotAssignment; onOpen: () => void }) {
+function AssignmentCard({ assignment, onOpen, focused }: { key?: string; assignment: SpotAssignment; onOpen: () => void; focused: boolean }) {
   const workedMinutes = useMemo(
     () => Math.max(0, timeToMinutes(assignment.end_time) - timeToMinutes(assignment.start_time) - assignment.break_minutes),
     [assignment],
   );
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, focused && styles.targetCard]}>
+      {focused ? <Text style={styles.targetLabel}>通知から開いたスポット勤務</Text> : null}
       <View style={styles.badgeRow}>
         <Text style={styles.badge}>{statusLabel(assignment.assignment_status)}</Text>
         {assignment.assignment_status === 'confirmed' ? <Text style={styles.badge}>勤務シフトに登録済み</Text> : null}
@@ -273,6 +287,8 @@ const styles = StyleSheet.create({
   body: { fontSize: 16, lineHeight: 23, color: '#252a31' },
   bodyMuted: { fontSize: 15, lineHeight: 22, color: '#606873' },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 10 },
+  targetCard: { borderColor: '#e8445a', borderWidth: 2, backgroundColor: '#fff8fa' },
+  targetLabel: { color: '#b4233e', fontSize: 14, fontWeight: '800' },
   empty: { backgroundColor: '#fff', borderRadius: 16, padding: 18, gap: 12 },
   badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   badge: { fontSize: 14, fontWeight: '800', backgroundColor: '#f2f4f7', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 6, overflow: 'hidden' },
