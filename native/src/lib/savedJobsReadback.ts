@@ -31,3 +31,22 @@ export async function removeSavedJobAndConfirm<T extends { id: string }>(
   }
   return rows;
 }
+
+/**
+ * A mutation acknowledgement is ambiguous until the canonical saved-ID list
+ * reflects the requested state. Never derive the UI result from a local guess.
+ */
+export async function updateSavedJobAndConfirm(
+  jobId: string,
+  shouldBeSaved: boolean,
+  mutateCanonical: () => Promise<void>,
+  rereadCanonical: () => Promise<string[]>,
+): Promise<string[]> {
+  await mutateCanonical();
+  const ids = await rereadCanonical();
+  if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string') ||
+      ids.includes(jobId) !== shouldBeSaved) {
+    throw new Error('保存状況を確認できませんでした。更新してご確認ください。');
+  }
+  return ids;
+}
