@@ -4,7 +4,7 @@ import {
   CareerApiUnavailableError, daysFromText, deleteCareerConditions, formatMan,
   getCareerConditions, getCareerScenarioJobs, getHolidayMarket, getMatchingPreferencesForCareer,
   getOfficialWageStats, getPostedSalaryMarket, manFromYen, saveCareerConditions,
-  scenarioSalaryLine, yenFromMan,
+  scenarioSalaryLine, withYourPosition, yenFromMan,
 } from '../src/lib/careerApi.ts';
 
 const conditions = {
@@ -135,4 +135,14 @@ test('stored conditions preserve exact values and coerce only invalid scenario a
   assert.equal(read.scenario, 'keep-income');
   assert.equal(read.salary_weight, 100);
   assert.equal(read.current_monthly_salary, 230000);
+});
+
+test('histogram fills missing bins and places personal salary without changing canonical counts', () => {
+  const bars = withYourPosition([{ from: 200000, to: 220000, count: 3 }, { from: 240000, to: 260000, count: 2 }], 230000);
+  assert.deepEqual(bars, [
+    { from: 200000, to: 220000, count: 3, containsYou: false },
+    { from: 220000, to: 240000, count: 0, containsYou: true },
+    { from: 240000, to: 260000, count: 2, containsYou: false },
+  ]);
+  assert.deepEqual(withYourPosition([], 230000), []);
 });
