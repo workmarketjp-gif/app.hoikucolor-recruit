@@ -1,7 +1,11 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSession } from '@clerk/expo';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
+import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
+import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
+import { canCancelVisibleVisit, canRequestVisibleVisit, visitReadbackConfirmsMutation } from '../lib/visitPresentation';
 import {
   cancelVisit,
   getVisitSettings,
@@ -42,56 +46,108 @@ export default function VisitsScreen() {
   usePrivateScreenCapture('visits');
   const params = useLocalSearchParams<{ visitId?: string | string[]; jobId?: string | string[]; applicationId?: string | string[] }>();
   const router = useRouter();
+  const { session } = useSession();
+  const privacy = usePrivateDataQuarantine();
+  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
   const { pinCandidateAction } = usePinnedCandidateAction();
   const focusedVisitId = firstParam(params.visitId) ?? null;
   const jobId = firstParam(params.jobId) ?? null;
   const applicationId = firstParam(params.applicationId) ?? null;
-  const [visits, setVisits] = useState<JobseekerVisitHistory[]>([]);
-  const [settings, setSettings] = useState<JobseekerVisitSettings | null>(null);
+  const [ownedVisits, setOwnedVisits] = useState<CandidateOwnedView<JobseekerVisitHistory[]> | null>(null);
+  const [ownedSettings, setOwnedSettings] = useState<CandidateOwnedView<JobseekerVisitSettings | null> | null>(null);
   const [experienceType, setExperienceType] = useState<VisitExperienceType>('visit');
   const [localDate, setLocalDate] = useState('');
   const [localTime, setLocalTime] = useState('');
   const [candidateMessage, setCandidateMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const generation = useRef(0);
+  // A same-session App Lock/unlock also invalidates every previously rendered visit.
+  const freshlyVerifiedOwner = useRef<string | null>(null);
+  const privateAllowed = !privacy.shieldVisible && privacy.canAccessPrivateData();
+  if (!privateAllowed) freshlyVerifiedOwner.current = null;
+  const visits = readCandidateFreshlyVerifiedView(ownedVisits, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
+  const settings = readCandidateFreshlyVerifiedView(ownedSettings, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
+  const error = readCandidateFreshlyVerifiedView(ownedError, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
 
-  const load = useCallback(async (quiet = false) => {
+  const load = useCallback(async (expected?: { reservationId: string; mutation: 'request' | 'cancel' }): Promise<boolean> => {
     const current = ++generation.current;
-    if (!quiet) setLoading(true);
-    setError(null);
+    freshlyVerifiedOwner.current = null;
+    setOwnedVisits(null);
+    setOwnedSettings(null);
+    setOwnedError(null);
+    setLoading(true);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned?.isCurrent()) throw new Error('安全なログイン状態を確認できませんでした。');
+      const requestOwner = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
+      if (!requestOwner) throw new Error('安全なログイン状態を確認できませんでした。');
       const [nextVisits, nextSettings] = await Promise.all([
         listCandidateVisits(pinned.client),
         jobId ? getVisitSettings(pinned.client, jobId) : Promise.resolve(null),
       ]);
-      if (!pinned.isCurrent() || current !== generation.current) return;
-      setVisits(nextVisits);
-      setSettings(nextSettings);
+      if (!pinned.isCurrent() || current !== generation.current || !privacy.canAccessPrivateData()) return false;
+      if (expected && !visitReadbackConfirmsMutation(nextVisits, expected.reservationId, expected.mutation)) {
+        throw new Error('操作は送信されましたが、最新の予約状態を確認できません。更新して確認してください。再送信はしないでください。');
+      }
+      freshlyVerifiedOwner.current = requestOwner;
+      setOwnedVisits({ ownerKey: requestOwner, value: nextVisits });
+      setOwnedSettings({ ownerKey: requestOwner, value: nextSettings });
       const available = allowedTypes(nextSettings);
-      if (available.length && !available.includes(experienceType)) setExperienceType(available[0]);
+      setExperienceType((previous) => available.includes(previous) ? previous : available[0] ?? 'visit');
+      return true;
     } catch (loadError) {
-      if (current === generation.current) setError(String((loadError as { message?: unknown })?.message ?? loadError));
+      if (current === generation.current && ownerKey && privacy.canAccessPrivateData()) {
+        freshlyVerifiedOwner.current = ownerKey;
+        setOwnedError({ ownerKey, value: String((loadError as { message?: unknown })?.message ?? loadError) });
+      }
+      return false;
     } finally {
-      if (current === generation.current && !quiet) setLoading(false);
+      if (current === generation.current) setLoading(false);
     }
-  }, [experienceType, jobId, pinCandidateAction]);
+  }, [jobId, ownerKey, pinCandidateAction, privacy.canAccessPrivateData]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
+    if (!ownerKey || !privateAllowed) {
+      generation.current += 1;
+      freshlyVerifiedOwner.current = null;
+      setOwnedVisits(null);
+      setOwnedSettings(null);
+      setOwnedError(null);
+      setLoading(true);
+      return;
+    }
     void load();
-    return () => { generation.current += 1; };
-  }, [load]);
+    return () => {
+      generation.current += 1;
+      freshlyVerifiedOwner.current = null;
+    };
+  }, [ownerKey, privateAllowed, load]));
+
+  // A previous account's private booking draft must not survive session change
+  // or an App Lock boundary, even if the screen remains mounted.
+  useEffect(() => {
+    setLocalDate('');
+    setLocalTime('');
+    setCandidateMessage('');
+    setExperienceType('visit');
+  }, [ownerKey, privacy.shieldVisible]);
+
+  const availableTypes = allowedTypes(settings);
+  const canRequest = privateAllowed && !loading && !busy && !error &&
+    canRequestVisibleVisit(
+      ownerKey, freshlyVerifiedOwner.current, jobId,
+      availableTypes, experienceType, localDate, localTime,
+    );
 
   const requestVisit = async () => {
-    if (!jobId) return;
+    if (!canRequest || !jobId) return;
     setBusy(true);
-    setError(null);
+    setOwnedError(null);
+    const pinned = await pinCandidateAction();
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
       const reservationId = await requestVisitDurable({
         client: pinned.client,
         ownerId: pinned.ownerId,
@@ -104,37 +160,55 @@ export default function VisitsScreen() {
         candidateMessage,
       });
       if (!pinned.isCurrent()) return;
+      // A successful mutation response is not proof of visible saved state.
+      const confirmed = await load({ reservationId, mutation: 'request' });
+      if (!confirmed || !pinned.isCurrent()) return;
       setCandidateMessage('');
-      await load(true);
       router.replace(`/visits?visitId=${encodeURIComponent(reservationId)}&jobId=${encodeURIComponent(jobId)}${applicationId ? `&applicationId=${encodeURIComponent(applicationId)}` : ''}` as never);
     } catch (requestError) {
-      setError(String((requestError as { message?: unknown })?.message ?? requestError));
+      if (pinned?.isCurrent() && ownerKey) {
+        freshlyVerifiedOwner.current = ownerKey;
+        setOwnedError({ ownerKey, value: String((requestError as { message?: unknown })?.message ?? requestError) });
+      }
     } finally {
       setBusy(false);
     }
   };
 
   const cancel = async (reservationId: string) => {
+    if (busy || !privateAllowed ||
+      !canCancelVisibleVisit(ownerKey, freshlyVerifiedOwner.current, visits, reservationId)) return;
     setBusy(true);
-    setError(null);
+    setOwnedError(null);
+    const pinned = await pinCandidateAction();
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
       await cancelVisit(pinned.client, reservationId);
       if (!pinned.isCurrent()) return;
-      await load(true);
+      await load({ reservationId, mutation: 'cancel' });
     } catch (cancelError) {
-      setError(String((cancelError as { message?: unknown })?.message ?? cancelError));
+      if (pinned?.isCurrent() && ownerKey) {
+        freshlyVerifiedOwner.current = ownerKey;
+        setOwnedError({ ownerKey, value: String((cancelError as { message?: unknown })?.message ?? cancelError) });
+      }
     } finally {
       setBusy(false);
     }
   };
 
+  const openRelatedApplication = async (reservationId: string, targetApplicationId: string) => {
+    if (!privateAllowed || !visits?.some((visit) =>
+      visit.reservation_id === reservationId && visit.application_id === targetApplicationId)) return;
+    const pinned = await pinCandidateAction();
+    if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+    router.push(`/application/${targetApplicationId}` as never);
+  };
+
   const visibleVisits = useMemo(() => {
+    if (!visits) return [];
     if (!focusedVisitId) return visits;
     return [...visits].sort((a, b) => Number(b.reservation_id === focusedVisitId) - Number(a.reservation_id === focusedVisitId));
   }, [focusedVisitId, visits]);
-  const availableTypes = allowedTypes(settings);
 
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
@@ -143,7 +217,12 @@ export default function VisitsScreen() {
         <Text style={styles.subtle}>園見学・半日体験・1日体験の予約と結果を確認できます。</Text>
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      {loading && visits.length === 0 ? <ActivityIndicator /> : null}
+      {(loading || (visits === null && !error)) ? <ActivityIndicator /> : null}
+      {error && privateAllowed ? (
+        <Pressable style={styles.secondary} onPress={() => void load()} disabled={loading}>
+          <Text style={styles.secondaryText}>予約情報を再取得</Text>
+        </Pressable>
+      ) : null}
 
       {jobId && settings ? (
         <View style={styles.card}>
@@ -166,7 +245,7 @@ export default function VisitsScreen() {
               <TextInput value={localDate} onChangeText={setLocalDate} placeholder="希望日 YYYY-MM-DD" autoCapitalize="none" style={styles.input} />
               <TextInput value={localTime} onChangeText={setLocalTime} placeholder={`希望時刻 HH:MM（${settings.first_start_time}〜${settings.last_start_time}）`} autoCapitalize="none" style={styles.input} />
               <TextInput value={candidateMessage} onChangeText={setCandidateMessage} placeholder="園への連絡事項（任意）" multiline style={styles.textArea} />
-              <Pressable style={styles.primary} disabled={busy || !localDate || !localTime} onPress={() => void requestVisit()}>
+              <Pressable style={styles.primary} disabled={!canRequest} onPress={() => void requestVisit()}>
                 <Text style={styles.primaryText}>{busy ? '予約を確認中…' : '見学・体験を申し込む'}</Text>
               </Pressable>
             </>
@@ -176,7 +255,7 @@ export default function VisitsScreen() {
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>予約履歴</Text>
-        {!loading && visibleVisits.length === 0 ? <Text style={styles.subtle}>予約履歴はありません。</Text> : null}
+        {!loading && visits !== null && visibleVisits.length === 0 ? <Text style={styles.subtle}>予約履歴はありません。</Text> : null}
         {visibleVisits.map((visit) => {
           const focused = visit.reservation_id === focusedVisitId;
           const cancellable = visit.status === 'requested' || visit.status === 'confirmed';
@@ -189,12 +268,12 @@ export default function VisitsScreen() {
               <Text style={styles.status}>{visit.status}</Text>
               {visit.candidate_message ? <Text style={styles.subtle}>連絡事項: {visit.candidate_message}</Text> : null}
               {cancellable ? (
-                <Pressable style={styles.secondary} disabled={busy} onPress={() => void cancel(visit.reservation_id)}>
+                <Pressable style={styles.secondary} disabled={busy || !canCancelVisibleVisit(ownerKey, freshlyVerifiedOwner.current, visits, visit.reservation_id)} onPress={() => void cancel(visit.reservation_id)}>
                   <Text style={styles.secondaryText}>予約をキャンセル</Text>
                 </Pressable>
               ) : null}
               {visit.application_id ? (
-                <Pressable style={styles.linkButton} onPress={() => router.push(`/application/${visit.application_id}` as never)}>
+                <Pressable style={styles.linkButton} onPress={() => void openRelatedApplication(visit.reservation_id, visit.application_id!)}>
                   <Text style={styles.link}>関連する応募を開く</Text>
                 </Pressable>
               ) : null}
