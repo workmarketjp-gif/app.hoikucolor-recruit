@@ -133,13 +133,25 @@ export default function JobsScreen() {
     }
   }, [cursor, ownerKey, pinCandidateAction, query, savedIds, visibleJobs]);
 
+  // App Lock and foreground revalidation are *also* ownership boundaries.
+  // Discard search drafts, results and pagination on shield entry. A fresh
+  // canonical read is required after unlock; old responses cannot commit.
   useEffect(() => {
+    generation.current += 1;
     setOwnedQuery(null);
+    setOwnedJobs(null);
+    setOwnedSavedIds(null);
+    setOwnedError(null);
+    setCursor(null);
+    setHasMore(false);
+    setTotalCount(0);
+    setLoading(true);
+    if (privacy.shieldVisible || !ownerKey) {
+      return () => { generation.current += 1; };
+    }
     void load(true, '');
-    return () => {
-      generation.current += 1;
-    };
-  }, [ownerKey]);
+    return () => { generation.current += 1; };
+  }, [ownerKey, privacy.shieldVisible]);
 
   const toggleSaved = async (jobId: string) => {
     if (!privateAllowed || savedIds === null || !jobs.some((job) => job.id === jobId)) return;
@@ -162,6 +174,11 @@ export default function JobsScreen() {
   };
 
 
+
+  // Never render a private result (or its editor) beneath a privacy shield.
+  if (!ownerKey || !privateAllowed || privacy.shieldVisible) {
+    return <View testID="jobs-private-shield" style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF8FA' }}><ActivityIndicator color="#FF2F5F" /></View>;
+  }
 
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
