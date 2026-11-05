@@ -23,7 +23,7 @@ test('application list revokes read lease on blur and refuses background read re
   assert.match(applications, /!privacy\.canAccessPrivateData\(\)\) return;/);
 });
 test('saved jobs clear prior rows immediately on blur', () => {
-  assert.match(saved, /return \(\) => \{\s*generation\.current \+= 1;\s*setOwnedJobs\(null\);\s*setOwnedError\(null\);/);
+  assert.match(saved, /return \(\) => \{\s*focusActiveRef\.current = false;\s*generation\.current \+= 1;\s*setOwnedJobs\(null\);\s*setOwnedError\(null\);/);
 });
 test('an old saved-job mutation cannot unlock a newer request', () => {
   assert.match(saved, /const mutationId = \+\+mutationSequence\.current;/);
