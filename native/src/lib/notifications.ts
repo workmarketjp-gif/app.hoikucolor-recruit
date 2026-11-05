@@ -146,7 +146,10 @@ export function nativeNotificationHref(route: { route_key: string; route_params:
   // The RPC proves scout/spot ownership; never route from an untrusted push payload or Web link_url.
   const scopedTarget = scopedNotificationHref(route);
   if (scopedTarget) return scopedTarget;
-  if (route.route_key === 'scouts' || route.route_key === 'spot_assignments') return '/(tabs)/notifications';
+  if (route.route_key === 'scouts' || route.route_key === 'spot_assignments') {
+    // Do not acknowledge a notification as opened if the verified target is missing.
+    throw new Error('NOTIFICATION_TARGET_UNAVAILABLE');
+  }
   const applicationId = route.route_params?.applicationId;
   const visitId = route.route_params?.visitId;
   const jobId = route.route_params?.jobId;
