@@ -7,6 +7,7 @@ import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
 import { candidateApplicationDetailKey } from '../../lib/applicationDetailVisibility';
 import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } from '../../lib/applicationDocumentHandoffStatus';
+import { applicationStatusLabel } from '../../lib/messageInbox';
 import {
   acceptOffer,
   getApplicationDetail,
@@ -318,7 +319,7 @@ function ApplicationDetailContent() {
           <Text style={styles.facility}>{detail.application.facility_name}</Text>
           <Text style={styles.subtle}>{[detail.application.prefecture, detail.application.city, detail.application.employment_type].filter(Boolean).join(' ・ ')}</Text>
         </View>
-        <Text style={styles.status}>{detail.application.status}</Text>
+        <Text style={styles.status}>{applicationStatusLabel(detail.application.status)}</Text>
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}

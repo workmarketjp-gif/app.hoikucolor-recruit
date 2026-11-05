@@ -10,6 +10,11 @@ const statusLabels: Readonly<Record<string, string>> = {
   offered: '内定', offer: '内定', hired: '採用', rejected: '選考終了', withdrawn: '辞退',
 };
 
+/** Match the approved Web application labels across list, detail, and messages. */
+export function applicationStatusLabel(status: string): string {
+  return statusLabels[status] || status;
+}
+
 export type MessageInboxRow = {
   applicationId: string;
   facilityName: string;
@@ -63,7 +68,7 @@ export function buildMessageInbox(
       applicationId: application.id,
       facilityName: application.facility_name || '園',
       jobTitle: application.job_title || '求人',
-      statusLabel: statusLabels[application.status] || application.status,
+      statusLabel: applicationStatusLabel(application.status),
       hasNewestUnread: application.id === newestApplicationId,
     })),
   };

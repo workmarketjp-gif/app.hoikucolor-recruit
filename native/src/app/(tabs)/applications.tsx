@@ -7,6 +7,7 @@ import { listApplications, type JobseekerApplicationSummary } from '../../lib/ap
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
+import { applicationStatusLabel } from '../../lib/messageInbox';
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -104,7 +105,7 @@ export default function ApplicationsScreen() {
         >
           <View style={styles.cardTop}>
             <Text style={styles.jobTitle}>{application.job_title}</Text>
-            <Text style={styles.status}>{application.status}</Text>
+            <Text style={styles.status}>{applicationStatusLabel(application.status)}</Text>
           </View>
           <Text style={styles.facility}>{application.facility_name}</Text>
           <Text style={styles.subtle}>

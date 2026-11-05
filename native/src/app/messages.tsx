@@ -7,7 +7,7 @@ import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { getJobseekerAttentionSummary, type JobseekerAttentionSummary } from '../lib/attentionApi';
 import { listApplications, type JobseekerApplicationSummary } from '../lib/applicationJourneyApi';
-import { candidateViewOwnerKey, readCandidateOwnedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
+import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import { buildMessageInbox } from '../lib/messageInbox';
 
 /** Web /messages: only authorized application threads, with canonical unread metadata. */
@@ -24,9 +24,14 @@ export default function MessagesScreen() {
   const [attentionFailed, setAttentionFailed] = useState<CandidateOwnedView<boolean> | null>(null);
   const [loading, setLoading] = useState(true);
   const generation = useRef(0);
+  // Cached threads need a fresh canonical read after App Lock, even for the same session.
+  const freshlyVerifiedOwner = useRef<string | null>(null);
+  const canRead = !privacy.shieldVisible && privacy.canAccessPrivateData();
+  if (!canRead) freshlyVerifiedOwner.current = null;
 
   const load = useCallback(async () => {
     const request = ++generation.current;
+    freshlyVerifiedOwner.current = null;
     setApplications(null);
     setAttention(null);
     setLoadError(null);
@@ -41,8 +46,9 @@ export default function MessagesScreen() {
         listApplications(pinned.client),
         getJobseekerAttentionSummary(pinned.client),
       ]);
-      if (request !== generation.current || !pinned.isCurrent()) return;
+      if (request !== generation.current || !pinned.isCurrent() || !privacy.canAccessPrivateData()) return;
       if (applicationsRead.status === 'rejected') throw applicationsRead.reason;
+      freshlyVerifiedOwner.current = requestOwner;
       setApplications({ ownerKey: requestOwner, value: applicationsRead.value });
       if (attentionRead.status === 'fulfilled') {
         setAttention({ ownerKey: requestOwner, value: attentionRead.value });
@@ -52,6 +58,7 @@ export default function MessagesScreen() {
       }
     } catch (error) {
       if (request === generation.current && ownerKey && privacy.canAccessPrivateData()) {
+        freshlyVerifiedOwner.current = ownerKey;
         setLoadError({ ownerKey, value: String((error as { message?: unknown })?.message ?? error) });
       }
     } finally {
@@ -60,8 +67,9 @@ export default function MessagesScreen() {
   }, [pinCandidateAction, ownerKey, privacy.canAccessPrivateData]);
 
   useEffect(() => {
-    if (!ownerKey || privacy.shieldVisible) {
+    if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
       generation.current += 1;
+      freshlyVerifiedOwner.current = null;
       setApplications(null);
       setAttention(null);
       setLoadError(null);
@@ -73,11 +81,10 @@ export default function MessagesScreen() {
     return () => { generation.current += 1; };
   }, [ownerKey, privacy.shieldVisible, load]);
 
-  const canRead = !privacy.shieldVisible && privacy.canAccessPrivateData();
-  const visibleApplications = readCandidateOwnedView(applications, ownerKey, canRead);
-  const visibleAttention = readCandidateOwnedView(attention, ownerKey, canRead);
-  const error = readCandidateOwnedView(loadError, ownerKey, canRead);
-  const warning = readCandidateOwnedView(attentionFailed, ownerKey, canRead);
+  const visibleApplications = readCandidateFreshlyVerifiedView(applications, ownerKey, canRead, freshlyVerifiedOwner.current);
+  const visibleAttention = readCandidateFreshlyVerifiedView(attention, ownerKey, canRead, freshlyVerifiedOwner.current);
+  const error = readCandidateFreshlyVerifiedView(loadError, ownerKey, canRead, freshlyVerifiedOwner.current);
+  const warning = readCandidateFreshlyVerifiedView(attentionFailed, ownerKey, canRead, freshlyVerifiedOwner.current);
   const inbox = buildMessageInbox(visibleApplications ?? [], visibleAttention);
   const openThread = async (applicationId: string) => {
     if (!visibleApplications || !inbox.rows.some((row) => row.applicationId === applicationId)) return;
