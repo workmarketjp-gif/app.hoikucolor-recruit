@@ -143,15 +143,14 @@ export default function ApplicationDetailScreen() {
   const privacy = usePrivateDataQuarantine();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
-  const detailKey = candidateApplicationDetailKey(
-    ownerKey,
-    params.id,
-    !privacy.shieldVisible && privacy.canAccessPrivateData(),
-  );
+  const privateAllowed = !!ownerKey && !privacy.shieldVisible && privacy.canAccessPrivateData();
+  const detailKey = candidateApplicationDetailKey(ownerKey, params.id, privateAllowed);
   if (!detailKey) {
     return (
       <View testID="application-private-shield" style={styles.center}>
-        <ActivityIndicator color="#E9265A" />
+        {privateAllowed
+          ? <Text style={styles.error}>応募情報を確認できませんでした。応募一覧から開き直してください。</Text>
+          : <ActivityIndicator color="#E9265A" />}
       </View>
     );
   }
