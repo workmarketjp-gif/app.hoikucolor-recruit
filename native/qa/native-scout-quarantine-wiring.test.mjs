@@ -21,8 +21,11 @@ test('focus and render gate prevent a locked or unauthenticated candidate read',
 });
 
 test('in-flight read and previous-owner errors cannot be presented as current private data', () => {
-  assert.match(screen, /current !== generation\.current \|\| !privateQuarantine\.canAccessPrivateData\(\)/);
-  assert.match(screen, /if \(!verifiedOwner \|\| verifiedOwner !== ownerKey\) return;/);
-  assert.match(screen, /const safeError = privateAllowed && errorOwnerRef\.current === ownerKey \? error : null;/);
+  assert.match(screen, /shouldPublishScoutRead\(\{/);
+  assert.match(screen, /expectedOwnerKey: ownerKey/);
+  assert.match(screen, /resolvedOwnerKey: verifiedOwner/);
+  assert.match(screen, /activeGeneration: generation\.current/);
+  assert.match(screen, /privateAccess: privateQuarantine\.canAccessPrivateData\(\)/);
+  assert.match(screen, /mayShowScoutError\(ownerKey, errorOwnerRef\.current, privateAllowed\)/);
   assert.match(screen, /setNotice\(null\);\s*setScouts\(\[\]\);\s*setPrivacy\(null\);\s*setBlockResults\(\[\]\);/);
 });
