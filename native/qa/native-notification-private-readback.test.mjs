@@ -57,7 +57,7 @@ test('real provider and screens enforce read lease and avoid unknown-to-zero UX'
   assert.match(context, /candidateViewOwnerKey\(/);
   assert.match(context, /resolveCanonicalNotificationRead\(/);
   assert.match(context, /verificationRef\.current = null/);
-  assert.match(context, /if \(!pinned\.isCurrent\(\) \|\| generation !== canonicalLoadGeneration\.current\)/);
+  assert.match(context, /if \(!pinned\.isCurrent\(\) \|\| generation !== canonicalLoadGeneration\.current/);
   assert.match(context, /const safeSnapshot = readCandidateFreshlyVerifiedView/);
   assert.match(screen, /notifications\.unreadCount === null \? '未読件数を確認できません' :/);
   assert.match(screen, /notifications\.error/);
