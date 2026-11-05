@@ -86,7 +86,8 @@
     "test:job-search-refocus": "node --experimental-strip-types --test qa/native-job-search-return-focus.test.mjs qa/native-job-search-focus-wiring.test.mjs",
     "test:visit-private-readback": "node --experimental-strip-types --test qa/native-visit-privacy-readback.test.mjs",
     "test:notification-private-readback": "node --experimental-strip-types --test qa/native-notification-private-readback.test.mjs",
-    "test:scoped-notification-route": "node --experimental-strip-types --test qa/native-scoped-notification-route.test.mjs"
+    "test:scoped-notification-route": "node --experimental-strip-types --test qa/native-scoped-notification-route.test.mjs",
+    "test:comparison-private-readback": "node --experimental-strip-types --test qa/native-comparison-selection.test.mjs qa/native-match-saved-readback.test.mjs"
   },
   "dependencies": {
     "@clerk/expo": "^3.1.12",
