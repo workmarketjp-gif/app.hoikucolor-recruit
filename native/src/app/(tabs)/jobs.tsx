@@ -1,7 +1,10 @@
+import { useSession } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
+import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
+import { candidateViewOwnerKey, readCandidateOwnedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
 import {
   listSavedJobIds,
   saveJob,
@@ -61,10 +64,15 @@ function JobCard({
 
 export default function JobsScreen() {
   const router = useRouter();
+  const { session } = useSession();
+  const privacy = usePrivateDataQuarantine();
+  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
+  const privateAllowed = privacy.canAccessPrivateData();
   const { pinCandidateAction } = usePinnedCandidateAction();
   const [query, setQuery] = useState('');
   const [jobs, setJobs] = useState<JobseekerJob[]>([]);
-  const [savedIds, setSavedIds] = useState<string[]>([]);
+  const [ownedSavedIds, setOwnedSavedIds] = useState<CandidateOwnedView<string[]> | null>(null);
+  const savedIds = readCandidateOwnedView(ownedSavedIds, ownerKey, privateAllowed);
   const [cursor, setCursor] = useState<JobSearchCursor | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
@@ -77,16 +85,24 @@ export default function JobsScreen() {
     const currentGeneration = ++generation.current;
     setLoading(true);
     setError(null);
+    if (reset) {
+      setJobs([]);
+      setOwnedSavedIds(null);
+      setCursor(null);
+      setHasMore(false);
+      setTotalCount(0);
+    }
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!reset && savedIds === null) throw new Error('保存済み求人を確認できません。更新してください。');
       const [page, canonicalSaved] = await Promise.all([
         searchJobseekerJobs(pinned.client, {
           keyword: requestedQuery,
           limit: 20,
           cursor: reset ? null : cursor,
         }),
-        reset ? listSavedJobIds(pinned.client) : Promise.resolve(savedIds),
+        reset ? listSavedJobIds(pinned.client) : Promise.resolve(savedIds ?? []),
       ]);
       if (!pinned.isCurrent() || currentGeneration !== generation.current) return;
       setJobs((current) => {
@@ -95,7 +111,7 @@ export default function JobsScreen() {
         page.jobs.forEach((job) => byId.set(job.id, job));
         return [...byId.values()];
       });
-      if (reset) setSavedIds(canonicalSaved);
+      if (reset) setOwnedSavedIds({ ownerKey: candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)!, value: canonicalSaved });
       setCursor(page.nextCursor);
       setHasMore(page.hasMore);
       setTotalCount(page.totalCount);
@@ -106,26 +122,29 @@ export default function JobsScreen() {
     } finally {
       if (currentGeneration === generation.current) setLoading(false);
     }
-  }, [cursor, pinCandidateAction, query, savedIds]);
+  }, [cursor, ownerKey, pinCandidateAction, query, savedIds]);
 
   useEffect(() => {
+    setQuery('');
     void load(true, '');
     return () => {
       generation.current += 1;
     };
-  }, []);
+  }, [ownerKey]);
 
   const toggleSaved = async (jobId: string) => {
+    if (!privateAllowed || savedIds === null || !jobs.some((job) => job.id === jobId)) return;
     setBusyJobId(jobId);
     setError(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) throw new Error('安全なログイン状態を確認できませんでした。');
       const currentlySaved = savedIds.includes(jobId);
       if (currentlySaved) await unsaveJob(pinned.client, jobId);
       else await saveJob(pinned.client, jobId);
       if (!pinned.isCurrent()) return;
-      setSavedIds((current) => (currentlySaved ? current.filter((id) => id !== jobId) : [...current, jobId]));
+      setOwnedSavedIds((current) => current?.ownerKey === candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)
+        ? { ...current, value: currentlySaved ? current.value.filter((id) => id !== jobId) : [...current.value, jobId] } : current);
     } catch (saveError) {
       setError(String((saveError as { message?: unknown })?.message ?? saveError));
     } finally {
@@ -150,11 +169,11 @@ export default function JobsScreen() {
         <Pressable testID="job-search-submit" style={styles.primaryButton} onPress={() => void load(true, query)} disabled={loading}>
           <Text style={styles.primaryButtonText}>検索</Text>
         </Pressable>
-        <Text style={styles.subtle}>{totalCount}件の求人</Text>
+        <Text style={styles.subtle}>{error || loading ? '検索中・確認待ち' : `${totalCount}件の求人`}</Text>
       </View>
 
       <View style={styles.resultBar}>
-        <Text style={styles.resultCount}>{totalCount}件</Text>
+        <Text style={styles.resultCount}>{error || loading ? '—' : `${totalCount}件`}</Text>
         {!query.trim() ? (
           <Pressable onPress={() => router.push('/matches' as never)}>
             <Text style={styles.link}>マッチ度順で見る</Text>
@@ -169,8 +188,8 @@ export default function JobsScreen() {
         <JobCard
           key={job.id}
           job={job}
-          saved={savedIds.includes(job.id)}
-          busy={busyJobId === job.id}
+          saved={savedIds?.includes(job.id) === true}
+          busy={busyJobId === job.id || savedIds === null || !privateAllowed}
           onToggleSaved={() => void toggleSaved(job.id)}
           onOpen={() => router.push(`/job/${job.id}` as never)}
         />
