@@ -17,6 +17,7 @@
     "test:message-inbox": "node --experimental-strip-types --test qa/native-candidate-view-owner.test.mjs qa/native-message-inbox-behavior.test.mjs qa/native-message-attention-adapter.test.mjs",
     "test:profile-save-guard": "node --experimental-strip-types --test qa/native-profile-save-guard.test.mjs",
     "test:saved-canonical-readback": "node --experimental-strip-types --test qa/native-saved-jobs-readback.test.mjs",
+    "test:job-search-filters": "node --experimental-strip-types --test qa/native-job-search-filters.test.mjs",
     "test:document-vault": "node qa/native-document-vault-contract.mjs && node qa/native-document-vault-upstream-rebase-contract.mjs",
     "test:document-vault-upstream": "node qa/native-document-vault-upstream-rebase-contract.mjs",
     "test:account-deletion-execution": "node qa/native-account-deletion-execution-contract.mjs",
