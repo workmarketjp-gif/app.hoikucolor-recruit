@@ -166,7 +166,14 @@ export default function SavedJobsScreen() {
       {(loading || (jobs === null && !error)) ? <ActivityIndicator /> : null}
       {!loading && !error && jobs?.length === 0 ? <Text style={styles.empty}>気になる求人はまだありません。求人の♡を押すと、ここに保存されます。</Text> : null}
       {jobs !== null && jobs.length >= 2 ? (
-        <Pressable style={styles.compareButton} onPress={() => router.push('/compare' as never)}>
+        <Pressable style={styles.compareButton} onPress={() => {
+          // Match Web Saved → Compare: pass the first three canonical saved IDs.
+          // Compare revalidates IDs against its own authorized published catalog.
+          const query = jobs.slice(0, 3)
+            .map((job) => 'job_id=' + encodeURIComponent(job.id))
+            .join('&');
+          router.push(('/compare?' + query) as never);
+        }}>
           <Text style={styles.compareButtonText}>園を比較する</Text>
         </Pressable>
       ) : null}
