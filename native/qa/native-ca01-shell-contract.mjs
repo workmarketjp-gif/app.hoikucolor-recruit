@@ -17,6 +17,7 @@ const routes = [
   'src/app/(auth)/sign-up.tsx',
   'src/app/(tabs)/_layout.tsx',
   'src/app/(tabs)/home.tsx',
+  'src/app/(tabs)/career.tsx',
   'src/app/(tabs)/jobs.tsx',
   'src/app/(tabs)/saved.tsx',
   'src/app/(tabs)/notifications.tsx',
