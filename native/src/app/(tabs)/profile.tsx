@@ -1,4 +1,4 @@
-import { useUser } from '@clerk/expo';
+import { useSession, useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
@@ -13,6 +13,9 @@ import {
   type JobseekerProfileInput,
 } from '../../lib/jobseekerCoreApi';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
+import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
+import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
+import { canPresentProfileResult, canonicalProfileMatchesSubmission } from '../../lib/profileSaveGuard';
 
 const positionOptions = ['保育士', '保育教諭', '幼稚園教諭', '保育補助', '看護師', '栄養士', '調理師', '児童指導員', '子育て支援員'];
 const employmentOptions = ['正社員', '契約社員', 'パート・アルバイト', '派遣'];
@@ -84,48 +87,105 @@ function ChipGroup({
 export default function ProfileScreen() {
   usePrivateScreenCapture('profile');
   const { user } = useUser();
+  const { session } = useSession();
+  const privacy = usePrivateDataQuarantine();
+  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
+  const ownerKeyRef = useRef(ownerKey);
+  ownerKeyRef.current = ownerKey;
   const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();
   const appLock = useAppLock();
   const notifications = useNotifications();
   const deletion = useAccountDeletion();
   const [profile, setProfile] = useState<JobseekerProfileInput>(emptyProfile);
+  const [loadedOwnerKey, setLoadedOwnerKey] = useState<string | null>(null);
   const [experienceText, setExperienceText] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+  const draftRevision = useRef(0);
+  const savingRef = useRef(false);
+
+  const isLive = (requestOwnerKey: string | null, requestGeneration: number) =>
+    canPresentProfileResult(requestOwnerKey, ownerKeyRef.current, requestGeneration,
+      generation.current, privacy.canAccessPrivateData());
+  const editProfile = (updater: (current: JobseekerProfileInput) => JobseekerProfileInput) => {
+    draftRevision.current += 1;
+    setMessage(null);
+    setProfile(updater);
+  };
+  const editExperience = (value: string) => {
+    draftRevision.current += 1;
+    setMessage(null);
+    setExperienceText(value);
+  };
 
   const hydrate = (next: JobseekerProfileInput) => {
     setProfile(next);
     setExperienceText(next.years_of_experience == null ? '' : String(next.years_of_experience));
   };
 
+
   const load = useCallback(async () => {
-    const currentGeneration = ++generation.current;
-    setLoading(true);
+    const requestOwner = ownerKey;
+    const requestGeneration = ++generation.current;
+    // A prior candidate's draft must never survive a session change or App Lock.
+    setLoadedOwnerKey(null);
+    setProfile(emptyProfile);
+    setExperienceText('');
+    setMessage(null);
     setError(null);
+    setLoading(true);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned?.isCurrent() ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestOwner) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
       const current = await getJobseekerProfile(pinned.client);
-      if (!pinned.isCurrent() || currentGeneration !== generation.current) return;
+      if (!pinned.isCurrent() || !isLive(requestOwner, requestGeneration)) return;
+      if (current && current.clerk_user_id !== pinned.ownerId) {
+        throw new Error('プロフィールの閲覧権限を確認できませんでした。');
+      }
       const primaryEmail = user?.primaryEmailAddress?.emailAddress ?? null;
       hydrate(current ?? { ...emptyProfile, email: primaryEmail });
-    } catch (loadError) {
-      if (currentGeneration === generation.current) setError(String((loadError as { message?: unknown })?.message ?? loadError));
+      draftRevision.current += 1;
+      setLoadedOwnerKey(requestOwner);
+    } catch {
+      if (isLive(requestOwner, requestGeneration)) {
+        setError('プロフィールを取得できませんでした。再読み込みしてください。');
+      }
     } finally {
-      if (currentGeneration === generation.current) setLoading(false);
+      if (isLive(requestOwner, requestGeneration)) setLoading(false);
     }
-  }, [pinCandidateAction, user?.primaryEmailAddress?.emailAddress]);
+  }, [ownerKey, pinCandidateAction, user?.primaryEmailAddress?.emailAddress, privacy.canAccessPrivateData]);
 
   useEffect(() => {
+    if (!ownerKey || privacy.shieldVisible) {
+      generation.current += 1;
+      savingRef.current = false;
+      setLoadedOwnerKey(null);
+      setProfile(emptyProfile);
+      setExperienceText('');
+      setMessage(null);
+      setError(null);
+      setSaving(false);
+      setLoading(true);
+      return;
+    }
     void load();
     return () => { generation.current += 1; };
-  }, [load]);
+  }, [ownerKey, privacy.shieldVisible, load]);
 
   const save = async () => {
+    if (!ownerKey || loadedOwnerKey !== ownerKey || loading ||
+        !privacy.canAccessPrivateData() || savingRef.current) return;
+    const requestOwner = ownerKey;
+    const requestGeneration = generation.current;
+    const submittedRevision = draftRevision.current;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -149,15 +209,33 @@ export default function ProfileScreen() {
         self_intro: nullable(profile.self_intro ?? ''),
       };
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
-      const saved = await upsertJobseekerProfile(pinned.client, next);
-      if (!pinned.isCurrent()) return;
-      hydrate(saved);
-      setMessage('プロフィールを保存しました。');
+      if (!pinned?.isCurrent() ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestOwner ||
+          !isLive(requestOwner, requestGeneration)) return;
+      await upsertJobseekerProfile(pinned.client, next);
+      if (!pinned.isCurrent() || !isLive(requestOwner, requestGeneration)) return;
+      // A successful write response alone is not proof of a durable saved draft.
+      const reread = await getJobseekerProfile(pinned.client);
+      if (!pinned.isCurrent() || !isLive(requestOwner, requestGeneration)) return;
+      if (!reread || reread.clerk_user_id !== pinned.ownerId ||
+          !canonicalProfileMatchesSubmission(next, reread)) {
+        throw new Error('保存結果を確認できませんでした。再読み込みしてご確認ください。');
+      }
+      if (submittedRevision !== draftRevision.current) {
+        setMessage('保存開始時点の内容は確認できましたが、その後の編集は未保存です。');
+      } else {
+        hydrate(reread);
+        setMessage('プロフィールを保存しました。');
+      }
     } catch (saveError) {
-      setError(String((saveError as { message?: unknown })?.message ?? saveError));
+      if (isLive(requestOwner, requestGeneration)) {
+        setError(String((saveError as { message?: unknown })?.message ?? saveError));
+      }
     } finally {
-      setSaving(false);
+      if (isLive(requestOwner, requestGeneration)) {
+        savingRef.current = false;
+        setSaving(false);
+      }
     }
   };
 
@@ -176,8 +254,16 @@ export default function ProfileScreen() {
     );
   };
 
-  if (loading) {
-    return <View style={styles.center}><ActivityIndicator /><Text>プロフィールを確認しています…</Text></View>;
+  const privateViewReady = Boolean(ownerKey) && !privacy.shieldVisible && privacy.canAccessPrivateData();
+  if (!privateViewReady || loading || loadedOwnerKey !== ownerKey) {
+    return <View style={styles.center}>
+      {privateViewReady && !loading && error ? <>
+        <Text style={styles.error}>{error}</Text>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => void load()}>
+          <Text style={styles.secondaryButtonText}>再読み込み</Text>
+        </Pressable>
+      </> : <><ActivityIndicator /><Text>プロフィールを確認しています…</Text></>}
+    </View>;
   }
 
   return (
@@ -195,20 +281,20 @@ export default function ProfileScreen() {
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>基本プロフィール</Text>
-        <Field label="氏名" value={profile.name ?? ''} onChangeText={(value) => setProfile((current) => ({ ...current, name: value }))} placeholder="例：保育 花子" />
-        <Field label="ふりがな" value={profile.name_kana ?? ''} onChangeText={(value) => setProfile((current) => ({ ...current, name_kana: value }))} placeholder="例：ほいく はなこ" />
-        <Field label="メール" value={profile.email ?? ''} onChangeText={(value) => setProfile((current) => ({ ...current, email: value }))} keyboardType="email-address" autoCapitalize="none" />
-        <Field label="電話番号" value={profile.phone ?? ''} onChangeText={(value) => setProfile((current) => ({ ...current, phone: value }))} keyboardType="phone-pad" />
-        <Field label="希望都道府県" value={profile.prefecture ?? ''} onChangeText={(value) => setProfile((current) => ({ ...current, prefecture: value }))} placeholder="例：東京都" />
-        <ChipGroup label="希望職種" options={positionOptions} values={profile.desired_positions} onChange={(values) => setProfile((current) => ({ ...current, desired_positions: values }))} />
-        <ChipGroup label="希望雇用形態" options={employmentOptions} values={profile.desired_employment_types} onChange={(values) => setProfile((current) => ({ ...current, desired_employment_types: values }))} />
-        <ChipGroup label="資格" options={qualificationOptions} values={profile.qualifications} onChange={(values) => setProfile((current) => ({ ...current, qualifications: values }))} />
-        <Field label="保育経験年数" value={experienceText} onChangeText={setExperienceText} keyboardType="numeric" placeholder="例：5" />
-        <Field label="希望入職日" value={profile.desired_start_date ?? ''} onChangeText={(value) => setProfile((current) => ({ ...current, desired_start_date: value }))} placeholder="YYYY-MM-DD" />
-        <Field label="自己紹介" value={profile.self_intro ?? ''} onChangeText={(value) => setProfile((current) => ({ ...current, self_intro: value }))} multiline placeholder="経験や大切にしている保育観など" />
+        <Field label="氏名" value={profile.name ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, name: value }))} placeholder="例：保育 花子" />
+        <Field label="ふりがな" value={profile.name_kana ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, name_kana: value }))} placeholder="例：ほいく はなこ" />
+        <Field label="メール" value={profile.email ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, email: value }))} keyboardType="email-address" autoCapitalize="none" />
+        <Field label="電話番号" value={profile.phone ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, phone: value }))} keyboardType="phone-pad" />
+        <Field label="希望都道府県" value={profile.prefecture ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, prefecture: value }))} placeholder="例：東京都" />
+        <ChipGroup label="希望職種" options={positionOptions} values={profile.desired_positions} onChange={(values) => editProfile((current) => ({ ...current, desired_positions: values }))} />
+        <ChipGroup label="希望雇用形態" options={employmentOptions} values={profile.desired_employment_types} onChange={(values) => editProfile((current) => ({ ...current, desired_employment_types: values }))} />
+        <ChipGroup label="資格" options={qualificationOptions} values={profile.qualifications} onChange={(values) => editProfile((current) => ({ ...current, qualifications: values }))} />
+        <Field label="保育経験年数" value={experienceText} onChangeText={editExperience} keyboardType="numeric" placeholder="例：5" />
+        <Field label="希望入職日" value={profile.desired_start_date ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, desired_start_date: value }))} placeholder="YYYY-MM-DD" />
+        <Field label="自己紹介" value={profile.self_intro ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, self_intro: value }))} multiline placeholder="経験や大切にしている保育観など" />
         {message ? <Text style={styles.success}>{message}</Text> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        <Pressable style={styles.primaryButton} disabled={saving} onPress={() => void save()}>
+        <Pressable style={styles.primaryButton} disabled={saving || loading} onPress={() => void save()}>
           {saving ? <ActivityIndicator /> : <Text style={styles.primaryButtonText}>プロフィールを保存</Text>}
         </Pressable>
       </View>
