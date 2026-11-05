@@ -25,7 +25,7 @@ export default function ApplicationsScreen() {
   const [loading, setLoading] = useState(true);
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const generation = useRef(0);
-  const privateAllowed = privacy.canAccessPrivateData();
+  const privateAllowed = !privacy.shieldVisible && privacy.canAccessPrivateData();
   // Invalidate synchronously when App Lock/foreground closes. A prior result
   // must not flash on unlock before a new authorized read completes.
   const freshlyVerifiedOwner = useRef<string | null>(null);
@@ -60,9 +60,19 @@ export default function ApplicationsScreen() {
   }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData]);
 
   useEffect(() => {
+    // Locking invalidates in-flight reads and removes private rows immediately.
+    // Unlocking triggers a NEW canonical read, not a stale same-session snapshot.
+    if (!ownerKey || !privateAllowed) {
+      generation.current += 1;
+      freshlyVerifiedOwner.current = null;
+      setOwnedApplications(null);
+      setOwnedError(null);
+      setLoading(true);
+      return;
+    }
     void load();
     return () => { generation.current += 1; };
-  }, [load]);
+  }, [ownerKey, privateAllowed, load]);
 
   const openApplication = async (applicationId: string) => {
     if (!privateAllowed || !applications?.some((application) => application.id === applicationId)) return;

@@ -31,3 +31,10 @@ test('screen invalidates the lease before refreshing and during the privacy shie
   assert.match(source, /freshlyVerifiedOwner\.current = verifiedOwner;\s*setOwnedApplications/);
   assert.match(source, /readCandidateFreshlyVerifiedView\(ownedApplications, ownerKey, privateAllowed, freshlyVerifiedOwner\.current\)/);
 });
+
+test('list refuses private reads while locked and starts a fresh load on unlock', () => {
+  const source = readFileSync(fileURLToPath(new URL('../src/app/(tabs)/applications.tsx', import.meta.url)), 'utf8');
+  assert.match(source, /const privateAllowed = !privacy\.shieldVisible && privacy\.canAccessPrivateData\(\)/);
+  assert.match(source, /if \(!ownerKey \|\| !privateAllowed\) \{[\s\S]*?generation\.current \+= 1;[\s\S]*?freshlyVerifiedOwner\.current = null;[\s\S]*?setOwnedApplications\(null\);[\s\S]*?return;\s*\}\s*void load\(\);/);
+  assert.match(source, /\}, \[ownerKey, privateAllowed, load\]\);/);
+});
