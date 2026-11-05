@@ -47,6 +47,7 @@ test('cancel is not confirmed by stale requested or confirmed readback', () => {
   assert.equal(visitReadbackConfirmsMutation(rows, 'missing', 'cancel'), false);
   assert.equal(visitReadbackConfirmsMutation([{ reservation_id: 'visit-4', status: 'unknown' }], 'visit-4', 'cancel'), false);
 });
+
 // Web /visits status and timezone parity are separate from session guards.
 import { visitStatusLabel, partitionVisitHistory, formatVisitDateTimeJapan } from '../src/lib/visitPresentation.ts';
 
