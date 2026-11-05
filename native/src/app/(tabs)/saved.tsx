@@ -12,7 +12,9 @@ export default function SavedJobsScreen() {
   const router = useRouter();
   const { session } = useSession();
   const privacy = usePrivateDataQuarantine();
-  const ownerKey = candidateViewOwnerKe  const [ownedJobs, setOwnedJobs] = useState<CandidateOwnedView<SavedJobseekerJob[]> | null>(null);
+  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
+  const { pinCandidateAction } = usePinnedCandidateAction();
+  const [ownedJobs, setOwnedJobs] = useState<CandidateOwnedView<SavedJobseekerJob[]> | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
@@ -121,11 +123,6 @@ export default function SavedJobsScreen() {
   if (!privateVisible || !ownerKey) {
     return <View testID="saved-private-shield" style={styles.center}><ActivityIndicator /></View>;
   }
-age?: unknown })?.message ?? removeError) });
-    } finally {
-      setBusyId(null);
-    }
-  };
 
   return (
     <ScrollView contentContainerStyle={styles.page}>
