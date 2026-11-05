@@ -1,10 +1,13 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useSession } from '@clerk/expo';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { getJobseekerProfile } from '../lib/jobseekerCoreApi';
 import { submitApplication } from '../lib/applicationJourneyApi';
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
+import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
+import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import {
   listMySpotAssignments,
@@ -75,6 +78,11 @@ export default function SpotJobsScreen() {
   usePrivateScreenCapture('spot-jobs');
   const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();
+  const { session } = useSession();
+  const privacy = usePrivateDataQuarantine();
+  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
+  const verifiedOwnerRef = useRef<string | null>(null);
+  if (privacy.shieldVisible || !privacy.canAccessPrivateData()) verifiedOwnerRef.current = null;
   const [jobs, setJobs] = useState<SpotJobListing[]>([]);
   const [assignments, setAssignments] = useState<SpotAssignment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,6 +98,7 @@ export default function SpotJobsScreen() {
 
   const load = useCallback(async (quiet = false) => {
     const current = ++generation.current;
+    verifiedOwnerRef.current = null;
     if (!quiet) setLoading(true);
     setError(null);
     try {
@@ -100,6 +109,7 @@ export default function SpotJobsScreen() {
         listMySpotAssignments(pinned.client),
       ]);
       if (!pinned.isCurrent() || current !== generation.current) return;
+      verifiedOwnerRef.current = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
       setJobs(nextJobs);
       setAssignments(nextAssignments);
     } catch (loadError) {
@@ -112,7 +122,7 @@ export default function SpotJobsScreen() {
   useFocusEffect(useCallback(() => {
     void load();
     return () => { generation.current += 1; };
-  }, [load]));
+  }, [load, focusedAssignmentId, ownerKey, privacy.shieldVisible]));
 
   const apply = async (job: SpotJobListing) => {
     setBusyId(job.job_id);
@@ -136,6 +146,18 @@ export default function SpotJobsScreen() {
       setBusyId(null);
     }
   };
+
+  const verifiedVisible = Boolean(ownerKey) && verifiedOwnerRef.current === ownerKey
+    && !privacy.shieldVisible && privacy.canAccessPrivateData();
+  if (!verifiedVisible) {
+    return (
+      <View style={styles.center}>
+        {error ? <Text style={styles.error}>{error}</Text> : <ActivityIndicator />}
+        <Text style={styles.bodyMuted}>スポット勤務の情報を確認しています…</Text>
+        {error ? <Pressable accessibilityRole="button" onPress={() => void load()}><Text style={styles.secondaryText}>もう一度読み込む</Text></Pressable> : null}
+      </View>
+    );
+  }
 
   return (
     <ScrollView contentContainerStyle={styles.page}>
@@ -278,6 +300,7 @@ function SpotCard({
 }
 
 const styles = StyleSheet.create({
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
   page: { padding: 16, gap: 14, backgroundColor: '#f7f8fa', flexGrow: 1 },
   title: { fontSize: 26, fontWeight: '900' },
   section: { gap: 12 },
