@@ -5,6 +5,7 @@ import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, TextInp
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
+import { disclosedCareerSalary } from '../lib/careerSalaryDisclosure';
 import { getJobseekerProfile, type JobseekerProfile } from '../lib/jobseekerCoreApi';
 import {
   CareerApiUnavailableError, daysFromText, deleteCareerConditions, formatMan,
@@ -248,7 +249,8 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         wishSalary: manFromYen(preferences.desired_monthly_salary_min),
         wishHolidays: conditions?.desired_annual_holidays == null ? '' : String(conditions.desired_annual_holidays),
       });
-      setBasis(conditions?.current_monthly_salary != null ? 'monthly' : null);
+      // The Web salary check never reveals saved salary until an explicit 月給 choice.
+      setBasis(null);
       setArea({ prefecture: preferences.desired_prefectures[0] ?? profile?.prefecture ?? '', employmentType: '' });
       setScenario(conditions?.scenario ?? 'keep-income');
       setWeight(conditions?.salary_weight ?? 50);
@@ -273,6 +275,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const ready = allowed && ownerKey !== null && base?.ownerKey === ownerKey;
   const current = ready ? base.value : null;
   const own = yenFromMan(fields.salary);
+  const disclosedOwn = disclosedCareerSalary(basis, own);
   const selectedMarket = ready && market?.ownerKey === ownerKey ? market.value : null;
   const selectedOfficial = ready && official?.ownerKey === ownerKey ? official.value : null;
   const selectedHoliday = ready && holiday?.ownerKey === ownerKey ? holiday.value : null;
@@ -416,7 +419,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         desired_annual_holidays: daysFromText(fields.wishHolidays),
         scenario, salary_weight: weight,
       });
-      if (pinned.isCurrent()) {
+      if (pinned.isCurrent() && launchedGeneration === generation.current) {
         setBase({ ownerKey, value: { ...current, conditions: saved } });
         setSaveMessage('条件を保存しました。あなただけが見られます。');
       }
@@ -432,7 +435,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       const pinned = await pinCandidateAction();
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
       await deleteCareerConditions(pinned.client);
-      if (pinned.isCurrent()) {
+      if (pinned.isCurrent() && launchedGeneration === generation.current) {
         setBase({ ownerKey, value: { ...current, conditions: null } });
         setFields({ ...blank, wishSalary: fields.wishSalary });
         setScenario('keep-income'); setWeight(50); setBasis(null);
@@ -489,7 +492,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
           {basis === 'monthly' ? <NumberField label="月給（額面）" unit="万円" hint="例：23" value={fields.salary} onChange={(value) => edit('salary', value)} /> : null}
           {basis === 'hourly' ? <Text style={styles.muted}>時給の求人は労働時間が異なるため、月給のように比べられません。「求人を探す」で時給の求人をご確認ください。</Text> : null}
           <StateMessage state={selectedMarket} onRetry={() => void refreshMarket()} />
-          {selectedMarket?.status === 'ready' ? <MoneyMarket market={selectedMarket.data} location={area.prefecture} own={basis === 'monthly' ? own : null} detailed={detailed} onToggleDetail={() => setDetailed(!detailed)} /> : null}
+          {selectedMarket?.status === 'ready' ? <MoneyMarket market={selectedMarket.data} location={area.prefecture} own={disclosedOwn} detailed={detailed} onToggleDetail={() => setDetailed(!detailed)} /> : null}
           {variant === 'home' && selectedOfficial?.status === 'ready' && selectedOfficial.data ? (
             <View style={styles.detailPanel}>
               <Text style={styles.source}>公的統計・給与実績</Text>
@@ -501,7 +504,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
               ) : null}
             </View>
           ) : null}
-          {variant === 'home' && basis === 'monthly' && own !== null && current.conditionsAvailable ? (
+          {variant === 'home' && disclosedOwn !== null && current.conditionsAvailable ? (
             current.conditions?.current_monthly_salary === own
               ? <Text style={styles.success}>この金額を保存しました。あなただけが見られます。</Text>
               : <Action label={busy ? '保存を確認中…' : 'この金額を保存する'} disabled={busy} secondary onPress={() => void saveSalaryOnly()} />
