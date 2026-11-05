@@ -13,7 +13,9 @@ test('application detail is valid TSX under the real project TypeScript parser',
 
 test('private route guard mounts detail only for exact owner/session/application and unlocked foreground', () => {
   assert.match(source, /const ownerKey = candidateViewOwnerKey\(session\?\.user\?\.id, session\?\.id\)/);
-  assert.match(source, /candidateApplicationDetailKey\(\s*ownerKey,\s*params\.id,\s*!privacy\.shieldVisible && privacy\.canAccessPrivateData\(\)/);
+  assert.match(source, /const privateAllowed = !!ownerKey && !privacy\.shieldVisible && privacy\.canAccessPrivateData\(\)/);
+  assert.match(source, /candidateApplicationDetailKey\(ownerKey, params\.id, privateAllowed\)/);
+  assert.match(source, /privateAllowed\s*\? <Text style=\{styles\.error\}>応募情報を確認できませんでした/);
   assert.match(source, /if \(!detailKey\)[\s\S]*?testID="application-private-shield"/);
   assert.match(source, /return <ApplicationDetailContent key=\{detailKey\} \/>/);
   assert.match(source, /usePrivateScreenCapture\('application-detail'\)/);
