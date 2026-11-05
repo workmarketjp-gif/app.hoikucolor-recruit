@@ -34,6 +34,7 @@ import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import { mayShowScoutError, shouldPublishScoutRead } from '../lib/scoutReadLease';
+import { confirmScoutBlock, confirmScoutDecision, confirmScoutOptIn } from '../lib/scoutMutationReadback';
 
 const weekdays = ['月', '火', '水', '木', '金', '土', '日'];
 const classroomOptions = ['0歳児', '1歳児', '2歳児', '3歳児', '4歳児', '5歳児', 'フリー', '異年齢保育', '障害児保育'];
@@ -103,6 +104,15 @@ export default function ScoutsScreen() {
   const privateAllowed = Boolean(ownerKey) && !privateQuarantine.shieldVisible && privateQuarantine.canAccessPrivateData();
   const verifiedOwnerRef = useRef<string | null>(null);
   const errorOwnerRef = useRef<string | null>(null);
+  const currentOwnerRef = useRef(ownerKey);
+  const writeSerialRef = useRef(0);
+  const writePendingRef = useRef(false);
+  // Invalidate a previous candidate's in-flight write completion on account switch.
+  if (currentOwnerRef.current !== ownerKey) {
+    currentOwnerRef.current = ownerKey;
+    writeSerialRef.current += 1;
+    writePendingRef.current = false;
+  }
   if (!privateAllowed) {
     verifiedOwnerRef.current = null;
     errorOwnerRef.current = null;
@@ -198,7 +208,66 @@ export default function ScoutsScreen() {
 
   const pendingCount = scouts.filter((item) => item.scout_status === 'pending').length;
 
+  const beginScoutWrite = (key: string): number | null => {
+    if (!privateAllowed || verifiedOwnerRef.current !== ownerKey ||
+        writePendingRef.current || busy !== null) return null;
+    writePendingRef.current = true;
+    const serial = ++writeSerialRef.current;
+    setBusy(key);
+    setError(null);
+    setNotice(null);
+    return serial;
+  };
+
+  const mayPublishScoutWrite = (
+    pinned: NonNullable<Awaited<ReturnType<typeof pinCandidateAction>>>,
+    serial: number,
+    owner: string | null,
+    readGeneration: number,
+  ): boolean => serial === writeSerialRef.current
+    && currentOwnerRef.current === owner
+    && shouldPublishScoutRead({
+      expectedOwnerKey: owner,
+      resolvedOwnerKey: candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId),
+      requestGeneration: readGeneration,
+      activeGeneration: generation.current,
+      sessionCurrent: pinned.isCurrent(),
+      privateAccess: privateQuarantine.canAccessPrivateData(),
+    });
+
+  const requireScoutWriteOwner = (
+    pinned: NonNullable<Awaited<ReturnType<typeof pinCandidateAction>>> | null,
+    serial: number,
+    owner: string | null,
+    readGeneration: number,
+  ): asserts pinned is NonNullable<Awaited<ReturnType<typeof pinCandidateAction>>> => {
+    if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
+      throw new Error('安全なログイン状態を確認できませんでした。');
+    }
+  };
+
+  const failScoutWrite = (serial: number, owner: string | null, readGeneration: number) => {
+    if (!owner || serial !== writeSerialRef.current ||
+        currentOwnerRef.current !== owner || readGeneration !== generation.current ||
+        !privateQuarantine.canAccessPrivateData()) return;
+    // An interrupted RPC might already have changed the server. Never paint
+    // an old status as pending or let the candidate unknowingly retry.
+    verifiedOwnerRef.current = null;
+    errorOwnerRef.current = owner;
+    setScouts([]);
+    setPrivacy(null);
+    setError('操作結果を確認できませんでした。再読み込みして最新の状態をご確認ください。');
+  };
+
+  const finishScoutWrite = (serial: number) => {
+    if (serial !== writeSerialRef.current) return;
+    writePendingRef.current = false;
+    setBusy(null);
+  };
+
   const respond = (item: JobseekerScout, decision: 'accepted' | 'declined') => {
+    if (!privateAllowed || writePendingRef.current || busy !== null ||
+        item.scout_status !== 'pending') return;
     const accepting = decision === 'accepted';
     Alert.alert(
       accepting ? 'スカウトを承諾しますか？' : 'スカウトを辞退しますか？',
@@ -211,22 +280,30 @@ export default function ScoutsScreen() {
           text: accepting ? '承諾する' : '辞退する',
           style: accepting ? 'default' : 'destructive',
           onPress: () => void (async () => {
-            setBusy(item.scout_id);
-            setError(null);
-            setNotice(null);
+            const serial = beginScoutWrite(item.scout_id);
+            if (serial === null) return;
+            const owner = ownerKey;
+            const readGeneration = generation.current;
             try {
               const pinned = await pinCandidateAction();
-              if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+              if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
+                throw new Error('安全なログイン状態を確認できませんでした。');
+              }
               const status = await respondToJobseekerScout(pinned.client, item.scout_id, decision);
-              if (!pinned.isCurrent()) return;
-              setScouts((current) => current.map((row) => row.scout_id === item.scout_id
-                ? { ...row, scout_status: status, responded_at: new Date().toISOString() }
-                : row));
-              setNotice(status === 'accepted' ? `${item.facility_name}からのスカウトを承諾しました。` : `${item.facility_name}からのスカウトを辞退しました。`);
-            } catch (responseError) {
-              setError(String((responseError as { message?: unknown })?.message ?? responseError));
+              if (status !== decision) throw new Error('スカウト回答の結果が一致しません。');
+              // Re-read with the SAME pinned candidate token. Never manufacture
+              // responded_at or assume an RPC acknowledgement is the visible state.
+              const canonical = confirmScoutDecision(
+                await listJobseekerScouts(pinned.client), item.scout_id, decision);
+              if (!mayPublishScoutWrite(pinned, serial, owner, readGeneration)) return;
+              setScouts([...canonical]);
+              setNotice(status === 'accepted'
+                ? `${item.facility_name}からのスカウトを承諾しました。`
+                : `${item.facility_name}からのスカウトを辞退しました。`);
+            } catch {
+              failScoutWrite(serial, owner, readGeneration);
             } finally {
-              setBusy(null);
+              finishScoutWrite(serial);
             }
           })(),
         },
@@ -234,27 +311,31 @@ export default function ScoutsScreen() {
     );
   };
 
-  const toggleScout = async (enabled: boolean) => {
+    const toggleScout = async (enabled: boolean) => {
     if (!privacy) return;
-    setBusy('privacy');
-    setError(null);
-    setNotice(null);
+    const serial = beginScoutWrite('privacy');
+    if (serial === null) return;
+    const owner = ownerKey;
+    const readGeneration = generation.current;
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
-      const confirmed = await setScoutOptIn(pinned.client, enabled);
-      if (!pinned.isCurrent()) return;
-      if (confirmed !== enabled) throw new Error('スカウト設定の保存結果を確認できませんでした。');
-      setPrivacy({ ...privacy, scout_opt_in: enabled });
+      if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
+      const response = await setScoutOptIn(pinned.client, enabled);
+      if (response !== enabled) throw new Error('スカウト設定の保存結果が一致しません。');
+      const confirmed = confirmScoutOptIn(await getScoutPrivacySettings(pinned.client), enabled);
+      if (!mayPublishScoutWrite(pinned, serial, owner, readGeneration)) return;
+      setPrivacy(confirmed);
       setNotice(enabled ? '匿名スカウトを受け取る設定にしました。' : '匿名スカウトを停止しました。');
-    } catch (privacyError) {
-      setError(String((privacyError as { message?: unknown })?.message ?? privacyError));
+    } catch {
+      failScoutWrite(serial, owner, readGeneration);
     } finally {
-      setBusy(null);
+      finishScoutWrite(serial);
     }
   };
 
-  const searchBlocks = async () => {
+    const searchBlocks = async () => {
     if (blockQuery.trim().length < 2) {
       setError('法人名を2文字以上入力してください。');
       return;
@@ -275,43 +356,53 @@ export default function ScoutsScreen() {
   };
 
   const addBlock = async (organization: ScoutBlockableOrganization) => {
-    setBusy(organization.organization_id);
-    setError(null);
+    const serial = beginScoutWrite(organization.organization_id);
+    if (serial === null) return;
+    const owner = ownerKey;
+    const readGeneration = generation.current;
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
       await addScoutBlockedOrganization(pinned.client, organization.organization_id);
-      const next = await getScoutPrivacySettings(pinned.client);
-      if (!pinned.isCurrent()) return;
-      setPrivacy(next);
+      const confirmed = confirmScoutBlock(
+        await getScoutPrivacySettings(pinned.client), organization.organization_id, true);
+      if (!mayPublishScoutWrite(pinned, serial, owner, readGeneration)) return;
+      setPrivacy(confirmed);
       setBlockResults((current) => current.filter((item) => item.organization_id !== organization.organization_id));
       setNotice(`${organization.organization_name}からプロフィールが見えないようにしました。`);
-    } catch (blockError) {
-      setError(String((blockError as { message?: unknown })?.message ?? blockError));
+    } catch {
+      failScoutWrite(serial, owner, readGeneration);
     } finally {
-      setBusy(null);
+      finishScoutWrite(serial);
     }
   };
 
-  const removeBlock = async (organizationId: string) => {
-    setBusy(organizationId);
-    setError(null);
+    const removeBlock = async (organizationId: string) => {
+    const serial = beginScoutWrite(organizationId);
+    if (serial === null) return;
+    const owner = ownerKey;
+    const readGeneration = generation.current;
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
       await removeScoutBlockedOrganization(pinned.client, organizationId);
-      const next = await getScoutPrivacySettings(pinned.client);
-      if (!pinned.isCurrent()) return;
-      setPrivacy(next);
+      const confirmed = confirmScoutBlock(
+        await getScoutPrivacySettings(pinned.client), organizationId, false);
+      if (!mayPublishScoutWrite(pinned, serial, owner, readGeneration)) return;
+      setPrivacy(confirmed);
       setNotice('手動ブロックを解除しました。');
-    } catch (blockError) {
-      setError(String((blockError as { message?: unknown })?.message ?? blockError));
+    } catch {
+      failScoutWrite(serial, owner, readGeneration);
     } finally {
-      setBusy(null);
+      finishScoutWrite(serial);
     }
   };
 
-  const savePreferences = async () => {
+    const savePreferences = async () => {
     const monthly = monthlySalaryText.trim() ? Number(monthlySalaryText) : null;
     const hourly = hourlyWageText.trim() ? Number(hourlyWageText) : null;
     const commute = commuteText.trim() ? Number(commuteText) : null;
