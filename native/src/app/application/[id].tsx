@@ -8,6 +8,7 @@ import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
 import { candidateApplicationDetailKey } from '../../lib/applicationDetailVisibility';
 import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } from '../../lib/applicationDocumentHandoffStatus';
 import { applicationStatusLabel } from '../../lib/messageInbox';
+import { applicationVisitExperienceLabel, applicationVisitStatusLabel, canSubmitInterviewResponse, formatApplicationEventDateTimeJapan, interviewStatusLabel } from '../../lib/applicationEventPresentation';
 import {
   acceptOffer,
   getApplicationDetail,
@@ -58,12 +59,22 @@ function InterviewCard({
 }) {
   const { pinCandidateAction } = usePinnedCandidateAction();
   const [message, setMessage] = useState(interview.candidate_response_message ?? '');
+  const [rescheduleOpen, setRescheduleOpen] = useState(interview.candidate_response_status === 'reschedule_requested');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const actionPending = useRef(false);
   const meetingUrl = safeHttps(interview.meeting_url);
   const canRespond = interview.status === 'scheduled';
 
   const respond = async (responseStatus: 'accepted' | 'reschedule_requested') => {
+    if (actionPending.current) return; // Prevent a double tap before React commits busy.
+    if (!canSubmitInterviewResponse(interview, responseStatus, message)) {
+      setError(responseStatus === 'reschedule_requested'
+        ? '希望日時や都合のよい時間帯を入力してください。'
+        : '面接の最新状態を確認してから回答してください。');
+      return;
+    }
+    actionPending.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -76,21 +87,23 @@ function InterviewCard({
         applicationId,
         interviewId: interview.id,
         responseStatus,
-        candidateMessage: responseStatus === 'reschedule_requested' ? message : null,
+        candidateMessage: responseStatus === 'reschedule_requested' ? message.trim() : null,
       });
       if (!pinned.isCurrent()) return;
       await onChanged();
+      if (responseStatus === 'accepted') setRescheduleOpen(false);
     } catch (responseError) {
       setError(String((responseError as { message?: unknown })?.message ?? responseError));
     } finally {
+      actionPending.current = false;
       setBusy(false);
     }
   };
 
   return (
     <View style={[styles.eventCard, focused && styles.focusedCard]}>
-      <Text style={styles.eventTitle}>{formatDateTime(interview.scheduled_at)}</Text>
-      <Text style={styles.subtle}>{interview.duration_minutes}分 ・ {interview.status}</Text>
+      <Text style={styles.eventTitle}>{formatApplicationEventDateTimeJapan(interview.scheduled_at)}</Text>
+      <Text style={styles.subtle}>{interview.duration_minutes}分 ・ {interviewStatusLabel(interview.status)}</Text>
       {interview.location ? <Text style={styles.subtle}>{interview.location}</Text> : null}
       {interview.candidate_response_status ? (
         <View style={styles.responseBox}>
@@ -102,31 +115,52 @@ function InterviewCard({
         </View>
       ) : null}
       {meetingUrl ? (
-        <Pressable style={styles.secondaryButton} onPress={() => void Linking.openURL(meetingUrl)}>
-          <Text style={styles.secondaryText}>オンライン面接を開く</Text>
+        <Pressable style={styles.secondaryButton} onPress={() => void Linking.openURL(meetingUrl)} accessibilityRole="link">
+          <Text style={styles.secondaryText}>オンライン面接</Text>
         </Pressable>
       ) : null}
       {canRespond ? (
         <>
-          <Pressable style={styles.primaryButton} disabled={busy} onPress={() => void respond('accepted')}>
-            <Text style={styles.primaryText}>{busy ? '送信中…' : 'この日時でOK'}</Text>
-          </Pressable>
-          <TextInput
-            value={message}
-            onChangeText={setMessage}
-            placeholder="日程変更の希望日時・時間帯"
-            multiline
-            maxLength={1000}
-            style={styles.textArea}
-          />
+          {interview.candidate_response_status !== 'accepted' ? (
+            <Pressable style={styles.primaryButton} disabled={busy} onPress={() => void respond('accepted')} accessibilityRole="button">
+              <Text style={styles.primaryText}>{busy ? '送信中…' : 'この日時でOK'}</Text>
+            </Pressable>
+          ) : null}
           <Pressable
             style={styles.secondaryButton}
-            disabled={busy || !message.trim()}
-            onPress={() => void respond('reschedule_requested')}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: rescheduleOpen, disabled: busy }}
+            onPress={() => { setRescheduleOpen((open) => !open); setError(null); }}
           >
-            <Text style={styles.secondaryText}>日程変更を希望</Text>
+            <Text style={styles.secondaryText}>{rescheduleOpen ? '日程変更を閉じる' : '日程変更を希望'}</Text>
           </Pressable>
+          {rescheduleOpen ? (
+            <View style={{ gap: 8 }}>
+              <Text style={styles.subtle}>希望日時・都合のよい時間帯</Text>
+              <TextInput
+                value={message}
+                onChangeText={setMessage}
+                placeholder="例：平日18時以降、または土曜日の午前中を希望します。"
+                multiline
+                maxLength={1000}
+                accessibilityLabel="希望日時・都合のよい時間帯"
+                style={styles.textArea}
+              />
+              <Text style={styles.meta}>{message.length}/1000</Text>
+              <Pressable
+                style={styles.primaryButton}
+                disabled={busy || !canSubmitInterviewResponse(interview, 'reschedule_requested', message)}
+                onPress={() => void respond('reschedule_requested')}
+                accessibilityRole="button"
+              >
+                <Text style={styles.primaryText}>{busy ? '送信中…' : '日程変更を送信'}</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </>
+      ) : interview.candidate_response_status ? (
+        <Text style={styles.subtle}>面接の状態が更新されたため、回答の変更はできません。</Text>
       ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
@@ -402,8 +436,8 @@ function ApplicationDetailContent() {
             style={styles.eventCard}
             onPress={() => router.push(`/visits?visitId=${encodeURIComponent(visit.id)}&jobId=${encodeURIComponent(detail.application.job_id)}&applicationId=${encodeURIComponent(applicationId)}` as never)}
           >
-            <Text style={styles.eventTitle}>{visit.experience_type} ・ {formatDateTime(visit.starts_at)}</Text>
-            <Text style={styles.subtle}>{visit.status}</Text>
+            <Text style={styles.eventTitle}>{applicationVisitExperienceLabel(visit.experience_type)} ・ {formatApplicationEventDateTimeJapan(visit.starts_at)}</Text>
+            <Text style={styles.subtle}>{applicationVisitStatusLabel(visit.status)}</Text>
           </Pressable>
         ))}
         <Pressable
