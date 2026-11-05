@@ -5,7 +5,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
-import { canCancelVisibleVisit, canRequestVisibleVisit, visitReadbackConfirmsMutation } from '../lib/visitPresentation';
+import { canCancelVisibleVisit, canRequestVisibleVisit, formatVisitDateTimeJapan, partitionVisitHistory, visitReadbackConfirmsMutation, visitStatusLabel } from '../lib/visitPresentation';
 import {
   cancelVisit,
   getVisitSettings,
@@ -19,12 +19,6 @@ import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function formatDateTime(value: string | null) {
-  if (!value) return '未設定';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('ja-JP');
 }
 
 function experienceLabel(value: VisitExperienceType) {
@@ -210,11 +204,53 @@ export default function VisitsScreen() {
     router.push(`/application/${targetApplicationId}` as never);
   };
 
-  const visibleVisits = useMemo(() => {
-    if (!visits) return [];
-    if (!focusedVisitId) return visits;
-    return [...visits].sort((a, b) => Number(b.reservation_id === focusedVisitId) - Number(a.reservation_id === focusedVisitId));
-  }, [focusedVisitId, visits]);
+  const groupedVisits = useMemo(
+    () => partitionVisitHistory(visits ?? [], focusedVisitId), [visits, focusedVisitId],
+  );
+  const missingTarget = !loading && !error && visits !== null && focusedVisitId !== null &&
+    !visits.some((visit) => visit.reservation_id === focusedVisitId);
+
+  const openRelatedJob = async (reservationId: string, targetJobId: string) => {
+    if (!privateAllowed || !visits?.some((visit) =>
+      visit.reservation_id === reservationId && visit.job_id === targetJobId)) return;
+    const pinned = await pinCandidateAction();
+    if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+    router.push(`/job/${targetJobId}` as never);
+  };
+
+  const renderVisit = (visit: JobseekerVisitHistory) => {
+    const focused = visit.reservation_id === focusedVisitId;
+    const cancellable = visit.status === 'requested' || visit.status === 'confirmed';
+    const address = [visit.prefecture, visit.city, visit.address].filter(Boolean).join('') || '住所未公開';
+    return (
+      <View key={visit.reservation_id} style={[styles.visitCard, focused && styles.focusedCard]}>
+        {focused ? <Text style={styles.focusLabel}>通知からこの予約を開きました</Text> : null}
+        <Text style={styles.visitTitle}>{experienceLabel(visit.experience_type)} ・ {visit.facility_name}</Text>
+        <Text style={styles.status}>{visitStatusLabel(visit.status)}</Text>
+        <Text style={styles.subtle}>{visit.job_title}</Text>
+        <Text>{formatVisitDateTimeJapan(visit.starts_at)} 〜 {formatVisitDateTimeJapan(visit.ends_at)}</Text>
+        <Text style={styles.subtle}>{address}</Text>
+        {visit.candidate_message ? <Text style={styles.subtle}>申込時のメッセージ: {visit.candidate_message}</Text> : null}
+        {cancellable ? (
+          <Pressable style={styles.secondary}
+            disabled={busy || !canCancelVisibleVisit(ownerKey, freshlyVerifiedOwner.current, visits, visit.reservation_id)}
+            onPress={() => void cancel(visit.reservation_id)}>
+            <Text style={styles.secondaryText}>予約をキャンセル</Text>
+          </Pressable>
+        ) : null}
+        {visit.application_id ? (
+          <Pressable style={styles.linkButton}
+            onPress={() => void openRelatedApplication(visit.reservation_id, visit.application_id!)}>
+            <Text style={styles.link}>応募状況を見る</Text>
+          </Pressable>
+        ) : null}
+        <Pressable style={styles.linkButton}
+          onPress={() => void openRelatedJob(visit.reservation_id, visit.job_id)}>
+          <Text style={styles.link}>求人を見る</Text>
+        </Pressable>
+      </View>
+    );
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
@@ -259,34 +295,30 @@ export default function VisitsScreen() {
         </View>
       ) : null}
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>予約履歴</Text>
-        {!loading && visits !== null && visibleVisits.length === 0 ? <Text style={styles.subtle}>予約履歴はありません。</Text> : null}
-        {visibleVisits.map((visit) => {
-          const focused = visit.reservation_id === focusedVisitId;
-          const cancellable = visit.status === 'requested' || visit.status === 'confirmed';
-          return (
-            <View key={visit.reservation_id} style={[styles.visitCard, focused && styles.focusedCard]}>
-              {focused ? <Text style={styles.focusLabel}>通知からこの予約を開きました</Text> : null}
-              <Text style={styles.visitTitle}>{experienceLabel(visit.experience_type)} ・ {visit.facility_name}</Text>
-              <Text style={styles.subtle}>{visit.job_title}</Text>
-              <Text>{formatDateTime(visit.starts_at)} 〜 {formatDateTime(visit.ends_at)}</Text>
-              <Text style={styles.status}>{visit.status}</Text>
-              {visit.candidate_message ? <Text style={styles.subtle}>連絡事項: {visit.candidate_message}</Text> : null}
-              {cancellable ? (
-                <Pressable style={styles.secondary} disabled={busy || !canCancelVisibleVisit(ownerKey, freshlyVerifiedOwner.current, visits, visit.reservation_id)} onPress={() => void cancel(visit.reservation_id)}>
-                  <Text style={styles.secondaryText}>予約をキャンセル</Text>
-                </Pressable>
-              ) : null}
-              {visit.application_id ? (
-                <Pressable style={styles.linkButton} onPress={() => void openRelatedApplication(visit.reservation_id, visit.application_id!)}>
-                  <Text style={styles.link}>関連する応募を開く</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          );
-        })}
-      </View>
+      {missingTarget ? (
+        <Text style={styles.subtle}>指定された見学・体験は見つかりませんでした。現在の予約・履歴のみ表示しています。</Text>
+      ) : null}
+      {!loading && visits !== null && visits.length === 0 ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>見学・体験の予定はまだありません</Text>
+          <Text style={styles.subtle}>気になる園の求人詳細から、園見学・半日体験・1日体験を申し込めます。</Text>
+          <Pressable style={styles.secondary} onPress={() => router.push('/(tabs)/jobs')}>
+            <Text style={styles.secondaryText}>求人を探す</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {groupedVisits.active.length > 0 ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>これからの見学・体験　{groupedVisits.active.length}件</Text>
+          {groupedVisits.active.map(renderVisit)}
+        </View>
+      ) : null}
+      {groupedVisits.history.length > 0 ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>これまでの履歴　{groupedVisits.history.length}件</Text>
+          {groupedVisits.history.map(renderVisit)}
+        </View>
+      ) : null}
 
       <Pressable style={styles.secondary} onPress={() => router.push('/(tabs)/applications')}>
         <Text style={styles.secondaryText}>応募管理へ戻る</Text>
