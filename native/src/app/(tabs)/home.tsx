@@ -42,6 +42,12 @@ export default function HomeScreen() {
         {notifications.unreadCount != null ? (
           <Text style={styles.subtle}>通知センター未読 {notifications.unreadCount} 件</Text>
         ) : null}
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => router.push('/messages' as never)}>
+          <Text style={styles.secondaryButtonText}>メッセージを確認する</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => router.push('/(tabs)/applications')}>
+          <Text style={styles.secondaryButtonText}>応募管理を開く</Text>
+        </Pressable>
       </View>
 
       <View style={styles.card}>
