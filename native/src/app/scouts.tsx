@@ -35,6 +35,7 @@ import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import { mayShowScoutError, shouldPublishScoutRead } from '../lib/scoutReadLease';
 import { confirmScoutBlock, confirmScoutDecision, confirmScoutOptIn } from '../lib/scoutMutationReadback';
+import { confirmScoutPreferences } from '../lib/scoutPreferencesReadback';
 
 const weekdays = ['月', '火', '水', '木', '金', '土', '日'];
 const classroomOptions = ['0歳児', '1歳児', '2歳児', '3歳児', '4歳児', '5歳児', 'フリー', '異年齢保育', '障害児保育'];
@@ -107,11 +108,16 @@ export default function ScoutsScreen() {
   const currentOwnerRef = useRef(ownerKey);
   const writeSerialRef = useRef(0);
   const writePendingRef = useRef(false);
+  const searchSerialRef = useRef(0);
+  const searchPendingRef = useRef(false);
+  const draftRevisionRef = useRef(0);
   // Invalidate a previous candidate's in-flight write completion on account switch.
   if (currentOwnerRef.current !== ownerKey) {
     currentOwnerRef.current = ownerKey;
     writeSerialRef.current += 1;
     writePendingRef.current = false;
+    searchSerialRef.current += 1;
+    searchPendingRef.current = false;
   }
   if (!privateAllowed) {
     verifiedOwnerRef.current = null;
@@ -159,6 +165,11 @@ export default function ScoutsScreen() {
     setScouts([]);
     setPrivacy(null);
     setBlockResults([]);
+    setBlockQuery('');
+    hydratePreferences(emptyJobseekerMatchingPreferences);
+    setBusy(null);
+    searchSerialRef.current += 1;
+    searchPendingRef.current = false;
     try {
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
@@ -194,6 +205,10 @@ export default function ScoutsScreen() {
   useFocusEffect(useCallback(() => {
     if (!privateAllowed) {
       generation.current += 1;
+      writeSerialRef.current += 1;
+      writePendingRef.current = false;
+      searchSerialRef.current += 1;
+      searchPendingRef.current = false;
       verifiedOwnerRef.current = null;
       errorOwnerRef.current = null;
       return;
@@ -201,6 +216,10 @@ export default function ScoutsScreen() {
     void load();
     return () => {
       generation.current += 1;
+      writeSerialRef.current += 1;
+      writePendingRef.current = false;
+      searchSerialRef.current += 1;
+      searchPendingRef.current = false;
       verifiedOwnerRef.current = null;
       errorOwnerRef.current = null;
     };
@@ -210,7 +229,7 @@ export default function ScoutsScreen() {
 
   const beginScoutWrite = (key: string): number | null => {
     if (!privateAllowed || verifiedOwnerRef.current !== ownerKey ||
-        writePendingRef.current || busy !== null) return null;
+        writePendingRef.current || searchPendingRef.current || busy !== null) return null;
     writePendingRef.current = true;
     const serial = ++writeSerialRef.current;
     setBusy(key);
@@ -335,24 +354,51 @@ export default function ScoutsScreen() {
     }
   };
 
-    const searchBlocks = async () => {
-    if (blockQuery.trim().length < 2) {
+  const searchBlocks = async () => {
+    if (!privateAllowed || verifiedOwnerRef.current !== ownerKey ||
+        writePendingRef.current || searchPendingRef.current || busy !== null) return;
+    const requestedQuery = blockQuery.trim();
+    if (requestedQuery.length < 2) {
+      setBlockResults([]);
       setError('法人名を2文字以上入力してください。');
       return;
     }
+    const serial = ++searchSerialRef.current;
+    const writeSerial = writeSerialRef.current;
+    const requestOwner = ownerKey;
+    const readGeneration = generation.current;
+    searchPendingRef.current = true;
     setBusy('block-search');
+    setBlockResults([]);
     setError(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
-      const rows = await searchScoutBlockableOrganizations(pinned.client, blockQuery);
-      if (!pinned.isCurrent()) return;
+      if (!pinned || !mayPublishScoutWrite(pinned, writeSerial, requestOwner, readGeneration)) return;
+      const rows = await searchScoutBlockableOrganizations(pinned.client, requestedQuery);
+      if (serial !== searchSerialRef.current ||
+          !mayPublishScoutWrite(pinned, writeSerial, requestOwner, readGeneration)) return;
       setBlockResults(rows);
-    } catch (searchError) {
-      setError(String((searchError as { message?: unknown })?.message ?? searchError));
+    } catch {
+      if (serial === searchSerialRef.current && readGeneration === generation.current &&
+          requestOwner === currentOwnerRef.current && privateQuarantine.canAccessPrivateData()) {
+        setError('法人の検索結果を確認できませんでした。もう一度検索してください。');
+      }
     } finally {
-      setBusy(null);
+      if (serial === searchSerialRef.current) {
+        searchPendingRef.current = false;
+        if (readGeneration === generation.current && requestOwner === currentOwnerRef.current) {
+          setBusy(null);
+        }
+      }
     }
+  };
+
+  const changeBlockQuery = (value: string) => {
+    searchSerialRef.current += 1;
+    searchPendingRef.current = false;
+    setBlockQuery(value);
+    setBlockResults([]);
+    if (busy === 'block-search') setBusy(null);
   };
 
   const addBlock = async (organization: ScoutBlockableOrganization) => {
@@ -402,7 +448,8 @@ export default function ScoutsScreen() {
     }
   };
 
-    const savePreferences = async () => {
+  const savePreferences = async () => {
+    if (!privateAllowed || verifiedOwnerRef.current !== ownerKey) return;
     const monthly = monthlySalaryText.trim() ? Number(monthlySalaryText) : null;
     const hourly = hourlyWageText.trim() ? Number(hourlyWageText) : null;
     const commute = commuteText.trim() ? Number(commuteText) : null;
@@ -410,7 +457,8 @@ export default function ScoutsScreen() {
       setError('給与・通勤時間は0以上の数字で入力してください。');
       return;
     }
-    if (preferences.available_time_from && preferences.available_time_to && preferences.available_time_from >= preferences.available_time_to) {
+    if (preferences.available_time_from && preferences.available_time_to &&
+        preferences.available_time_from >= preferences.available_time_to) {
       setError('勤務可能時間は、開始時刻を終了時刻より前にしてください。');
       return;
     }
@@ -422,20 +470,31 @@ export default function ScoutsScreen() {
       desired_hourly_wage_min: hourly,
       max_commute_minutes: commute,
     };
-    setBusy('preferences');
-    setError(null);
-    setNotice(null);
+    const serial = beginScoutWrite('preferences');
+    if (serial === null) return;
+    const owner = ownerKey;
+    const readGeneration = generation.current;
+    const submittedRevision = draftRevisionRef.current;
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
-      const saved = await saveJobseekerMatchingPreferences(pinned.client, next);
-      if (!pinned.isCurrent()) return;
-      hydratePreferences(saved);
-      setNotice('希望条件と保育観を保存しました。');
-    } catch (saveError) {
-      setError(String((saveError as { message?: unknown })?.message ?? saveError));
+      if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
+      // An acknowledged write is not a verified persisted preference.
+      await saveJobseekerMatchingPreferences(pinned.client, next);
+      const verified = confirmScoutPreferences(
+        next, await getJobseekerMatchingPreferences(pinned.client));
+      if (!mayPublishScoutWrite(pinned, serial, owner, readGeneration)) return;
+      if (draftRevisionRef.current === submittedRevision) {
+        hydratePreferences(verified);
+        setNotice('希望条件と保育観を保存しました。');
+      } else {
+        setNotice('保存開始時点の内容は確認できましたが、その後の編集は未保存です。');
+      }
+    } catch {
+      failScoutWrite(serial, owner, readGeneration);
     } finally {
-      setBusy(null);
+      finishScoutWrite(serial);
     }
   };
 
@@ -452,7 +511,15 @@ export default function ScoutsScreen() {
   }, [hourlyWageText, monthlySalaryText, preferences, prefecturesText]);
 
   const update = <K extends keyof JobseekerMatchingPreferences>(key: K, value: JobseekerMatchingPreferences[K]) => {
+    draftRevisionRef.current += 1;
+    setNotice(null);
     setPreferences((current) => ({ ...current, [key]: value }));
+  };
+
+  const editPreferenceText = (setter: (value: string) => void, value: string) => {
+    draftRevisionRef.current += 1;
+    setNotice(null);
+    setter(value);
   };
 
   const verifiedVisible = privateAllowed && verifiedOwnerRef.current === ownerKey;
@@ -557,7 +624,7 @@ export default function ScoutsScreen() {
           ))}
           <TextInput
             value={blockQuery}
-            onChangeText={setBlockQuery}
+            onChangeText={changeBlockQuery}
             placeholder="法人名を2文字以上入力"
             style={styles.input}
             returnKeyType="search"
@@ -585,11 +652,11 @@ export default function ScoutsScreen() {
         <Text style={styles.bodyMuted}>求人の並び順、保育観マッチング、匿名スカウトの精度向上に使います。</Text>
 
         <Text style={styles.itemTitle}>希望エリア・給与</Text>
-        <TextInput value={prefecturesText} onChangeText={setPrefecturesText} placeholder="希望都道府県 例：東京都、神奈川県" style={styles.input} />
-        <TextInput value={citiesText} onChangeText={setCitiesText} placeholder="希望市区町村 例：世田谷区、川崎市" style={styles.input} />
-        <TextInput value={monthlySalaryText} onChangeText={setMonthlySalaryText} placeholder="希望月給の下限" keyboardType="numeric" style={styles.input} />
-        <TextInput value={hourlyWageText} onChangeText={setHourlyWageText} placeholder="希望時給の下限" keyboardType="numeric" style={styles.input} />
-        <TextInput value={commuteText} onChangeText={setCommuteText} placeholder="通勤時間の上限（分）" keyboardType="numeric" style={styles.input} />
+        <TextInput value={prefecturesText} onChangeText={(value) => editPreferenceText(setPrefecturesText, value)} placeholder="希望都道府県 例：東京都、神奈川県" style={styles.input} />
+        <TextInput value={citiesText} onChangeText={(value) => editPreferenceText(setCitiesText, value)} placeholder="希望市区町村 例：世田谷区、川崎市" style={styles.input} />
+        <TextInput value={monthlySalaryText} onChangeText={(value) => editPreferenceText(setMonthlySalaryText, value)} placeholder="希望月給の下限" keyboardType="numeric" style={styles.input} />
+        <TextInput value={hourlyWageText} onChangeText={(value) => editPreferenceText(setHourlyWageText, value)} placeholder="希望時給の下限" keyboardType="numeric" style={styles.input} />
+        <TextInput value={commuteText} onChangeText={(value) => editPreferenceText(setCommuteText, value)} placeholder="通勤時間の上限（分）" keyboardType="numeric" style={styles.input} />
 
         <Text style={styles.itemTitle}>勤務できる曜日</Text>
         <ToggleChips options={weekdays} selected={preferences.available_weekdays} onChange={(value) => update('available_weekdays', value)} />
