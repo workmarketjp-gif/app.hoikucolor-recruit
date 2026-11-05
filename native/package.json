@@ -82,7 +82,8 @@
     "test:camera-document-capture": "node qa/native-camera-document-capture-contract.mjs",
     "test:web-parity": "node qa/native-web-parity-contract.mjs",
     "test:career-salary-disclosure": "node --experimental-strip-types --test qa/native-career-salary-disclosure.test.mjs",
-    "test:message-freshness": "node --experimental-strip-types --test qa/native-message-freshness-parity.test.mjs"
+    "test:message-freshness": "node --experimental-strip-types --test qa/native-message-freshness-parity.test.mjs",
+    "test:job-search-refocus": "node --experimental-strip-types --test qa/native-job-search-return-focus.test.mjs qa/native-job-search-focus-wiring.test.mjs"
   },
   "dependencies": {
     "@clerk/expo": "^3.1.12",
