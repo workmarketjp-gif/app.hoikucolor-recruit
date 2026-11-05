@@ -1,6 +1,6 @@
 import { useSession } from '@clerk/expo';
-import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
@@ -66,7 +66,10 @@ export default function MessagesScreen() {
     }
   }, [pinCandidateAction, ownerKey, privacy.canAccessPrivateData]);
 
-  useEffect(() => {
+  // A reply in the application detail can change unread counts and thread state.
+  // Revalidate on screen focus; blur revokes the old presentation lease *before*
+  // this stack screen can be shown again, including after App Lock.
+  useFocusEffect(useCallback(() => {
     if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
       generation.current += 1;
       freshlyVerifiedOwner.current = null;
@@ -78,8 +81,11 @@ export default function MessagesScreen() {
       return;
     }
     void load();
-    return () => { generation.current += 1; };
-  }, [ownerKey, privacy.shieldVisible, load]);
+    return () => {
+      generation.current += 1;
+      freshlyVerifiedOwner.current = null;
+    };
+  }, [ownerKey, privacy.shieldVisible, privacy.canAccessPrivateData, load]));
 
   const visibleApplications = readCandidateFreshlyVerifiedView(applications, ownerKey, canRead, freshlyVerifiedOwner.current);
   const visibleAttention = readCandidateFreshlyVerifiedView(attention, ownerKey, canRead, freshlyVerifiedOwner.current);

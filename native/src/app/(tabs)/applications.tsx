@@ -1,6 +1,6 @@
 import { useSession } from '@clerk/expo';
-import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { listApplications, type JobseekerApplicationSummary } from '../../lib/applicationJourneyApi';
@@ -43,7 +43,7 @@ export default function ApplicationsScreen() {
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
       const rows = await listApplications(pinned.client);
-      if (!pinned.isCurrent() || current !== generation.current) return;
+      if (!pinned.isCurrent() || current !== generation.current || !privacy.canAccessPrivateData()) return;
       const verifiedOwner = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)!;
       freshlyVerifiedOwner.current = verifiedOwner;
       setOwnedApplications({ ownerKey: verifiedOwner, value: rows });
@@ -59,9 +59,9 @@ export default function ApplicationsScreen() {
     }
   }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData]);
 
-  useEffect(() => {
-    // Locking invalidates in-flight reads and removes private rows immediately.
-    // Unlocking triggers a NEW canonical read, not a stale same-session snapshot.
+  // A return from details/interview/application submission must read the
+  // canonical status anew. Blur revokes the lease and invalidates in-flight RPCs.
+  useFocusEffect(useCallback(() => {
     if (!ownerKey || !privateAllowed) {
       generation.current += 1;
       freshlyVerifiedOwner.current = null;
@@ -71,8 +71,11 @@ export default function ApplicationsScreen() {
       return;
     }
     void load();
-    return () => { generation.current += 1; };
-  }, [ownerKey, privateAllowed, load]);
+    return () => {
+      generation.current += 1;
+      freshlyVerifiedOwner.current = null;
+    };
+  }, [ownerKey, privateAllowed, load]));
 
   const openApplication = async (applicationId: string) => {
     if (!privateAllowed || !applications?.some((application) => application.id === applicationId)) return;

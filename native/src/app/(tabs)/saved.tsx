@@ -1,6 +1,6 @@
 import { useSession } from '@clerk/expo';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { listSavedJobs, unsaveJob, type SavedJobseekerJob } from '../../lib/jobseekerCoreApi';
@@ -20,6 +20,7 @@ export default function SavedJobsScreen() {
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const generation = useRef(0);
   const mutationBusyRef = useRef(false);
+  const mutationSequence = useRef(0);
   const currentOwnerRef = useRef(ownerKey);
   const privateVisible = Boolean(ownerKey) && !privacy.shieldVisible && privacy.canAccessPrivateData();
   const privateVisibleRef = useRef(privateVisible);
@@ -61,12 +62,14 @@ export default function SavedJobsScreen() {
     }
   }, [ownerKey, pinCandidateAction]);
 
-  // A privacy shield is a new generation, not merely a hidden tab.
-  // Invalidate both reads and mutations before unlocking shows any saved rows.
-  useEffect(() => {
+  // A favorite may have changed in job detail or comparison while this tab
+  // was blurred. Drop the old rows immediately and read canonical saves anew
+  // on each focus (also after biometric unlock/account switch).
+  useFocusEffect(useCallback(() => {
     if (!privateVisible || !ownerKey) {
       generation.current += 1;
       mutationBusyRef.current = false;
+      mutationSequence.current += 1;
       setOwnedJobs(null);
       setOwnedError(null);
       setBusyId(null);
@@ -74,13 +77,21 @@ export default function SavedJobsScreen() {
       return;
     }
     void load();
-    return () => { generation.current += 1; };
-  }, [load, ownerKey, privateVisible]);
+    return () => {
+      generation.current += 1;
+      setOwnedJobs(null);
+      setOwnedError(null);
+      setLoading(true);
+      // Do not clear an in-flight server mutation: it may still complete.
+      // The generation fence prevents its delayed result from being painted.
+    };
+  }, [load, ownerKey, privateVisible]));
 
   const remove = async (jobId: string) => {
     if (!privateVisibleRef.current || !ownerKey || loading ||
         mutationBusyRef.current || !jobs?.some((job) => job.id === jobId)) return;
     mutationBusyRef.current = true;
+    const mutationId = ++mutationSequence.current;
     const requestOwner = ownerKey;
     const requestGeneration = generation.current;
     setBusyId(jobId);
@@ -104,7 +115,9 @@ export default function SavedJobsScreen() {
           value: '保存状況を確認できませんでした。更新してご確認ください。' });
       }
     } finally {
-      if (canPresent(requestOwner, requestGeneration)) {
+      // Always settle the originating mutation, even if we navigated away
+      // while the RPC was running. Never unlock a newer candidate mutation.
+      if (mutationId === mutationSequence.current) {
         mutationBusyRef.current = false;
         setBusyId(null);
       }
