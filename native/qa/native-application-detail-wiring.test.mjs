@@ -23,14 +23,18 @@ test('private route guard mounts detail only for exact owner/session/application
 
 test('canonical detail refresh clears stale application, messages, documents and drafts on unmount', () => {
   const start = source.indexOf('  const load = useCallback(');
-  const end = source.indexOf('\n  useEffect(', start);
+  const end = source.indexOf('\n  const latestLoad = useRef(load);', start);
   assert.ok(start > 0 && end > start);
   const body = source.slice(start, end);
   for (const fragment of ['setLoading(true);', 'setDetail(null);', 'setMessages([]);', 'setDocumentState(null);', 'setError(null);']) {
     assert.ok(body.includes(fragment), 'missing fail-closed refresh: ' + fragment);
   }
   assert.match(body, /!pinned\.isCurrent\(\) \|\| current !== generation\.current/);
-  assert.match(source, /return \(\) => \{ generation\.current \+= 1; \};/);
+  assert.match(source, /const latestLoad = useRef\(load\);/);
+  assert.match(source, /latestLoad\.current = load;/);
+  assert.match(source, /useFocusEffect\(useCallback\(\(\) => \{/);
+  assert.match(source, /generation\.current \+= 1; \/\/ Never apply an in-flight read after blur/);
+  assert.match(source, /setDetail\(null\);[\s\S]*setMessages\(\[\]\);[\s\S]*setDocumentState\(null\);/);
   assert.match(source, /const \[messageDraft, setMessageDraft\] = useState\(''\)/);
   assert.match(source, /const \[offerMessage, setOfferMessage\] = useState\(''\)/);
 });

@@ -1,6 +1,6 @@
 import { useSession } from '@clerk/expo';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
@@ -242,10 +242,22 @@ function ApplicationDetailContent() {
     }
   }, [applicationId, pinCandidateAction]);
 
-  useEffect(() => {
-    void load();
-    return () => { generation.current += 1; };
-  }, [load]);
+  // When returning from a visit, interview or message thread, refresh the
+  // canonical application + messages + document handoff as a single read.
+  // The ref prevents unrelated RPC result rerenders from repeating focus loads.
+  const latestLoad = useRef(load);
+  latestLoad.current = load;
+  useFocusEffect(useCallback(() => {
+    void latestLoad.current();
+    return () => {
+      generation.current += 1; // Never apply an in-flight read after blur.
+      setDetail(null);
+      setMessages([]);
+      setDocumentState(null);
+      setError(null);
+      setLoading(true);
+    };
+  }, []));
 
   const sendMessage = async () => {
     setBusy(true);
