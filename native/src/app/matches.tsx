@@ -1,7 +1,11 @@
-import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useSession } from '@clerk/expo';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
+import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
+import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, readCandidateOwnedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
+import { assertSavedJobReadback } from '../lib/confirmedSavedIds';
 import {
   getJobseekerProfile,
   listRankedJobs,
@@ -27,78 +31,154 @@ function salary(job: JobseekerJob) {
   return job.salary_note || '給与は詳細をご確認ください';
 }
 
+type MatchesSnapshot = {
+  jobs: JobseekerJob[];
+  profile: JobseekerProfile | null;
+  preferences: JobseekerMatchingPreferences | null;
+  savedIds: string[];
+};
+
 export default function MatchesScreen() {
   const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();
-  const [jobs, setJobs] = useState<JobseekerJob[]>([]);
-  const [profile, setProfile] = useState<JobseekerProfile | null>(null);
-  const [preferences, setPreferences] = useState<JobseekerMatchingPreferences | null>(null);
-  const [savedIds, setSavedIds] = useState<string[]>([]);
+  const { session } = useSession();
+  const privacy = usePrivateDataQuarantine();
+  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
+  const privateAllowed = !privacy.shieldVisible && privacy.canAccessPrivateData();
+  const verifiedOwnerRef = useRef<string | null>(null);
+  if (!privateAllowed) verifiedOwnerRef.current = null;
+  const [ownedSnapshot, setOwnedSnapshot] = useState<CandidateOwnedView<MatchesSnapshot> | null>(null);
+  const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const [onlyStrong, setOnlyStrong] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const busyRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+  const snapshot = readCandidateFreshlyVerifiedView(
+    ownedSnapshot, ownerKey, privateAllowed, verifiedOwnerRef.current,
+  );
+  const error = readCandidateOwnedView(ownedError, ownerKey, privateAllowed);
+  const savedIds = snapshot?.savedIds ?? [];
 
   const load = useCallback(async () => {
     const current = ++generation.current;
+    verifiedOwnerRef.current = null;
+    busyRef.current = null;
+    setBusyId(null);
+    setOwnedSnapshot(null);
+    setOwnedError(null);
     setLoading(true);
-    setError(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      const pinnedOwner = pinned && candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
+      if (!pinned || !pinnedOwner || pinnedOwner !== ownerKey || !pinned.isCurrent()) {
+        throw new Error('CANDIDATE_SESSION_CHANGED');
+      }
       const [nextJobs, nextProfile, nextPreferences, nextSaved] = await Promise.all([
         listRankedJobs(pinned.client),
         getJobseekerProfile(pinned.client),
         getJobseekerMatchingPreferences(pinned.client),
         listSavedJobIds(pinned.client),
       ]);
-      if (!pinned.isCurrent() || current !== generation.current) return;
-      setJobs(nextJobs);
-      setProfile(nextProfile);
-      setPreferences(nextPreferences);
-      setSavedIds(nextSaved);
-    } catch (loadError) {
-      if (current === generation.current) setError(String((loadError as { message?: unknown })?.message ?? loadError));
+      if (!pinned.isCurrent() || current !== generation.current || pinnedOwner !== ownerKey ||
+          !privacy.canAccessPrivateData()) return;
+      verifiedOwnerRef.current = pinnedOwner;
+      setOwnedSnapshot({ ownerKey: pinnedOwner, value: {
+        jobs: nextJobs, profile: nextProfile, preferences: nextPreferences, savedIds: nextSaved,
+      } });
+    } catch {
+      if (current === generation.current && ownerKey && !privacy.shieldVisible &&
+          privacy.canAccessPrivateData()) {
+        setOwnedError({ ownerKey, value: 'マッチ度の情報を取得できませんでした。通信環境を確認して再読み込みしてください。' });
+      }
     } finally {
       if (current === generation.current) setLoading(false);
     }
-  }, [pinCandidateAction]);
+  }, [pinCandidateAction, ownerKey, privacy.canAccessPrivateData, privacy.shieldVisible]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
+    if (!ownerKey || privacy.shieldVisible) {
+      generation.current += 1;
+      verifiedOwnerRef.current = null;
+      return;
+    }
     void load();
-    return () => { generation.current += 1; };
-  }, [load]);
+    return () => {
+      generation.current += 1;
+      verifiedOwnerRef.current = null;
+    };
+  }, [load, ownerKey, privacy.shieldVisible]));
 
   const ranked = useMemo<RankedJob[]>(() => {
-    if (!preferences) return [];
-    return jobs
-      .map((job) => ({ job, match: matchJob({ job, profile, preferences }) }))
+    if (!snapshot?.preferences) return [];
+    return snapshot.jobs
+      .map((job) => ({ job, match: matchJob({
+        job, profile: snapshot.profile, preferences: snapshot.preferences!,
+      }) }))
       .sort(compareMatchedJobs);
-  }, [jobs, preferences, profile]);
+  }, [snapshot]);
 
-  const hasPreferences = Boolean(preferences && hasMatchingPreferences(profile, preferences));
+  const hasPreferences = Boolean(snapshot?.preferences &&
+    hasMatchingPreferences(snapshot.profile, snapshot.preferences));
   const visible = onlyStrong
     ? ranked.filter((item) => item.match.condition_score !== null && item.match.condition_score >= 70)
     : ranked;
 
+  // Saving a heart is a private mutation. The RPC response alone is not proof:
+  // re-read canonical saved IDs and show success only after observing the change.
   const toggleSaved = async (jobId: string) => {
+    if (!snapshot || !ownerKey || !privateAllowed || busyRef.current ||
+        !snapshot.jobs.some((job) => job.id === jobId)) return;
+    const current = generation.current;
+    busyRef.current = jobId;
     setBusyId(jobId);
-    setError(null);
+    setOwnedError(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
-      const isSaved = savedIds.includes(jobId);
-      if (isSaved) await unsaveJob(pinned.client, jobId);
-      else await saveJob(pinned.client, jobId);
-      if (!pinned.isCurrent()) return;
-      setSavedIds((current) => isSaved ? current.filter((id) => id !== jobId) : [...current, jobId]);
-    } catch (saveError) {
-      setError(String((saveError as { message?: unknown })?.message ?? saveError));
+      const pinnedOwner = pinned && candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
+      if (!pinned || !pinnedOwner || pinnedOwner !== ownerKey || !pinned.isCurrent()) {
+        throw new Error('CANDIDATE_SESSION_CHANGED');
+      }
+      const shouldSave = !snapshot.savedIds.includes(jobId);
+      if (shouldSave) await saveJob(pinned.client, jobId);
+      else await unsaveJob(pinned.client, jobId);
+      if (!pinned.isCurrent() || current !== generation.current || !privacy.canAccessPrivateData()) return;
+      const freshIds = await listSavedJobIds(pinned.client);
+      if (!pinned.isCurrent() || current !== generation.current || !privacy.canAccessPrivateData()) return;
+      assertSavedJobReadback(jobId, shouldSave, freshIds);
+      setOwnedSnapshot((previous) => previous?.ownerKey === pinnedOwner
+        ? { ownerKey: pinnedOwner, value: { ...previous.value, savedIds: freshIds } }
+        : previous);
+    } catch {
+      if (current === generation.current && privacy.canAccessPrivateData() && ownerKey) {
+        // A failed/ambiguous readback must never show an optimistic heart.
+        verifiedOwnerRef.current = null;
+        setOwnedSnapshot(null);
+        setOwnedError({ ownerKey, value: '気になるの保存状態を確認できませんでした。再読み込みして確認してください。' });
+      }
     } finally {
-      setBusyId(null);
+      if (current === generation.current) {
+        busyRef.current = null;
+        setBusyId(null);
+      }
     }
   };
+
+  if (!snapshot) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#FFF8FA' }} testID="matches-private-read-gate">
+        {loading && privateAllowed ? <ActivityIndicator /> : null}
+        <Text style={{ color: '#40313A', fontWeight: '700', textAlign: 'center', marginVertical: 12 }}>
+          {error ?? (privateAllowed ? 'マッチ度の情報を確認しています…' : 'ログイン状態を確認しています…')}
+        </Text>
+        {error && privateAllowed ? (
+          <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.callout}>
+            <Text style={styles.itemTitle}>もう一度読み込む</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
 
   return (
     <ScrollView contentContainerStyle={styles.page}>
