@@ -41,6 +41,7 @@ export function visitReadbackConfirmsMutation(
   // The canonical cancel API itself requires an explicit 'cancelled' state.
   return visit?.status === 'cancelled';
 }
+
 /** Labels and ordering mirror Web src/views/VisitsView.tsx (main fa779e73). */
 const VISIT_STATUS_LABELS: Readonly<Record<string, string>> = {
   requested: '日程調整中',
