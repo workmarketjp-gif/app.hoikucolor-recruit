@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useSession } from '@clerk/expo';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateOwnedView, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
-import { reconcileComparedSelection } from '../lib/comparisonSelection';
+import { reconcileComparedSelection, requestedComparisonJobIds } from '../lib/comparisonSelection';
 import { getJobseekerProfile, listRankedJobs, type JobseekerJob, type JobseekerProfile } from '../lib/jobseekerCoreApi';
 import { getJobseekerMatchingPreferences, type JobseekerMatchingPreferences } from '../lib/candidateParityApi';
 import { matchJob, type JobMatchResult } from '../lib/jobMatching';
@@ -128,6 +128,9 @@ type ComparisonSnapshot = {
 export default function CompareScreen() {
   const { pinCandidateAction } = usePinnedCandidateAction();
   const { session } = useSession();
+  const { job_id: rawRequestedIds } = useLocalSearchParams<{ job_id?: string | string[] }>();
+  const requestedKey = requestedComparisonJobIds(rawRequestedIds).join('|');
+  const initializedRequestScope = useRef<string | null>(null);
   const privacy = usePrivateDataQuarantine();
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
   const privateAllowed = !privacy.shieldVisible && privacy.canAccessPrivateData();
@@ -169,10 +172,19 @@ export default function CompareScreen() {
       ]);
       if (!pinned.isCurrent() || current !== generation.current || pinnedOwner !== ownerKey ||
           !privacy.canAccessPrivateData()) return;
+      // Web /compare?job_id=... can preselect up to three jobs. Treat the
+      // URL as a request only: the canonical published-job result authorizes
+      // which of those IDs can be displayed. Do not reapply the original
+      // deep link after the candidate manually changes their selection.
+      const requestScope = pinnedOwner + '::' + requestedKey;
+      const initialQuery = requestedKey.length > 0 && initializedRequestScope.current !== requestScope;
+      if (initialQuery) initializedRequestScope.current = requestScope;
       setOwnedSelectedIds((previous) => ({
         ownerKey: pinnedOwner,
         value: reconcileComparedSelection(
-          readCandidateOwnedView(previous, pinnedOwner, true),
+          initialQuery
+            ? requestedKey.split('|')
+            : readCandidateOwnedView(previous, pinnedOwner, true),
           nextJobs.map((job) => job.id),
           maxComparedJobs,
         ),
@@ -189,7 +201,7 @@ export default function CompareScreen() {
     } finally {
       if (current === generation.current) setLoading(false);
     }
-  }, [pinCandidateAction, ownerKey, privacy.canAccessPrivateData, privacy.shieldVisible]);
+  }, [pinCandidateAction, ownerKey, requestedKey, privacy.canAccessPrivateData, privacy.shieldVisible]);
 
   useFocusEffect(useCallback(() => {
     if (!ownerKey || privacy.shieldVisible) {
