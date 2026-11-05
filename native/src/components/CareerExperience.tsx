@@ -6,6 +6,7 @@ import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { disclosedCareerSalary } from '../lib/careerSalaryDisclosure';
+import { careerMutationNotice } from '../lib/careerMutationNotice';
 import { getJobseekerProfile, type JobseekerProfile } from '../lib/jobseekerCoreApi';
 import {
   CareerApiUnavailableError, daysFromText, deleteCareerConditions, formatMan,
@@ -216,6 +217,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
+  const formRevision = useRef(0);
   const marketGeneration = useRef(0);
   const scenarioGeneration = useRef(0);
   const detailsGeneration = useRef(0);
@@ -374,12 +376,14 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
 
   const edit = (field: keyof Fields, value: string) => {
     if (!ready) return;
+    formRevision.current += 1;
     setFields((old) => ({ ...old, [field]: value }));
     setSaveMessage(null);
   };
 
   const saveSalaryOnly = async () => {
     const launchedGeneration = generation.current;
+    const launchedRevision = formRevision.current;
     if (!ready || !current || !ownerKey || busy || !current.conditionsAvailable || basis !== 'monthly' || own === null) return;
     setBusy(true); setSaveMessage(null);
     try {
@@ -388,7 +392,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       const saved = await saveCareerConditions(pinned.client, { ...(current.conditions ?? EMPTY), current_monthly_salary: own });
       if (pinned.isCurrent() && launchedGeneration === generation.current) {
         setBase({ ownerKey, value: { ...current, conditions: saved } });
-        setSaveMessage('この金額を保存しました。あなただけが見られます。');
+        setSaveMessage(careerMutationNotice('salary', launchedRevision, formRevision.current));
       }
     } catch (error) {
       if (launchedGeneration === generation.current && privacy.canAccessPrivateData()) setSaveMessage(failure(error));
@@ -399,6 +403,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
 
   const save = async () => {
     const launchedGeneration = generation.current;
+    const launchedRevision = formRevision.current;
     if (!ready || !current || busy || !ownerKey) return;
     if (!current.conditionsAvailable) { setSaveMessage('条件の保存は現在利用できません。入力した内容は保存されていません。'); return; }
     if (fields.salary.trim() && own === null ||
@@ -421,7 +426,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       });
       if (pinned.isCurrent() && launchedGeneration === generation.current) {
         setBase({ ownerKey, value: { ...current, conditions: saved } });
-        setSaveMessage('条件を保存しました。あなただけが見られます。');
+        setSaveMessage(careerMutationNotice('conditions', launchedRevision, formRevision.current));
       }
     } catch (error) { if (privacy.canAccessPrivateData() && launchedGeneration === generation.current) setSaveMessage(failure(error)); }
     finally { if (launchedGeneration === generation.current) setBusy(false); }
@@ -429,6 +434,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
 
   const clear = async () => {
     const launchedGeneration = generation.current;
+    const launchedRevision = formRevision.current;
     if (!ready || !current || busy || !ownerKey || !current.conditionsAvailable) return;
     setBusy(true); setSaveMessage(null);
     try {
@@ -437,9 +443,11 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       await deleteCareerConditions(pinned.client);
       if (pinned.isCurrent() && launchedGeneration === generation.current) {
         setBase({ ownerKey, value: { ...current, conditions: null } });
-        setFields({ ...blank, wishSalary: fields.wishSalary });
-        setScenario('keep-income'); setWeight(50); setBasis(null);
-        setSaveMessage('保存した条件を削除しました。');
+        if (launchedRevision === formRevision.current) {
+          setFields({ ...blank, wishSalary: fields.wishSalary });
+          setScenario('keep-income'); setWeight(50); setBasis(null);
+        }
+        setSaveMessage(careerMutationNotice('delete', launchedRevision, formRevision.current));
       }
     } catch (error) { if (privacy.canAccessPrivateData() && launchedGeneration === generation.current) setSaveMessage(failure(error)); }
     finally { if (launchedGeneration === generation.current) setBusy(false); }
@@ -485,9 +493,9 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         <Section title="私のお給料、比べてみる">
           <Text style={styles.muted}>今のお給料はどのくらい？入力は任意です。保存するまでは記録されません。</Text>
           <View style={styles.chips}>
-            <Choice text="月給" active={basis === 'monthly'} onPress={() => setBasis('monthly')} />
-            <Choice text="時給" active={basis === 'hourly'} onPress={() => setBasis('hourly')} />
-            <Choice text="まだ働いていない" active={basis === 'none'} onPress={() => setBasis('none')} />
+            <Choice text="月給" active={basis === 'monthly'} onPress={() => { formRevision.current += 1; setBasis('monthly'); }} />
+            <Choice text="時給" active={basis === 'hourly'} onPress={() => { formRevision.current += 1; setBasis('hourly'); }} />
+            <Choice text="まだ働いていない" active={basis === 'none'} onPress={() => { formRevision.current += 1; setBasis('none'); }} />
           </View>
           {basis === 'monthly' ? <NumberField label="月給（額面）" unit="万円" hint="例：23" value={fields.salary} onChange={(value) => edit('salary', value)} /> : null}
           {basis === 'hourly' ? <Text style={styles.muted}>時給の求人は労働時間が異なるため、月給のように比べられません。「求人を探す」で時給の求人をご確認ください。</Text> : null}
@@ -582,12 +590,12 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
             ) : null}
           </Section>
           <Section title="どう働きたいか">
-            <View style={styles.chips}>{SCENARIOS.map((item) => <Choice key={item.id} text={item.label} active={scenario === item.id} onPress={() => setScenario(item.id)} />)}</View>
+            <View style={styles.chips}>{SCENARIOS.map((item) => <Choice key={item.id} text={item.label} active={scenario === item.id} onPress={() => { formRevision.current += 1; setScenario(item.id); }} />)}</View>
             <Text style={styles.muted}>{SCENARIOS.find((item) => item.id === scenario)?.lead}</Text>
             {scenario === 'balance' ? (
               <>
                 <Text style={styles.fieldLabel}>給与と休日の優先度：{weight === 50 ? '同じくらい' : weight > 50 ? '給与を優先' : '休日を優先'}</Text>
-                <View style={styles.chips}>{[0, 25, 50, 75, 100].map((w) => <Choice key={w} text={w + '%'} active={weight === w} onPress={() => setWeight(w)} />)}</View>
+                <View style={styles.chips}>{[0, 25, 50, 75, 100].map((w) => <Choice key={w} text={w + '%'} active={weight === w} onPress={() => { formRevision.current += 1; setWeight(w); }} />)}</View>
               </>
             ) : null}
             <StateMessage state={selectedDetails} onRetry={() => void refreshDetails()} />
