@@ -145,8 +145,9 @@ export default function VisitsScreen() {
     if (!canRequest || !jobId) return;
     setBusy(true);
     setOwnedError(null);
-    const pinned = await pinCandidateAction();
+    let pinned: Awaited<ReturnType<typeof pinCandidateAction>> | null = null;
     try {
+      pinned = await pinCandidateAction();
       if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
       const reservationId = await requestVisitDurable({
         client: pinned.client,
@@ -180,8 +181,9 @@ export default function VisitsScreen() {
       !canCancelVisibleVisit(ownerKey, freshlyVerifiedOwner.current, visits, reservationId)) return;
     setBusy(true);
     setOwnedError(null);
-    const pinned = await pinCandidateAction();
+    let pinned: Awaited<ReturnType<typeof pinCandidateAction>> | null = null;
     try {
+      pinned = await pinCandidateAction();
       if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
       await cancelVisit(pinned.client, reservationId);
       if (!pinned.isCurrent()) return;
