@@ -16,6 +16,7 @@ import {
   type JobseekerJob,
 } from '../../lib/jobseekerCoreApi';
 import { EMPTY_JOB_SEARCH_FILTERS, createJobSearchQuery, hasActiveJobFilters, type JobSearchFilterCriteria } from '../../lib/jobSearchFilterCriteria';
+import { updateSavedJobAndConfirm } from '../../lib/savedJobsReadback';
 
 function salary(job: JobseekerJob) {
   const prefix = job.salary_type === 'hourly' ? '時給' : job.salary_type === 'annual' ? '年収' : '月給';
@@ -74,8 +75,25 @@ export default function JobsScreen() {
   const { pinCandidateAction } = usePinnedCandidateAction();
   const [ownedQuery, setOwnedQuery] = useState<CandidateOwnedView<string> | null>(null);
   const query = readCandidateOwnedView(ownedQuery, ownerKey, privateAllowed) ?? '';
+  // Web searches as the user types (250 ms debounce). Invalidate the old
+  // result generation immediately so a late response cannot paint a different
+  // keyword's jobs while the user is still typing.
   const editQuery = (value: string) => {
-    if (ownerKey && privateAllowed) setOwnedQuery({ ownerKey, value });
+    if (!ownerKey || !privateAllowed || privacy.shieldVisible) return;
+    setOwnedQuery({ ownerKey, value });
+    if (keywordTimer.current) clearTimeout(keywordTimer.current);
+    generation.current += 1;
+    setOwnedJobs(null);
+    setOwnedSavedIds(null);
+    setOwnedError(null);
+    setCursor(null);
+    setHasMore(false);
+    setTotalCount(0);
+    setLoading(true);
+    keywordTimer.current = setTimeout(() => {
+      keywordTimer.current = null;
+      void load(true, value, filters);
+    }, value.trim() ? 250 : 0);
   };
   const [ownedFilters, setOwnedFilters] = useState<CandidateOwnedView<JobSearchFilterCriteria> | null>(null);
   const filters = readCandidateOwnedView(ownedFilters, ownerKey, privateAllowed) ?? EMPTY_JOB_SEARCH_FILTERS;
@@ -98,6 +116,14 @@ export default function JobsScreen() {
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const error = readCandidateOwnedView(ownedError, ownerKey, privateAllowed);
   const generation = useRef(0);
+  const keywordTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mutationBusyRef = useRef(false);
+  const mutationSequence = useRef(0);
+
+  const cancelKeywordTimer = () => {
+    if (keywordTimer.current) clearTimeout(keywordTimer.current);
+    keywordTimer.current = null;
+  };
 
   const loadFacets = useCallback(async () => {
     const current = ++facetGeneration.current;
@@ -167,8 +193,12 @@ export default function JobsScreen() {
   // Discard search drafts, results and pagination on shield entry. A fresh
   // canonical read is required after unlock; old responses cannot commit.
   useEffect(() => {
+    cancelKeywordTimer();
     generation.current += 1;
     facetGeneration.current += 1;
+    mutationSequence.current += 1;
+    mutationBusyRef.current = false;
+    setBusyJobId(null);
     setOwnedQuery(null);
     setOwnedFilters(null);
     setOwnedFacets(null);
@@ -186,11 +216,17 @@ export default function JobsScreen() {
     }
     void load(true, '', EMPTY_JOB_SEARCH_FILTERS);
     void loadFacets();
-    return () => { generation.current += 1; facetGeneration.current += 1; };
+    return () => {
+      cancelKeywordTimer();
+      generation.current += 1;
+      facetGeneration.current += 1;
+      mutationSequence.current += 1;
+    };
   }, [ownerKey, privacy.shieldVisible]);
 
   const selectFilter = (patch: Partial<JobSearchFilterCriteria>) => {
     if (!ownerKey || !privateAllowed || privacy.shieldVisible) return;
+    cancelKeywordTimer();
     const next = { ...filters, ...patch };
     setOwnedFilters({ ownerKey, value: next });
     setPicker(null);
@@ -198,6 +234,7 @@ export default function JobsScreen() {
   };
   const clearFilters = () => {
     if (!ownerKey || !privateAllowed || privacy.shieldVisible) return;
+    cancelKeywordTimer();
     setOwnedQuery(null);
     setOwnedFilters(null);
     setPicker(null);
@@ -205,22 +242,39 @@ export default function JobsScreen() {
   };
 
   const toggleSaved = async (jobId: string) => {
-    if (!privateAllowed || savedIds === null || !jobs.some((job) => job.id === jobId)) return;
+    if (!privateAllowed || !ownerKey || privacy.shieldVisible || loading ||
+        savedIds === null || mutationBusyRef.current ||
+        !jobs.some((job) => job.id === jobId)) return;
+    mutationBusyRef.current = true;
+    const requestGeneration = generation.current;
+    const attempt = ++mutationSequence.current;
     setBusyJobId(jobId);
     setOwnedError(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) throw new Error('安全なログイン状態を確認できませんでした。');
-      const currentlySaved = savedIds.includes(jobId);
-      if (currentlySaved) await unsaveJob(pinned.client, jobId);
-      else await saveJob(pinned.client, jobId);
-      if (!pinned.isCurrent()) return;
-      setOwnedSavedIds((current) => current?.ownerKey === candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)
-        ? { ...current, value: currentlySaved ? current.value.filter((id) => id !== jobId) : [...current.value, jobId] } : current);
-    } catch (saveError) {
-      setOwnedError(ownerKey ? { ownerKey, value: String((saveError as { message?: unknown })?.message ?? saveError) } : null);
+      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
+      const shouldBeSaved = !savedIds.includes(jobId);
+      const canonical = await updateSavedJobAndConfirm(jobId, shouldBeSaved,
+        () => shouldBeSaved ? saveJob(pinned.client, jobId) : unsaveJob(pinned.client, jobId),
+        () => listSavedJobIds(pinned.client));
+      if (!pinned.isCurrent() || attempt !== mutationSequence.current ||
+          requestGeneration !== generation.current || privacy.shieldVisible) return;
+      setOwnedSavedIds({ ownerKey, value: canonical });
+    } catch {
+      if (attempt === mutationSequence.current && requestGeneration === generation.current &&
+          ownerKey && !privacy.shieldVisible) {
+        // A write can succeed while its acknowledgement/readback fails. Never
+        // present a guessed bookmark state or allow a second toggle until reload.
+        setOwnedSavedIds(null);
+        setOwnedError({ ownerKey, value: '保存状況を確認できませんでした。再検索してご確認ください。' });
+      }
     } finally {
-      setBusyJobId(null);
+      if (attempt === mutationSequence.current) {
+        mutationBusyRef.current = false;
+        setBusyJobId(null);
+      }
     }
   };
 
@@ -240,7 +294,7 @@ export default function JobsScreen() {
           onChangeText={editQuery}
           placeholder="園名・職種・地域で検索"
           returnKeyType="search"
-          onSubmitEditing={() => void load(true, query)}
+          onSubmitEditing={() => { cancelKeywordTimer(); void load(true, query); }}
           style={styles.input}
         />
         <View style={styles.filterRow}>
@@ -258,7 +312,7 @@ export default function JobsScreen() {
           </Pressable>
         </View>
         {facetError ? <View style={styles.filterFailure}><Text style={styles.error}>{facetError}</Text><Pressable accessibilityRole="button" onPress={() => void loadFacets()}><Text style={styles.link}>再読み込み</Text></Pressable></View> : null}
-        <Pressable testID="job-search-submit" style={styles.primaryButton} onPress={() => void load(true, query)} disabled={loading}>
+        <Pressable testID="job-search-submit" style={styles.primaryButton} onPress={() => { cancelKeywordTimer(); void load(true, query); }} disabled={loading}>
           <Text style={styles.primaryButtonText}>検索</Text>
         </Pressable>
         <Text style={styles.subtle}>{error || loading || visibleJobs === null ? '検索中・確認待ち' : `${totalCount}件の求人`}</Text>
@@ -284,7 +338,7 @@ export default function JobsScreen() {
           key={job.id}
           job={job}
           saved={savedIds?.includes(job.id) === true}
-          busy={busyJobId === job.id || savedIds === null || !privateAllowed}
+          busy={busyJobId !== null || savedIds === null || !privateAllowed || loading}
           onToggleSaved={() => void toggleSaved(job.id)}
           onOpen={() => router.push(`/job/${job.id}` as never)}
         />
