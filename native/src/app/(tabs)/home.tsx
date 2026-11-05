@@ -5,10 +5,10 @@ import { CareerExperience } from '../../components/CareerExperience';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { useNotifications } from '../../contexts/NotificationContext';
 
-function Metric({ value, label }: { value: number; label: string }) {
+function Metric({ value, label }: { value: number | null; label: string }) {
   return (
     <View style={styles.metric}>
-      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.metricValue}>{value == null ? '—' : value}</Text>
       <Text style={styles.metricLabel}>{label}</Text>
     </View>
   );
@@ -41,10 +41,11 @@ export default function HomeScreen() {
           </Pressable>
         </View>
         <View style={styles.metrics}>
-          <Metric value={summary.unanswered_interviews_count} label="面接回答" />
-          <Metric value={summary.unread_messages_count} label="未読連絡" />
-          <Metric value={summary.pending_scouts_count} label="スカウト" />
+          <Metric value={summary?.unanswered_interviews_count ?? null} label="面接回答" />
+          <Metric value={summary?.unread_messages_count ?? null} label="未読連絡" />
+          <Metric value={summary?.pending_scouts_count ?? null} label="スカウト" />
         </View>
+        {notifications.error ? <Text style={styles.subtle}>{notifications.error}</Text> : null}
         {notifications.unreadCount != null ? (
           <Text style={styles.subtle}>通知センター未読 {notifications.unreadCount} 件</Text>
         ) : null}

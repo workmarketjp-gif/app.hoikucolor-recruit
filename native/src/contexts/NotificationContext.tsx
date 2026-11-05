@@ -1,3 +1,4 @@
+import { useSession } from '@clerk/expo';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import {
@@ -12,7 +13,6 @@ import {
 } from 'react';
 import { AppState, Linking } from 'react-native';
 import {
-  emptyAttentionSummary,
   getJobseekerAttentionSummary,
   type JobseekerAttentionSummary,
 } from '../lib/attentionApi';
@@ -32,13 +32,22 @@ import {
 } from '../lib/notifications';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
+import {
+  candidateViewOwnerKey,
+  readCandidateOwnedView,
+  readCandidateFreshlyVerifiedView,
+  type CandidateOwnedView,
+} from '../lib/candidateViewOwner';
+import { resolveCanonicalNotificationRead, type CanonicalNotificationRead } from '../lib/notificationReadSnapshot';
 
 const NotificationContext = createContext<{
   notifications: JobseekerNotification[];
   unreadCount: number | null;
   loading: boolean;
   pushState: PushRegistrationState | null;
-  attentionSummary: JobseekerAttentionSummary;
+  attentionSummary: JobseekerAttentionSummary | null;
+  loaded: boolean;
+  error: string | null;
   reconciliationRevision: number;
   refresh: () => Promise<void>;
   enablePush: () => Promise<PushRegistrationState>;
@@ -59,24 +68,52 @@ function isDefinitiveNotificationMiss(error: unknown) {
 
 export function NotificationProvider({ children }: PropsWithChildren) {
   const router = useRouter();
+  const { session } = useSession();
   const privacy = usePrivateDataQuarantine();
   const { pinCandidateAction, pinCandidateSession } = usePinnedCandidateAction();
-  const [notifications, setNotifications] = useState<JobseekerNotification[]>([]);
-  const [unreadCount, setUnreadCount] = useState<number | null>(null);
+  const [ownedSnapshot, setOwnedSnapshot] = useState<CandidateOwnedView<CanonicalNotificationRead<JobseekerNotification, JobseekerAttentionSummary>> | null>(null);
+  const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const [loading, setLoading] = useState(true);
   const [pushState, setPushState] = useState<PushRegistrationState | null>(null);
-  const [attentionSummary, setAttentionSummary] = useState<JobseekerAttentionSummary>(emptyAttentionSummary);
   const [reconciliationRevision, setReconciliationRevision] = useState(0);
   const handledIds = useRef<Set<string>>(new Set());
   const processingIds = useRef<Set<string>>(new Set());
   const deferredResponses = useRef<Map<string, any>>(new Map());
   const pendingCanonicalReconciliation = useRef(false);
   const canonicalLoadGeneration = useRef(0);
+  const verificationRef = useRef<string | null>(null);
+  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
+  const privateAllowed = Boolean(ownerKey) && !privacy.shieldVisible && privacy.canAccessPrivateData();
+
+  // Do not let an earlier same-session read become visible on lock/unlock.
+  // This imperative revocation runs during render, before passive effects.
+  if (!privateAllowed) verificationRef.current = null;
+  const safeSnapshot = readCandidateFreshlyVerifiedView(
+    ownedSnapshot, ownerKey, privateAllowed, verificationRef.current,
+  );
+  const safeError = readCandidateOwnedView(ownedError, ownerKey, privateAllowed);
+
+  useEffect(() => {
+    // A new owner or App Lock state invalidates in-flight responses. A fresh,
+    // pinned canonical read is needed even if the user/session string is unchanged.
+    canonicalLoadGeneration.current += 1;
+    verificationRef.current = null;
+    setOwnedSnapshot(null);
+    setOwnedError(null);
+    setLoading(true);
+  }, [ownerKey, privacy.shieldVisible]);
 
   const loadCanonicalSnapshot = useCallback(async () => {
     const generation = ++canonicalLoadGeneration.current;
+    verificationRef.current = null;
+    setOwnedSnapshot(null);
+    setOwnedError(null);
+    setLoading(true);
+
     const pinned = await pinCandidateAction();
-    if (!pinned || generation !== canonicalLoadGeneration.current) {
+    const pinnedOwnerKey = candidateViewOwnerKey(pinned?.ownerId, pinned?.ownerSessionId);
+    if (!pinned || !pinnedOwnerKey || pinnedOwnerKey !== ownerKey ||
+        generation !== canonicalLoadGeneration.current || !pinned.isCurrent()) {
       throw new Error('CANDIDATE_SESSION_CHANGED');
     }
 
@@ -86,16 +123,28 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       getJobseekerAttentionSummary(pinned.client),
     ]);
 
-    if (!pinned.isCurrent() || generation !== canonicalLoadGeneration.current) {
+    if (!pinned.isCurrent() || generation !== canonicalLoadGeneration.current ||
+        pinnedOwnerKey !== ownerKey) {
       throw new Error('CANDIDATE_SESSION_CHANGED');
     }
 
-    if (countResult.status === 'fulfilled') setUnreadCount(countResult.value);
-    if (attentionResult.status === 'fulfilled') setAttentionSummary(attentionResult.value);
-    setLoading(false);
-    if (rowsResult.status === 'rejected') throw rowsResult.reason;
-    setNotifications(rowsResult.value);
-  }, [pinCandidateAction]);
+    try {
+      // A failed list is an error, never a confirmed empty inbox. Failed count
+      // or attention reads are unknown, never zero.
+      const value = resolveCanonicalNotificationRead(rowsResult, countResult, attentionResult);
+      verificationRef.current = pinnedOwnerKey;
+      setOwnedSnapshot({ ownerKey: pinnedOwnerKey, value });
+      setLoading(false);
+    } catch (error) {
+      verificationRef.current = null;
+      setOwnedError({
+        ownerKey: pinnedOwnerKey,
+        value: '通知情報を取得できませんでした。通信環境を確認して更新してください。',
+      });
+      setLoading(false);
+      throw error;
+    }
+  }, [ownerKey, pinCandidateAction]);
 
   const refresh = useCallback(async () => {
     if (privacy.shieldVisible) {
@@ -283,23 +332,27 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   }, [consumeLastResponse, handleResponse, reconcileCanonicalState]);
 
   useEffect(() => {
-    if (unreadCount == null) return;
-    void setCandidateNotificationBadgeCount(unreadCount).catch(() => undefined);
-  }, [unreadCount]);
+    // Never replace an OS badge with an inferred zero or a previous owner's count.
+    if (safeSnapshot?.unreadCount == null) return;
+    void setCandidateNotificationBadgeCount(safeSnapshot.unreadCount).catch(() => undefined);
+  }, [safeSnapshot?.unreadCount]);
 
   const value = useMemo(() => ({
-    notifications,
-    unreadCount,
-    loading,
-    pushState,
-    attentionSummary,
+    notifications: safeSnapshot?.notifications ?? [],
+    unreadCount: safeSnapshot?.unreadCount ?? null,
+    loading: privateAllowed && loading && safeSnapshot === null && safeError === null,
+    loaded: safeSnapshot !== null,
+    error: safeError ?? safeSnapshot?.warning ?? null,
+    pushState: privateAllowed ? pushState : null,
+    attentionSummary: safeSnapshot?.attentionSummary ?? null,
     reconciliationRevision,
     refresh,
     enablePush: () => syncPush(true),
     openPushSettings: () => Linking.openSettings(),
     openNotification,
     markAllRead,
-  }), [attentionSummary, loading, markAllRead, notifications, openNotification, pushState, reconciliationRevision, refresh, syncPush, unreadCount]);
+  }), [loading, markAllRead, openNotification, privateAllowed, pushState,
+    reconciliationRevision, refresh, safeError, safeSnapshot, syncPush]);
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;
 }

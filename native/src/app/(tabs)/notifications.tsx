@@ -9,19 +9,27 @@ export default function NotificationsScreen() {
   return (
     <ScrollView contentContainerStyle={styles.page}>
       <View style={styles.toolbar}>
-        <Text style={styles.count}>{notifications.unreadCount ?? 0}件未読</Text>
+        <Text style={styles.count}>{notifications.unreadCount === null ? '未読件数を確認できません' : `${notifications.unreadCount}件未読`}</Text>
         <View style={styles.toolbarActions}>
-          <Pressable onPress={() => void notifications.refresh()}><Text style={styles.link}>更新</Text></Pressable>
-          <Pressable onPress={() => void notifications.markAllRead()}><Text style={styles.link}>すべて既読</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => void notifications.refresh().catch(() => undefined)}><Text style={styles.link}>更新</Text></Pressable>
+          <Pressable accessibilityRole="button" disabled={!notifications.loaded} onPress={() => void notifications.markAllRead().catch(() => undefined)}><Text style={styles.link}>すべて既読</Text></Pressable>
         </View>
       </View>
 
-      {notifications.loading && notifications.notifications.length === 0 ? <ActivityIndicator /> : null}
-      {!notifications.loading && notifications.notifications.length === 0 ? (
+      {notifications.loading ? <ActivityIndicator color="#E9265A" /> : null}
+      {notifications.error ? (
+        <View style={styles.permissionCard} testID="notification-read-error">
+          <Text style={styles.error}>{notifications.error}</Text>
+          <Pressable accessibilityRole="button" style={styles.button} onPress={() => void notifications.refresh().catch(() => undefined)}>
+            <Text style={styles.buttonText}>もう一度読み込む</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {!notifications.loading && notifications.loaded && notifications.notifications.length === 0 ? (
         <Text style={styles.empty}>新しい通知はありません。</Text>
       ) : null}
 
-      {notifications.notifications.map((notification) => (
+      {notifications.loaded ? notifications.notifications.map((notification) => (
         <Pressable
           key={notification.id}
           style={[styles.card, !notification.read_at && styles.unreadCard]}
@@ -34,7 +42,7 @@ export default function NotificationsScreen() {
           <Text style={styles.body}>{notification.body}</Text>
           <Text style={styles.date}>{new Date(notification.created_at).toLocaleString('ja-JP')}</Text>
         </Pressable>
-      ))}
+      )) : null}
 
       {notifications.pushState?.kind === 'permission_denied' ? (
         <View style={styles.permissionCard}>
@@ -67,6 +75,7 @@ const styles = StyleSheet.create({
   date: { color: '#7b8490', fontSize: 12 },
   unreadMark: { fontSize: 11, fontWeight: '800', backgroundColor: '#edf4ff', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
   empty: { backgroundColor: '#fff', borderRadius: 14, padding: 20, color: '#606873' },
+  error: { color: '#AC2643', fontSize: 14, lineHeight: 21, fontWeight: '700' },
   permissionCard: { backgroundColor: '#fff', borderRadius: 14, padding: 16, gap: 10 },
   button: { minHeight: 46, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
   buttonText: { fontWeight: '800' },
