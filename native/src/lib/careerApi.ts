@@ -139,6 +139,29 @@ export function formatMan(value: number): string {
   return (value / 10000).toFixed(1).replace(/\.0$/, '') + '万円';
 }
 
+/**
+ * Exactly the Web histogram presentation: fill missing posted-salary bins and
+ * show a private own-salary position without calculating any market statistic.
+ * The counts themselves are always those returned by the canonical RPC.
+ */
+export function withYourPosition(
+  histogram: { from: number; to: number; count: number }[],
+  own: number | null,
+  binSize = 20000,
+): { from: number; to: number; count: number; containsYou: boolean }[] {
+  if (!histogram.length) return [];
+  const counts = new Map(histogram.map((row) => [row.from, row.count]));
+  const youBin = own === null ? null : Math.floor(own / binSize) * binSize;
+  const starts = histogram.map((row) => row.from);
+  const lowest = Math.min(...starts, youBin ?? Infinity);
+  const highest = Math.max(...starts, youBin ?? -Infinity);
+  const result: { from: number; to: number; count: number; containsYou: boolean }[] = [];
+  for (let from = lowest; from <= highest; from += binSize) {
+    result.push({ from, to: from + binSize, count: counts.get(from) ?? 0, containsYou: youBin === from });
+  }
+  return result;
+}
+
 export function scenarioSalaryLine(
   scenario: CareerScenarioId, own: number | null, drop: number | null, desired: number | null,
 ): number | null {
@@ -183,7 +206,8 @@ export async function deleteCareerConditions(client: SupabaseClient): Promise<vo
 export async function getMatchingPreferencesForCareer(client: SupabaseClient): Promise<MatchingPreferencesForCareer> {
   const value = await call(client, 'hc_jobseeker_get_matching_preferences');
   if (value === null) return { desired_prefectures: [], desired_monthly_salary_min: null, childcare_values: [] };
-  const row = requiredObject<Record<string, unknown>>('hc_jobseeker_get_matching_preferences', value, 'desired_prefectures');
+  if (!validObject(value)) throw new Error('希望条件を確認できませんでした。');
+  const row = value;
   const texts = (key: string): string[] => Array.isArray(row[key]) ? (row[key] as unknown[]).filter((x): x is string => typeof x === 'string') : [];
   return {
     desired_prefectures: texts('desired_prefectures'),
