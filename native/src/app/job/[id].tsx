@@ -1,10 +1,15 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSession } from '@clerk/expo';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { getJobseekerProfile, type JobseekerJob, type JobseekerProfile } from '../../lib/jobseekerCoreApi';
 import { getCandidateJob, listApplications, submitApplication } from '../../lib/applicationJourneyApi';
 import { ApplyDocumentsPanel } from '../../components/ApplyDocumentsPanel';
+import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
+import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
+import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
+import { jobIsClosed, verifiedEvidence, type VerifiedEvidenceDisplay } from '../../lib/jobVerifiedEvidence';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -23,11 +28,52 @@ function salary(job: JobseekerJob) {
   return job.salary_note || range || '給与は求人情報をご確認ください';
 }
 
+/** Candidate-specific job details must never retain a former account's profile or application CTA. */
 export default function JobDetailScreen() {
+  usePrivateScreenCapture('job-detail');
+  const { session } = useSession();
+  const privacy = usePrivateDataQuarantine();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const jobId = firstParam(params.id) ?? '';
+  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
+  if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
+    return <View style={styles.center}><ActivityIndicator color="#E9265A" /></View>;
+  }
+  if (!jobId) return <View style={styles.center}><Text style={styles.error}>求人IDを確認できませんでした。</Text></View>;
+  return <JobDetailContent key={`${ownerKey}:${jobId}`} jobId={jobId} />;
+}
+
+function VerifiedEvidenceCard({
+  title, evidence, kind,
+}: {
+  title: string;
+  evidence: VerifiedEvidenceDisplay;
+  kind: 'workplace' | 'finance';
+}) {
+  return <View style={styles.evidenceCard}>
+    <Text style={styles.evidenceTitle}>✓ {title}</Text>
+    {evidence.transparencyPercent !== null
+      ? <Text style={styles.subtle}>情報公開率 {evidence.transparencyPercent}%</Text> : null}
+    {evidence.metrics.map((metric) => <View key={metric.key} style={styles.evidenceRow}>
+      <Text style={styles.subtle}>{metric.label}</Text>
+      <Text style={styles.evidenceValue}>{metric.value}</Text>
+      {metric.recordCount !== null ? <Text style={styles.subtle}>
+        {metric.recordCount}{kind === 'finance' ? 'か月分の記録' : '件の記録'}
+      </Text> : null}
+    </View>)}
+    {evidence.period ? <Text style={styles.evidenceFoot}>集計期間 {evidence.period}</Text> : null}
+    <Text style={styles.evidenceFoot}>{kind === 'finance'
+      ? '園の申告ではなく確定した会計記録から集計'
+      : '園の申告ではなく実際の勤務記録から集計'}</Text>
+    {kind === 'finance' && evidence.metrics.some((metric) => metric.key === 'finance_monthly_result_stability') ? (
+      <Text style={styles.evidenceFoot}>「月次収支安定性」は月次収支の推移を示す指標で、法人全体の信用力・支払能力・将来の経営継続を保証するものではありません。</Text>
+    ) : null}
+  </View>;
+}
+
+function JobDetailContent({ jobId }: { jobId: string }) {
   const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();
-  const jobId = firstParam(params.id) ?? '';
   const [job, setJob] = useState<JobseekerJob | null>(null);
   const [profile, setProfile] = useState<JobseekerProfile | null>(null);
   const [existingApplicationId, setExistingApplicationId] = useState<string | null>(null);
@@ -42,6 +88,10 @@ export default function JobDetailScreen() {
     const current = ++generation.current;
     setLoading(true);
     setError(null);
+    setJob(null);
+    setProfile(null);
+    setExistingApplicationId(null);
+    setChoosingDocuments(false);
     try {
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
@@ -61,10 +111,19 @@ export default function JobDetailScreen() {
     }
   }, [jobId, pinCandidateAction]);
 
-  useEffect(() => {
-    void load();
-    return () => { generation.current += 1; };
-  }, [load]);
+  const latestLoad = useRef(load);
+  latestLoad.current = load;
+  useFocusEffect(useCallback(() => {
+    void latestLoad.current();
+    return () => {
+      generation.current += 1;
+      setJob(null);
+      setProfile(null);
+      setExistingApplicationId(null);
+      setChoosingDocuments(false);
+      setLoading(true);
+    };
+  }, []));
 
   const routeToApplication = (applicationId: string, documentWarning = false) => {
     setExistingApplicationId(applicationId);
@@ -93,6 +152,10 @@ export default function JobDetailScreen() {
       return;
     }
     if (applying || existingApplicationId) return;
+    if (!job || job.is_external || job.can_apply_direct === false || jobIsClosed(job.closing_at, Date.now())) {
+      setError('この求人は現在Hoiku Colorから直接応募できません。');
+      return;
+    }
     setError(null);
     setChoosingDocuments(true);
   };
@@ -103,6 +166,11 @@ export default function JobDetailScreen() {
       return;
     }
     if (applying || existingApplicationId) return;
+    if (!job || job.is_external || job.can_apply_direct === false || jobIsClosed(job.closing_at, Date.now())) {
+      setChoosingDocuments(false);
+      setError('この求人は現在Hoiku Colorから直接応募できません。');
+      return;
+    }
     setApplying(true);
     setError(null);
     try {
@@ -131,6 +199,18 @@ export default function JobDetailScreen() {
   }
   if (!job) return <View style={styles.center}><Text>この求人は現在確認できません。</Text></View>;
 
+  const closed = jobIsClosed(job.closing_at, Date.now());
+  const directApply = !job.is_external && job.can_apply_direct !== false;
+  const workplaceEvidence = verifiedEvidence(job.verified_workplace, 'workplace');
+  const financeEvidence = verifiedEvidence(job.verified_finance, 'finance');
+  const safeSourceUrl = (() => {
+    try {
+      if (!job.source_url) return null;
+      const parsed = new URL(job.source_url);
+      return parsed.protocol === 'https:' && !parsed.username && !parsed.password ? parsed.toString() : null;
+    } catch { return null; }
+  })();
+
   return (
     <ScrollView contentContainerStyle={styles.page}>
       <Text style={styles.title}>{job.title}</Text>
@@ -140,32 +220,47 @@ export default function JobDetailScreen() {
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
+      {closed ? <Text style={styles.error}>募集終了：保存履歴として求人内容を確認できます。応募はできません。</Text> : null}
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>仕事内容</Text>
-        <Text style={styles.body}>{job.description || '詳細は園へお問い合わせください。'}</Text>
+        <Text style={styles.sectionTitle}>園</Text>
+        <Text style={styles.body}>{job.facility_name}{job.facility_type ? `（${job.facility_type}）` : ''}</Text>
+        <Text style={styles.subtle}>{job.address || [job.prefecture, job.city].filter(Boolean).join(' ') || '勤務地は詳細をご確認ください'}</Text>
       </View>
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>勤務条件</Text>
-        <Text style={styles.body}>勤務時間: {job.working_hours || '未掲載'}</Text>
-        <Text style={styles.body}>休日: {job.holidays || '未掲載'}</Text>
-        <Text style={styles.body}>必要資格: {job.required_qualification || '未掲載'}</Text>
-        <Text style={styles.body}>待遇・福利厚生: {job.benefits || '未掲載'}</Text>
+        <Text style={styles.sectionTitle}>条件</Text>
+        <Text style={styles.body}>給与：{salary(job)}</Text>
+        <Text style={styles.body}>雇用形態：{job.employment_type || '未掲載'}</Text>
+        <Text style={styles.body}>勤務時間：{job.working_hours || '未掲載'}</Text>
+        <Text style={styles.body}>休日：{job.holidays || '未掲載'}</Text>
+        <Text style={styles.body}>応募資格：{job.required_qualification || '未掲載'}</Text>
+        <Text style={styles.body}>待遇：{job.benefits || '未掲載'}</Text>
+        <Text style={styles.body}>募集人数：{Number.isSafeInteger(job.number_of_positions) && job.number_of_positions >= 0 ? `${job.number_of_positions}名` : '未掲載'}</Text>
+      </View>
+      {workplaceEvidence || financeEvidence ? <View style={styles.card}>
+        <Text style={styles.sectionTitle}>実際の働き方</Text>
+        {workplaceEvidence ? <VerifiedEvidenceCard title="勤務実績" evidence={workplaceEvidence} kind="workplace" /> : null}
+        {financeEvidence ? <VerifiedEvidenceCard title="会計実績" evidence={financeEvidence} kind="finance" /> : null}
+      </View> : null}
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>仕事内容・保育観</Text>
+        <Text style={styles.body}>{job.description || '未掲載'}</Text>
       </View>
 
-      {job.is_external ? (
-        <View style={styles.externalCard}>
-          <Text style={styles.sectionTitle}>{job.source_name || '外部求人'}</Text>
-          <Text style={styles.subtle}>この求人はHoiku Colorから直接応募しません。掲載元で最新情報を確認して手続きを進めてください。</Text>
-          {job.source_url ? (
-            <Pressable style={styles.primary} onPress={() => void Linking.openURL(job.source_url!)}>
-              <Text style={styles.primaryText}>掲載元で詳細を見る</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      ) : existingApplicationId ? (
+      {existingApplicationId ? (
         <Pressable style={styles.primary} onPress={() => router.push(`/application/${existingApplicationId}` as never)}>
           <Text style={styles.primaryText}>応募内容を確認</Text>
         </Pressable>
+      ) : !directApply ? (
+        <View style={styles.externalCard}>
+          <Text style={styles.sectionTitle}>{job.source_name || '掲載元での応募'}</Text>
+          <Text style={styles.subtle}>Hoiku Colorから直接応募できない求人です。掲載元で最新情報と応募方法をご確認ください。</Text>
+          {safeSourceUrl ? <Pressable style={styles.primary} accessibilityRole="link" onPress={() => void Linking.openURL(safeSourceUrl)}>
+            <Text style={styles.primaryText}>{job.source_kind === 'hellowork' ? 'ハローワークで応募方法を確認' : '掲載元で応募方法を確認'}</Text>
+          </Pressable> : null}
+          {job.source_name ? <Text style={styles.subtle}>出典：{job.source_name}{job.source_job_id ? `（求人番号 ${job.source_job_id}）` : ''}</Text> : null}
+        </View>
+      ) : closed ? (
+        <Text style={styles.subtle}>募集は終了しています。</Text>
       ) : choosingDocuments ? (
         <ApplyDocumentsPanel jobId={job.id} submitting={applying} onCancel={() => setChoosingDocuments(false)} onSubmit={(documentIds) => void apply(documentIds)} />
       ) : (
@@ -174,13 +269,13 @@ export default function JobDetailScreen() {
         </Pressable>
       )}
 
-      {!job.is_external && !profile?.name?.trim() && !existingApplicationId ? (
+      {directApply && !closed && !profile?.name?.trim() && !existingApplicationId ? (
         <Pressable style={styles.secondary} onPress={() => router.push('/(tabs)/profile')}>
           <Text style={styles.secondaryText}>プロフィールを登録する</Text>
         </Pressable>
       ) : null}
 
-      {!job.is_external ? (
+      {directApply && !closed ? (
         <Pressable style={styles.secondary} onPress={() => router.push(`/visits?jobId=${encodeURIComponent(job.id)}` as never)}>
           <Text style={styles.secondaryText}>見学・体験を予約</Text>
         </Pressable>
@@ -200,6 +295,11 @@ const styles = StyleSheet.create({
   subtle: { color: '#606873', lineHeight: 20 },
   salary: { fontSize: 19, fontWeight: '900' },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 8 },
+  evidenceCard: { borderWidth: 1, borderColor: '#F5DCE4', borderRadius: 14, padding: 12, gap: 8, backgroundColor: '#FFF8FA' },
+  evidenceTitle: { fontSize: 17, fontWeight: '900', color: '#AA1F49' },
+  evidenceRow: { borderRadius: 10, padding: 10, gap: 3, backgroundColor: '#fff' },
+  evidenceValue: { fontSize: 19, fontWeight: '900', color: '#24212A' },
+  evidenceFoot: { color: '#606873', fontSize: 12, lineHeight: 18 },
   externalCard: { backgroundColor: '#fff8e6', borderRadius: 16, padding: 16, gap: 10 },
   sectionTitle: { fontSize: 18, fontWeight: '900' },
   body: { lineHeight: 22 },
