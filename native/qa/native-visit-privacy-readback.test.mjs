@@ -44,5 +44,6 @@ test('cancel is not confirmed by stale requested or confirmed readback', () => {
   assert.equal(visitReadbackConfirmsMutation(rows, 'visit-1', 'cancel'), false);
   assert.equal(visitReadbackConfirmsMutation(rows, 'visit-2', 'cancel'), false);
   assert.equal(visitReadbackConfirmsMutation(rows, 'visit-3', 'cancel'), true);
-  assert.equal(visitReadbackConfirmsMutation(rows, 'missing', 'cancel'), true);
+  assert.equal(visitReadbackConfirmsMutation(rows, 'missing', 'cancel'), false);
+  assert.equal(visitReadbackConfirmsMutation([{ reservation_id: 'visit-4', status: 'unknown' }], 'visit-4', 'cancel'), false);
 });
