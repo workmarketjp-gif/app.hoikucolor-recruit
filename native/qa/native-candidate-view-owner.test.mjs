@@ -75,3 +75,28 @@ test('search keyword is candidate-session scoped in the real Native Jobs screen'
   assert.match(jobsScreenSource, /onChangeText=\{editQuery\}/);
   assert.doesNotMatch(jobsScreenSource, /\bsetQuery\(/);
 });
+
+
+test('App Lock discards search drafts/results and forces a new canonical read after unlock', () => {
+  const effect = jobsScreenSource.slice(
+    jobsScreenSource.indexOf('  // App Lock and foreground revalidation'),
+    jobsScreenSource.indexOf('  const toggleSaved ='),
+  );
+  assert.match(effect, /generation\.current \+= 1;/);
+  for (const fragment of [
+    'setOwnedQuery(null);', 'setOwnedJobs(null);', 'setOwnedSavedIds(null);',
+    'setOwnedError(null);', 'setCursor(null);', 'setHasMore(false);',
+    'setTotalCount(0);', 'setLoading(true);',
+  ]) assert.ok(effect.includes(fragment), 'must reset: ' + fragment);
+  assert.ok(effect.indexOf('setOwnedQuery(null);') < effect.indexOf('if (privacy.shieldVisible || !ownerKey)'));
+  assert.match(effect, /if \(privacy\.shieldVisible \|\| !ownerKey\)/);
+  assert.match(effect, /void load\(true, ''\)/);
+  assert.match(effect, /\}, \[ownerKey, privacy\.shieldVisible\]\)/);
+});
+
+test('locked or unverified search screen renders no private query, rows or pagination', () => {
+  const shield = jobsScreenSource.indexOf('if (!ownerKey || !privateAllowed || privacy.shieldVisible)');
+  const screen = jobsScreenSource.indexOf('return (\n    <ScrollView contentContainerStyle={styles.page}');
+  assert.ok(shield > 0 && screen > shield, 'private UI must be behind early privacy return');
+  assert.match(jobsScreenSource.slice(shield, screen), /testID="jobs-private-shield"/);
+});
