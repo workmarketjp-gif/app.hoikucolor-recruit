@@ -68,3 +68,10 @@ test('real Jobs screen fences rows, errors, count and pagination before renderin
   assert.doesNotMatch(jobsScreenSource, /\bsetJobs\(/);
   assert.doesNotMatch(jobsScreenSource, /\bsetError\(/);
 });
+
+test('search keyword is candidate-session scoped in the real Native Jobs screen', () => {
+  assert.match(jobsScreenSource, /const query = readCandidateOwnedView\(ownedQuery, ownerKey, privateAllowed\) \?\? ''/);
+  assert.match(jobsScreenSource, /if \(ownerKey && privateAllowed\) setOwnedQuery\(\{ ownerKey, value \}\)/);
+  assert.match(jobsScreenSource, /onChangeText=\{editQuery\}/);
+  assert.doesNotMatch(jobsScreenSource, /\bsetQuery\(/);
+});

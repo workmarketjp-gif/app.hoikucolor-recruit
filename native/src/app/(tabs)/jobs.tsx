@@ -69,7 +69,11 @@ export default function JobsScreen() {
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
   const privateAllowed = privacy.canAccessPrivateData();
   const { pinCandidateAction } = usePinnedCandidateAction();
-  const [query, setQuery] = useState('');
+  const [ownedQuery, setOwnedQuery] = useState<CandidateOwnedView<string> | null>(null);
+  const query = readCandidateOwnedView(ownedQuery, ownerKey, privateAllowed) ?? '';
+  const editQuery = (value: string) => {
+    if (ownerKey && privateAllowed) setOwnedQuery({ ownerKey, value });
+  };
   const [ownedJobs, setOwnedJobs] = useState<CandidateOwnedView<JobseekerJob[]> | null>(null);
   const [ownedSavedIds, setOwnedSavedIds] = useState<CandidateOwnedView<string[]> | null>(null);
   const savedIds = readCandidateOwnedView(ownedSavedIds, ownerKey, privateAllowed);
@@ -130,7 +134,7 @@ export default function JobsScreen() {
   }, [cursor, ownerKey, pinCandidateAction, query, savedIds, visibleJobs]);
 
   useEffect(() => {
-    setQuery('');
+    setOwnedQuery(null);
     void load(true, '');
     return () => {
       generation.current += 1;
@@ -165,7 +169,7 @@ export default function JobsScreen() {
         <TextInput
           testID="job-search-keyword"
           value={query}
-          onChangeText={setQuery}
+          onChangeText={editQuery}
           placeholder="園名・職種・地域・キーワード"
           returnKeyType="search"
           onSubmitEditing={() => void load(true, query)}
