@@ -109,26 +109,25 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     setOwnedSnapshot(null);
     setOwnedError(null);
     setLoading(true);
-
-    const pinned = await pinCandidateAction();
-    const pinnedOwnerKey = candidateViewOwnerKey(pinned?.ownerId, pinned?.ownerSessionId);
-    if (!pinned || !pinnedOwnerKey || pinnedOwnerKey !== ownerKey ||
-        generation !== canonicalLoadGeneration.current || !pinned.isCurrent()) {
-      throw new Error('CANDIDATE_SESSION_CHANGED');
-    }
-
-    const [rowsResult, countResult, attentionResult] = await Promise.allSettled([
-      listNotifications(pinned.client, 50),
-      getUnreadNotificationCount(pinned.client),
-      getJobseekerAttentionSummary(pinned.client),
-    ]);
-
-    if (!pinned.isCurrent() || generation !== canonicalLoadGeneration.current ||
-        pinnedOwnerKey !== ownerKey) {
-      throw new Error('CANDIDATE_SESSION_CHANGED');
-    }
-
     try {
+      const pinned = await pinCandidateAction();
+      const pinnedOwnerKey = candidateViewOwnerKey(pinned?.ownerId, pinned?.ownerSessionId);
+      if (!pinned || !pinnedOwnerKey || pinnedOwnerKey !== ownerKey ||
+          generation !== canonicalLoadGeneration.current || !pinned.isCurrent()) {
+        throw new Error('CANDIDATE_SESSION_CHANGED');
+      }
+
+      const [rowsResult, countResult, attentionResult] = await Promise.allSettled([
+        listNotifications(pinned.client, 50),
+        getUnreadNotificationCount(pinned.client),
+        getJobseekerAttentionSummary(pinned.client),
+      ]);
+
+      if (!pinned.isCurrent() || generation !== canonicalLoadGeneration.current ||
+          pinnedOwnerKey !== ownerKey) {
+        throw new Error('CANDIDATE_SESSION_CHANGED');
+      }
+
       // A failed list is an error, never a confirmed empty inbox. Failed count
       // or attention reads are unknown, never zero.
       const value = resolveCanonicalNotificationRead(rowsResult, countResult, attentionResult);
@@ -136,15 +135,22 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       setOwnedSnapshot({ ownerKey: pinnedOwnerKey, value });
       setLoading(false);
     } catch (error) {
-      verificationRef.current = null;
-      setOwnedError({
-        ownerKey: pinnedOwnerKey,
-        value: '通知情報を取得できませんでした。通信環境を確認して更新してください。',
-      });
-      setLoading(false);
+      // This also covers failed pinCandidateAction() and missing/expired auth.
+      // A switched account, locked screen or obsolete generation receives no
+      // error message or private state from its predecessor.
+      if (generation === canonicalLoadGeneration.current && ownerKey &&
+          !privacy.shieldVisible && privacy.canAccessPrivateData()) {
+        verificationRef.current = null;
+        setOwnedSnapshot(null);
+        setOwnedError({
+          ownerKey,
+          value: '通知情報を取得できませんでした。通信環境を確認して更新してください。',
+        });
+        setLoading(false);
+      }
       throw error;
     }
-  }, [ownerKey, pinCandidateAction]);
+  }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData, privacy.shieldVisible]);
 
   const refresh = useCallback(async () => {
     if (privacy.shieldVisible) {
@@ -239,21 +245,35 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   const openNotification = useCallback(async (notificationId: string) => {
     const pinned = await pinCandidateAction();
     if (!pinned) return;
-    const route = await resolveNotificationRoute(pinned.client, notificationId);
-    if (!pinned.isCurrent()) return;
-    await markNotificationRead(pinned.client, notificationId);
-    if (!pinned.isCurrent()) return;
-    await refresh().catch(() => undefined);
-    if (!pinned.isCurrent()) return;
-    router.push(nativeNotificationHref(route, notificationId) as never);
+    try {
+      const route = await resolveNotificationRoute(pinned.client, notificationId);
+      if (!pinned.isCurrent()) return;
+      await markNotificationRead(pinned.client, notificationId);
+      if (!pinned.isCurrent()) return;
+      // A readback failure is not an acknowledged empty list; leave the
+      // canonical error visible and do not infer a successful badge update.
+      await refresh().catch(() => undefined);
+      if (!pinned.isCurrent()) return;
+      router.push(nativeNotificationHref(route, notificationId) as never);
+    } catch {
+      if (!pinned.isCurrent()) return;
+      const key = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
+      if (key) setOwnedError({ ownerKey: key, value: '通知を開けませんでした。もう一度お試しください。' });
+    }
   }, [pinCandidateAction, refresh, router]);
 
   const markAllRead = useCallback(async () => {
     const pinned = await pinCandidateAction();
     if (!pinned) return;
-    await markAllNotificationsRead(pinned.client);
-    if (!pinned.isCurrent()) return;
-    await refresh().catch(() => undefined);
+    try {
+      await markAllNotificationsRead(pinned.client);
+      if (!pinned.isCurrent()) return;
+      await refresh();
+    } catch {
+      if (!pinned.isCurrent()) return;
+      const key = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
+      if (key) setOwnedError({ ownerKey: key, value: '通知を既読にできませんでした。もう一度お試しください。' });
+    }
   }, [pinCandidateAction, refresh]);
 
   const consumeLastResponse = useCallback(async () => {
