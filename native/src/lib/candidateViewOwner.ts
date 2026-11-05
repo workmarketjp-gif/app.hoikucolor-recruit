@@ -24,3 +24,21 @@ export function readCandidateOwnedView<T>(
   return privateDataAllowed && currentOwnerKey !== null &&
     snapshot?.ownerKey === currentOwnerKey ? snapshot.value : null;
 }
+
+/**
+ * After App Lock/unlock, an old snapshot with the same user and session still
+ * needs a NEW canonical read. A matching owner key alone is insufficient.
+ */
+export function readCandidateFreshlyVerifiedView<T>(
+  snapshot: CandidateOwnedView<T> | null,
+  currentOwnerKey: string | null,
+  privateDataAllowed: boolean,
+  freshlyVerifiedOwnerKey: string | null,
+): T | null {
+  return readCandidateOwnedView(
+    snapshot,
+    currentOwnerKey,
+    privateDataAllowed && freshlyVerifiedOwnerKey !== null &&
+      freshlyVerifiedOwnerKey === currentOwnerKey,
+  );
+}
