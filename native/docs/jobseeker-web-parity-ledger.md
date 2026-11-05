@@ -37,3 +37,10 @@ Updated: 2026-11-05 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either 
 
 ## Next
 Integrate previously preserved `/career` candidate into the checked-out Expo project, then correct the exact Web five-tab order. Run full dependency-backed TypeScript and integration tests before creating a PR/triggering costly CI; then complete both-platform visual/runtime QA and independently signed acceptance artifacts. Never treat source tests as two-platform acceptance.
+
+## Candidate jobs result visibility gate (2026-11-05, same Web baseline)
+- Repository branch: `native/color-candidate-session-isolation-20261105`, parent `580f3d5d8127ab1622fcb69481311fbe25e63215`; change scoped only to `native/src/app/(tabs)/jobs.tsx` plus existing owner-test suite.
+- Search results and error messages now carry the exact candidate user+session owner key, and old rows, counts and pagination do not render on account/session change or App Lock. Existing search, favorites, detail navigation, backend/RLS remain unchanged.
+- Dynamic owner helper regression: Node 22 source tests 9/9 PASS against exact existing helper (previous 9); two expanded tests are committed in the normal owner test suite but **not claimed executed** in complete Expo checkout in this run. Scoped real React Native typecheck, API readback, Android rendering and iOS rendering are all **NOT VERIFIED**.
+- Web reference: `src/components/CandidateShell.tsx` and `src/views/CareerCompanion.tsx` at main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, role jobseeker, synthetic test state; actual same-state Web screenshots not yet captured.
+- Next: integrate prior tested `/career` UI+RPC candidate with Expo project; restore Web five-tab nav; full dependency typecheck and platform QA remain open. No backend or Production changes.

@@ -70,23 +70,26 @@ export default function JobsScreen() {
   const privateAllowed = privacy.canAccessPrivateData();
   const { pinCandidateAction } = usePinnedCandidateAction();
   const [query, setQuery] = useState('');
-  const [jobs, setJobs] = useState<JobseekerJob[]>([]);
+  const [ownedJobs, setOwnedJobs] = useState<CandidateOwnedView<JobseekerJob[]> | null>(null);
   const [ownedSavedIds, setOwnedSavedIds] = useState<CandidateOwnedView<string[]> | null>(null);
   const savedIds = readCandidateOwnedView(ownedSavedIds, ownerKey, privateAllowed);
+  const visibleJobs = readCandidateOwnedView(ownedJobs, ownerKey, privateAllowed);
+  const jobs = visibleJobs ?? [];
   const [cursor, setCursor] = useState<JobSearchCursor | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
+  const error = readCandidateOwnedView(ownedError, ownerKey, privateAllowed);
   const generation = useRef(0);
 
   const load = useCallback(async (reset: boolean, requestedQuery = query) => {
     const currentGeneration = ++generation.current;
     setLoading(true);
-    setError(null);
+    setOwnedError(null);
     if (reset) {
-      setJobs([]);
+      setOwnedJobs(null);
       setOwnedSavedIds(null);
       setCursor(null);
       setHasMore(false);
@@ -95,7 +98,7 @@ export default function JobsScreen() {
     try {
       const pinned = await pinCandidateAction();
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) throw new Error('安全なログイン状態を確認できませんでした。');
-      if (!reset && savedIds === null) throw new Error('保存済み求人を確認できません。更新してください。');
+      if (!reset && (savedIds === null || visibleJobs === null)) throw new Error('検索結果を確認できません。更新してください。');
       const [page, canonicalSaved] = await Promise.all([
         searchJobseekerJobs(pinned.client, {
           keyword: requestedQuery,
@@ -105,11 +108,13 @@ export default function JobsScreen() {
         reset ? listSavedJobIds(pinned.client) : Promise.resolve(savedIds ?? []),
       ]);
       if (!pinned.isCurrent() || currentGeneration !== generation.current) return;
-      setJobs((current) => {
-        if (reset) return page.jobs;
-        const byId = new Map(current.map((job) => [job.id, job]));
+      setOwnedJobs((previous) => {
+        const ownedKey = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
+        if (!ownedKey || ownedKey !== ownerKey) return previous;
+        const previousJobs = readCandidateOwnedView(previous, ownedKey, true);
+        const byId = new Map((reset ? [] : (previousJobs ?? [])).map((job) => [job.id, job]));
         page.jobs.forEach((job) => byId.set(job.id, job));
-        return [...byId.values()];
+        return { ownerKey: ownedKey, value: [...byId.values()] };
       });
       if (reset) setOwnedSavedIds({ ownerKey: candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)!, value: canonicalSaved });
       setCursor(page.nextCursor);
@@ -117,12 +122,12 @@ export default function JobsScreen() {
       setTotalCount(page.totalCount);
     } catch (loadError) {
       if (currentGeneration === generation.current) {
-        setError(String((loadError as { message?: unknown })?.message ?? loadError));
+        setOwnedError(ownerKey ? { ownerKey, value: String((loadError as { message?: unknown })?.message ?? loadError) } : null);
       }
     } finally {
       if (currentGeneration === generation.current) setLoading(false);
     }
-  }, [cursor, ownerKey, pinCandidateAction, query, savedIds]);
+  }, [cursor, ownerKey, pinCandidateAction, query, savedIds, visibleJobs]);
 
   useEffect(() => {
     setQuery('');
@@ -135,7 +140,7 @@ export default function JobsScreen() {
   const toggleSaved = async (jobId: string) => {
     if (!privateAllowed || savedIds === null || !jobs.some((job) => job.id === jobId)) return;
     setBusyJobId(jobId);
-    setError(null);
+    setOwnedError(null);
     try {
       const pinned = await pinCandidateAction();
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) throw new Error('安全なログイン状態を確認できませんでした。');
@@ -146,7 +151,7 @@ export default function JobsScreen() {
       setOwnedSavedIds((current) => current?.ownerKey === candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)
         ? { ...current, value: currentlySaved ? current.value.filter((id) => id !== jobId) : [...current.value, jobId] } : current);
     } catch (saveError) {
-      setError(String((saveError as { message?: unknown })?.message ?? saveError));
+      setOwnedError(ownerKey ? { ownerKey, value: String((saveError as { message?: unknown })?.message ?? saveError) } : null);
     } finally {
       setBusyJobId(null);
     }
@@ -169,11 +174,11 @@ export default function JobsScreen() {
         <Pressable testID="job-search-submit" style={styles.primaryButton} onPress={() => void load(true, query)} disabled={loading}>
           <Text style={styles.primaryButtonText}>検索</Text>
         </Pressable>
-        <Text style={styles.subtle}>{error || loading ? '検索中・確認待ち' : `${totalCount}件の求人`}</Text>
+        <Text style={styles.subtle}>{error || loading || visibleJobs === null ? '検索中・確認待ち' : `${totalCount}件の求人`}</Text>
       </View>
 
       <View style={styles.resultBar}>
-        <Text style={styles.resultCount}>{error || loading ? '—' : `${totalCount}件`}</Text>
+        <Text style={styles.resultCount}>{error || loading || visibleJobs === null ? '—' : `${totalCount}件`}</Text>
         {!query.trim() ? (
           <Pressable onPress={() => router.push('/matches' as never)}>
             <Text style={styles.link}>マッチ度順で見る</Text>
@@ -195,7 +200,7 @@ export default function JobsScreen() {
         />
       ))}
 
-      {hasMore ? (
+      {hasMore && visibleJobs !== null ? (
         <Pressable style={styles.secondaryButtonWide} disabled={loading} onPress={() => void load(false)}>
           {loading ? <ActivityIndicator /> : <Text style={styles.secondaryButtonText}>もっと見る</Text>}
         </Pressable>
