@@ -184,6 +184,8 @@ export default function ProfileScreen() {
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <View style={styles.menuCard}>
         <Text style={styles.sectionTitle}>お仕事探しメニュー</Text>
+        <Pressable style={styles.menuButton} accessibilityRole="button" onPress={() => router.push('/(tabs)/applications')}><Text style={styles.menuText}>応募管理</Text><Text style={styles.menuChevron}>›</Text></Pressable>
+        <Pressable style={styles.menuButton} accessibilityRole="button" onPress={() => router.push('/messages' as never)}><Text style={styles.menuText}>メッセージ</Text><Text style={styles.menuChevron}>›</Text></Pressable>
         <Pressable style={styles.menuButton} onPress={() => router.push('/scouts' as never)}><Text style={styles.menuText}>スカウト</Text><Text style={styles.menuChevron}>›</Text></Pressable>
         <Pressable style={styles.menuButton} onPress={() => router.push('/visits' as never)}><Text style={styles.menuText}>見学・体験の予約</Text><Text style={styles.menuChevron}>›</Text></Pressable>
         <Pressable style={styles.menuButton} onPress={() => router.push('/spot-jobs' as never)}><Text style={styles.menuText}>スポット勤務</Text><Text style={styles.menuChevron}>›</Text></Pressable>
