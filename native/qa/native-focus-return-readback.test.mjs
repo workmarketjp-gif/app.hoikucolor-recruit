@@ -28,4 +28,10 @@ test('saved jobs clear prior rows immediately on blur', () => {
 test('an old saved-job mutation cannot unlock a newer request', () => {
   assert.match(saved, /const mutationId = \+\+mutationSequence\.current;/);
   assert.match(saved, /if \(mutationId === mutationSequence\.current\)/);
+  assert.match(saved, /focusedOwnerRef\.current !== ownerKey/);
+});
+test('a pending unfocused unsave settles through a new canonical read after returning', () => {
+  assert.match(saved, /focusActiveRef\.current = false;/);
+  assert.match(saved, /privateVisibleRef\.current && focusActiveRef\.current\) \{/);
+  assert.match(saved, /void load\(\);/);
 });

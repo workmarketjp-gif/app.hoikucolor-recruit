@@ -21,6 +21,8 @@ export default function SavedJobsScreen() {
   const generation = useRef(0);
   const mutationBusyRef = useRef(false);
   const mutationSequence = useRef(0);
+  const focusedOwnerRef = useRef<string | null>(null);
+  const focusActiveRef = useRef(false);
   const currentOwnerRef = useRef(ownerKey);
   const privateVisible = Boolean(ownerKey) && !privacy.shieldVisible && privacy.canAccessPrivateData();
   const privateVisibleRef = useRef(privateVisible);
@@ -66,6 +68,15 @@ export default function SavedJobsScreen() {
   // was blurred. Drop the old rows immediately and read canonical saves anew
   // on each focus (also after biometric unlock/account switch).
   useFocusEffect(useCallback(() => {
+    if (focusedOwnerRef.current !== ownerKey) {
+      // An old candidate's pending unsave may still resolve. Do not let it
+      // control the next candidate's mutation flag or visible spinner.
+      mutationSequence.current += 1;
+      mutationBusyRef.current = false;
+      setBusyId(null);
+    }
+    focusedOwnerRef.current = ownerKey;
+    focusActiveRef.current = privateVisible && Boolean(ownerKey);
     if (!privateVisible || !ownerKey) {
       generation.current += 1;
       mutationBusyRef.current = false;
@@ -78,6 +89,7 @@ export default function SavedJobsScreen() {
     }
     void load();
     return () => {
+      focusActiveRef.current = false;
       generation.current += 1;
       setOwnedJobs(null);
       setOwnedError(null);
@@ -120,6 +132,13 @@ export default function SavedJobsScreen() {
       if (mutationId === mutationSequence.current) {
         mutationBusyRef.current = false;
         setBusyId(null);
+        // A read started on return can race with the earlier mutation.
+        // After a blur, re-read the confirmed server state when active.
+        if (!canPresent(requestOwner, requestGeneration) &&
+            requestOwner === currentOwnerRef.current &&
+            privateVisibleRef.current && focusActiveRef.current) {
+          void load();
+        }
       }
     }
   };
