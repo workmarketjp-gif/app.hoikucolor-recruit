@@ -132,7 +132,7 @@ export default function VisitsScreen() {
     setLocalTime('');
     setCandidateMessage('');
     setExperienceType('visit');
-  }, [ownerKey, privacy.shieldVisible]);
+  }, [ownerKey, privacy.shieldVisible, jobId, applicationId]);
 
   const availableTypes = allowedTypes(settings);
   const canRequest = privateAllowed && !loading && !busy && !error &&
