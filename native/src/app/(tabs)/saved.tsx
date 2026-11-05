@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { listSavedJobs, unsaveJob, type SavedJobseekerJob } from '../../lib/jobseekerCoreApi';
+import { canCommitSavedJobsView, removeSavedJobAndConfirm } from '../../lib/savedJobsReadback';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateOwnedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
 
@@ -11,53 +12,116 @@ export default function SavedJobsScreen() {
   const router = useRouter();
   const { session } = useSession();
   const privacy = usePrivateDataQuarantine();
-  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
-  const { pinCandidateAction } = usePinnedCandidateAction();
-  const [ownedJobs, setOwnedJobs] = useState<CandidateOwnedView<SavedJobseekerJob[]> | null>(null);
+  const ownerKey = candidateViewOwnerKe  const [ownedJobs, setOwnedJobs] = useState<CandidateOwnedView<SavedJobseekerJob[]> | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const generation = useRef(0);
-  const privateAllowed = privacy.canAccessPrivateData();
-  const jobs = readCandidateOwnedView(ownedJobs, ownerKey, privateAllowed);
-  const error = readCandidateOwnedView(ownedError, ownerKey, privateAllowed);
+  const mutationBusyRef = useRef(false);
+  const currentOwnerRef = useRef(ownerKey);
+  const privateVisible = Boolean(ownerKey) && !privacy.shieldVisible && privacy.canAccessPrivateData();
+  const privateVisibleRef = useRef(privateVisible);
+  currentOwnerRef.current = ownerKey;
+  privateVisibleRef.current = privateVisible;
+
+  const jobs = readCandidateOwnedView(ownedJobs, ownerKey, privateVisible);
+  const error = readCandidateOwnedView(ownedError, ownerKey, privateVisible);
+  const canPresent = (requestOwner: string | null, requestGeneration: number) =>
+    canCommitSavedJobsView(requestOwner, currentOwnerRef.current, requestGeneration,
+      generation.current, privateVisibleRef.current);
 
   const load = useCallback(async () => {
-    const currentGeneration = ++generation.current;
+    const requestOwner = ownerKey;
+    const requestGeneration = ++generation.current;
     setLoading(true);
     setOwnedJobs(null);
     setOwnedError(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned?.isCurrent() ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestOwner) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
       const next = await listSavedJobs(pinned.client);
-      if (!pinned.isCurrent() || currentGeneration !== generation.current) return;
-      setOwnedJobs({ ownerKey: candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)!, value: next });
-    } catch (loadError) {
-      if (currentGeneration === generation.current && ownerKey) setOwnedError({ ownerKey, value: String((loadError as { message?: unknown })?.message ?? loadError) });
+      if (!pinned.isCurrent() || !requestOwner ||
+          !canCommitSavedJobsView(requestOwner, currentOwnerRef.current, requestGeneration,
+            generation.current, privateVisibleRef.current)) return;
+      setOwnedJobs({ ownerKey: requestOwner, value: next });
+    } catch {
+      if (requestOwner &&
+          canCommitSavedJobsView(requestOwner, currentOwnerRef.current, requestGeneration,
+            generation.current, privateVisibleRef.current)) {
+        setOwnedError({ ownerKey: requestOwner, value: '気になる求人を取得できませんでした。更新してください。' });
+      }
     } finally {
-      if (currentGeneration === generation.current) setLoading(false);
+      if (canCommitSavedJobsView(requestOwner, currentOwnerRef.current, requestGeneration,
+          generation.current, privateVisibleRef.current)) setLoading(false);
     }
   }, [ownerKey, pinCandidateAction]);
 
+  // A privacy shield is a new generation, not merely a hidden tab.
+  // Invalidate both reads and mutations before unlocking shows any saved rows.
   useEffect(() => {
+    if (!privateVisible || !ownerKey) {
+      generation.current += 1;
+      mutationBusyRef.current = false;
+      setOwnedJobs(null);
+      setOwnedError(null);
+      setBusyId(null);
+      setLoading(true);
+      return;
+    }
     void load();
     return () => { generation.current += 1; };
-  }, [load]);
+  }, [load, ownerKey, privateVisible]);
 
   const remove = async (jobId: string) => {
-    if (!privateAllowed || !jobs?.some((job) => job.id === jobId)) return;
+    if (!privateVisibleRef.current || !ownerKey || loading ||
+        mutationBusyRef.current || !jobs?.some((job) => job.id === jobId)) return;
+    mutationBusyRef.current = true;
+    const requestOwner = ownerKey;
+    const requestGeneration = generation.current;
     setBusyId(jobId);
     setOwnedError(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
-      await unsaveJob(pinned.client, jobId);
-      if (!pinned.isCurrent()) return;
-      setOwnedJobs((current) => current?.ownerKey === candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)
-        ? { ...current, value: current.value.filter((job) => job.id !== jobId) } : current);
-    } catch (removeError) {
-      if (ownerKey) setOwnedError({ ownerKey, value: String((removeError as { message?: unknown })?.message ?? removeError) });
+      if (!pinned?.isCurrent() ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestOwner ||
+          !canPresent(requestOwner, requestGeneration)) return;
+      const canonical = await removeSavedJobAndConfirm(jobId,
+        () => unsaveJob(pinned.client, jobId),
+        () => listSavedJobs(pinned.client));
+      if (!pinned.isCurrent() || !canPresent(requestOwner, requestGeneration)) return;
+      setOwnedJobs({ ownerKey: requestOwner, value: canonical });
+    } catch {
+      if (canPresent(requestOwner, requestGeneration)) {
+        // An interrupted mutation may have succeeded server-side. Do not
+        // display stale rows or allow another remove until a fresh read.
+        setOwnedJobs(null);
+        setOwnedError({ ownerKey: requestOwner,
+          value: '保存状況を確認できませんでした。更新してご確認ください。' });
+      }
+    } finally {
+      if (canPresent(requestOwner, requestGeneration)) {
+        mutationBusyRef.current = false;
+        setBusyId(null);
+      }
+    }
+  };
+
+  const open = async (jobId: string) => {
+    if (!privateVisibleRef.current || !ownerKey || !jobs?.some((job) => job.id === jobId)) return;
+    const requestGeneration = generation.current;
+    const pinned = await pinCandidateAction();
+    if (pinned?.isCurrent() &&
+        candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey &&
+        canPresent(ownerKey, requestGeneration)) router.push(`/job/${jobId}` as never);
+  };
+
+  if (!privateVisible || !ownerKey) {
+    return <View testID="saved-private-shield" style={styles.center}><ActivityIndicator /></View>;
+  }
+age?: unknown })?.message ?? removeError) });
     } finally {
       setBusyId(null);
     }
@@ -67,7 +131,7 @@ export default function SavedJobsScreen() {
     <ScrollView contentContainerStyle={styles.page}>
       <View style={styles.headerRow}>
         <Text style={styles.summary}>{jobs === null ? '—' : `${jobs.length}件`}</Text>
-        <Pressable onPress={() => void load()}><Text style={styles.link}>更新</Text></Pressable>
+        <Pressable onPress={() => void load()} disabled={loading || busyId !== null}><Text style={styles.link}>更新</Text></Pressable>
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {(loading || (jobs === null && !error)) ? <ActivityIndicator /> : null}
@@ -83,13 +147,10 @@ export default function SavedJobsScreen() {
           <Text style={styles.facility}>{job.facility_name}</Text>
           <Text style={styles.meta}>{[job.prefecture, job.city, job.employment_type].filter(Boolean).join(' ・ ')}</Text>
           {!job.is_open ? <Text style={styles.closed}>この求人は募集を終了しています。</Text> : null}
-          <Pressable style={styles.openButton} onPress={async () => {
-            const pinned = await pinCandidateAction();
-            if (pinned?.isCurrent() && privateAllowed && candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey) router.push(`/job/${job.id}` as never);
-          }}>
+          <Pressable style={styles.openButton} onPress={() => void open(job.id)}>
             <Text style={styles.openButtonText}>求人を見る</Text>
           </Pressable>
-          <Pressable disabled={busyId === job.id} style={styles.button} onPress={() => void remove(job.id)}>
+          <Pressable disabled={loading || busyId !== null} style={styles.button} onPress={() => void remove(job.id)}>
             {busyId === job.id ? <ActivityIndicator /> : <Text style={styles.buttonText}>保存から外す</Text>}
           </Pressable>
         </View>
@@ -99,6 +160,7 @@ export default function SavedJobsScreen() {
 }
 
 const styles = StyleSheet.create({
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF8FA' },
   page: { padding: 16, gap: 12, backgroundColor: '#f7f8fa' },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   summary: { fontSize: 16, fontWeight: '800' },
