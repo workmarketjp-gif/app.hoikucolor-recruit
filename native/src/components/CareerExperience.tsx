@@ -1,7 +1,7 @@
 import { useSession } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
@@ -154,7 +154,7 @@ function OfficialWages({ data, experienceYears }: { data: OfficialWageStats | nu
         <Text style={styles.muted}>{data.prefecture_all_experience.prefecture}・全経験年数</Text>
         <Text style={styles.bold}>{data.prefecture_all_experience.monthly_scheduled_cash_yen === null ? '公表なし' : formatMan(data.prefecture_all_experience.monthly_scheduled_cash_yen)}</Text>
       </View> : null}
-      {data.source_url ? <Text style={styles.footnote}>出典URLはWeb版「お給料」で確認できます：{data.source_url}</Text> : null}
+      {data.source_url?.startsWith('https://') ? <Pressable accessibilityRole="link" onPress={() => void Linking.openURL(data.source_url!).catch(() => undefined)}><Text style={styles.link}>公的統計の出典を開く ↗</Text></Pressable> : null}
     </>
   );
 }
@@ -369,6 +369,25 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     setSaveMessage(null);
   };
 
+  const saveSalaryOnly = async () => {
+    const launchedGeneration = generation.current;
+    if (!ready || !current || !ownerKey || busy || !current.conditionsAvailable || basis !== 'monthly' || own === null) return;
+    setBusy(true); setSaveMessage(null);
+    try {
+      const pinned = await pinCandidateAction();
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      const saved = await saveCareerConditions(pinned.client, { ...(current.conditions ?? EMPTY), current_monthly_salary: own });
+      if (pinned.isCurrent() && launchedGeneration === generation.current) {
+        setBase({ ownerKey, value: { ...current, conditions: saved } });
+        setSaveMessage('この金額を保存しました。あなただけが見られます。');
+      }
+    } catch (error) {
+      if (launchedGeneration === generation.current && privacy.canAccessPrivateData()) setSaveMessage(failure(error));
+    } finally {
+      if (launchedGeneration === generation.current) setBusy(false);
+    }
+  };
+
   const save = async () => {
     const launchedGeneration = generation.current;
     if (!ready || !current || busy || !ownerKey) return;
@@ -465,6 +484,23 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
           {basis === 'hourly' ? <Text style={styles.muted}>時給の求人は労働時間が異なるため、月給のように比べられません。「求人を探す」で時給の求人をご確認ください。</Text> : null}
           <StateMessage state={selectedMarket} onRetry={() => void refreshMarket()} />
           {selectedMarket?.status === 'ready' ? <MoneyMarket market={selectedMarket.data} location={area.prefecture} own={basis === 'monthly' ? own : null} detailed={detailed} onToggleDetail={() => setDetailed(!detailed)} /> : null}
+          {variant === 'home' && selectedOfficial?.status === 'ready' && selectedOfficial.data ? (
+            <View style={styles.detailPanel}>
+              <Text style={styles.source}>公的統計・給与実績</Text>
+              <Text style={styles.muted}>{selectedOfficial.data.reference_year}年 {selectedOfficial.data.source}・求人票の募集給与とは別の指標です。</Text>
+              {selectedOfficial.data.prefecture_all_experience?.monthly_scheduled_cash_yen != null ? (
+                <Text style={styles.bold}>{selectedOfficial.data.prefecture_all_experience.prefecture}・全経験年数：{formatMan(selectedOfficial.data.prefecture_all_experience.monthly_scheduled_cash_yen)}</Text>
+              ) : selectedOfficial.data.national_by_experience.find((r) => r.monthly_scheduled_cash_yen !== null) ? (
+                <Text style={styles.bold}>全国・経験年数別：{formatMan(selectedOfficial.data.national_by_experience.find((r) => r.monthly_scheduled_cash_yen !== null)!.monthly_scheduled_cash_yen!)}</Text>
+              ) : null}
+            </View>
+          ) : null}
+          {variant === 'home' && basis === 'monthly' && own !== null && current.conditionsAvailable ? (
+            current.conditions?.current_monthly_salary === own
+              ? <Text style={styles.success}>この金額を保存しました。あなただけが見られます。</Text>
+              : <Action label={busy ? '保存を確認中…' : 'この金額を保存する'} disabled={busy} secondary onPress={() => void saveSalaryOnly()} />
+          ) : null}
+          {variant === 'home' && saveMessage ? <Text style={saveMessage.includes('保存しました') ? styles.success : styles.error}>{saveMessage}</Text> : null}
           <Text style={styles.footnote}>数値の出典は区別して表示します。求人票の募集給与と公的統計の給与実績は同一の統計ではありません。</Text>
           {variant === 'home' ? <Action label="条件を細かく決めて比べる" secondary onPress={() => router.push('/(tabs)/career')} /> : null}
         </Section>
