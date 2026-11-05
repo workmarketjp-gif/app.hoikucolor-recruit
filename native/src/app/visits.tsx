@@ -169,6 +169,8 @@ export default function VisitsScreen() {
     } catch (requestError) {
       if (pinned?.isCurrent() && ownerKey) {
         freshlyVerifiedOwner.current = ownerKey;
+        setOwnedVisits(null);
+        setOwnedSettings(null);
         setOwnedError({ ownerKey, value: String((requestError as { message?: unknown })?.message ?? requestError) });
       }
     } finally {
@@ -191,6 +193,8 @@ export default function VisitsScreen() {
     } catch (cancelError) {
       if (pinned?.isCurrent() && ownerKey) {
         freshlyVerifiedOwner.current = ownerKey;
+        setOwnedVisits(null);
+        setOwnedSettings(null);
         setOwnedError({ ownerKey, value: String((cancelError as { message?: unknown })?.message ?? cancelError) });
       }
     } finally {
