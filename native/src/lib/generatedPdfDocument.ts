@@ -14,6 +14,7 @@ export type GeneratedPdfRecord = {
   jobseeker_clerk_user_id: string;
   document_type: string;
   file_path: string;
+  is_default: boolean;
 };
 
 type GeneratedPdfOperations<T extends GeneratedPdfRecord> = {
@@ -88,14 +89,18 @@ export async function saveGeneratedPdfWithReadback<T extends GeneratedPdfRecord>
     try { await operations.cleanup(path); } catch { throw new Error('書類の登録を中止しましたが、一時ファイルの削除を確認できませんでした。'); }
     throw error;
   }
-  let saved: T | null = null;
-  try { saved = await operations.register({ id, type, title, path, size: bytes.byteLength }); }
+  let acknowledged: T | null = null;
+  try { acknowledged = await operations.register({ id, type, title, path, size: bytes.byteLength }); }
   catch { /* RPC may have committed before the network failed; reconcile below. */ }
-  if (!validDocument(saved, id, ownerId, type, path)) {
-    try { saved = await operations.readback(id); }
-    catch { throw new Error('書類の保存結果を確認できませんでした。書類一覧を再読み込みしてください。'); }
-  }
+  // Even a successful RPC response must be independently confirmed by the
+  // canonical documents table. Never treat upload/registration as readback.
+  let saved: T | null;
+  try { saved = await operations.readback(id); }
+  catch { throw new Error('書類の保存結果を確認できませんでした。書類一覧を再読み込みしてください。'); }
   if (!saved) {
+    // If the RPC acknowledged a row, a temporarily empty read cannot justify
+    // deleting its Storage object. Leave it for safe reconciliation.
+    if (acknowledged) throw new Error('書類の保存結果を確認できませんでした。書類一覧を再読み込みしてください。');
     try { await operations.cleanup(path); }
     catch { throw new Error('書類が登録されず、一時ファイルの削除も確認できませんでした。'); }
     throw new Error('PDFを登録できませんでした。');
@@ -104,7 +109,9 @@ export async function saveGeneratedPdfWithReadback<T extends GeneratedPdfRecord>
   mustBeCurrent(canContinue);
   if (request.makeDefault) {
     const selected = await operations.setDefault(saved.id);
-    if (!validDocument(selected, id, ownerId, type, path)) throw new Error('応募時に使う書類の設定を確認できませんでした。');
+    if (!validDocument(selected, id, ownerId, type, path) || !selected.is_default) {
+      throw new Error('応募時に使う書類の設定を確認できませんでした。');
+    }
     mustBeCurrent(canContinue);
     return selected;
   }
