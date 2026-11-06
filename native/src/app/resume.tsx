@@ -9,7 +9,7 @@ import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { ResumeYearMonthField } from '../components/ResumeYearMonthField';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import {
-  getCandidateResume, saveCandidateResumeAndConfirm, type CandidateResume,
+  getCandidateResume, saveCandidateResumeAndConfirm, ResumeReadbackUnconfirmed, ResumeRevisionConflict, type CandidateResume,
   type ResumeEducation, type ResumeEmployment,
 } from '../lib/resumeCanonical';
 import { MAX_RESUME_EDUCATION, MAX_RESUME_EMPLOYMENT, canAppendResumeEntry, educationStatusChange, moveResumeEntry, resumeCurrentChange } from '../lib/resumeEditor';
@@ -83,6 +83,7 @@ export default function ResumeScreen() {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [autoSavePaused, setAutoSavePaused] = useState(false);
+  const [requiresReload, setRequiresReload] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const live = (owner: string, request: number) =>
@@ -92,6 +93,9 @@ export default function ResumeScreen() {
     draftRevision.current += 1;
     setStatus(null);
     setError(null);
+    // A known validation error may be fixed by editing; an ambiguous commit or
+    // revision conflict must first be reconciled with the canonical record.
+    if (!requiresReload) setAutoSavePaused(false);
     setDirty(true);
     setResume((value) => value ? update(value) : null);
   };
@@ -106,6 +110,7 @@ export default function ResumeScreen() {
     setDirty(false);
     setSaving(false);
     setAutoSavePaused(false);
+    setRequiresReload(false);
     setStatus(null);
     setError(null);
     setLoading(true);
@@ -168,6 +173,7 @@ export default function ResumeScreen() {
       if (live(expectedOwner, startedGeneration)) {
         // Even an unknown server response may have committed: never auto-resend.
         setAutoSavePaused(true);
+        setRequiresReload(cause instanceof ResumeReadbackUnconfirmed || cause instanceof ResumeRevisionConflict);
         setError(cause instanceof Error ? cause.message : '保存結果を確認できませんでした。');
       }
     } finally {
@@ -327,7 +333,7 @@ export default function ResumeScreen() {
           <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => router.push('/(tabs)/profile')}><Text style={styles.buttonText}>応募書類の管理を開く</Text></Pressable>
         </> : null}
       </View>
-      {dirty ? <Text style={styles.hint}>{autoSavePaused ? '保存状態を確認できません。自動再送信は停止しました。最新の履歴書を読み込んで確認してください。' : saving ? '保存中です。' : '未保存の入力があります。約1.2秒後に自動保存します。'}</Text> : null}
+      {dirty ? <Text style={styles.hint}>{autoSavePaused ? (requiresReload ? '保存結果が不明、または他の端末が先に保存しました。自動再送信は停止しています。最新の内容を確認してください。' : '入力を修正すると自動保存を再開できます。') : saving ? '保存中です。' : '未保存の入力があります。約1.2秒後に自動保存します。'}</Text> : null}
       {status ? <Text style={styles.success}>{status}</Text> : null}
       <Pressable accessibilityRole="button" style={[styles.primary, (!dirty || saving || autoSavePaused) && styles.disabled]} disabled={!dirty || saving || autoSavePaused} onPress={() => void save()}>
         {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>{dirty ? (autoSavePaused ? '保存結果の確認が必要です' : '今すぐ保存する') : '保存済み'}</Text>}
