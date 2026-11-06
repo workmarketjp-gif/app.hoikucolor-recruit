@@ -9,6 +9,7 @@ import { candidateApplicationDetailKey } from '../../lib/applicationDetailVisibi
 import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } from '../../lib/applicationDocumentHandoffStatus';
 import { applicationStatusLabel } from '../../lib/messageInbox';
 import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
+import { focusedApplicationMessagesOffset } from '../../lib/focusedApplicationMessages';
 import { applicationVisitExperienceLabel, applicationVisitStatusLabel, canSubmitInterviewResponse, formatApplicationEventDateTimeJapan, interviewStatusLabel } from '../../lib/applicationEventPresentation';
 import {
   acceptOffer,
@@ -214,9 +215,19 @@ function ApplicationDetailContent() {
   const [handoffError, setHandoffError] = useState<string | null>(null);
   const generation = useRef(0);
   const messageSendPending = useRef(false);
+  // /messages? -> /application/:id?focus=messages must land at the thread,
+  // not at the top of the application summary. A prior focused scroll is never
+  // reused across a refresh, focus change or hidden private session.
+  const messageScrollRef = useRef<ScrollView>(null);
+  const messageAnchorYRef = useRef<number | null>(null);
+  const messageViewportHeightRef = useRef(0);
+  const messageContentHeightRef = useRef(0);
+  const messageAnchorConsumedRef = useRef(false);
 
   const load = useCallback(async (_quiet = false) => {
     const current = ++generation.current;
+    messageAnchorConsumedRef.current = false;
+    messageAnchorYRef.current = null;
     // Fail closed on refresh or lost permission: do not keep displaying the old
     // application, messages or submitted documents while authorization is retried.
     setLoading(true);
@@ -253,6 +264,8 @@ function ApplicationDetailContent() {
     void latestLoad.current();
     return () => {
       generation.current += 1; // Never apply an in-flight read after blur.
+      messageAnchorConsumedRef.current = false;
+      messageAnchorYRef.current = null;
       setDetail(null);
       setMessages([]);
       setDocumentState(null);
@@ -347,6 +360,23 @@ function ApplicationDetailContent() {
   };
 
   const messagesFocused = focus === 'messages';
+  const maybeScrollToMessages = () => {
+    const offset = focusedApplicationMessagesOffset({
+      focused: messagesFocused,
+      alreadyFocused: messageAnchorConsumedRef.current,
+      anchorY: messageAnchorYRef.current,
+      contentHeight: messageContentHeightRef.current,
+      viewportHeight: messageViewportHeightRef.current,
+    });
+    if (offset === null || !messageScrollRef.current) return;
+    messageAnchorConsumedRef.current = true;
+    const focusGeneration = generation.current;
+    requestAnimationFrame(() => {
+      // A late animation frame may race with leaving the private thread.
+      if (focusGeneration !== generation.current || !messageAnchorConsumedRef.current) return;
+      messageScrollRef.current?.scrollTo({ y: offset, animated: false });
+    });
+  };
   const missingDocuments = documentState?.missingSourceDocumentIds.length ?? 0;
   const documentReadState = classifyApplicationDocumentHandoff(documentState);
   const orderedMessages = useMemo(() => [...messages].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at)), [messages]);
@@ -369,7 +399,19 @@ function ApplicationDetailContent() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      ref={messageScrollRef}
+      contentContainerStyle={styles.page}
+      keyboardShouldPersistTaps="handled"
+      onLayout={(event) => {
+        messageViewportHeightRef.current = event.nativeEvent.layout.height;
+        maybeScrollToMessages();
+      }}
+      onContentSizeChange={(_width, height) => {
+        messageContentHeightRef.current = height;
+        maybeScrollToMessages();
+      }}
+    >
       <View style={styles.heading}>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{detail.application.job_title}</Text>
@@ -471,12 +513,16 @@ function ApplicationDetailContent() {
         </Pressable>
       </View>
 
-      <View style={[styles.card, messagesFocused && styles.focusedCard]}>
+      <View style={[styles.card, messagesFocused && styles.focusedCard]}
+        onLayout={(event) => {
+          messageAnchorYRef.current = event.nativeEvent.layout.y;
+          maybeScrollToMessages();
+        }}>
         <View style={styles.cardHeadingRow}>
           <Text style={styles.sectionTitle}>園とのメッセージ</Text>
           <Text style={styles.count}>{messages.length}件</Text>
         </View>
-        {messagesFocused ? <Text style={styles.focusLabel}>通知からこのやり取りを開きました</Text> : null}
+        {messagesFocused ? <Text style={styles.focusLabel}>園とのメッセージを表示しています</Text> : null}
         {orderedMessages.length === 0 ? <Text style={styles.subtle}>メッセージはまだありません。</Text> : null}
         {orderedMessages.map((message) => (
           <View key={message.id} style={[styles.message, message.sender_role === 'jobseeker' && styles.myMessage]}>
