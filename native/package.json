@@ -94,7 +94,8 @@
     "test:resume-canonical": "node --experimental-strip-types --test qa/native-resume-canonical.test.mjs",
     "test:resume-linked-profile": "node --experimental-strip-types --test qa/native-resume-linked-profile-fields.test.mjs qa/native-resume-childcare-parity.test.mjs",
     "test:resume-autosave": "node --experimental-strip-types --test qa/native-resume-autosave.test.mjs qa/native-resume-editor-parity.test.mjs",
-    "test:resume-review": "node --experimental-strip-types --test qa/native-resume-review.test.mjs"
+    "test:resume-review": "node --experimental-strip-types --test qa/native-resume-review.test.mjs",
+    "test:resume-photo-preview": "node --experimental-strip-types --test qa/native-resume-photo-preview.test.mjs"
   },
   "dependencies": {
     "@clerk/expo": "^3.1.12",
