@@ -1,5 +1,7 @@
 import { useSession } from '@clerk/expo';
 import * as Crypto from 'expo-crypto';
+import * as ImagePicker from 'expo-image-picker';
+import { File } from 'expo-file-system';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
@@ -10,6 +12,8 @@ import { ResumeYearMonthField } from '../components/ResumeYearMonthField';
 import { ResumeChildcareEditor } from '../components/ResumeChildcareEditor';
 import { ResumeReviewPanel } from '../components/ResumeReviewPanel';
 import { buildResumeReview, type ResumeReview } from '../lib/resumeReviewModel';
+import { canPresentResumePhoto, prepareResumePhotoPreview, type ResumePhotoPreview } from '../lib/resumePhotoPreview';
+import { isPrivateDocumentPickerCacheUri } from '../lib/documentPickerCache';
 import { getJobseekerProfile } from '../lib/jobseekerCoreApi';
 import { getJobseekerMatchingPreferences, emptyJobseekerMatchingPreferences } from '../lib/candidateParityApi';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
@@ -95,6 +99,11 @@ export default function ResumeScreen() {
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewRefresh, setReviewRefresh] = useState(0);
   const reviewRequest = useRef(0);
+  const photoInFlight = useRef(false);
+  const photoScreenActive = useRef(false);
+  const [photoPreview, setPhotoPreview] = useState<ResumePhotoPreview | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const live = (owner: string, request: number) =>
     request === generation.current && ownerRef.current === owner && privacy.canAccessPrivateData();
   const edit = (update: (value: CandidateResume) => CandidateResume) => {
@@ -140,21 +149,95 @@ export default function ResumeScreen() {
   }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData]);
 
   useFocusEffect(useCallback(() => {
+    photoScreenActive.current = true;
     if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
+      photoScreenActive.current = false;
       generation.current += 1;
       setLoadedOwner(null);
       setResume(null);
       setDirty(false);
       setLoading(true);
+      setPhotoPreview(null);
+      setPhotoError(null);
+      setPhotoBusy(false);
       return;
     }
     void load();
     return () => {
+      photoScreenActive.current = false;
       generation.current += 1;
       setLoadedOwner(null);
       setResume(null);
+      setPhotoPreview(null);
+      setPhotoError(null);
+      setPhotoBusy(false);
     };
   }, [ownerKey, privacy.shieldVisible, privacy.canAccessPrivateData, load]));
+
+  // Never retain a previous owner's photo across a lock, reload or account change.
+  useEffect(() => {
+    if (!canRead || loadedOwner !== ownerKey) {
+      setPhotoPreview(null);
+      setPhotoError(null);
+    }
+  }, [canRead, loadedOwner, ownerKey]);
+
+  const pickResumePhoto = async () => {
+    if (photoInFlight.current || section !== 6 || !canRead || !ownerKey ||
+        loadedOwner !== ownerKey || !photoScreenActive.current) return;
+    const startedOwner = ownerKey;
+    const startedGeneration = generation.current;
+    const stillEligible = () => canPresentResumePhoto({
+      startedOwner, currentOwner: ownerRef.current, loadedOwner,
+      startedGeneration, currentGeneration: generation.current,
+      privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+      screenActive: photoScreenActive.current,
+    });
+    photoInFlight.current = true;
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      // Expo's native editor may crop differently on iOS. A consistent 3:4
+      // sanitized export must be verified before the photo can enter a PDF.
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'], allowsEditing: true, aspect: [3, 4],
+        quality: 0.88, base64: true, exif: false,
+      });
+      if (result.canceled) return;
+      const asset = result.assets?.[0];
+      if (!asset) throw new Error('写真を確認できませんでした。もう一度選んでください。');
+      let prepared: ResumePhotoPreview | null = null;
+      let failure: unknown = null;
+      try {
+        prepared = prepareResumePhotoPreview(asset);
+      } catch (cause) {
+        failure = cause;
+      }
+      // ImagePicker creates an app-cache copy. Delete it before retaining the
+      // selected image in JS memory. Never delete an external library original.
+      try {
+        if (!isPrivateDocumentPickerCacheUri(asset.uri)) {
+          throw new Error('写真の一時ファイルを安全に確認できませんでした。');
+        }
+        const temp = new File(asset.uri);
+        if (temp.exists) temp.delete();
+        if (temp.exists) throw new Error('写真の一時ファイルを削除できませんでした。');
+      } catch (cause) {
+        failure = cause;
+      }
+      if (!stillEligible()) return;
+      if (failure) throw failure;
+      if (!prepared) throw new Error('写真を確認できませんでした。');
+      setPhotoPreview(prepared);
+    } catch (cause) {
+      if (stillEligible()) {
+        setPhotoError(cause instanceof Error ? cause.message : '写真を読み込めませんでした。');
+      }
+    } finally {
+      photoInFlight.current = false;
+      if (stillEligible()) setPhotoBusy(false);
+    }
+  };
 
   const save = async () => {
     if (savingRef.current || autoSavePaused || !resume || !dirty || !canRead || loadedOwner !== ownerKey || !ownerKey) return;
@@ -394,8 +477,24 @@ export default function ResumeScreen() {
         </> : null}
         {section === 6 ? <>
           <ResumeReviewPanel review={review?.owner === ownerKey && !dirty && !saving && !autoSavePaused ? review.data : null}
+            photoDataUri={canRead && loadedOwner === ownerKey ? photoPreview?.dataUri ?? null : null}
             loading={reviewBusy} error={reviewError}
             onRefresh={() => setReviewRefresh((n) => n + 1)} onReloadResume={reloadLatest} />
+          <View style={styles.photoCard}>
+            <Text style={styles.label}>証明写真（任意）</Text>
+            <Text style={styles.hint}>この画面では端末上のプレビューのみです。写真だけを送信しません。画面を離れると選択内容は消去されます。PDFへの組込み・保存はまだ対応していません。</Text>
+            {photoError ? <Text accessibilityRole="alert" style={styles.warningText}>{photoError}</Text> : null}
+            {photoPreview && canRead ? <Text style={styles.hint}>写真を選択しました。履歴書プレビューで確認できます。</Text> : null}
+            <Pressable accessibilityRole="button" accessibilityLabel={photoPreview ? '証明写真を変更' : '証明写真を選ぶ'}
+              disabled={photoBusy} style={[styles.secondary, photoBusy && styles.disabled]}
+              onPress={() => void pickResumePhoto()}>
+              <Text style={styles.buttonText}>{photoBusy ? '写真を確認中…' : photoPreview ? '写真を変更' : '写真を選ぶ'}</Text>
+            </Pressable>
+            {photoPreview ? <Pressable accessibilityRole="button" style={styles.secondary}
+              onPress={() => { setPhotoPreview(null); setPhotoError(null); }}>
+              <Text style={styles.buttonText}>写真を外す</Text>
+            </Pressable> : null}
+          </View>
           <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => router.push('/(tabs)/profile')}><Text style={styles.buttonText}>応募書類の管理を開く</Text></Pressable>
         </> : null}
       </View>
@@ -426,6 +525,7 @@ const styles = StyleSheet.create({
   choiceLabel: { color: '#453741', fontSize: 14, fontWeight: '700' },
   selectedLabel: { color: '#B82051' },
   card: { borderRadius: 18, backgroundColor: '#fff', padding: 16, gap: 14, borderWidth: 1, borderColor: '#F5DDE5' },
+  photoCard: { borderWidth: 1, borderColor: '#F5DDE5', backgroundColor: '#fff', padding: 14, borderRadius: 14, gap: 10 },
   title: { fontSize: 20, color: '#30212B', fontWeight: '800' },
   field: { gap: 7 },
   label: { color: '#34232E', fontWeight: '800', fontSize: 15 },
