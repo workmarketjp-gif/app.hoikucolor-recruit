@@ -7,6 +7,7 @@ import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { ResumeYearMonthField } from '../components/ResumeYearMonthField';
+import { ResumeChildcareEditor } from '../components/ResumeChildcareEditor';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import {
   getCandidateResume, saveCandidateResumeAndConfirm, ResumeReadbackUnconfirmed, ResumeRevisionConflict, type CandidateResume,
@@ -79,6 +80,8 @@ export default function ResumeScreen() {
   const [resume, setResume] = useState<CandidateResume | null>(null);
   const [loadedOwner, setLoadedOwner] = useState<string | null>(null);
   const [section, setSection] = useState(0);
+  const [childcareActivated, setChildcareActivated] = useState(false);
+  useEffect(() => { if (section === 4) setChildcareActivated(true); }, [section]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -325,10 +328,8 @@ export default function ResumeScreen() {
           ))}
           <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => router.push('/(tabs)/profile')}><Text style={styles.buttonText}>資格・免許の登録を開く</Text></Pressable>
         </> : null}
-        {section === 4 ? <>
-          <Text style={styles.hint}>保育経験、担当年齢、リーダー経験はプロフィールと希望条件の正式データから利用されます。</Text>
-          <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => router.push('/scouts' as never)}><Text style={styles.buttonText}>保育経験・希望条件の編集</Text></Pressable>
-        </> : null}
+        {section === 4 ? <Text style={styles.hint}>保育経験、担当年齢、リーダー経験は、マイページと同じ正式データを編集します。</Text> : null}
+        {childcareActivated ? <ResumeChildcareEditor visible={section === 4} /> : null}
         {section === 5 ? <>
           <Field label="職務要約" value={view.work_summary} multiline onChange={(v) => change('work_summary', v)} />
           <Field label="自己PR" value={view.self_pr} multiline onChange={(v) => change('self_pr', v)} />
