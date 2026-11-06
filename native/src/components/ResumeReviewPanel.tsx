@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { ResumeReview } from '../lib/resumeReviewModel';
 
@@ -14,6 +15,7 @@ function Detail({ title, value }: { title: string; value: string }) {
 }
 /** Data-only review: does not imply a PDF has been generated or uploaded. */
 export function ResumeReviewPanel({ review, photoDataUri, loading, error, onRefresh, onReloadResume }: Props) {
+  const [activePreview, setActivePreview] = useState<'resume' | 'work_history'>('resume');
   return <View style={styles.root}>
     <View style={styles.header}>
       <Text style={styles.heading}>履歴書・職務経歴書の内容確認</Text>
@@ -35,7 +37,19 @@ export function ResumeReviewPanel({ review, photoDataUri, loading, error, onRefr
         <Text style={styles.note}>未入力でもプレビューできますが、PDF作成前に確認してください。</Text>
         <Text style={styles.noticeText}>{review.gaps.join('、')}</Text>
       </View> : <Text style={styles.ok}>Web版の必須確認項目に不足はありません。</Text>}
-      <View style={styles.paper}>
+      <View style={styles.previewTabs} accessibilityLabel="プレビューを切り替える">
+        <Pressable accessibilityRole="tab" accessibilityState={{ selected: activePreview === 'resume' }}
+          style={[styles.previewTab, activePreview === 'resume' && styles.previewTabSelected]}
+          onPress={() => setActivePreview('resume')}>
+          <Text style={[styles.refreshLabel, activePreview === 'resume' && styles.previewTabSelectedText]}>履歴書</Text>
+        </Pressable>
+        <Pressable accessibilityRole="tab" accessibilityState={{ selected: activePreview === 'work_history' }}
+          style={[styles.previewTab, activePreview === 'work_history' && styles.previewTabSelected]}
+          onPress={() => setActivePreview('work_history')}>
+          <Text style={[styles.refreshLabel, activePreview === 'work_history' && styles.previewTabSelectedText]}>職務経歴書</Text>
+        </Pressable>
+      </View>
+      {activePreview === 'resume' ? <View style={styles.paper}>
         <Text style={styles.paperTitle}>履歴書</Text>
         <Text style={styles.date}>{review.createdOn}</Text>
         <Detail title="ふりがな" value={review.kana} />
@@ -64,8 +78,7 @@ export function ResumeReviewPanel({ review, photoDataUri, loading, error, onRefr
           <Text style={styles.sectionTitle}>{section.title}</Text><Text style={styles.body}>{section.lines.join('\n')}</Text>
         </View>)}
         <Text style={styles.sectionTitle}>本人希望記入欄</Text><Text style={styles.body}>{review.requests}</Text>
-      </View>
-      <View style={styles.paper}>
+      </View> : <View style={styles.paper}>
         <Text style={styles.paperTitle}>職務経歴書</Text>
         <Text style={styles.date}>{review.createdOn}</Text>
         <Detail title="氏名" value={review.name} />
@@ -74,7 +87,7 @@ export function ResumeReviewPanel({ review, photoDataUri, loading, error, onRefr
           {section.lines.map((line, j) => <Text key={`${i}-${j}`} style={styles.body}>{line}</Text>)}
         </View>)}
         {!review.work.length ? <Text style={styles.body}>職務経歴・自己PRの登録がありません。</Text> : null}
-      </View>
+      </View>}
       <Text style={styles.note}>このプレビューはNative画面での確認用です。A4 PDFの生成・書類管理への登録・提出はまだ行われていません。</Text>
     </> : null}
   </View>;
@@ -92,6 +105,10 @@ const styles = StyleSheet.create({
   noticeTitle: { color: '#80500D', fontWeight: '900', fontSize: 15 },
   noticeText: { color: '#765016', fontSize: 15, lineHeight: 22 },
   ok: { color: '#087044', fontWeight: '800', fontSize: 14 },
+  previewTabs: { flexDirection: 'row', gap: 8 },
+  previewTab: { flex: 1, minHeight: 48, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E6C5D0', borderRadius: 12, backgroundColor: '#fff' },
+  previewTabSelected: { backgroundColor: '#E9265A', borderColor: '#E9265A' },
+  previewTabSelectedText: { color: '#fff' },
   paper: { borderColor: '#E7D5DD', borderWidth: 1, backgroundColor: '#fff', padding: 14, gap: 8, borderRadius: 10 },
   paperTitle: { textAlign: 'center', fontSize: 20, fontWeight: '900', color: '#30212B', marginTop: 5 },
   photoLine: { flexDirection: 'row', gap: 12, alignItems: 'center', justifyContent: 'flex-end' },
