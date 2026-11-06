@@ -301,9 +301,7 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>応募書類</Text>
-        <Text style={styles.subtle}>履歴書・職務経歴書・資格証を登録し、応募時に使う書類を管理します。</Text>
-        <DocumentVaultSection />
+        <DocumentVaultSection qualifications={profile.qualifications} />
       </View>
 
       <View style={styles.card}>
