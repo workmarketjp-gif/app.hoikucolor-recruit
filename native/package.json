@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit",
     "test:contracts": "node qa/run-native-contracts.mjs",
     "test:contracts:available": "node qa/run-native-contracts.mjs --available-only",
+    "test:push-lifecycle": "node --experimental-strip-types --test qa/native-push-lifecycle.test.mjs",
     "test:application-journey": "node --experimental-strip-types --test qa/native-application-journey.test.mjs",
     "test:ambiguous-retry": "node qa/native-ambiguous-mutation-retry-contract.mjs",
     "test:notification-permission": "node qa/native-notification-permission-recovery-contract.mjs",

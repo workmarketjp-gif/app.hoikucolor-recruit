@@ -94,3 +94,6 @@ Remove the 62 dead npm scripts or point them at real suites, so a green `npm run
   routing, Clerk config failure vs instance mismatch, signed-out never mounts PrivateRuntime, inactive identity holding state,
   sign-in / account-switch / sign-out transitions, diagnostics carry no identifiers. Retires inventory entry `signed-out-bootstrap`.
   Mutation-checked: forcing the entry redirect to home fails the suite.
+- `native-push-lifecycle.test.mjs` (18 tests, `npm run test:push-lifecycle`; fixture `qa/fixtures/push-platform.stub.mjs`): real `notifications.ts`
+  with a synthetic platform. Mutation-checked (removing generation guards fails 2 tests). Retires `push-lifecycle`; covers the registration half
+  of `push-session-quarantine` / `push-binding-session-race`. Real push delivery needs a device.
