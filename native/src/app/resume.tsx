@@ -212,7 +212,7 @@ export default function ResumeScreen() {
   }, [canRead, loadedOwner, ownerKey]);
 
   const pickResumePhoto = async () => {
-    if (photoInFlight.current || section !== 6 || !canRead || !ownerKey ||
+    if (photoInFlight.current || pdfInFlight.current || section !== 6 || !canRead || !ownerKey ||
         loadedOwner !== ownerKey || !photoScreenActive.current ||
         !session?.user?.id || !session?.id) return;
     const startedOwner = ownerKey;
@@ -281,7 +281,7 @@ export default function ResumeScreen() {
   };
 
   const removeResumePhoto = async () => {
-    if (photoInFlight.current || !photoPreview || section !== 6 ||
+    if (photoInFlight.current || pdfInFlight.current || !photoPreview || section !== 6 ||
         !canRead || !ownerKey || loadedOwner !== ownerKey ||
         !photoScreenActive.current || !session?.user?.id || !session?.id) return;
     const startedOwner = ownerKey;
@@ -496,10 +496,22 @@ export default function ResumeScreen() {
           canStartUpload: () => pinned.isCurrent() && stillCurrent(),
         },
       );
-      if (!pinned.isCurrent() || !stillCurrent()) return;
+      if (!pinned.isCurrent()) return;
+      if (!stillCurrent()) {
+        if (live(expectedOwner, startedGeneration)) {
+          setPdfError('PDF作成中に入力内容が変更されました。書類が保存済みの可能性があるため、応募書類一覧を確認してください。');
+        }
+        return;
+      }
       setPdfSaved({ type, isDefault: record.is_default });
     } catch (cause) {
-      if (stillCurrent()) setPdfError(cause instanceof Error ? cause.message : 'PDFを作成・保存できませんでした。');
+      if (stillCurrent()) {
+        setPdfError(cause instanceof Error ? cause.message : 'PDFを作成・保存できませんでした。');
+      } else if (live(expectedOwner, startedGeneration)) {
+        // Registration may already have committed before the photo/draft changed.
+        // Do not call it a success or automatically submit another PDF.
+        setPdfError('PDF作成中に写真または入力内容が変更されました。保存済みの可能性があるため、応募書類一覧を確認してください。');
+      }
     } finally {
       pdfInFlight.current = false;
       if (ownerRef.current === expectedOwner && privacy.canAccessPrivateData()) setPdfBusy(null);
@@ -640,11 +652,11 @@ export default function ResumeScreen() {
             {photoError ? <Text accessibilityRole="alert" style={styles.warningText}>{photoError}</Text> : null}
             {photoPreview && canRead ? <Text style={styles.hint}>写真を選択しました。履歴書プレビューで確認できます。</Text> : null}
             <Pressable accessibilityRole="button" accessibilityLabel={photoPreview ? '証明写真を変更' : '証明写真を選ぶ'}
-              disabled={photoBusy} style={[styles.secondary, photoBusy && styles.disabled]}
+              disabled={photoBusy || pdfBusy !== null} style={[styles.secondary, (photoBusy || pdfBusy !== null) && styles.disabled]}
               onPress={() => void pickResumePhoto()}>
               <Text style={styles.buttonText}>{photoBusy ? '写真を確認中…' : photoPreview ? '写真を変更' : '写真を選ぶ'}</Text>
             </Pressable>
-            {photoPreview ? <Pressable accessibilityRole="button" disabled={photoBusy} style={[styles.secondary, photoBusy && styles.disabled]}
+            {photoPreview ? <Pressable accessibilityRole="button" disabled={photoBusy || pdfBusy !== null} style={[styles.secondary, (photoBusy || pdfBusy !== null) && styles.disabled]}
               onPress={() => void removeResumePhoto()}>
               <Text style={styles.buttonText}>写真を外す</Text>
             </Pressable> : null}
@@ -663,17 +675,17 @@ export default function ResumeScreen() {
               {pdfSaved.isDefault ? '次の応募で使う既定の書類に設定しました。' : ''}
             </Text> : null}
             <Pressable accessibilityRole="button" accessibilityLabel="履歴書のPDFを作成して保存"
-              disabled={pdfBusy !== null || !canRead || dirty || saving || autoSavePaused ||
+              disabled={pdfBusy !== null || photoBusy || !canRead || dirty || saving || autoSavePaused ||
                 reviewBusy || !review || review.owner !== ownerKey}
-              style={[styles.primary, (pdfBusy !== null || !review || dirty || saving || autoSavePaused) && styles.disabled]}
+              style={[styles.primary, (pdfBusy !== null || photoBusy || !review || dirty || saving || autoSavePaused) && styles.disabled]}
               onPress={() => void createPdf('resume')}>
               {pdfBusy === 'resume' ? <ActivityIndicator color="#fff" /> :
                 <Text style={styles.primaryText}>履歴書のPDFを作成して保存</Text>}
             </Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel="職務経歴書のPDFを作成して保存"
-              disabled={pdfBusy !== null || !canRead || dirty || saving || autoSavePaused ||
+              disabled={pdfBusy !== null || photoBusy || !canRead || dirty || saving || autoSavePaused ||
                 reviewBusy || !review || review.owner !== ownerKey}
-              style={[styles.primary, (pdfBusy !== null || !review || dirty || saving || autoSavePaused) && styles.disabled]}
+              style={[styles.primary, (pdfBusy !== null || photoBusy || !review || dirty || saving || autoSavePaused) && styles.disabled]}
               onPress={() => void createPdf('work_history')}>
               {pdfBusy === 'work_history' ? <ActivityIndicator color="#fff" /> :
                 <Text style={styles.primaryText}>職務経歴書のPDFを作成して保存</Text>}
