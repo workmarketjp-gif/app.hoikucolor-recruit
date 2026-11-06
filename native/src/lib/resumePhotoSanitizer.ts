@@ -7,6 +7,8 @@
  * Parsed JPEG scan data and PNG essential image chunks are preserved intact.
  * Reject unknown/truncated structures rather than accidentally forward metadata.
  */
+import { pngChunkCrcValid } from './resumePhotoPngCrc.ts';
+
 const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10] as const;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -125,6 +127,9 @@ function sanitizePng(bytes: Uint8Array): Uint8Array {
   while (at + 12 <= bytes.length) {
     const length = pngLength(bytes, at);
     if (!Number.isSafeInteger(length) || length > bytes.length - at - 12) throw corrupt();
+    // PNG CRC-32 is mandatory, even for ancillary chunks discarded for privacy.
+    // A corrupted pixel payload must never pass through to native image/PDF decoding.
+    if (!pngChunkCrcValid(bytes, at, length)) throw corrupt();
     const type = String.fromCharCode(...bytes.subarray(at + 4, at + 8));
     if (!/^[A-Za-z]{4}$/.test(type)) throw corrupt();
     const end = at + 12 + length;
