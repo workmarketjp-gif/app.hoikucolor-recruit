@@ -158,7 +158,16 @@ export default function ResumeScreen() {
     const expectedOwner = ownerKey;
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== expectedOwner || !live(expectedOwner, startedGeneration)) return;
+      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== expectedOwner || !live(expectedOwner, startedGeneration)) {
+        // A credential/pin failure in the still-visible owner scope is not a
+        // reason to retry every 1.2 seconds. Hide stale progress and reload.
+        if (live(expectedOwner, startedGeneration)) {
+          setAutoSavePaused(true);
+          setRequiresReload(true);
+          setError('ログイン状態を確認できませんでした。再送信せず、最新の内容を読み込んでください。');
+        }
+        return;
+      }
       const confirmed = await saveCandidateResumeAndConfirm(pinned.client, submitted);
       if (!pinned.isCurrent() || !live(expectedOwner, startedGeneration)) return;
       if (submittedRevision === draftRevision.current) {
