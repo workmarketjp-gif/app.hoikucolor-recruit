@@ -4,6 +4,8 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View 
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
+import { ResumeYearMonthField } from './ResumeYearMonthField';
+import { RESUME_PROFILE_QUALIFICATION_OPTIONS, RESUME_PROFILE_QUALIFICATION_LIMIT, setResumeQualification, resumeOptionalProfileText } from '../lib/resumeLinkedProfilePolicy';
 import { getJobseekerProfile, upsertJobseekerProfile, type JobseekerProfileInput } from '../lib/jobseekerCoreApi';
 import {
   emptyJobseekerMatchingPreferences, getJobseekerMatchingPreferences,
@@ -24,8 +26,14 @@ const emptyProfile: JobseekerProfileInput = {
 
 type Target = 'profile' | 'preferences';
 
-/** Web /resume step 5 edits the existing candidate profile and matching preferences. */
-export function ResumeChildcareEditor({ visible }: { visible: boolean }) {
+/** One mounted editor owns Web /resume's shared profile across steps 1, 4, 5.
+ * Unmounting or duplicating profile editors would race against the canonical upsert.
+ */
+export function ResumeChildcareEditor({ section, qualificationAcquired, onQualificationAcquiredChange }: {
+  section: 'basic' | 'licenses' | 'childcare' | null;
+  qualificationAcquired: Readonly<Record<string, string>>;
+  onQualificationAcquiredChange: (next: Record<string, string>) => void;
+}) {
   const { session } = useSession();
   const { pinCandidateAction } = usePinnedCandidateAction();
   const privacy = usePrivateDataQuarantine();
@@ -42,6 +50,7 @@ export function ResumeChildcareEditor({ visible }: { visible: boolean }) {
   const [profile, setProfile] = useState<JobseekerProfileInput | null>(null);
   const [preferences, setPreferences] = useState<JobseekerMatchingPreferences | null>(null);
   const [yearsText, setYearsText] = useState('');
+  const [customQualification, setCustomQualification] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [dirtyProfile, setDirtyProfile] = useState(false);
@@ -61,6 +70,7 @@ export function ResumeChildcareEditor({ visible }: { visible: boolean }) {
     setProfile(null);
     setPreferences(null);
     setYearsText('');
+    setCustomQualification('');
     setValidationError(null);
     setDirtyProfile(false);
     setDirtyPreferences(false);
@@ -214,7 +224,7 @@ export function ResumeChildcareEditor({ visible }: { visible: boolean }) {
     if (!dirtyProfile && !dirtyPreferences) { void load(); return; }
     const expectedOwner = ownerKey;
     const request = generation.current;
-    Alert.alert('未保存の変更を破棄しますか？', '正式データを読み込むと未保存の保育経験・希望条件は失われます。', [
+    Alert.alert('未保存の変更を破棄しますか？', '正式データを読み込むと未保存のプロフィール・資格・保育経験・希望条件は失われます。', [
       { text: 'キャンセル', style: 'cancel' },
       { text: '破棄して再読み込み', style: 'destructive', onPress: () => {
         if (ownerRef.current !== expectedOwner || generation.current !== request || !privacy.canAccessPrivateData()) return;
@@ -225,7 +235,7 @@ export function ResumeChildcareEditor({ visible }: { visible: boolean }) {
 
   // Always mounted by the parent while the résumé wizard is active. Section
   // changes therefore cannot silently cancel a pending 1.2-second save.
-  if (!visible || !privateAllowed) return null;
+  if (!section || !privateAllowed) return null;
   if (loading || loadedOwner !== ownerKey || !profile || !preferences) {
     return <View style={styles.panel}>
       {error ? <Text style={styles.error}>{error}</Text> : <ActivityIndicator color="#E9265A" />}
@@ -233,7 +243,76 @@ export function ResumeChildcareEditor({ visible }: { visible: boolean }) {
     </View>;
   }
   const selectedExperience = profile.years_of_experience;
+  const applyQualification = (rawName: string, enabled: boolean) => {
+    // Qualification and its acquisition date belong to different canonical
+    // records: refuse a second mutation while the profile result is unknown.
+    if (pausedProfile) {
+      setError('資格の保存結果が不明です。正式データを読み込んでから変更してください。');
+      return;
+    }
+    try {
+      const next = setResumeQualification(profile.qualifications, qualificationAcquired, rawName, enabled);
+      if (next.qualifications.length === profile.qualifications.length &&
+          next.qualifications.every((name, i) => name === profile.qualifications[i])) return;
+      editProfile((current) => ({ ...current, qualifications: next.qualifications }));
+      if (Object.keys(next.acquisitionDates).length !== Object.keys(qualificationAcquired).length) {
+        onQualificationAcquiredChange(next.acquisitionDates);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '資格を変更できませんでした。');
+    }
+  };
   return <View style={styles.panel}>
+    {section === 'basic' ? <>
+      <Text style={styles.note}>お名前・連絡先はマイページの正式なプロフィールと共通です。編集すると両方に反映されます。</Text>
+      {([
+        ['お名前', 'name'], ['ふりがな', 'name_kana'],
+        ['電話番号', 'phone'], ['メールアドレス', 'email'],
+      ] as const).map(([label, key]) => <View key={key} style={styles.field}>
+        <Text style={styles.label}>{label}</Text>
+        <TextInput accessibilityLabel={label} style={styles.input}
+          keyboardType={key === 'phone' ? 'phone-pad' : key === 'email' ? 'email-address' : 'default'}
+          autoCapitalize="none" autoCorrect={false}
+          value={profile[key] ?? ''}
+          onChangeText={(value) => editProfile((current) => ({ ...current, [key]: resumeOptionalProfileText(value) }))} />
+      </View>)}
+    </> : null}
+    {section === 'licenses' ? <>
+      <Text style={styles.note}>選択した資格はプロフィールにも保存され、求人のマッチングに使われます。証明書類を登録しても確認済み資格にはなりません。</Text>
+      <Text style={styles.label}>持っている資格・免許</Text>
+      <View style={styles.choices}>{[...new Set([...RESUME_PROFILE_QUALIFICATION_OPTIONS, ...profile.qualifications])].map((name) => {
+        const selected = profile.qualifications.includes(name);
+        return <Pressable key={name} accessibilityRole="button" accessibilityState={{ selected }}
+          style={[styles.choice, selected && styles.selected]}
+          onPress={() => applyQualification(name, !selected)}>
+          <Text style={[styles.choiceText, selected && styles.selectedText]}>{name}</Text>
+        </Pressable>;
+      })}</View>
+      <Text style={styles.note}>最大{RESUME_PROFILE_QUALIFICATION_LIMIT}件。持っていない資格は登録しないでください。</Text>
+      <View style={styles.field}>
+        <Text style={styles.label}>ほかの資格を追加（任意）</Text>
+        <TextInput accessibilityLabel="ほかの資格を追加" style={styles.input} maxLength={100}
+          placeholder="例：リトミック指導員" value={customQualification}
+          onChangeText={setCustomQualification} />
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: !customQualification.trim() }}
+          disabled={!customQualification.trim()} style={styles.action}
+          onPress={() => {
+            applyQualification(customQualification, true);
+            // Clear only when the candidate's input was already valid.
+            if (customQualification.trim().length <= 100) setCustomQualification('');
+          }}>
+          <Text style={styles.actionText}>追加</Text>
+        </Pressable>
+      </View>
+      {profile.qualifications.map((name) => <ResumeYearMonthField
+        key={name} label={name + 'を取得した年月'} value={qualificationAcquired[name] ?? null}
+        onChange={(value) => {
+          const next = { ...qualificationAcquired };
+          if (value) next[name] = value; else delete next[name];
+          onQualificationAcquiredChange(next);
+        }} />)}
+    </> : null}
+    {section === 'childcare' ? <>
     <Text style={styles.note}>ここで編集した内容はマイページの正式なプロフィールと「詳しい希望条件」にも保存され、職務経歴書の保育経験に使われます。</Text>
     <View style={styles.field}>
       <Text style={styles.label}>保育の経験は何年ですか？</Text>
@@ -267,6 +346,7 @@ export function ResumeChildcareEditor({ visible }: { visible: boolean }) {
           ...current, leadership_roles: toggleResumeExperienceChoice(current.leadership_roles, name),
         }))}><Text style={[styles.choiceText, selected && styles.selectedText]}>{name}</Text></Pressable>;
     })}</View>
+    </> : null}
     {notice ? <Text style={styles.success}>{notice}</Text> : null}
     {error ? <Text style={styles.error}>{error}</Text> : null}
     {(dirtyProfile || dirtyPreferences) ? <Text style={styles.note}>
