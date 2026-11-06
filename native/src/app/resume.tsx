@@ -12,6 +12,9 @@ import { ResumeYearMonthField } from '../components/ResumeYearMonthField';
 import { ResumeChildcareEditor } from '../components/ResumeChildcareEditor';
 import { ResumeReviewPanel } from '../components/ResumeReviewPanel';
 import { buildResumeReview, type ResumeReview } from '../lib/resumeReviewModel';
+import { renderNativeResumePdf } from '../lib/renderNativeResumePdf';
+import type { ResumeA4Kind } from '../lib/resumeA4Html';
+import { uploadGeneratedJobseekerPdf } from '../lib/documentVaultApi';
 import { canPresentResumePhoto, prepareResumePhotoPreview, type ResumePhotoPreview } from '../lib/resumePhotoPreview';
 import { loadCachedResumePhoto, removeCachedResumePhoto, saveCachedResumePhoto } from '../lib/resumePhotoDeviceCache';
 import { captureCandidateLocalStateSessionLease } from '../lib/candidateLocalStateSession';
@@ -101,6 +104,11 @@ export default function ResumeScreen() {
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewRefresh, setReviewRefresh] = useState(0);
   const reviewRequest = useRef(0);
+  const pdfInFlight = useRef(false);
+  const [pdfBusy, setPdfBusy] = useState<ResumeA4Kind | null>(null);
+  const [pdfMakeDefault, setPdfMakeDefault] = useState(true);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [pdfSaved, setPdfSaved] = useState<{ type: ResumeA4Kind; isDefault: boolean } | null>(null);
   const photoInFlight = useRef(false);
   const photoScreenActive = useRef(false);
   const [photoPreview, setPhotoPreview] = useState<ResumePhotoPreview | null>(null);
@@ -113,6 +121,8 @@ export default function ResumeScreen() {
     draftRevision.current += 1;
     setStatus(null);
     setError(null);
+    setPdfSaved(null);
+    setPdfError(null);
     // A known validation error may be fixed by editing; an ambiguous commit or
     // revision conflict must first be reconciled with the canonical record.
     if (!requiresReload) setAutoSavePaused(false);
@@ -133,6 +143,9 @@ export default function ResumeScreen() {
     setRequiresReload(false);
     setStatus(null);
     setError(null);
+    setPdfSaved(null);
+    setPdfError(null);
+    setPdfBusy(null);
     setPhotoPreview(null);
     setPhotoError(null);
     setLoading(true);
@@ -405,6 +418,74 @@ export default function ResumeScreen() {
     return () => { active = false; reviewRequest.current += 1; };
   }, [section, ownerKey, loadedOwner, canRead, dirty, saving, autoSavePaused, resume?.revision, reviewRefresh]);
 
+  /**
+   * Explicit Web /resume confirmation. Never generate from a dirty draft:
+   * re-read the canonical candidate-owned record and guard every async boundary
+   * against Clerk session switches, local edits and private-screen revocation.
+   */
+  const createPdf = async (type: ResumeA4Kind) => {
+    if (pdfInFlight.current) return;
+    if (!ownerKey || !canRead || loadedOwner !== ownerKey || !resume ||
+        review?.owner !== ownerKey || dirty || saving || autoSavePaused || reviewBusy) {
+      setPdfError('正式データの保存・再取得を確認してからPDFを作成してください。');
+      return;
+    }
+    const expectedOwner = ownerKey;
+    const startedGeneration = generation.current;
+    const submittedDraftRevision = draftRevision.current;
+    const stillCurrent = () => live(expectedOwner, startedGeneration) &&
+      draftRevision.current === submittedDraftRevision;
+    pdfInFlight.current = true;
+    setPdfBusy(type);
+    setPdfError(null);
+    setPdfSaved(null);
+    try {
+      const pinned = await pinCandidateAction();
+      if (!pinned?.isCurrent() ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== expectedOwner ||
+          !stillCurrent()) throw new Error('ログイン状態が変わりました。書類作成を中止しました。');
+      const [canonicalResume, profile, prefs] = await Promise.all([
+        getCandidateResume(pinned.client),
+        getJobseekerProfile(pinned.client),
+        getJobseekerMatchingPreferences(pinned.client),
+      ]);
+      if (!pinned.isCurrent() || !stillCurrent()) throw new Error('DOCUMENT_UPLOAD_QUARANTINED');
+      if (profile && profile.clerk_user_id !== pinned.ownerId) {
+        throw new Error('プロフィールの閲覧権限を確認できませんでした。');
+      }
+      if (canonicalResume.revision !== resume.revision ||
+          JSON.stringify(toResumePayload(canonicalResume)) !== JSON.stringify(toResumePayload(resume))) {
+        throw new Error('別の端末で履歴書が変更されました。最新データを読み込み直してください。');
+      }
+      const latestReview = buildResumeReview(
+        profile ?? { name: null, name_kana: null, phone: null, email: null,
+          qualifications: [], years_of_experience: null },
+        canonicalResume, prefs ?? emptyJobseekerMatchingPreferences, new Date(),
+      );
+      const bytes = await renderNativeResumePdf(
+        type, latestReview, type === 'resume' ? photoPreview?.dataUri ?? null : null,
+        () => pinned.isCurrent() && stillCurrent(),
+      );
+      if (!pinned.isCurrent() || !stillCurrent()) throw new Error('DOCUMENT_UPLOAD_QUARANTINED');
+      const now = new Date();
+      const label = type === 'resume' ? '履歴書' : '職務経歴書';
+      const title = `${label}（${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 作成）`;
+      const record = await uploadGeneratedJobseekerPdf(
+        pinned.client, pinned.ownerId, type, bytes, {
+          title, makeDefault: pdfMakeDefault,
+          canStartUpload: () => pinned.isCurrent() && stillCurrent(),
+        },
+      );
+      if (!pinned.isCurrent() || !stillCurrent()) return;
+      setPdfSaved({ type, isDefault: record.is_default });
+    } catch (cause) {
+      if (stillCurrent()) setPdfError(cause instanceof Error ? cause.message : 'PDFを作成・保存できませんでした。');
+    } finally {
+      pdfInFlight.current = false;
+      if (ownerRef.current === expectedOwner && privacy.canAccessPrivateData()) setPdfBusy(null);
+    }
+  };
+
   const reloadLatest = () => {
     if (!shouldConfirmResumeReload(dirty)) { void load(); return; }
     const reloadOwner = ownerKey;
@@ -535,7 +616,7 @@ export default function ResumeScreen() {
             onRefresh={() => setReviewRefresh((n) => n + 1)} onReloadResume={reloadLatest} />
           <View style={styles.photoCard}>
             <Text style={styles.label}>証明写真（任意）</Text>
-            <Text style={styles.hint}>写真だけを送信することはありません。端末のアプリ専用一時領域に保持し、再表示できます。OSによって消去される場合があります。ログアウト時に削除します。PDFへの組込み・提出はまだ対応していません。</Text>
+            <Text style={styles.hint}>写真だけを送信することはありません。端末のアプリ専用一時領域に保持し、再表示できます。OSによって消去される場合があります。ログアウト時に削除します。写真はPDF作成時に組み込みますが、応募は自動送信しません。</Text>
             {photoError ? <Text accessibilityRole="alert" style={styles.warningText}>{photoError}</Text> : null}
             {photoPreview && canRead ? <Text style={styles.hint}>写真を選択しました。履歴書プレビューで確認できます。</Text> : null}
             <Pressable accessibilityRole="button" accessibilityLabel={photoPreview ? '証明写真を変更' : '証明写真を選ぶ'}
@@ -547,6 +628,37 @@ export default function ResumeScreen() {
               onPress={() => void removeResumePhoto()}>
               <Text style={styles.buttonText}>写真を外す</Text>
             </Pressable> : null}
+          </View>
+          <View style={styles.photoCard}>
+            <Text style={styles.label}>A4 PDFを作成して応募書類に保存</Text>
+            <Text style={styles.hint}>正式に保存された情報を再確認し、端末内でPDFを作成します。非公開の応募書類に保存しますが、応募やメッセージは送信されません。</Text>
+            <View style={styles.toggle}>
+              <Text style={styles.label}>次の応募で使う既定の書類にする</Text>
+              <Switch accessibilityLabel="応募時に使う書類にする" value={pdfMakeDefault}
+                disabled={pdfBusy !== null} onValueChange={setPdfMakeDefault} />
+            </View>
+            {pdfError ? <Text accessibilityRole="alert" style={styles.warningText}>{pdfError}</Text> : null}
+            {pdfSaved ? <Text accessibilityRole="alert" style={styles.success}>
+              {pdfSaved.type === 'resume' ? '履歴書' : '職務経歴書'}を正式な応募書類に保存しました。
+              {pdfSaved.isDefault ? '次の応募で使う既定の書類に設定しました。' : ''}
+            </Text> : null}
+            <Pressable accessibilityRole="button" accessibilityLabel="履歴書のPDFを作成して保存"
+              disabled={pdfBusy !== null || !canRead || dirty || saving || autoSavePaused ||
+                reviewBusy || !review || review.owner !== ownerKey}
+              style={[styles.primary, (pdfBusy !== null || !review || dirty || saving || autoSavePaused) && styles.disabled]}
+              onPress={() => void createPdf('resume')}>
+              {pdfBusy === 'resume' ? <ActivityIndicator color="#fff" /> :
+                <Text style={styles.primaryText}>履歴書のPDFを作成して保存</Text>}
+            </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="職務経歴書のPDFを作成して保存"
+              disabled={pdfBusy !== null || !canRead || dirty || saving || autoSavePaused ||
+                reviewBusy || !review || review.owner !== ownerKey}
+              style={[styles.primary, (pdfBusy !== null || !review || dirty || saving || autoSavePaused) && styles.disabled]}
+              onPress={() => void createPdf('work_history')}>
+              {pdfBusy === 'work_history' ? <ActivityIndicator color="#fff" /> :
+                <Text style={styles.primaryText}>職務経歴書のPDFを作成して保存</Text>}
+            </Pressable>
+            <Text style={styles.hint}>以前作成した書類も残ります。不要な書類は応募書類の管理画面で削除してください。</Text>
           </View>
           <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => router.push('/(tabs)/profile')}><Text style={styles.buttonText}>応募書類の管理を開く</Text></Pressable>
         </> : null}
