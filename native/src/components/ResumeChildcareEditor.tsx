@@ -116,7 +116,8 @@ export function ResumeChildcareEditor({ visible }: { visible: boolean }) {
     if (!privateAllowed || ownerKey !== loadedOwner || !privacy.canAccessPrivateData()) return;
     profileRevision.current += 1;
     setDirtyProfile(true);
-    setPausedProfile(false);
+    // A previous write may have committed despite a lost response. Editing
+    // cannot waive the required canonical reload before another mutation.
     setError(null);
     setNotice(null);
     setProfile((current) => current ? update(current) : null);
@@ -125,7 +126,7 @@ export function ResumeChildcareEditor({ visible }: { visible: boolean }) {
     if (!privateAllowed || ownerKey !== loadedOwner || !privacy.canAccessPrivateData()) return;
     preferenceRevision.current += 1;
     setDirtyPreferences(true);
-    setPausedPreferences(false);
+    // Keep an ambiguous write quarantined until the owner explicitly reloads.
     setError(null);
     setNotice(null);
     setPreferences((current) => current ? update(current) : null);

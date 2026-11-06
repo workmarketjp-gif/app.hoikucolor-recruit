@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   RESUME_CLASSROOM_OPTIONS, RESUME_LEADERSHIP_OPTIONS, RESUME_LINKED_AUTOSAVE_DELAY_MS,
   parseResumeExperienceYears, toggleResumeExperienceChoice, canAutosaveResumeLinkedData,
@@ -35,4 +36,15 @@ test('debounce policy matches Web but never persists without a verified owner', 
   assert.equal(canAutosaveResumeLinkedData({ ...ready, paused: true }), false);
   assert.equal(canAutosaveResumeLinkedData({ ...ready, saving: true }), false);
   assert.equal(canAutosaveResumeLinkedData({ ...ready, dirty: false }), false);
+});
+
+test('the real Native editor never resumes an ambiguous write merely on edit', () => {
+  const source = readFileSync(new URL('../src/components/ResumeChildcareEditor.tsx', import.meta.url), 'utf8');
+  const editProfile = source.split('const editProfile =')[1]?.split('const editPreferences =')[0];
+  const editPreferences = source.split('const editPreferences =')[1]?.split('const save =')[0];
+  assert.ok(editProfile && editPreferences, 'both canonical write draft handlers must exist');
+  assert.doesNotMatch(editProfile, /setPausedProfile\(false\)/);
+  assert.doesNotMatch(editPreferences, /setPausedPreferences\(false\)/);
+  assert.match(source, /setPausedProfile\(true\)/);
+  assert.match(source, /setPausedPreferences\(true\)/);
 });
