@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import { File } from 'expo-file-system';
 import { consumePendingDocumentPickerCache } from './documentPickerCache';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { saveGeneratedPdfWithReadback, type GeneratedPdfType } from './generatedPdfDocument';
 
 export type CandidateDocumentAsset = {
   uri: string;
@@ -230,6 +231,42 @@ export async function listJobseekerDocuments(client: SupabaseClient): Promise<Jo
   const { data, error } = await client.from('hc_jobseeker_documents').select(documentColumns).order('document_type', { ascending: true }).order('is_default', { ascending: false }).order('uploaded_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as JobseekerDocument[];
+}
+
+/**
+ * Register a locally generated résumé/work-history PDF in the SAME canonical
+ * private vault used by the document picker. No photo-only transfer occurs.
+ * Call only after the candidate has explicitly chosen PDF creation and pass
+ * a live session/owner guard; this function never sends an application.
+ * The caller must still verify canonical list/readback before UI confirmation.
+ */
+export async function uploadGeneratedJobseekerPdf(
+  client: SupabaseClient,
+  clerkUserId: string,
+  documentType: GeneratedPdfType,
+  pdfBytes: Uint8Array | ArrayBuffer,
+  options: { title?: string; makeDefault?: boolean; canStartUpload?: () => boolean } = {},
+): Promise<JobseekerDocument> {
+  return saveGeneratedPdfWithReadback<JobseekerDocument>({
+    ownerId: clerkUserId, type: documentType, bytes: pdfBytes,
+    title: options.title, makeDefault: options.makeDefault,
+    canContinue: options.canStartUpload,
+    operations: {
+      newId: () => Crypto.randomUUID(),
+      upload: (path, bytes) => ensureUploadedSourceObject(client, path, bytes, 'application/pdf'),
+      register: async ({ id, type, title, path, size }) => {
+        const { data, error } = await client.rpc('hc_register_jobseeker_document_source', {
+          p_document_id: id, p_document_type: type, p_title: title,
+          p_file_path: path, p_mime_type: 'application/pdf', p_file_size: size,
+        });
+        if (error) throw error;
+        return (data as JobseekerDocument | null) ?? null;
+      },
+      readback: (id) => findJobseekerDocumentById(client, id),
+      cleanup: (path) => cleanupUnregisteredObject(client, path),
+      setDefault: (id) => setDefaultJobseekerDocument(client, id),
+    },
+  });
 }
 
 export async function uploadPickedJobseekerDocument(client: SupabaseClient, clerkUserId: string, documentType: JobseekerDocumentType, asset: CandidateDocumentAsset, options: { title?: string; makeDefault?: boolean; canStartUpload?: () => boolean } = {}): Promise<JobseekerDocument> {
