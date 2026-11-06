@@ -173,7 +173,7 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
         if (submittedRevision === profileRevision.current) {
           setProfile(verified);
           setDirtyProfile(false);
-          setNotice('保育経験を正式データで確認しました。');
+          setNotice('プロフィールの保存内容を正式データで確認しました。');
         }
       } else {
         const submitted = draft as JobseekerMatchingPreferences;
