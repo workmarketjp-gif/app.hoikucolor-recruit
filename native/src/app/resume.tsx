@@ -13,6 +13,8 @@ import { ResumeChildcareEditor } from '../components/ResumeChildcareEditor';
 import { ResumeReviewPanel } from '../components/ResumeReviewPanel';
 import { buildResumeReview, type ResumeReview } from '../lib/resumeReviewModel';
 import { canPresentResumePhoto, prepareResumePhotoPreview, type ResumePhotoPreview } from '../lib/resumePhotoPreview';
+import { loadCachedResumePhoto, removeCachedResumePhoto, saveCachedResumePhoto } from '../lib/resumePhotoDeviceCache';
+import { captureCandidateLocalStateSessionLease } from '../lib/candidateLocalStateSession';
 import { isPrivateDocumentPickerCacheUri } from '../lib/documentPickerCache';
 import { getJobseekerProfile } from '../lib/jobseekerCoreApi';
 import { getJobseekerMatchingPreferences, emptyJobseekerMatchingPreferences } from '../lib/candidateParityApi';
@@ -131,6 +133,8 @@ export default function ResumeScreen() {
     setRequiresReload(false);
     setStatus(null);
     setError(null);
+    setPhotoPreview(null);
+    setPhotoError(null);
     setLoading(true);
     if (!expectedOwner || !privacy.canAccessPrivateData()) return;
     try {
@@ -138,8 +142,18 @@ export default function ResumeScreen() {
       if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== expectedOwner) return;
       const canonical = await getCandidateResume(pinned.client);
       if (!pinned.isCurrent() || !live(expectedOwner, request)) return;
+      let cached: ResumePhotoPreview | null = null;
+      try {
+        cached = await loadCachedResumePhoto(pinned.ownerId);
+      } catch {
+        if (pinned.isCurrent() && live(expectedOwner, request)) {
+          setPhotoError('端末に保存された証明写真を確認できませんでした。もう一度選んでください。');
+        }
+      }
+      if (!pinned.isCurrent() || !live(expectedOwner, request)) return;
       setResume(canonical);
       setLoadedOwner(expectedOwner);
+      setPhotoPreview(cached);
       draftRevision.current += 1;
     } catch {
       if (live(expectedOwner, request)) setError('履歴書を取得できませんでした。再読み込みしてください。');
@@ -184,8 +198,11 @@ export default function ResumeScreen() {
 
   const pickResumePhoto = async () => {
     if (photoInFlight.current || section !== 6 || !canRead || !ownerKey ||
-        loadedOwner !== ownerKey || !photoScreenActive.current) return;
+        loadedOwner !== ownerKey || !photoScreenActive.current ||
+        !session?.user?.id || !session?.id) return;
     const startedOwner = ownerKey;
+    const photoOwnerId = session.user.id;
+    const lease = captureCandidateLocalStateSessionLease(photoOwnerId, session.id);
     const startedGeneration = generation.current;
     const stillEligible = () => canPresentResumePhoto({
       startedOwner, currentOwner: ownerRef.current, loadedOwner,
@@ -228,10 +245,43 @@ export default function ResumeScreen() {
       if (!stillEligible()) return;
       if (failure) throw failure;
       if (!prepared) throw new Error('写真を確認できませんでした。');
+      // Never show a photo as retained until the owner/session-bound cache write
+      // has completed. A concurrent logout blocks this lease and purges the file.
+      await saveCachedResumePhoto(photoOwnerId, prepared, lease);
+      if (!stillEligible()) return;
       setPhotoPreview(prepared);
     } catch (cause) {
       if (stillEligible()) {
         setPhotoError(cause instanceof Error ? cause.message : '写真を読み込めませんでした。');
+      }
+    } finally {
+      photoInFlight.current = false;
+      if (stillEligible()) setPhotoBusy(false);
+    }
+  };
+
+  const removeResumePhoto = async () => {
+    if (photoInFlight.current || !photoPreview || section !== 6 ||
+        !canRead || !ownerKey || loadedOwner !== ownerKey ||
+        !photoScreenActive.current || !session?.user?.id || !session?.id) return;
+    const startedOwner = ownerKey;
+    const startedGeneration = generation.current;
+    const stillEligible = () => canPresentResumePhoto({
+      startedOwner, currentOwner: ownerRef.current, loadedOwner,
+      startedGeneration, currentGeneration: generation.current,
+      privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+      screenActive: photoScreenActive.current,
+    });
+    photoInFlight.current = true;
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      const lease = captureCandidateLocalStateSessionLease(session.user.id, session.id);
+      await removeCachedResumePhoto(session.user.id, lease);
+      if (stillEligible()) setPhotoPreview(null);
+    } catch {
+      if (stillEligible()) {
+        setPhotoError('端末内の証明写真を削除できませんでした。もう一度お試しください。');
       }
     } finally {
       photoInFlight.current = false;
@@ -482,7 +532,7 @@ export default function ResumeScreen() {
             onRefresh={() => setReviewRefresh((n) => n + 1)} onReloadResume={reloadLatest} />
           <View style={styles.photoCard}>
             <Text style={styles.label}>証明写真（任意）</Text>
-            <Text style={styles.hint}>この画面では端末上のプレビューのみです。写真だけを送信しません。画面を離れると選択内容は消去されます。PDFへの組込み・保存はまだ対応していません。</Text>
+            <Text style={styles.hint}>写真だけを送信することはありません。端末のアプリ専用一時領域に保持し、再表示できます。OSによって消去される場合があります。ログアウト時に削除します。PDFへの組込み・提出はまだ対応していません。</Text>
             {photoError ? <Text accessibilityRole="alert" style={styles.warningText}>{photoError}</Text> : null}
             {photoPreview && canRead ? <Text style={styles.hint}>写真を選択しました。履歴書プレビューで確認できます。</Text> : null}
             <Pressable accessibilityRole="button" accessibilityLabel={photoPreview ? '証明写真を変更' : '証明写真を選ぶ'}
@@ -490,8 +540,8 @@ export default function ResumeScreen() {
               onPress={() => void pickResumePhoto()}>
               <Text style={styles.buttonText}>{photoBusy ? '写真を確認中…' : photoPreview ? '写真を変更' : '写真を選ぶ'}</Text>
             </Pressable>
-            {photoPreview ? <Pressable accessibilityRole="button" style={styles.secondary}
-              onPress={() => { setPhotoPreview(null); setPhotoError(null); }}>
+            {photoPreview ? <Pressable accessibilityRole="button" disabled={photoBusy} style={[styles.secondary, photoBusy && styles.disabled]}
+              onPress={() => void removeResumePhoto()}>
               <Text style={styles.buttonText}>写真を外す</Text>
             </Pressable> : null}
           </View>
