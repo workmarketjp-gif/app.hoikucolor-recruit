@@ -35,3 +35,52 @@ Priority for Build 4 acceptance: `signed-out-bootstrap`, `profile-auth`, `push-l
 
 ## Done in this change
 `screen-privacy`: `usePrivateScreenCapture` on profile, applications, application detail, messages, scouts, visits.
+
+---
+
+# Update 2026-11-07 (consolidation branch on r49)
+
+Verified: all 70 absent files have **zero history in any fetched branch** (`git log --all -- qa/<file>` is empty),
+so none can be recovered; they must be written fresh. 62 of the 70 also have a dead `npm run test:*` script in
+`package.json` pointing at the missing file. Those scripts fail with MODULE_NOT_FOUND and are **not evidence**.
+`--available-only` runs 17 contracts (17 PASS). Behavioural `*.test.mjs` suites (run via named npm scripts, not by the
+contract runner) now cover part of the inventory.
+
+## A. Covered in substance by a behavioural suite (inventory entry can be retired once the owner agrees)
+| Inventory entry | Covering suite(s) |
+|---|---|
+| application-canonical-detail | native-application-detail-privacy, native-application-detail-wiring |
+| application-list-canonical | native-application-list-freshness |
+| application-document-expectation-recovery | native-application-document-status |
+| comparison-provenance | native-comparison-selection, native-match-saved-readback |
+| job-search-pagination, discovery-read-reliability | native-job-search-pagination-wiring, native-job-search-failure-channel, native-job-search-filters |
+| message-read-visibility | native-message-inbox-behavior, native-message-freshness-parity |
+| document-vault (privacy, readback only) | native-document-vault-privacy, native-document-write-readback, native-generated-pdf-document |
+| notification-deep-link-focus (route scope only) | native-scoped-notification-route, native-notification-private-readback |
+| saved-offline-snapshot (readback only) | native-saved-jobs-readback |
+| shell | superseded by ca01-shell + web-parity (PASS) |
+
+## B. Still uncovered, privacy/session race behaviour (write ~6 consolidated suites)
+signout-local-purge, signout-session-handoff, session-handoff-local-purge, clerk-session-identity-atomicity,
+release-gate-session-atomicity, release-gate-continuity, private-data-quarantine, private-read-session-quarantine,
+saved-session-quarantine, discovery-session-quarantine, recovery-session-quarantine, candidate-write-session-quarantine,
+app-lock-canonical-quarantine, saved-app-lock-quarantine, push-session-quarantine, push-installation-rebind,
+push-binding-session-race, push-presentation-session-race, push-state-reconciliation, document-picker-cache,
+document-picker-session-quarantine, document-picker-purge-race, private-document-open-session,
+document-vault-upstream-rebase, durable-mutation-purge-race, durable-mutation-recovery, durable-mutation-mismatch,
+ambiguous-mutation-retry, account-isolation, account-deletion-execution, account-deletion-session-quarantine,
+session-foreground-freshness, session-biometric, biometric-strong-policy, screen-privacy-session-handoff.
+
+## C. Still uncovered, journey correctness
+signed-out-bootstrap, profile-auth, application-journey, application-confirmation, interview-completion,
+interview-durable-recovery, interview-exact-target, interview-push-exact-target, visit-journey, visit-context-binding,
+visit-facility-message, notification-permission-recovery, notification-visibility-count, exact-unread-badge,
+attention-summary, push-lifecycle, root-notification-scope, canonical-api, offline-save,
+foreground-reconciliation-fallback, application-read-reliability.
+Acceptance priority: application-journey, application-confirmation, signed-out-bootstrap, push-lifecycle.
+
+## D. Deferred to store release (need signed builds)
+release-e2e, store-compliance, store-listing-preparation.
+
+## Recommended hygiene (not yet applied)
+Remove the 62 dead npm scripts or point them at real suites, so a green `npm run` is never mistaken for coverage.
