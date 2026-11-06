@@ -89,21 +89,21 @@ export async function saveGeneratedPdfWithReadback<T extends GeneratedPdfRecord>
     try { await operations.cleanup(path); } catch { throw new Error('書類の登録を中止しましたが、一時ファイルの削除を確認できませんでした。'); }
     throw error;
   }
-  let acknowledged: T | null = null;
-  try { acknowledged = await operations.register({ id, type, title, path, size: bytes.byteLength }); }
-  catch { /* RPC may have committed before the network failed; reconcile below. */ }
+  try { await operations.register({ id, type, title, path, size: bytes.byteLength }); }
+  catch { /* An interrupted RPC may already have committed: reconcile by ID. */ }
   // Even a successful RPC response must be independently confirmed by the
   // canonical documents table. Never treat upload/registration as readback.
   let saved: T | null;
   try { saved = await operations.readback(id); }
   catch { throw new Error('書類の保存結果を確認できませんでした。書類一覧を再読み込みしてください。'); }
   if (!saved) {
-    // If the RPC acknowledged a row, a temporarily empty read cannot justify
-    // deleting its Storage object. Leave it for safe reconciliation.
-    if (acknowledged) throw new Error('書類の保存結果を確認できませんでした。書類一覧を再読み込みしてください。');
-    try { await operations.cleanup(path); }
-    catch { throw new Error('書類が登録されず、一時ファイルの削除も確認できませんでした。'); }
-    throw new Error('PDFを登録できませんでした。');
+    // RPC null and RPC transport errors are both ambiguous: the server may
+    // already have committed before our response was lost. A single empty
+    // readback is NOT a proof of rollback (replica lag/revoked read rights).
+    // Do not delete the source PDF: it may already be referenced by a canonical
+    // row/application. Existing stale-orphan reconciliation owns eventual
+    // cleanup after its server-side age/ownership checks.
+    throw new Error('書類の保存結果を確認できませんでした。書類一覧を再読み込みしてください。');
   }
   if (!validDocument(saved, id, ownerId, type, path)) throw new Error('保存された書類の所有者・種類・パスが一致しません。');
   mustBeCurrent(canContinue);
