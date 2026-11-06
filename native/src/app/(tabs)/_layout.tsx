@@ -2,6 +2,7 @@ import { useAuth } from '@clerk/expo';
 import { Redirect, Tabs } from 'expo-router';
 import { ActivityIndicator, View } from 'react-native';
 import { CandidateTabIcon } from '../../components/CandidateTabIcon';
+import { CandidateHeaderNotification } from '../../components/CandidateHeaderNotification';
 import type { TabGlyph } from '../../lib/candidateTabGlyphs';
 
 const pink = '#E9265A';
@@ -23,6 +24,7 @@ export default function CandidateTabsLayout() {
   return (
     <Tabs screenOptions={{
       headerShown: true,
+      headerRight: () => <CandidateHeaderNotification />,
       headerTitleStyle: { fontSize: 19, fontWeight: '800', color: '#30212B' },
       headerStyle: { backgroundColor: '#FFF8FA' },
       tabBarHideOnKeyboard: true,
