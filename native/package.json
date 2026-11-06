@@ -11,7 +11,7 @@
     "test:application-journey": "node --experimental-strip-types --test qa/native-application-journey.test.mjs",
     "test:ambiguous-retry": "node qa/native-ambiguous-mutation-retry-contract.mjs",
     "test:notification-permission": "node qa/native-notification-permission-recovery-contract.mjs",
-    "test:signed-out-bootstrap": "node qa/native-signed-out-bootstrap-contract.mjs",
+    "test:signed-out-bootstrap": "node --test qa/native-signed-out-bootstrap.test.mjs && node qa/native-startup-contract.mjs",
     "test:interview-completion": "node qa/native-interview-completion-contract.mjs",
     "test:account-isolation": "node qa/native-account-isolation-contract.mjs",
     "test:message-inbox": "node --experimental-strip-types --test qa/native-candidate-view-owner.test.mjs qa/native-message-inbox-behavior.test.mjs qa/native-message-attention-adapter.test.mjs",

@@ -90,3 +90,7 @@ Remove the 62 dead npm scripts or point them at real suites, so a green `npm run
   synthetic RPC client. Covers submit validation, identity-field hygiene, canonical readback gate, ambiguous-result rejection,
   v2->v1 fallback, document dedupe/selection/default handoff, partial attach failure, and handoff repair.
   Retires inventory entries `application-journey` and (submission half of) `application-confirmation`.
+- `native-signed-out-bootstrap.test.mjs` (10 tests, `npm run test:signed-out-bootstrap`, which also runs the startup contract): entry
+  routing, Clerk config failure vs instance mismatch, signed-out never mounts PrivateRuntime, inactive identity holding state,
+  sign-in / account-switch / sign-out transitions, diagnostics carry no identifiers. Retires inventory entry `signed-out-bootstrap`.
+  Mutation-checked: forcing the entry redirect to home fails the suite.
