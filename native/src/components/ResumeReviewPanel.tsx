@@ -1,8 +1,9 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { ResumeReview } from '../lib/resumeReviewModel';
 
 type Props = {
   review: ResumeReview | null;
+  photoDataUri?: string | null;
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
@@ -12,7 +13,7 @@ function Detail({ title, value }: { title: string; value: string }) {
   return <View style={styles.detail}><Text style={styles.detailLabel}>{title}</Text><Text style={styles.detailText}>{value || '—'}</Text></View>;
 }
 /** Data-only review: does not imply a PDF has been generated or uploaded. */
-export function ResumeReviewPanel({ review, loading, error, onRefresh, onReloadResume }: Props) {
+export function ResumeReviewPanel({ review, photoDataUri, loading, error, onRefresh, onReloadResume }: Props) {
   return <View style={styles.root}>
     <View style={styles.header}>
       <Text style={styles.heading}>履歴書・職務経歴書の内容確認</Text>
@@ -39,6 +40,12 @@ export function ResumeReviewPanel({ review, loading, error, onRefresh, onReloadR
         <Text style={styles.date}>{review.createdOn}</Text>
         <Detail title="ふりがな" value={review.kana} />
         <Detail title="氏名" value={review.name} />
+        <View style={styles.photoLine}>
+          {photoDataUri
+            ? <Image accessibilityLabel="選択した証明写真のプレビュー" source={{ uri: photoDataUri }} style={styles.photo} resizeMode="cover" />
+            : <View style={styles.photoEmpty}><Text style={styles.photoPlaceholder}>写真</Text></View>}
+          <Text style={styles.photoHint}>写真はプレビュー専用です。PDF作成・提出はまだ行われていません。</Text>
+        </View>
         <Detail title="生年月日" value={review.birth} />
         <Detail title="性別" value={review.gender} />
         <Detail title="住所" value={review.address} />
@@ -87,6 +94,11 @@ const styles = StyleSheet.create({
   ok: { color: '#087044', fontWeight: '800', fontSize: 14 },
   paper: { borderColor: '#E7D5DD', borderWidth: 1, backgroundColor: '#fff', padding: 14, gap: 8, borderRadius: 10 },
   paperTitle: { textAlign: 'center', fontSize: 20, fontWeight: '900', color: '#30212B', marginTop: 5 },
+  photoLine: { flexDirection: 'row', gap: 12, alignItems: 'center', justifyContent: 'flex-end' },
+  photo: { width: 90, height: 120, borderWidth: 1, borderColor: '#CDBBC4', backgroundColor: '#F7F1F4' },
+  photoEmpty: { width: 90, height: 120, borderWidth: 1, borderColor: '#CDBBC4', justifyContent: 'center', alignItems: 'center' },
+  photoPlaceholder: { color: '#8A7D86', fontWeight: '700' },
+  photoHint: { flex: 1, color: '#645963', fontSize: 12, lineHeight: 18 },
   date: { color: '#60535C', textAlign: 'right', fontSize: 12 },
   detail: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#D8C9D0', paddingVertical: 7, gap: 8 },
   detailLabel: { width: 68, color: '#5B4E56', fontSize: 13, fontWeight: '700' },
