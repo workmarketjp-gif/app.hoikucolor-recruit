@@ -8,6 +8,7 @@ import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
 import { candidateApplicationDetailKey } from '../../lib/applicationDetailVisibility';
 import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } from '../../lib/applicationDocumentHandoffStatus';
 import { applicationStatusLabel } from '../../lib/messageInbox';
+import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
 import { applicationVisitExperienceLabel, applicationVisitStatusLabel, canSubmitInterviewResponse, formatApplicationEventDateTimeJapan, interviewStatusLabel } from '../../lib/applicationEventPresentation';
 import {
   acceptOffer,
@@ -212,6 +213,7 @@ function ApplicationDetailContent() {
   const [error, setError] = useState<string | null>(null);
   const [handoffError, setHandoffError] = useState<string | null>(null);
   const generation = useRef(0);
+  const messageSendPending = useRef(false);
 
   const load = useCallback(async (_quiet = false) => {
     const current = ++generation.current;
@@ -260,6 +262,13 @@ function ApplicationDetailContent() {
   }, []));
 
   const sendMessage = async () => {
+    // A synchronous ref gates rapid taps before React commits the busy state.
+    // The adapter already sends a durable request ID and verifies server readback;
+    // never auto-resend if an acknowledgement is ambiguous.
+    if (messageSendPending.current || busy) return;
+    const submittedDraft = messageDraft;
+    if (!submittedDraft.trim()) return;
+    messageSendPending.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -270,14 +279,16 @@ function ApplicationDetailContent() {
         ownerId: pinned.ownerId,
         ownerSessionId: pinned.ownerSessionId,
         applicationId,
-        body: messageDraft,
+        body: submittedDraft,
       });
       if (!pinned.isCurrent()) return;
-      setMessageDraft('');
+      // Do not erase edits typed while the previous message was in flight.
+      setMessageDraft((current) => draftAfterConfirmedMessageSend(current, submittedDraft));
       await load(true);
     } catch (sendError) {
       setError(String((sendError as { message?: unknown })?.message ?? sendError));
     } finally {
+      messageSendPending.current = false;
       setBusy(false);
     }
   };
