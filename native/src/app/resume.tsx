@@ -1,7 +1,7 @@
 import { useSession } from '@clerk/expo';
 import * as Crypto from 'expo-crypto';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
@@ -13,8 +13,10 @@ import {
   type ResumeEducation, type ResumeEmployment,
 } from '../lib/resumeCanonical';
 import { MAX_RESUME_EDUCATION, MAX_RESUME_EMPLOYMENT, canAppendResumeEntry, educationStatusChange, moveResumeEntry, resumeCurrentChange } from '../lib/resumeEditor';
+import { RESUME_AUTOSAVE_DELAY_MS, shouldConfirmResumeReload, shouldScheduleResumeAutosave } from '../lib/resumeAutosavePolicy';
 
 const sections = ['基本情報', '学歴', '職歴', '資格', '保育経験', '自己PR', '確認・保存'] as const;
+const sectionQuestions = ['あなたのことを教えてください', 'どの学校を卒業しましたか？', 'これまで、どこで働きましたか？', 'どんな資格・免許を持っていますか？', '保育の経験を教えてください', 'あなたの強みや思いを書きましょう', '入力内容を確認して保存しましょう'] as const;
 const statuses = ['卒業', '卒業見込み', '修了', '中退', '在学中'];
 const ageGroups = ['0歳児', '1歳児', '2歳児', '3歳児', '4歳児', '5歳児', '異年齢', 'フリー'];
 const qualificationOptions = ['保育士', '幼稚園教諭', '保育教諭', '看護師', '准看護師', '栄養士', '管理栄養士', '調理師', '子育て支援員', '普通自動車第一種運転免許'];
@@ -80,6 +82,7 @@ export default function ResumeScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [autoSavePaused, setAutoSavePaused] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const live = (owner: string, request: number) =>
@@ -102,6 +105,7 @@ export default function ResumeScreen() {
     setLoadedOwner(null);
     setDirty(false);
     setSaving(false);
+    setAutoSavePaused(false);
     setStatus(null);
     setError(null);
     setLoading(true);
@@ -139,7 +143,7 @@ export default function ResumeScreen() {
   }, [ownerKey, privacy.shieldVisible, privacy.canAccessPrivateData, load]));
 
   const save = async () => {
-    if (savingRef.current || !resume || !dirty || !canRead || loadedOwner !== ownerKey || !ownerKey) return;
+    if (savingRef.current || autoSavePaused || !resume || !dirty || !canRead || loadedOwner !== ownerKey || !ownerKey) return;
     savingRef.current = true;
     setSaving(true);
     setError(null);
@@ -161,11 +165,42 @@ export default function ResumeScreen() {
         setStatus('保存中に変更した内容があります。もう一度保存してください。');
       }
     } catch (cause) {
-      if (live(expectedOwner, startedGeneration)) setError(cause instanceof Error ? cause.message : '保存結果を確認できませんでした。');
+      if (live(expectedOwner, startedGeneration)) {
+        // Even an unknown server response may have committed: never auto-resend.
+        setAutoSavePaused(true);
+        setError(cause instanceof Error ? cause.message : '保存結果を確認できませんでした。');
+      }
     } finally {
       savingRef.current = false;
       if (live(expectedOwner, startedGeneration)) setSaving(false);
     }
+  };
+
+  // Web /resume debounce. Each new edit cancels the pending timer. Once a save
+  // finishes, changes made during the write get a fresh debounce against the
+  // confirmed revision. Blur/lock unmounts the timer; no speculative retries.
+  useEffect(() => {
+    if (!resume || !shouldScheduleResumeAutosave({
+      ownerKey, loadedOwner, privateAllowed: canRead, loading, dirty, saving,
+      pausedAfterError: autoSavePaused,
+    })) return;
+    const timer = setTimeout(() => { void save(); }, RESUME_AUTOSAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [resume, ownerKey, loadedOwner, canRead, loading, dirty, saving, autoSavePaused]);
+
+  const reloadLatest = () => {
+    if (!shouldConfirmResumeReload(dirty)) { void load(); return; }
+    const reloadOwner = ownerKey;
+    const reloadGeneration = generation.current;
+    Alert.alert('未保存の入力を破棄しますか？',
+      '最新の履歴書を取得すると、この画面で未保存の変更は失われます。', [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '破棄して再読み込み', style: 'destructive', onPress: () => {
+          if (ownerRef.current !== reloadOwner || generation.current !== reloadGeneration ||
+              !privacy.canAccessPrivateData()) return;
+          void load();
+        } },
+      ]);
   };
 
   const confirmRemove = (kind: 'education' | 'employment', index: number) => {
@@ -185,15 +220,17 @@ export default function ResumeScreen() {
   if (!canRead || !ownerKey) return <View style={styles.center}><ActivityIndicator color="#E9265A" /></View>;
   return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}>
     <Text style={styles.heading}>履歴書・職務経歴書</Text>
-    <Text style={styles.intro}>Web版と同じ正式な履歴書データを編集します。PDFの作成・書類登録は別の操作です。</Text>
+    <Text style={styles.intro}>質問に答えながら履歴書を作成します。入力内容は約1.2秒後に自動保存されます。PDF作成はNative版では準備中です。</Text>
     {loading ? <ActivityIndicator color="#E9265A" /> : null}
-    {error ? <View style={styles.warning}><Text style={styles.warningText}>{error}</Text><Pressable accessibilityRole="button" style={styles.secondary} onPress={() => void load()}><Text style={styles.buttonText}>最新の内容を読み込む</Text></Pressable></View> : null}
+    {error ? <View style={styles.warning}><Text style={styles.warningText}>{error}</Text><Pressable accessibilityRole="button" style={styles.secondary} onPress={reloadLatest}><Text style={styles.buttonText}>最新の内容を読み込む</Text></Pressable></View> : null}
     {view ? <>
+      <Text style={styles.progressLabel}>ステップ {section + 1} / {sections.length}</Text>
+      <View style={styles.progressTrack} accessibilityLabel={'入力ステップ ' + (section + 1) + ' / ' + sections.length}><View style={[styles.progressFill, { width: `${Math.round(((section + 1) / sections.length) * 100)}%` as `${number}%` }]} /></View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel="履歴書の入力ステップ" contentContainerStyle={styles.steps}>
         {sections.map((name, index) => <Choice key={name} label={(index + 1) + '. ' + name} selected={section === index} onPress={() => setSection(index)} />)}
       </ScrollView>
       <View style={styles.card}>
-        <Text style={styles.title}>{sections[section]}</Text>
+        <Text style={styles.title}>{sectionQuestions[section]}</Text>
         {section === 0 ? <>
           <Field label="生年月日" hint="西暦YYYY-MM-DD" value={view.birth_date} onChange={(v) => change('birth_date', v)} />
           <Field label="性別" value={view.gender} onChange={(v) => change('gender', v)} />
@@ -290,10 +327,10 @@ export default function ResumeScreen() {
           <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => router.push('/(tabs)/profile')}><Text style={styles.buttonText}>応募書類の管理を開く</Text></Pressable>
         </> : null}
       </View>
-      {dirty ? <Text style={styles.hint}>未保存の入力があります。画面を離れる前に保存してください。</Text> : null}
+      {dirty ? <Text style={styles.hint}>{autoSavePaused ? '保存状態を確認できません。自動再送信は停止しました。最新の履歴書を読み込んで確認してください。' : saving ? '保存中です。' : '未保存の入力があります。約1.2秒後に自動保存します。'}</Text> : null}
       {status ? <Text style={styles.success}>{status}</Text> : null}
-      <Pressable accessibilityRole="button" style={[styles.primary, (!dirty || saving) && styles.disabled]} disabled={!dirty || saving} onPress={() => void save()}>
-        {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>{dirty ? '変更を保存する' : '保存済み'}</Text>}
+      <Pressable accessibilityRole="button" style={[styles.primary, (!dirty || saving || autoSavePaused) && styles.disabled]} disabled={!dirty || saving || autoSavePaused} onPress={() => void save()}>
+        {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>{dirty ? (autoSavePaused ? '保存結果の確認が必要です' : '今すぐ保存する') : '保存済み'}</Text>}
       </Pressable>
       <View style={styles.navigation}>
         <Pressable accessibilityRole="button" style={styles.secondaryHalf} disabled={section === 0} onPress={() => setSection((s) => Math.max(0, s - 1))}><Text style={styles.buttonText}>戻る</Text></Pressable>
@@ -309,6 +346,9 @@ const styles = StyleSheet.create({
   heading: { fontSize: 24, fontWeight: '900', color: '#30212B' },
   intro: { fontSize: 15, lineHeight: 22, color: '#62575E' },
   steps: { gap: 8, paddingVertical: 2 },
+  progressLabel: { fontSize: 14, fontWeight: '800', color: '#57454F' },
+  progressTrack: { height: 6, borderRadius: 6, overflow: 'hidden', backgroundColor: '#F8DAE4' },
+  progressFill: { height: 6, borderRadius: 6, backgroundColor: '#E9265A' },
   choice: { paddingHorizontal: 14, paddingVertical: 11, borderWidth: 1, borderColor: '#E5D1D9', borderRadius: 12, minHeight: 44, justifyContent: 'center', backgroundColor: '#fff' },
   selected: { borderColor: '#E9265A', backgroundColor: '#FFF0F4' },
   choiceLabel: { color: '#453741', fontSize: 14, fontWeight: '700' },
