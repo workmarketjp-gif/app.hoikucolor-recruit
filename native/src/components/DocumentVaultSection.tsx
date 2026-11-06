@@ -1,8 +1,9 @@
 import { useSession } from '@clerk/expo';
+import { useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Button, Linking, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Button, Linking, Pressable, Text, View } from 'react-native';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { captureDocumentPickerCacheGeneration, consumePendingDocumentPickerCache, discardUnregisteredDocumentPickerCache, registerPendingDocumentPickerCache } from '../lib/documentPickerCache';
@@ -19,20 +20,42 @@ import {
 import { consumeCameraCaptureRecoveryNotice } from '../lib/cameraCaptureRecovery';
 import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import { assertCandidateDocumentListOwner, canActOnCandidateDocument, confirmCandidateDocumentMutation } from '../lib/documentVaultPrivacy';
+import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_ORDER, evidenceTypesForQualification } from '../lib/documentTypes';
+import { qualificationEvidenceCounts } from '../lib/qualificationEvidenceCounts';
 
-const labels: Record<JobseekerDocumentType, string> = {
-  resume: '履歴書',
-  work_history: '職務経歴書',
-  nursery_teacher_license: '保育士証',
-  kindergarten_license: '幼稚園教諭免許状',
-  registered_dietitian_license: '管理栄養士免許証',
-  dietitian_license: '栄養士免許証',
-  cook_license: '調理師免許証',
-  nurse_license: '看護師免許証',
-  assistant_nurse_license: '准看護師免許証',
-  other: 'その他',
-};
-const types = Object.keys(labels) as JobseekerDocumentType[];
+// Keep the document catalogue and exact qualification mapping in sync with Web.
+const labels = DOCUMENT_TYPE_LABELS;
+const types = DOCUMENT_TYPE_ORDER;
+
+function VaultAction({ title, onPress, disabled = false, testID, primary = false }: {
+  title: string;
+  onPress: () => void;
+  disabled?: boolean;
+  testID?: string;
+  primary?: boolean;
+}) {
+  return <Pressable
+    testID={testID}
+    accessibilityRole="button"
+    accessibilityState={{ disabled }}
+    disabled={disabled}
+    onPress={onPress}
+    style={({ pressed }) => ({
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: primary ? '#cb477a' : '#e8b5c9',
+      backgroundColor: primary ? '#cf4c80' : '#fff7fa',
+      paddingHorizontal: 13,
+      paddingVertical: 11,
+      minHeight: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+      opacity: disabled ? 0.5 : pressed ? 0.82 : 1,
+    })}
+  >
+    <Text style={{ fontSize: 14, fontWeight: '700', color: primary ? '#fff' : '#9a315d', textAlign: 'center' }}>{title}</Text>
+  </Pressable>;
+}
 
 function formatBytes(value: number | null) {
   if (!value) return '';
@@ -44,10 +67,13 @@ function formatBytes(value: number | null) {
  * `initialType` preselects the type to add (the apply step opens this section for a missing
  * document). `onDocumentsChanged` receives every canonical reload so the caller can refresh.
  */
-export function DocumentVaultSection({ initialType = 'resume', onDocumentsChanged }: {
+export function DocumentVaultSection({ initialType = 'resume', onDocumentsChanged, qualifications }: {
   initialType?: JobseekerDocumentType;
   onDocumentsChanged?: (documents: JobseekerDocument[]) => void;
+  /** Self-declared profile qualifications; uploaded copies are NOT verified credentials. */
+  qualifications?: readonly string[];
 } = {}) {
+  const router = useRouter();
   const { session } = useSession();
   const user = session?.user ?? null;
   const privacy = usePrivateDataQuarantine();
@@ -71,7 +97,9 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
     onDocumentsChangedRef.current?.(next);
   }, [privacy.canAccessPrivateData]);
   const [documentType, setDocumentType] = useState<JobseekerDocumentType>(initialType);
+  const [showTypes, setShowTypes] = useState(false);
   useEffect(() => { setDocumentType(initialType); }, [initialType]);
+  useEffect(() => { setShowTypes(false); }, [ownerKey, privateAllowed]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const userIdRef = useRef<string | null>(user?.id ?? null);
@@ -256,9 +284,9 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
     Alert.alert('保存しました', `${labels[selectedType]}を応募書類として保存しました。`);
   }
 
-  async function pickAndUpload(replacement: JobseekerDocument | null = null) {
+  async function pickAndUpload(replacement: JobseekerDocument | null = null, explicitType: JobseekerDocumentType | null = null) {
     const pickerOwnerId = userIdRef.current;
-    const selectedType = replacement?.document_type ?? documentType;
+    const selectedType = replacement?.document_type ?? explicitType ?? documentType;
     if (!pickerOwnerId || busyId || verifiedDocuments === null || !privateAllowed) return;
     const pickerCacheGeneration = captureDocumentPickerCacheGeneration();
     setBusyId(replacement ? `replace-picker-${replacement.id}` : 'picker');
@@ -410,39 +438,96 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
 
   if (!privateAllowed) return <View testID="document-vault-private-shield"><Text>応募書類を表示するには、ログイン状態を確認してください。</Text></View>;
 
-  return <View testID="document-vault-section" style={{ gap: 12 }}>
-    <View style={{ gap: 4 }}>
-      <Text style={{ fontSize: 18, fontWeight: '700' }}>応募書類</Text>
-      <Text>履歴書や資格証を一度保存し、応募先へ必要な書類だけ提出できます。</Text>
-      <Text style={{ color: '#666', fontSize: 12 }}>PDF・JPEG・PNG、1ファイル10MBまで。提出済みコピーは後から元ファイルを削除しても応募記録として保持されます。</Text>
+  return <View testID="document-vault-section" style={{ gap: 14 }}>
+    <View style={{ gap: 6 }}>
+      <Text accessibilityRole="header" style={{ fontSize: 19, fontWeight: '700', color: '#30232c' }}>応募書類</Text>
+      <Text style={{ fontSize: 14, lineHeight: 22, color: '#493c43' }}>一度保存した履歴書や資格証を、次の応募でも再利用できます。ファイルは非公開で保存され、応募した園にだけ提出用コピーが共有されます。</Text>
     </View>
 
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-      {types.map((type) => <Button key={type} title={`${documentType === type ? '✓ ' : ''}${labels[type]}`} disabled={busyId !== null || verifiedDocuments === null} onPress={() => setDocumentType(type)} />)}
-    </View>
     <View style={{ gap: 8 }}>
-      <Button testID="document-vault-add" title={busyId === 'upload' ? '保存中…' : `${labels[documentType]}をファイルから追加`} disabled={busyId !== null || verifiedDocuments === null} onPress={() => void pickAndUpload()} />
-      <Button testID="document-vault-camera" title={busyId === 'camera' || busyId === 'camera-permission' ? 'カメラを準備中…' : `${labels[documentType]}をカメラで撮影`} disabled={busyId !== null || verifiedDocuments === null} onPress={() => void captureAndUpload()} />
+      <Text style={{ fontSize: 14, fontWeight: '700', color: '#30232c' }}>追加する書類の種類</Text>
+      <Pressable
+        testID="document-vault-type-selector"
+        accessibilityRole="button"
+        disabled={busyId !== null || verifiedDocuments === null}
+        onPress={() => setShowTypes((current) => !current)}
+        style={{ borderWidth: 1, borderColor: '#e8b5c9', borderRadius: 10, minHeight: 48, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+      >
+        <Text style={{ fontSize: 16, fontWeight: '600', color: '#30232c' }}>{labels[documentType]}</Text>
+        <Text style={{ fontSize: 16, color: '#9a315d' }}>{showTypes ? '⌃' : '⌄'}</Text>
+      </Pressable>
+      {showTypes ? <View testID="document-vault-type-options" style={{ borderWidth: 1, borderColor: '#efc7d7', borderRadius: 10, overflow: 'hidden', backgroundColor: '#fff' }}>
+        {types.map((type) => <Pressable
+          key={type}
+          testID={`document-vault-type-${type}`}
+          accessibilityRole="button"
+          accessibilityState={{ selected: documentType === type }}
+          disabled={busyId !== null || verifiedDocuments === null}
+          onPress={() => { setDocumentType(type); setShowTypes(false); }}
+          style={{ minHeight: 44, paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderColor: '#f6e7ee', backgroundColor: documentType === type ? '#fff0f6' : '#fff' }}
+        ><Text style={{ fontSize: 15, fontWeight: documentType === type ? '700' : '500', color: '#30232c' }}>{documentType === type ? '✓ ' : ''}{labels[type]}</Text></Pressable>)}
+      </View> : null}
+      <VaultAction testID="document-vault-add" title={busyId === 'upload' ? '保存しています…' : '書類を追加'} primary disabled={busyId !== null || verifiedDocuments === null} onPress={() => void pickAndUpload()} />
+      <VaultAction testID="document-vault-camera" title={busyId === 'camera' || busyId === 'camera-permission' ? 'カメラを準備しています…' : 'カメラで撮影して追加'} disabled={busyId !== null || verifiedDocuments === null} onPress={() => void captureAndUpload()} />
+      <Text style={{ color: '#65515b', fontSize: 13, lineHeight: 20 }}>PDF・画像（JPEG / PNG）、1ファイル10MBまで。各種類の「応募時に使う」を1件選べます。</Text>
+      <VaultAction testID="document-vault-resume-builder" title="履歴書・職務経歴書をアプリで作る" disabled={busyId !== null} onPress={() => router.push('/resume' as never)} />
+      {busyId !== null ? <Text accessibilityRole="text" style={{ fontSize: 13, color: '#65515b' }}>書類の処理中です。画面を閉じずにお待ちください。</Text> : null}
     </View>
+
+    {qualifications !== undefined && !loading && verifiedDocuments !== null ? <View testID="document-vault-qualification-evidence" style={{ gap: 10, backgroundColor: '#fff7fa', borderRadius: 12, borderWidth: 1, borderColor: '#f0d2df', padding: 14 }}>
+      <Text accessibilityRole="header" style={{ fontSize: 17, fontWeight: '700', color: '#30232c' }}>資格と証明書類</Text>
+      <Text style={{ color: '#574651', fontSize: 14, lineHeight: 21 }}>資格はプロフィールで登録した内容（ご本人の申告）です。免許証などの写しを保存しても、資格が確認済みになるわけではありません。確認は応募先の園が行います。</Text>
+      {qualifications.length ? qualifications.map((qualification, qualificationIndex) => {
+        const evidence = qualificationEvidenceCounts(evidenceTypesForQualification(qualification), documents);
+        return <View key={`${qualification}-${qualificationIndex}`} style={{ borderWidth: 1, borderColor: '#f0d2df', borderRadius: 10, padding: 12, backgroundColor: '#fff', gap: 8 }}>
+          <Text style={{ color: '#30232c', fontWeight: '700', fontSize: 15 }}>{qualification}</Text>
+          {evidence.length ? evidence.map(({ type, savedCount }) => <View key={type} style={{ gap: 7 }}>
+            <Text style={{ fontSize: 14, lineHeight: 20, color: '#493c43' }}>{labels[type]}：{savedCount ? `保存済み（${savedCount}件）` : 'まだ保存されていません'}</Text>
+            {savedCount === 0 ? <VaultAction
+              testID={`document-vault-qualification-add-${type}`}
+              title={`${labels[type]}を追加`}
+              disabled={busyId !== null || verifiedDocuments === null}
+              onPress={() => void pickAndUpload(null, type)}
+            /> : null}
+          </View>) : <Text style={{ fontSize: 14, color: '#65515b' }}>証明書類は「その他」として保存できます。</Text>}
+        </View>;
+      }) : <Text style={{ fontSize: 14, color: '#65515b' }}>プロフィールで資格を登録すると、ここに証明書類の保存状況が表示されます。</Text>}
+    </View> : null}
 
     {loading ? <ActivityIndicator /> : verifiedDocuments === null ? (
       <View testID="document-vault-reload-required" style={{ gap: 8 }}>
         <Text>応募書類を確認できませんでした。通信状況を確認して再読み込みしてください。</Text>
-        <Button title="再読み込み" onPress={() => void load()} />
+        <VaultAction title="再読み込み" onPress={() => void load()} />
       </View>
-    ) : documents.length ? documents.map((document) => <View testID={`document-vault-item-${document.id}`} key={document.id} style={{ borderWidth: 1, borderColor: '#ddd', borderRadius: 12, padding: 12, gap: 8 }}>
-      <View style={{ gap: 2 }}>
-        <Text style={{ fontWeight: '700' }}>{labels[document.document_type]}{document.is_default ? ' ・応募時に使用' : ''}</Text>
-        <Text numberOfLines={1}>{document.title}</Text>
-        {document.file_size ? <Text style={{ color: '#666', fontSize: 12 }}>{formatBytes(document.file_size)}</Text> : null}
-      </View>
-      <View style={{ gap: 8 }}>
-        <Button testID={`document-vault-open-${document.id}`} title="開く" disabled={busyId !== null} onPress={() => void open(document)} />
-        <Button testID={`document-vault-replace-file-${document.id}`} title="ファイルで差し替え" disabled={busyId !== null} onPress={() => void pickAndUpload(document)} />
-        <Button testID={`document-vault-replace-camera-${document.id}`} title="撮影して差し替え" disabled={busyId !== null} onPress={() => void captureAndUpload(document)} />
-        {!document.is_default ? <Button testID={`document-vault-default-${document.id}`} title="応募時に使う" disabled={busyId !== null} onPress={() => void makeDefault(document)} /> : null}
-        <Button testID={`document-vault-delete-${document.id}`} title="削除" color="#9f2d2d" disabled={busyId !== null} onPress={() => confirmDelete(document)} />
-      </View>
-    </View>) : <Text style={{ color: '#666' }}>保存した応募書類はまだありません。</Text>}
+    ) : documents.length ? <View style={{ gap: 10 }} testID="document-vault-list">
+      {documents.map((document) => <View testID={`document-vault-item-${document.id}`} key={document.id} style={{ borderWidth: 1, borderColor: '#efc7d7', backgroundColor: '#fff', borderRadius: 14, padding: 14, gap: 10 }}>
+        <Pressable
+          testID={`document-vault-open-${document.id}`}
+          accessibilityRole="button"
+          disabled={busyId !== null}
+          onPress={() => void open(document)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 }}
+        >
+          <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: '#fff0f6', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: '#b63e70', fontSize: 23 }}>▤</Text>
+          </View>
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={{ fontSize: 15, color: '#30232c', fontWeight: '700' }}>{labels[document.document_type]}{document.is_default ? <Text style={{ color: '#a43465', fontWeight: '700' }}>　応募時に使用</Text> : null}</Text>
+            <Text style={{ color: '#65515b', fontSize: 13 }} numberOfLines={2}>{document.title}{document.file_size ? ` ・ ${formatBytes(document.file_size)}` : ''}</Text>
+          </View>
+          <Text style={{ fontSize: 19, color: '#ab5279' }}>›</Text>
+        </Pressable>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <VaultAction testID={`document-vault-replace-file-${document.id}`} title="ファイルで差し替え" disabled={busyId !== null} onPress={() => void pickAndUpload(document)} />
+          <VaultAction testID={`document-vault-replace-camera-${document.id}`} title="撮影して差し替え" disabled={busyId !== null} onPress={() => void captureAndUpload(document)} />
+          {!document.is_default ? <VaultAction testID={`document-vault-default-${document.id}`} title="応募時に使う" disabled={busyId !== null} onPress={() => void makeDefault(document)} /> : null}
+          <VaultAction testID={`document-vault-delete-${document.id}`} title="削除" disabled={busyId !== null} onPress={() => confirmDelete(document)} />
+        </View>
+      </View>)}
+    </View> : <View style={{ backgroundColor: '#fff7fa', borderRadius: 12, borderWidth: 1, borderColor: '#f0d2df', padding: 16, gap: 10 }}>
+      <Text style={{ fontSize: 16, fontWeight: '700', color: '#30232c' }}>保存した応募書類はまだありません</Text>
+      <Text style={{ fontSize: 14, color: '#65515b', lineHeight: 21 }}>まずは履歴書を1件保存してください。保育士証などはあとから追加できます。</Text>
+      <VaultAction title="履歴書を追加" primary disabled={busyId !== null} onPress={() => void pickAndUpload(null, 'resume')} />
+    </View>}
   </View>;
 }
