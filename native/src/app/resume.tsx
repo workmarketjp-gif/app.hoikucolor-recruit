@@ -243,7 +243,10 @@ export default function ResumeScreen() {
         ]);
         if (!active || reviewRequest.current !== request || !pinned.isCurrent() ||
             !live(expectedOwner, startedGeneration)) return;
-        if (!profile || profile.clerk_user_id !== pinned.ownerId) {
+        // A newly registered candidate may have no profile row yet. The Web
+        // preview handles this as empty fields, not an authorization failure.
+        // A returned row with the wrong owner, however, must be rejected.
+        if (profile && profile.clerk_user_id !== pinned.ownerId) {
           throw new Error('プロフィールの閲覧権限を確認できませんでした。');
         }
         if (canonicalResume.revision !== resume.revision ||
@@ -251,7 +254,9 @@ export default function ResumeScreen() {
           throw new Error('別の画面または端末で履歴書が変更されました。最新の履歴書を読み込んでください。');
         }
         setReview({ owner: expectedOwner, data: buildResumeReview(
-          profile, canonicalResume, prefs ?? emptyJobseekerMatchingPreferences, new Date(),
+          profile ?? { name: null, name_kana: null, phone: null, email: null,
+            qualifications: [], years_of_experience: null },
+          canonicalResume, prefs ?? emptyJobseekerMatchingPreferences, new Date(),
         ) });
       } catch {
         if (active && reviewRequest.current === request && live(expectedOwner, startedGeneration)) {
