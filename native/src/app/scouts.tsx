@@ -36,6 +36,7 @@ import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRout
 import { mayShowScoutError, shouldPublishScoutRead } from '../lib/scoutReadLease';
 import { confirmScoutBlock, confirmScoutDecision, confirmScoutOptIn } from '../lib/scoutMutationReadback';
 import { confirmScoutPreferences } from '../lib/scoutPreferencesReadback';
+import { formatScoutDateTime, scoutJobLine, scoutResponseNote, scoutStatusLabel, validateScoutNumericInput } from '../lib/scoutWebParity';
 
 const weekdays = ['月', '火', '水', '木', '金', '土', '日'];
 const classroomOptions = ['0歳児', '1歳児', '2歳児', '3歳児', '4歳児', '5歳児', 'フリー', '異年齢保育', '障害児保育'];
@@ -50,21 +51,6 @@ function listText(values: string[]) {
 
 function parseList(value: string) {
   return [...new Set(value.split(/[、,\n]/).map((item) => item.trim()).filter(Boolean))];
-}
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('ja-JP');
-}
-
-function scoutStatusLabel(status: JobseekerScout['scout_status']) {
-  return ({
-    pending: '回答待ち',
-    accepted: '承諾済み',
-    declined: '辞退済み',
-    cancelled: '取消',
-    expired: '期限切れ',
-  } as const)[status];
 }
 
 function ToggleChips({
@@ -450,25 +436,22 @@ export default function ScoutsScreen() {
 
   const savePreferences = async () => {
     if (!privateAllowed || verifiedOwnerRef.current !== ownerKey) return;
-    const monthly = monthlySalaryText.trim() ? Number(monthlySalaryText) : null;
-    const hourly = hourlyWageText.trim() ? Number(hourlyWageText) : null;
-    const commute = commuteText.trim() ? Number(commuteText) : null;
-    if ([monthly, hourly, commute].some((value) => value !== null && (!Number.isFinite(value) || value < 0))) {
-      setError('給与・通勤時間は0以上の数字で入力してください。');
-      return;
-    }
-    if (preferences.available_time_from && preferences.available_time_to &&
-        preferences.available_time_from >= preferences.available_time_to) {
-      setError('勤務可能時間は、開始時刻を終了時刻より前にしてください。');
+    const validated = validateScoutNumericInput({
+      monthlySalaryText,
+      hourlyWageText,
+      commuteText,
+      availableTimeFrom: preferences.available_time_from,
+      availableTimeTo: preferences.available_time_to,
+    });
+    if (!validated.ok) {
+      setError(validated.error);
       return;
     }
     const next: JobseekerMatchingPreferences = {
       ...preferences,
       desired_prefectures: parseList(prefecturesText),
       desired_cities: parseList(citiesText),
-      desired_monthly_salary_min: monthly,
-      desired_hourly_wage_min: hourly,
-      max_commute_minutes: commute,
+      ...validated.values,
     };
     const serial = beginScoutWrite('preferences');
     if (serial === null) return;
@@ -563,13 +546,16 @@ export default function ScoutsScreen() {
             {item.scout_id === focusedScoutId ? <Text style={styles.targetLabel}>通知から開いたスカウト</Text> : null}
             <View style={styles.rowBetween}>
               <Text style={styles.status}>{scoutStatusLabel(item.scout_status)}</Text>
-              <Text style={styles.meta}>{formatDateTime(item.sent_at)}</Text>
+              <Text style={styles.meta}>{formatScoutDateTime(item.sent_at)}</Text>
             </View>
             <Text style={styles.itemTitle}>{item.facility_name}</Text>
             <Text style={styles.bodyMuted}>{item.organization_name}</Text>
-            {(item.job_title || item.employment_type) ? <Text style={styles.body}>{[item.job_title, item.employment_type].filter(Boolean).join(' ・ ')}</Text> : null}
+            {(item.job_title || item.employment_type) ? <Text style={styles.body}>{scoutJobLine(item.job_title, item.employment_type)}</Text> : null}
             {item.invitation_message ? <Text style={styles.quote}>{item.invitation_message}</Text> : null}
-            <Text style={styles.meta}>回答期限 {formatDateTime(item.expires_at)}</Text>
+            <View style={styles.responseTimes}>
+              <Text style={styles.meta}>回答期限 {formatScoutDateTime(item.expires_at)}</Text>
+              {item.responded_at ? <Text style={styles.meta}>回答 {formatScoutDateTime(item.responded_at)}</Text> : null}
+            </View>
             {item.scout_status === 'pending' ? (
               <View style={styles.actionRow}>
                 <Pressable style={styles.secondaryButton} disabled={Boolean(busy)} onPress={() => respond(item, 'declined')}>
@@ -580,8 +566,7 @@ export default function ScoutsScreen() {
                 </Pressable>
               </View>
             ) : null}
-            {item.scout_status === 'accepted' ? <Text style={styles.bodyMuted}>承諾済みです。園からの連絡をお待ちください。</Text> : null}
-            {item.scout_status === 'declined' ? <Text style={styles.bodyMuted}>辞退済みです。本人情報は共有されません。</Text> : null}
+            {scoutResponseNote(item.scout_status) ? <Text style={styles.bodyMuted}>{scoutResponseNote(item.scout_status)}</Text> : null}
           </View>
         ))}
       </View>
@@ -652,17 +637,28 @@ export default function ScoutsScreen() {
         <Text style={styles.bodyMuted}>求人の並び順、保育観マッチング、匿名スカウトの精度向上に使います。</Text>
 
         <Text style={styles.itemTitle}>希望エリア・給与</Text>
-        <TextInput value={prefecturesText} onChangeText={(value) => editPreferenceText(setPrefecturesText, value)} placeholder="希望都道府県 例：東京都、神奈川県" style={styles.input} />
-        <TextInput value={citiesText} onChangeText={(value) => editPreferenceText(setCitiesText, value)} placeholder="希望市区町村 例：世田谷区、川崎市" style={styles.input} />
-        <TextInput value={monthlySalaryText} onChangeText={(value) => editPreferenceText(setMonthlySalaryText, value)} placeholder="希望月給の下限" keyboardType="numeric" style={styles.input} />
-        <TextInput value={hourlyWageText} onChangeText={(value) => editPreferenceText(setHourlyWageText, value)} placeholder="希望時給の下限" keyboardType="numeric" style={styles.input} />
-        <TextInput value={commuteText} onChangeText={(value) => editPreferenceText(setCommuteText, value)} placeholder="通勤時間の上限（分）" keyboardType="numeric" style={styles.input} />
+        <Text style={styles.inputLabel}>希望都道府県</Text>
+        <TextInput accessibilityLabel="希望都道府県" value={prefecturesText} onChangeText={(value) => editPreferenceText(setPrefecturesText, value)} placeholder="例：東京都、神奈川県" style={styles.input} />
+        <Text style={styles.inputLabel}>希望市区町村</Text>
+        <TextInput accessibilityLabel="希望市区町村" value={citiesText} onChangeText={(value) => editPreferenceText(setCitiesText, value)} placeholder="例：世田谷区、川崎市" style={styles.input} />
+        <Text style={styles.inputLabel}>希望月給の下限</Text>
+        <TextInput accessibilityLabel="希望月給の下限" value={monthlySalaryText} onChangeText={(value) => editPreferenceText(setMonthlySalaryText, value)} placeholder="例：250000" keyboardType="numeric" style={styles.input} />
+        <Text style={styles.inputLabel}>希望時給の下限</Text>
+        <TextInput accessibilityLabel="希望時給の下限" value={hourlyWageText} onChangeText={(value) => editPreferenceText(setHourlyWageText, value)} placeholder="例：1300" keyboardType="numeric" style={styles.input} />
+        <Text style={styles.inputLabel}>通勤時間の上限（分）</Text>
+        <TextInput accessibilityLabel="通勤時間の上限（分）" value={commuteText} onChangeText={(value) => editPreferenceText(setCommuteText, value)} placeholder="1〜300分" keyboardType="numeric" style={styles.input} />
 
         <Text style={styles.itemTitle}>勤務できる曜日</Text>
         <ToggleChips options={weekdays} selected={preferences.available_weekdays} onChange={(value) => update('available_weekdays', value)} />
         <View style={styles.actionRow}>
-          <TextInput value={preferences.available_time_from ?? ''} onChangeText={(value) => update('available_time_from', value || null)} placeholder="開始 例 08:00" style={[styles.input, { flex: 1 }]} />
-          <TextInput value={preferences.available_time_to ?? ''} onChangeText={(value) => update('available_time_to', value || null)} placeholder="終了 例 18:00" style={[styles.input, { flex: 1 }]} />
+          <View style={styles.timeField}>
+            <Text style={styles.inputLabel}>開始</Text>
+            <TextInput accessibilityLabel="勤務可能時間の開始" value={preferences.available_time_from ?? ''} onChangeText={(value) => update('available_time_from', value || null)} placeholder="例：08:00" maxLength={5} style={styles.input} />
+          </View>
+          <View style={styles.timeField}>
+            <Text style={styles.inputLabel}>終了</Text>
+            <TextInput accessibilityLabel="勤務可能時間の終了" value={preferences.available_time_to ?? ''} onChangeText={(value) => update('available_time_to', value || null)} placeholder="例：18:00" maxLength={5} style={styles.input} />
+          </View>
         </View>
 
         <Text style={styles.itemTitle}>担当経験</Text>
@@ -702,6 +698,9 @@ const styles = StyleSheet.create({
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   actionRow: { flexDirection: 'row', gap: 8 },
+  responseTimes: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
+  timeField: { flex: 1, gap: 4 },
+  inputLabel: { fontSize: 14, fontWeight: '800', color: '#3c424b' },
   status: { fontSize: 14, fontWeight: '800', backgroundColor: '#f2f4f7', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 6, overflow: 'hidden' },
   quote: { fontSize: 16, lineHeight: 23, backgroundColor: '#f7f8fa', padding: 12, borderRadius: 10 },
   infoBox: { backgroundColor: '#f5f8ff', borderRadius: 12, padding: 12, gap: 4 },
