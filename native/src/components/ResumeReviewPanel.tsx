@@ -6,12 +6,13 @@ type Props = {
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
+  onReloadResume: () => void;
 };
 function Detail({ title, value }: { title: string; value: string }) {
   return <View style={styles.detail}><Text style={styles.detailLabel}>{title}</Text><Text style={styles.detailText}>{value || '—'}</Text></View>;
 }
 /** Data-only review: does not imply a PDF has been generated or uploaded. */
-export function ResumeReviewPanel({ review, loading, error, onRefresh }: Props) {
+export function ResumeReviewPanel({ review, loading, error, onRefresh, onReloadResume }: Props) {
   return <View style={styles.root}>
     <View style={styles.header}>
       <Text style={styles.heading}>履歴書・職務経歴書の内容確認</Text>
@@ -21,7 +22,12 @@ export function ResumeReviewPanel({ review, loading, error, onRefresh }: Props) 
     </View>
     <Text style={styles.note}>正式に保存されたプロフィール・履歴書・希望条件を取得して表示します。資格は本人が申告した情報で、確認済みの証明ではありません。</Text>
     {loading ? <ActivityIndicator accessibilityLabel="履歴書の最新データを取得中" color="#E9265A" /> : null}
-    {error ? <Text style={styles.error} accessibilityRole="alert">{error}</Text> : null}
+    {error ? <View style={styles.errorGroup}>
+      <Text style={styles.error} accessibilityRole="alert">{error}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="履歴書の入力を再取得" onPress={onReloadResume} style={styles.refresh}>
+        <Text style={styles.refreshLabel}>履歴書の入力を再取得</Text>
+      </Pressable>
+    </View> : null}
     {review ? <>
       {review.gaps.length ? <View style={styles.notice}>
         <Text style={styles.noticeTitle}>入力を確認したい項目</Text>
@@ -73,6 +79,7 @@ const styles = StyleSheet.create({
   refresh: { minHeight: 44, borderRadius: 11, paddingHorizontal: 14, justifyContent: 'center', borderWidth: 1, borderColor: '#E6C5D0' },
   refreshLabel: { color: '#A9184C', fontWeight: '800', fontSize: 14 },
   note: { color: '#645963', fontSize: 14, lineHeight: 21 },
+  errorGroup: { gap: 9 },
   error: { backgroundColor: '#FFF0F0', padding: 12, borderRadius: 9, color: '#AA2034', fontWeight: '700', lineHeight: 22 },
   notice: { backgroundColor: '#FFF3E4', borderColor: '#F2D5AC', borderWidth: 1, borderRadius: 12, padding: 12, gap: 5 },
   noticeTitle: { color: '#80500D', fontWeight: '900', fontSize: 15 },
