@@ -8,9 +8,13 @@ import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { ResumeYearMonthField } from '../components/ResumeYearMonthField';
 import { ResumeChildcareEditor } from '../components/ResumeChildcareEditor';
+import { ResumeReviewPanel } from '../components/ResumeReviewPanel';
+import { buildResumeReview, type ResumeReview } from '../lib/resumeReviewModel';
+import { getJobseekerProfile } from '../lib/jobseekerCoreApi';
+import { getJobseekerMatchingPreferences, emptyJobseekerMatchingPreferences } from '../lib/candidateParityApi';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import {
-  getCandidateResume, saveCandidateResumeAndConfirm, ResumeReadbackUnconfirmed, ResumeRevisionConflict, type CandidateResume,
+  getCandidateResume, saveCandidateResumeAndConfirm, toResumePayload, ResumeReadbackUnconfirmed, ResumeRevisionConflict, type CandidateResume,
   type ResumeEducation, type ResumeEmployment,
 } from '../lib/resumeCanonical';
 import { MAX_RESUME_EDUCATION, MAX_RESUME_EMPLOYMENT, canAppendResumeEntry, educationStatusChange, moveResumeEntry, resumeCurrentChange } from '../lib/resumeEditor';
@@ -86,6 +90,11 @@ export default function ResumeScreen() {
   const [requiresReload, setRequiresReload] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [review, setReview] = useState<{ owner: string; data: ResumeReview } | null>(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewRefresh, setReviewRefresh] = useState(0);
+  const reviewRequest = useRef(0);
   const live = (owner: string, request: number) =>
     request === generation.current && ownerRef.current === owner && privacy.canAccessPrivateData();
   const edit = (update: (value: CandidateResume) => CandidateResume) => {
@@ -202,6 +211,58 @@ export default function ResumeScreen() {
     const timer = setTimeout(() => { void save(); }, RESUME_AUTOSAVE_DELAY_MS);
     return () => clearTimeout(timer);
   }, [resume, ownerKey, loadedOwner, canRead, loading, dirty, saving, autoSavePaused]);
+
+  // Review is read-only and never trusts unsaved local edits. Re-read all three
+  // Web-owned canonical datasets under one pinned Clerk session before display.
+  // Clear a previous candidate's review synchronously via the owner render gate.
+  useEffect(() => {
+    const request = ++reviewRequest.current;
+    setReview(null);
+    setReviewError(null);
+    setReviewBusy(false);
+    if (section !== 6 || !canRead || !ownerKey || loadedOwner !== ownerKey || !resume) return;
+    if (dirty || saving || autoSavePaused) {
+      setReviewError('入力の保存を確認してから内容を再取得できます。保存結果が不明な場合は最新の履歴書を読み込んでください。');
+      return;
+    }
+    let active = true;
+    const expectedOwner = ownerKey;
+    const startedGeneration = generation.current;
+    setReviewBusy(true);
+    void (async () => {
+      try {
+        const pinned = await pinCandidateAction();
+        if (!pinned?.isCurrent() ||
+            candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== expectedOwner) {
+          throw new Error('ログイン状態を確認できませんでした。');
+        }
+        const [canonicalResume, profile, prefs] = await Promise.all([
+          getCandidateResume(pinned.client),
+          getJobseekerProfile(pinned.client),
+          getJobseekerMatchingPreferences(pinned.client),
+        ]);
+        if (!active || reviewRequest.current !== request || !pinned.isCurrent() ||
+            !live(expectedOwner, startedGeneration)) return;
+        if (!profile || profile.clerk_user_id !== pinned.ownerId) {
+          throw new Error('プロフィールの閲覧権限を確認できませんでした。');
+        }
+        if (canonicalResume.revision !== resume.revision ||
+            JSON.stringify(toResumePayload(canonicalResume)) !== JSON.stringify(toResumePayload(resume))) {
+          throw new Error('別の画面または端末で履歴書が変更されました。最新の履歴書を読み込んでください。');
+        }
+        setReview({ owner: expectedOwner, data: buildResumeReview(
+          profile, canonicalResume, prefs ?? emptyJobseekerMatchingPreferences, new Date(),
+        ) });
+      } catch {
+        if (active && reviewRequest.current === request && live(expectedOwner, startedGeneration)) {
+          setReviewError('正式データを確認できませんでした。再読み込みしてください。');
+        }
+      } finally {
+        if (active && reviewRequest.current === request && live(expectedOwner, startedGeneration)) setReviewBusy(false);
+      }
+    })();
+    return () => { active = false; reviewRequest.current += 1; };
+  }, [section, ownerKey, loadedOwner, canRead, dirty, saving, autoSavePaused, resume?.revision, reviewRefresh]);
 
   const reloadLatest = () => {
     if (!shouldConfirmResumeReload(dirty)) { void load(); return; }
@@ -327,8 +388,9 @@ export default function ResumeScreen() {
           <Field label="本人希望記入欄" value={view.personal_requests} multiline onChange={(v) => change('personal_requests', v)} />
         </> : null}
         {section === 6 ? <>
-          <Text style={styles.hint}>学歴 {view.education.filter((e) => e.organization.trim()).length}件、職歴 {view.employment.filter((e) => e.organization.trim()).length}件。</Text>
-          <Text style={styles.hint}>正式な保存内容はWeb版でも確認できます。PDF作成は現在のNative画面では提供していません。</Text>
+          <ResumeReviewPanel review={review?.owner === ownerKey && !dirty && !saving && !autoSavePaused ? review.data : null}
+            loading={reviewBusy} error={reviewError}
+            onRefresh={() => setReviewRefresh((n) => n + 1)} />
           <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => router.push('/(tabs)/profile')}><Text style={styles.buttonText}>応募書類の管理を開く</Text></Pressable>
         </> : null}
       </View>
