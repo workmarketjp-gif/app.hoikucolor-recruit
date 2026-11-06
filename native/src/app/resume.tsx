@@ -235,7 +235,7 @@ export default function ResumeScreen() {
   if (!canRead || !ownerKey) return <View style={styles.center}><ActivityIndicator color="#E9265A" /></View>;
   return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}>
     <Text style={styles.heading}>履歴書・職務経歴書</Text>
-    <Text style={styles.intro}>質問に答えながら履歴書を作成します。入力内容は約1.2秒後に自動保存されます。PDF作成はNative版では準備中です。</Text>
+    <Text style={styles.intro}>質問に答えながら履歴書データを編集できます。入力内容は約1.2秒後に自動保存されます。</Text>
     {loading ? <ActivityIndicator color="#E9265A" /> : null}
     {error ? <View style={styles.warning}><Text style={styles.warningText}>{error}</Text><Pressable accessibilityRole="button" style={styles.secondary} onPress={reloadLatest}><Text style={styles.buttonText}>最新の内容を読み込む</Text></Pressable></View> : null}
     {view ? <>
