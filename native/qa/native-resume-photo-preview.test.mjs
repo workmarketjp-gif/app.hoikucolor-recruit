@@ -34,9 +34,8 @@ test('unknown and unapproved formats fail closed', () => {
   assert.throws(() => prepareResumePhotoPreview(photo({ mimeType: 'image/heic' })), /JPEG/);
   assert.throws(() => prepareResumePhotoPreview(photo({ mimeType: null })), /JPEG/);
 });
-test('invalid base64 and dimensions fail without a preview URI', () => {
+test('invalid base64 fails without a preview URI', () => {
   for (const bad of ['', '/9j/$$==', ' /9j/AA==', '/9j/AA=']) assert.throws(() => prepareResumePhotoPreview(photo({ base64: bad })), /読み込めません/);
-  for (const width of [0, -2, 0.5, Infinity]) assert.throws(() => prepareResumePhotoPreview(photo({ width })), /サイズ/);
 });
 test('oversized images are rejected before constructing a data URI', () => {
   const over = '/9j/' + 'A'.repeat(Math.ceil((RESUME_PHOTO_MAX_BYTES + 4) * 4 / 3 / 4) * 4);
@@ -57,4 +56,11 @@ test('picker dimensions are not trusted when the sanitized JPEG/PNG is actually 
   const jpg = prepareResumePhotoPreview(photo({ width: 600, height: 800 }));
   const image = prepareResumePhotoPreview(photo({ base64: png, mimeType: 'image/png', width: 300, height: 400 }));
   assert.deepEqual([jpg.width, jpg.height, image.width, image.height], [1, 1, 1, 1]);
+});
+
+test('valid source pixels take priority even when OS reports invalid size', () => {
+  for (const width of [0, -2, 0.5, Infinity]) {
+    const result = prepareResumePhotoPreview(photo({ width, height: 0 }));
+    assert.deepEqual([result.width, result.height], [1, 1]);
+  }
 });
