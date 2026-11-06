@@ -8,6 +8,21 @@ export type ResumePhotoDimensions = { width: number; height: number };
 
 const unsupported = () => new Error('証明写真の画像サイズを確認できませんでした。別の画像を選んでください。');
 
+// Input bytes may be under 10 MB while a compressed image expands to several
+// gigabytes. Check dimensions before passing pixels to the native image decoder
+// or Expo's on-device PDF renderer. Keep ordinary 12/48 MP photos eligible.
+export const RESUME_PHOTO_MAX_PIXELS = 80_000_000;
+export const RESUME_PHOTO_MAX_EDGE = 16_384;
+
+function checkedDimensions(width: number, height: number): ResumePhotoDimensions {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+      width < 1 || height < 1 || width > RESUME_PHOTO_MAX_EDGE ||
+      height > RESUME_PHOTO_MAX_EDGE || width * height > RESUME_PHOTO_MAX_PIXELS) {
+    throw unsupported();
+  }
+  return { width, height };
+}
+
 export function inspectResumePhotoDimensions(
   bytes: Uint8Array,
   mimeType: 'image/jpeg' | 'image/png',
@@ -23,8 +38,7 @@ export function inspectResumePhotoDimensions(
     }
     const width = bytes[16] * 0x1000000 + (bytes[17] << 16) + (bytes[18] << 8) + bytes[19];
     const height = bytes[20] * 0x1000000 + (bytes[21] << 16) + (bytes[22] << 8) + bytes[23];
-    if (width < 1 || height < 1) throw unsupported();
-    return { width, height };
+    return checkedDimensions(width, height);
   }
   if (mimeType !== 'image/jpeg' || bytes.length < 8 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
     throw unsupported();
@@ -47,8 +61,7 @@ export function inspectResumePhotoDimensions(
       if (segmentLength < 11 || segmentLength !== 8 + 3 * bytes[at + 7]) throw unsupported();
       const height = (bytes[at + 3] << 8) | bytes[at + 4];
       const width = (bytes[at + 5] << 8) | bytes[at + 6];
-      if (width < 1 || height < 1) throw unsupported();
-      return { width, height };
+      return checkedDimensions(width, height);
     }
     at += segmentLength;
   }
