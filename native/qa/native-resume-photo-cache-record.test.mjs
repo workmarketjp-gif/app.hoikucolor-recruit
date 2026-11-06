@@ -4,13 +4,13 @@ import { encodeResumePhotoCacheRecord, decodeResumePhotoCacheRecord } from '../s
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC';
 const photo = (overrides = {}) => ({ dataUri: `data:image/png;base64,${png}`, mimeType: 'image/png',
-  width: 600, height: 800, byteLength: Buffer.from(png, 'base64').length, ...overrides });
+  width: 1, height: 1, byteLength: Buffer.from(png, 'base64').length, ...overrides });
 
 test('app-private record round trips image bytes/dimensions with no owner identifiers', () => {
   const record = encodeResumePhotoCacheRecord(photo());
   assert.equal(record.includes('candidate'), false);
   assert.deepEqual(decodeResumePhotoCacheRecord(record), {
-    base64: png, mimeType: 'image/png', width: 600, height: 800,
+    base64: png, mimeType: 'image/png', width: 1, height: 1,
     byteLength: Buffer.from(png, 'base64').length,
   });
 });
