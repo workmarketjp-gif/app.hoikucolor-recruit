@@ -16,7 +16,7 @@ test('JPEG preview stays in memory and reports exact byte count', () => {
   const preview = prepareResumePhotoPreview(photo());
   assert.deepEqual({ ...preview, dataUri: preview.dataUri.slice(0, 23) }, {
     dataUri: 'data:image/jpeg;base64,', mimeType: 'image/jpeg',
-    byteLength: Buffer.from(preview.dataUri.split(',')[1], 'base64').length, width: 600, height: 800,
+    byteLength: Buffer.from(preview.dataUri.split(',')[1], 'base64').length, width: 1, height: 1,
   });
   assert.equal(Buffer.from(preview.dataUri.split(',')[1], 'base64').includes(Buffer.from('JFIF')), false);
   assert.ok(preview.byteLength < Buffer.from(jpeg, 'base64').length); 
@@ -51,4 +51,10 @@ test('screen blur, App Lock and generation change all reject late photos', () =>
   for (const overrides of [{ screenActive: false }, { privateAllowed: false }, { currentGeneration: 8 }]) {
     assert.equal(canPresentResumePhoto(lease(overrides)), false);
   }
+});
+
+test('picker dimensions are not trusted when the sanitized JPEG/PNG is actually 1×1', () => {
+  const jpg = prepareResumePhotoPreview(photo({ width: 600, height: 800 }));
+  const image = prepareResumePhotoPreview(photo({ base64: png, mimeType: 'image/png', width: 300, height: 400 }));
+  assert.deepEqual([jpg.width, jpg.height, image.width, image.height], [1, 1, 1, 1]);
 });
