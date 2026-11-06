@@ -202,7 +202,6 @@ export default function ResumeScreen() {
         !session?.user?.id || !session?.id) return;
     const startedOwner = ownerKey;
     const photoOwnerId = session.user.id;
-    const lease = captureCandidateLocalStateSessionLease(photoOwnerId, session.id);
     const startedGeneration = generation.current;
     const stillEligible = () => canPresentResumePhoto({
       startedOwner, currentOwner: ownerRef.current, loadedOwner,
@@ -214,6 +213,7 @@ export default function ResumeScreen() {
     setPhotoBusy(true);
     setPhotoError(null);
     try {
+      const lease = captureCandidateLocalStateSessionLease(photoOwnerId, session.id);
       // Expo's native editor may crop differently on iOS. A consistent 3:4
       // sanitized export must be verified before the photo can enter a PDF.
       const result = await ImagePicker.launchImageLibraryAsync({
