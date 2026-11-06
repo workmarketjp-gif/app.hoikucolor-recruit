@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Button, Linking, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, Text, View } from 'react-native';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { captureDocumentPickerCacheGeneration, consumePendingDocumentPickerCache, discardUnregisteredDocumentPickerCache, registerPendingDocumentPickerCache } from '../lib/documentPickerCache';
