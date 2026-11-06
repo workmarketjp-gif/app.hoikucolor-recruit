@@ -13,6 +13,7 @@ import { ResumeChildcareEditor } from '../components/ResumeChildcareEditor';
 import { ResumeReviewPanel } from '../components/ResumeReviewPanel';
 import { buildResumeReview, type ResumeReview } from '../lib/resumeReviewModel';
 import { renderNativeResumePdf } from '../lib/renderNativeResumePdf';
+import { isResumePdfPhotoSnapshotCurrent } from '../lib/resumePdfPhotoSnapshot';
 import type { ResumeA4Kind } from '../lib/resumeA4Html';
 import { uploadGeneratedJobseekerPdf } from '../lib/documentVaultApi';
 import { canPresentResumePhoto, prepareResumePhotoPreview, type ResumePhotoPreview } from '../lib/resumePhotoPreview';
@@ -110,6 +111,7 @@ export default function ResumeScreen() {
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [pdfSaved, setPdfSaved] = useState<{ type: ResumeA4Kind; isDefault: boolean } | null>(null);
   const photoInFlight = useRef(false);
+  const photoRevision = useRef(0);
   const photoScreenActive = useRef(false);
   const [photoPreview, setPhotoPreview] = useState<ResumePhotoPreview | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -222,6 +224,8 @@ export default function ResumeScreen() {
       privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
       screenActive: photoScreenActive.current,
     });
+    // Invalidate any already-rendering PDF before invoking the OS picker or deleting.
+    photoRevision.current += 1;
     photoInFlight.current = true;
     setPhotoBusy(true);
     setPhotoError(null);
@@ -288,6 +292,8 @@ export default function ResumeScreen() {
       privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
       screenActive: photoScreenActive.current,
     });
+    // Invalidate any already-rendering PDF before invoking the OS picker or deleting.
+    photoRevision.current += 1;
     photoInFlight.current = true;
     setPhotoBusy(true);
     setPhotoError(null);
@@ -425,6 +431,10 @@ export default function ResumeScreen() {
    */
   const createPdf = async (type: ResumeA4Kind) => {
     if (pdfInFlight.current) return;
+    if (photoInFlight.current) {
+      setPdfError('証明写真の処理が完了してからPDFを作成してください。');
+      return;
+    }
     if (!ownerKey || !canRead || loadedOwner !== ownerKey || !resume ||
         review?.owner !== ownerKey || dirty || saving || autoSavePaused || reviewBusy) {
       setPdfError('正式データの保存・再取得を確認してからPDFを作成してください。');
@@ -433,8 +443,18 @@ export default function ResumeScreen() {
     const expectedOwner = ownerKey;
     const startedGeneration = generation.current;
     const submittedDraftRevision = draftRevision.current;
+    const pdfSnapshot = {
+      ownerKey: expectedOwner, generation: startedGeneration,
+      draftRevision: submittedDraftRevision, photoRevision: photoRevision.current,
+    };
     const stillCurrent = () => live(expectedOwner, startedGeneration) &&
-      draftRevision.current === submittedDraftRevision;
+      isResumePdfPhotoSnapshotCurrent(pdfSnapshot, {
+        ownerKey: ownerRef.current ?? '',
+        generation: generation.current, draftRevision: draftRevision.current,
+        photoRevision: photoRevision.current,
+        canAccessPrivateData: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+        photoMutationInFlight: photoInFlight.current,
+      });
     pdfInFlight.current = true;
     setPdfBusy(type);
     setPdfError(null);
