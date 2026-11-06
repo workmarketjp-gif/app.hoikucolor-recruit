@@ -41,7 +41,7 @@ export function buildResumeA4Html(kind: ResumeA4Kind, review: ResumeReview, phot
     </table></div><div class="photo">${photo ? `<img src="${photo}" alt="証明写真">` : '<span>写真</span>'}</div></div>
     ${reviewRows(review.history, '学歴・職歴')}
     ${reviewRows(review.licenses.length ? review.licenses : [{ year: '', month: '', label: '特になし' }], '免許・資格（本人申告）')}
-    ${reviewSections(review.appeal)}${section('本人希望記入欄', review.requests)` : `
+    ${reviewSections(review.appeal)}${section('本人希望記入欄', review.requests)}` : `
     <table class="details">${detail('氏名', review.name)}</table>
     ${review.work.length ? reviewSections(review.work) : section('職務経歴', '職務経歴・自己PRの登録がありません。')}`;
   // Only HTML text derived from the canonical review and optional inline sanitized
