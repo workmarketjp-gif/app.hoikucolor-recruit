@@ -43,3 +43,10 @@ dependency, so adding it is a dependency change that needs your approval and an 
 
 ## Update: photo export implemented (source + unit tests only)
 `src/lib/resumePhotoExport.ts` + `expo-image-manipulator ~55.0.21` now orient, centre-crop 3:4, resample to 600x800 and re-encode JPEG q0.88 before sanitization; the result is rejected unless the sanitized header reads exactly 600x800. All intermediate cache files are deleted on success and failure. Transparent PNGs (alpha / tRNS) are rejected with a message, a deliberate deviation from Web (white fill), because alpha cannot be flattened without a pixel decoder. NOT verified on Android or iOS: manipulator orientation handling, real output size/quality, and PDF size.
+
+## Runtime verification status (2026-11-07, HEAD of this branch)
+Environment: Windows 11; `adb` platform-tools only (no emulator, no system image, no connected device); Java 1.8 (React Native needs 17);
+iOS builds impossible on Windows (no Xcode/simulator).
+- **Bundle-level (source) evidence:** `npx expo export --platform android --platform ios` succeeded (Metro + Hermes): Android 5.8 MB and iOS 5.7 MB bundles. This proves the JS compiles for both targets. It is NOT runtime, emulator, simulator or device evidence.
+- **Android emulator: NOT RUN. Android physical device: NOT RUN. iOS simulator: NOT RUN. iOS physical device: NOT RUN.**
+- Unit/behavioural tests run in Node with synthetic platform stubs; native modules (expo-print, image-manipulator, notifications, SecureStore, file system) were never executed for real.
