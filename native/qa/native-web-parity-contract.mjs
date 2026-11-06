@@ -44,7 +44,7 @@ const checks = [
   ['search uses current v2 RPC', core.includes("rpc('hc_jobseeker_search_jobs_v2'") && !core.includes("rpc('hc_jobseeker_search_jobs',")],
   ['saved jobs use v2 status read model', core.includes("rpc('hc_jobseeker_list_saved_jobs_with_status_v2'")],
   ['job detail uses v2 exact lookup', journey.includes("rpc('hc_jobseeker_get_job_v2'")],
-  ['external jobs cannot use direct HC apply CTA', jobDetail.includes('job.is_external') && jobDetail.includes('掲載元で詳細を見る') && jobDetail.includes('Linking.openURL')],
+  ['external jobs cannot use direct HC apply CTA', jobDetail.includes('job.is_external') && jobDetail.includes('掲載元で応募方法を確認') && jobDetail.includes('Linking.openURL')],
   ['scout screen is materialized', scouts.includes('届いた匿名スカウト') && scouts.includes('匿名スカウト・公開範囲')],
   ['spot screen is materialized', spot.includes('募集中のスポット勤務') && spot.includes('あなたのスポット勤務')],
   ['match screen is materialized', matches.includes('条件マッチ') && matches.includes('保育観サイン')],

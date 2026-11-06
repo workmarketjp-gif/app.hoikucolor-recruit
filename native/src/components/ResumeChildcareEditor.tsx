@@ -275,7 +275,7 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
       ] as const).map(([label, key]) => <View key={key} style={styles.field}>
         <Text style={styles.label}>{label}</Text>
         <TextInput accessibilityLabel={label} style={styles.input}
-          keyboardType={key === 'phone' ? 'phone-pad' : key === 'email' ? 'email-address' : 'default'}
+          keyboardType="default"
           autoCapitalize="none" autoCorrect={false}
           value={profile[key] ?? ''}
           onChangeText={(value) => editProfile((current) => ({ ...current, [key]: resumeOptionalProfileText(value) }))} />

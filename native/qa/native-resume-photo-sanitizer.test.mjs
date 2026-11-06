@@ -6,7 +6,7 @@ import { registerHooks } from 'node:module';
 // Node's type-stripper does not resolve Metro's extensionless TS imports; this
 // test-only hook lets us execute the real production module without changing it.
 registerHooks({ resolve(specifier, context, nextResolve) {
-  return nextResolve(specifier === './resumePhotoSanitizer' ? './resumePhotoSanitizer.ts' : specifier, context);
+  return nextResolve(['./resumePhotoSanitizer', './resumePhotoDimensions'].includes(specifier) ? specifier + '.ts' : specifier, context);
 } });
 const { prepareResumePhotoPreview } = await import('../src/lib/resumePhotoPreview.ts');
 

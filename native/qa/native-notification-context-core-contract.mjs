@@ -23,7 +23,7 @@ check('cold-start notification response is recovered', context.includes('getLast
 check('live notification response listener is installed', context.includes('addNotificationResponseReceivedListener'));
 check('foreground push is only a canonical invalidation signal', context.includes('addNotificationReceivedListener') && context.includes('reconcileCanonicalState'));
 check('periodic fallback runs only while app is active', context.includes("AppState.currentState !== 'active'") && context.includes('60_000'));
-check('exact unread count drives OS badge through quarantine wrapper', context.includes('setCandidateNotificationBadgeCount(unreadCount)') && !context.includes('Notifications.setBadgeCountAsync('));
+check('exact unread count drives OS badge through quarantine wrapper', context.includes('setCandidateNotificationBadgeCount(safeSnapshot.unreadCount)') && !context.includes('Notifications.setBadgeCountAsync('));
 check('handled responses clear OS last-response through wrapper', context.includes('clearCandidateLastNotificationResponse()') && !context.includes('Notifications.clearLastNotificationResponseAsync('));
 check('quarantined push bind is not surfaced as a normal registration error', context.includes('isPushBindingQuarantinedError'));
 check('canonical notification refresh does not write business tables', !context.includes(".from('hc_applications')") && !context.includes(".from('hc_visit_reservations')") && !context.includes(".from('hc_interviews')"));

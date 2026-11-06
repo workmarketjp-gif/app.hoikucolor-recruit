@@ -50,8 +50,8 @@ check('save success is canonically re-read', api.includes('const canonical = awa
 check('profile reuses canonical actor-scoped RPCs', api.includes("hc_jobseeker_get_profile") && api.includes("hc_jobseeker_upsert_profile"));
 check('profile writes never send caller identity', !api.match(/p_clerk_user_id\s*:/));
 check('Native core API does not read canonical tables directly', !api.includes('.from('));
-check('job comparison is capped to three', compare.includes('const maxComparedJobs = 3') && compare.includes('current.length >= maxComparedJobs') && compare.includes("setError('比較できる求人は3件までです。')"));
-check('document vault is mounted in profile', profile.includes('<DocumentVaultSection />'));
+check('job comparison is capped to three', compare.includes('const maxComparedJobs = 3') && compare.includes('selectedIds.length >= maxComparedJobs') && compare.includes("value: '比較できる求人は3件までです。'"));
+check('document vault is mounted in profile', profile.includes('<DocumentVaultSection '));
 check('safe account sign-out is exposed in profile', profile.includes('deletion.signOutSafely()'));
 check('account deletion entry is explicit', profile.includes('deletion.requestDeletion()') && profile.includes("style: 'destructive'"));
 

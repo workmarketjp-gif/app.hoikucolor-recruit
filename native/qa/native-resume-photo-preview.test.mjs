@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 registerHooks({ resolve(specifier, context, nextResolve) {
-  return nextResolve(specifier === './resumePhotoSanitizer' ? './resumePhotoSanitizer.ts' : specifier, context);
+  return nextResolve(['./resumePhotoSanitizer', './resumePhotoDimensions'].includes(specifier) ? specifier + '.ts' : specifier, context);
 } });
 const { prepareResumePhotoPreview, canPresentResumePhoto, RESUME_PHOTO_MAX_BYTES } = await import('../src/lib/resumePhotoPreview.ts');
 
