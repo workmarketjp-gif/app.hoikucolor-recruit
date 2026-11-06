@@ -1,5 +1,5 @@
 import { useSession } from '@clerk/expo';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
@@ -29,10 +29,13 @@ type Target = 'profile' | 'preferences';
 /** One mounted editor owns Web /resume's shared profile across steps 1, 4, 5.
  * Unmounting or duplicating profile editors would race against the canonical upsert.
  */
-export function ResumeChildcareEditor({ section, qualificationAcquired, onQualificationAcquiredChange }: {
+export function ResumeChildcareEditor({ section, qualificationAcquired, onQualificationAcquiredChange, basicAddressFields, basicContactAddressField }: {
   section: 'basic' | 'licenses' | 'childcare' | null;
   qualificationAcquired: Readonly<Record<string, string>>;
   onQualificationAcquiredChange: (next: Record<string, string>) => void;
+  /** Résumé fields are owned by the parent canonical résumé draft, not profile RPC. */
+  basicAddressFields: ReactNode;
+  basicContactAddressField: ReactNode;
 }) {
   const { session } = useSession();
   const { pinCandidateAction } = usePinnedCandidateAction();
@@ -269,7 +272,6 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
       <Text style={styles.note}>お名前・連絡先はマイページの正式なプロフィールと共通です。編集すると両方に反映されます。</Text>
       {([
         ['お名前', 'name'], ['ふりがな', 'name_kana'],
-        ['電話番号', 'phone'], ['メールアドレス', 'email'],
       ] as const).map(([label, key]) => <View key={key} style={styles.field}>
         <Text style={styles.label}>{label}</Text>
         <TextInput accessibilityLabel={label} style={styles.input}
@@ -278,6 +280,18 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
           value={profile[key] ?? ''}
           onChangeText={(value) => editProfile((current) => ({ ...current, [key]: resumeOptionalProfileText(value) }))} />
       </View>)}
+      {basicAddressFields}
+      {([
+        ['電話番号', 'phone'], ['メールアドレス', 'email'],
+      ] as const).map(([label, key]) => <View key={key} style={styles.field}>
+        <Text style={styles.label}>{label}</Text>
+        <TextInput accessibilityLabel={label} style={styles.input}
+          keyboardType={key === 'phone' ? 'phone-pad' : 'email-address'}
+          autoCapitalize="none" autoCorrect={false}
+          value={profile[key] ?? ''}
+          onChangeText={(value) => editProfile((current) => ({ ...current, [key]: resumeOptionalProfileText(value) }))} />
+      </View>)}
+      {basicContactAddressField}
     </> : null}
     {section === 'licenses' ? <>
       <Text style={styles.note}>選択した資格はプロフィールにも保存され、求人のマッチングに使われます。証明書類を登録しても確認済み資格にはなりません。</Text>
