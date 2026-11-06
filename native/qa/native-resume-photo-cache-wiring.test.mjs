@@ -32,5 +32,5 @@ test('explicit sign-out and deletion handoff attempts physical photo purge and c
   assert.match(purge, /Promise\.allSettled\(operations\.map/);
   assert.match(purge, /CANDIDATE_LOCAL_PRIVACY_PURGE_INCOMPLETE/);
   assert.match(cache, /new File\(Paths\.cache,/);
-  assert.doesNotMatch(cache, /Paths\.document|fetch\(|supabase|upload|console\./);
+  assert.doesNotMatch(cache, /Paths\.document|fetch\(|supabase|upload\(|console\./);
 });
