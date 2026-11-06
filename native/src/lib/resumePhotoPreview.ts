@@ -6,6 +6,7 @@
  * still NOT equivalent to Web's 600 x 800 JPEG export.
  */
 import { sanitizeResumePhoto } from './resumePhotoSanitizer';
+
 export const RESUME_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 
 export type PickedResumePhoto = {
