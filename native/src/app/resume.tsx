@@ -252,15 +252,15 @@ export default function ResumeScreen() {
           section={section === 0 ? 'basic' : section === 3 ? 'licenses' : section === 4 ? 'childcare' : null}
           qualificationAcquired={view.qualification_acquired}
           onQualificationAcquiredChange={(next) => change('qualification_acquired', next)}
+          basicAddressFields={<>
+            <Field label="生年月日" hint="西暦YYYY-MM-DD" value={view.birth_date} onChange={(v) => change('birth_date', v)} />
+            <Field label="性別" value={view.gender} onChange={(v) => change('gender', v)} />
+            <Field label="郵便番号" value={view.postal_code} onChange={(v) => change('postal_code', v)} />
+            <Field label="住所" value={view.address} onChange={(v) => change('address', v)} />
+            <Field label="住所のふりがな" value={view.address_kana} onChange={(v) => change('address_kana', v)} />
+          </>}
+          basicContactAddressField={<Field label="現住所以外の連絡先" value={view.contact_address} onChange={(v) => change('contact_address', v)} />}
         />
-        {section === 0 ? <>
-          <Field label="生年月日" hint="西暦YYYY-MM-DD" value={view.birth_date} onChange={(v) => change('birth_date', v)} />
-          <Field label="性別" value={view.gender} onChange={(v) => change('gender', v)} />
-          <Field label="郵便番号" value={view.postal_code} onChange={(v) => change('postal_code', v)} />
-          <Field label="住所" value={view.address} onChange={(v) => change('address', v)} />
-          <Field label="住所（ふりがな）" value={view.address_kana} onChange={(v) => change('address_kana', v)} />
-          <Field label="連絡先住所（現住所と異なる場合）" value={view.contact_address} onChange={(v) => change('contact_address', v)} />
-        </> : null}
         {section === 1 ? <>
           {view.education.map((entry, index) => {
             const patch = (data: Partial<ResumeEducation>) => change('education', view.education.map((e, i) => i === index ? { ...e, ...data } : e));
