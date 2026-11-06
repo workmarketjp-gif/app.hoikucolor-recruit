@@ -1,8 +1,11 @@
 /**
- * A candidate's optional résumé photo is selected for an in-memory preview only.
- * This does not upload a photo, persist it, certify metadata stripping, or
- * represent a generated PDF. Native ImagePicker's OS cache is handled by the UI.
+ * An optional résumé photo remains on the candidate's device and in memory;
+ * it is never uploaded on its own or represented as a created PDF.
+ * Expo's OS cache is handled by the UI. Sanitization strips JPEG/PNG container
+ * metadata before the in-memory preview is constructed; crop/resampling are
+ * still NOT equivalent to Web's 600 x 800 JPEG export.
  */
+import { sanitizeResumePhoto } from './resumePhotoSanitizer';
 export const RESUME_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 
 export type PickedResumePhoto = {
@@ -38,13 +41,15 @@ export function prepareResumePhotoPreview(asset: PickedResumePhoto): ResumePhoto
   if (!byteLength || byteLength > RESUME_PHOTO_MAX_BYTES) {
     throw new Error('写真は10MB以下の画像を選んでください。');
   }
-  // Check the actual bytes via the encoded magic prefix, not the picker-reported MIME alone.
+  // Content signature wins over the picker-supplied MIME. No unparsed original
+  // bytes survive in the data URI even if the editor returned GPS or XMP tags.
   if ((mime === 'image/jpeg' && !encoded.startsWith('/9j/')) ||
       (mime === 'image/png' && !encoded.startsWith('iVBORw0KGgo'))) {
     throw new Error('写真の内容と画像形式が一致しません。');
   }
-  return { dataUri: `data:${mime};base64,${encoded}`, mimeType: mime, byteLength,
-    width: asset.width, height: asset.height };
+  const clean = sanitizeResumePhoto(encoded, mime);
+  return { dataUri: `data:${mime};base64,${clean.base64}`, mimeType: mime,
+    byteLength: clean.byteLength, width: asset.width, height: asset.height };
 }
 
 /** An OS picker can return after account switch, screen blur or App Lock. */
