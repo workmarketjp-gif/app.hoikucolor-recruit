@@ -252,6 +252,9 @@ export default function ResumeScreen() {
       setPhotoPreview(prepared);
     } catch (cause) {
       if (stillEligible()) {
+        // Cache write may have failed after replacing bytes; do not display a
+        // previous preview as if it still matches a confirmed on-disk photo.
+        setPhotoPreview(null);
         setPhotoError(cause instanceof Error ? cause.message : '写真を読み込めませんでした。');
       }
     } finally {
