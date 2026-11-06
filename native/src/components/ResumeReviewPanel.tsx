@@ -58,7 +58,7 @@ export function ResumeReviewPanel({ review, photoDataUri, loading, error, onRefr
           {photoDataUri
             ? <Image accessibilityLabel="選択した証明写真のプレビュー" source={{ uri: photoDataUri }} style={styles.photo} resizeMode="cover" />
             : <View style={styles.photoEmpty}><Text style={styles.photoPlaceholder}>写真</Text></View>}
-          <Text style={styles.photoHint}>写真はプレビュー専用です。PDF作成・提出はまだ行われていません。</Text>
+          <Text style={styles.photoHint}>写真はこの画面での確認用です。下の作成ボタンを押すと履歴書PDFに組み込みます。</Text>
         </View>
         <Detail title="生年月日" value={review.birth} />
         <Detail title="性別" value={review.gender} />
@@ -88,7 +88,7 @@ export function ResumeReviewPanel({ review, photoDataUri, loading, error, onRefr
         </View>)}
         {!review.work.length ? <Text style={styles.body}>職務経歴・自己PRの登録がありません。</Text> : null}
       </View>}
-      <Text style={styles.note}>このプレビューはNative画面での確認用です。A4 PDFの生成・書類管理への登録・提出はまだ行われていません。</Text>
+      <Text style={styles.note}>このプレビューはNative画面での確認用です。正式データを確認後、下のボタンからA4 PDFを作成し非公開の書類管理に保存できます。応募は自動送信されません。</Text>
     </> : null}
   </View>;
 }
