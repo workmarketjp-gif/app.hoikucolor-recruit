@@ -1,5 +1,6 @@
 import { clearAllDurableMutations } from './durableMutation';
 import { purgePendingDocumentPickerCache } from './documentPickerCache';
+import { purgeCachedResumePhoto } from './resumePhotoDeviceCache';
 import { clearOfflineSavedJobs } from './offlineSavedJobs';
 import { clearOfflineSavedSnapshot } from './offlineSavedSnapshot';
 import { withCandidateLocalStatePurge } from './candidateLocalStateSession';
@@ -45,6 +46,7 @@ export async function purgeCandidatePrivateLocalState(userId: string) {
       ['saved-display-snapshot', () => clearOfflineSavedSnapshot(ownerId)],
       ['durable-mutation-recovery', () => clearAllDurableMutations(ownerId)],
       ['document-picker-cache', () => purgePendingDocumentPickerCache()],
+      ['resume-photo-cache', () => purgeCachedResumePhoto(ownerId)],
     ] as const;
 
     const results = await Promise.allSettled(operations.map(([, operation]) => operation()));
