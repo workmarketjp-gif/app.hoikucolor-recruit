@@ -18,6 +18,9 @@ const sections = ['基本情報', '学歴', '職歴', '資格', '保育経験', 
 const statuses = ['卒業', '卒業見込み', '修了', '中退', '在学中'];
 const ageGroups = ['0歳児', '1歳児', '2歳児', '3歳児', '4歳児', '5歳児', '異年齢', 'フリー'];
 const qualificationOptions = ['保育士', '幼稚園教諭', '保育教諭', '看護師', '准看護師', '栄養士', '管理栄養士', '調理師', '子育て支援員', '普通自動車第一種運転免許'];
+const facilityTypeOptions = ['認可保育園', '認定こども園', '幼稚園', '小規模保育', '企業主導型保育', '事業所内保育', '認可外保育施設', '学童保育', '児童発達支援', '保育以外'];
+const employmentTypeOptions = ['正社員', '契約社員', 'パート・アルバイト', '派遣'];
+const leavingReasonOptions = ['一身上の都合により退職', '契約期間満了により退職', '会社都合により退職', '退職'];
 const nullable = (v: string) => v.trim() || null;
 type FieldProps = { label: string; value: string | null; onChange: (value: string | null) => void; multiline?: boolean; hint?: string };
 function Field({ label, value, onChange, multiline, hint }: FieldProps) {
@@ -34,6 +37,27 @@ function Choice({ label, selected, onPress }: { label: string; selected: boolean
     style={[styles.choice, selected && styles.selected]} onPress={onPress}>
     <Text style={[styles.choiceLabel, selected && styles.selectedLabel]}>{label}</Text>
   </Pressable>;
+}
+
+/** Native expandable select with the Web's existing options and unknown saved-value preservation. */
+function ResumeOptionField({ label, value, choices, onChange }: {
+  label: string; value: string | null; choices: readonly string[]; onChange: (value: string | null) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const values = value && !choices.includes(value) ? [value, ...choices] : choices;
+  return <View style={styles.field}>
+    <Text style={styles.label}>{label}</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel={label + 'を選択'}
+      onPress={() => setExpanded((was) => !was)} style={styles.optionTrigger}>
+      <Text style={styles.choiceLabel}>{value || '選択してください（任意）'}</Text>
+      <Text style={styles.selectedLabel}>{expanded ? '閉じる' : '選ぶ'}</Text>
+    </Pressable>
+    {expanded ? <View style={styles.choices}>
+      <Choice label="未設定" selected={!value} onPress={() => { onChange(null); setExpanded(false); }} />
+      {values.map((item) => <Choice key={item} label={item} selected={value === item}
+        onPress={() => { onChange(item); setExpanded(false); }} />)}
+    </View> : null}
+  </View>;
 }
 
 /** Editable candidate-owned Web /resume parity slice, not a PDF generator. */
@@ -215,8 +239,8 @@ export default function ResumeScreen() {
               </View>
               <Field label="勤務先・施設名" value={entry.organization} onChange={(v) => patch({ organization: v ?? '' })} />
               <Field label="所属・部署" value={entry.department} onChange={(v) => patch({ department: v })} />
-              <Field label="施設種類" value={entry.facility_type} onChange={(v) => patch({ facility_type: v })} />
-              <Field label="雇用形態" value={entry.employment_type} onChange={(v) => patch({ employment_type: v })} />
+              <ResumeOptionField label="施設の種類" value={entry.facility_type} choices={facilityTypeOptions} onChange={(v) => patch({ facility_type: v })} />
+              <ResumeOptionField label="雇用形態" value={entry.employment_type} choices={employmentTypeOptions} onChange={(v) => patch({ employment_type: v })} />
               <Field label="職種" value={entry.job_title} onChange={(v) => patch({ job_title: v })} />
               <ResumeYearMonthField label="働き始めた年月" value={entry.start_ym} onChange={(v) => patch({ start_ym: v })} />
               <View style={styles.toggle}><Text style={styles.label}>今もここで働いている</Text><Switch value={entry.is_current} onValueChange={(v) => patch(resumeCurrentChange(entry, v))} /></View>
@@ -228,7 +252,7 @@ export default function ResumeScreen() {
               <View style={styles.choices}>{ageGroups.map((label) => <Choice key={label} label={label} selected={entry.age_groups.includes(label)} onPress={() => patch({ age_groups: entry.age_groups.includes(label) ? entry.age_groups.filter((x) => x !== label) : [...entry.age_groups, label] })} />)}</View>
               <Field label="業務内容" value={entry.duties} multiline onChange={(v) => patch({ duties: v })} />
               <Field label="実績・工夫したこと" value={entry.achievements} multiline onChange={(v) => patch({ achievements: v })} />
-              <Field label="退職理由" value={entry.leaving_reason} onChange={(v) => patch({ leaving_reason: v })} />
+              {!entry.is_current ? <ResumeOptionField label="退職の理由（書き方）" value={entry.leaving_reason} choices={leavingReasonOptions} onChange={(v) => patch({ leaving_reason: v })} /> : null}
               <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => confirmRemove('employment', index)}><Text style={styles.buttonText}>この職歴を削除</Text></Pressable>
             </View>;
           })}
@@ -239,7 +263,7 @@ export default function ResumeScreen() {
         {section === 3 ? <>
           <Text style={styles.hint}>取得済み資格の年月を記録します。資格の追加・削除はマイページから行えます。</Text>
           {[...new Set([...qualificationOptions, ...Object.keys(view.qualification_acquired)])].map((name) => (
-            <Field key={name} label={name + '・取得年月（YYYY-MM、未取得は空欄）'}
+            <ResumeYearMonthField key={name} label={name + 'を取得した年月'}
               value={view.qualification_acquired[name] ?? null}
               onChange={(v) => {
                 const next = { ...view.qualification_acquired };
@@ -298,6 +322,7 @@ const styles = StyleSheet.create({
   textArea: { minHeight: 112 },
   entry: { borderWidth: 1, borderColor: '#F4DAE4', backgroundColor: '#FFFDFE', padding: 14, borderRadius: 14, gap: 12 },
   entryTitle: { fontSize: 17, fontWeight: '800', color: '#34232E' },
+  optionTrigger: { minHeight: 48, borderWidth: 1, borderColor: '#D8C9D0', borderRadius: 12, backgroundColor: '#fff', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   rowActions: { flexDirection: 'row', gap: 8 },
   rowAction: { flex: 1, minHeight: 44, borderRadius: 10, borderWidth: 1, borderColor: '#E5D1D9', alignItems: 'center', justifyContent: 'center' },
   choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
