@@ -34,7 +34,6 @@ test('wrong MIME is not silently interpreted as another format', () => {
   assert.throws(() => inspectResumePhotoDimensions(jpeg(600, 800), 'image/png'), /サイズ/);
 });
 
-
 // The source's sanitization layer validates container/chunk structure; this
 // test exercises the next decoder boundary with attacker-controlled dimensions.
 const pngHeader = (width, height) => {
