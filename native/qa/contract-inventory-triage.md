@@ -97,3 +97,84 @@ Remove the 62 dead npm scripts or point them at real suites, so a green `npm run
 - `native-push-lifecycle.test.mjs` (18 tests, `npm run test:push-lifecycle`; fixture `qa/fixtures/push-platform.stub.mjs`): real `notifications.ts`
   with a synthetic platform. Mutation-checked (removing generation guards fails 2 tests). Retires `push-lifecycle`; covers the registration half
   of `push-session-quarantine` / `push-binding-session-race`. Real push delivery needs a device.
+
+---
+
+# npm script disposition (2026-11-07, Phase 1)
+
+Before: 58 `test:*` scripts pointed at contract files that never existed on any branch (MODULE_NOT_FOUND = no evidence).
+After: **0 dead scripts**. `npm run test:behavioural` runs every `qa/*.test.mjs` (469 tests, 469 pass); `test:contracts:available` runs 17 contract files (17 pass).
+
+## Repointed to real suites (full = the original topic is exercised; partial = only part is, remainder is backlog)
+| Script | Coverage |
+|---|---|
+| `test:ambiguous-retry` | full |
+| `test:account-isolation` | partial |
+| `test:document-vault` | partial |
+| `test:push-session-quarantine` | full |
+| `test:durable-mutation-recovery` | full |
+| `test:push-installation-rebind` | partial |
+| `test:durable-mutation-mismatch` | full |
+| `test:job-search-pagination` | full |
+| `test:visit-journey` | partial |
+| `test:application-confirmation` | partial |
+| `test:application-canonical-detail` | full |
+| `test:application-list-canonical` | full |
+| `test:comparison-provenance` | full |
+| `test:notification-deep-link-focus` | partial |
+| `test:application-document-expectation-recovery` | full |
+| `test:message-read-visibility` | full |
+| `test:visit-context-binding` | partial |
+| `test:saved-offline-snapshot` | partial |
+| `test:signout-local-purge` | full |
+| `test:app-lock-canonical-quarantine` | partial |
+| `test:saved-app-lock-quarantine` | partial |
+| `test:private-data-quarantine` | partial |
+| `test:document-picker-cache` | full |
+| `test:document-picker-session-quarantine` | full |
+| `test:candidate-write-session-quarantine` | full |
+| `test:push-binding-session-race` | full |
+| `test:discovery-read-reliability` | full |
+| `test:recovery-session-quarantine` | partial |
+| `test:private-read-session-quarantine` | partial |
+| `test:saved-session-quarantine` | partial |
+| `test:document-picker-purge-race` | full |
+| `test:durable-mutation-purge-race` | full |
+| `test:session-handoff-local-purge` | full |
+| `test:discovery-session-quarantine` | partial |
+| `test:push-presentation-session-race` | full |
+
+## Removed: no real test exists yet (backlog, NOT obsolete)
+The feature exists in `src`; the script was removed only because a script that cannot run is not a test. These stay listed in `native-contract-inventory.json` as UNMATERIALIZED so the gap remains visible.
+
+- `test:notification-permission`
+- `test:interview-completion`
+- `test:document-vault-upstream`
+- `test:account-deletion-execution`
+- `test:exact-unread-badge`
+- `test:notification-visibility-count`
+- `test:interview-durable-recovery`
+- `test:release-gate-continuity`
+- `test:biometric-strong-policy`
+- `test:visit-facility-message`
+- `test:attention-summary`
+- `test:foreground-reconciliation-fallback`
+- `test:interview-exact-target`
+- `test:interview-push-exact-target`
+- `test:store-listing-preparation`
+- `test:account-deletion-session-quarantine`
+- `test:private-document-open-session`
+- `test:session-foreground-freshness`
+- `test:screen-privacy-session-handoff`
+- `test:application-read-reliability`
+- `test:signout-session-handoff`
+- `test:clerk-session-identity-atomicity`
+- `test:release-gate-session-atomicity`
+
+Phase 2 priority: interview-*, notification-permission, exact-unread-badge, account-deletion-*, session-foreground-freshness, clerk-session-identity-atomicity.
+
+## New suites this phase
+- `native-session-isolation.test.mjs` (17): session fence, queue serialization, purge draining, cross-account independence, five-surface sign-out purge that fails closed.
+- `native-document-photo-cache.test.mjs` (16): picker temp-cache ownership/generation/purge; photo cache owner binding and tamper rejection.
+- `native-durable-mutation.test.mjs` (17): idempotent recovery envelopes, no plaintext, expiry, owner purge, message send and interview response readback gates.
+All three were mutation-checked against their production modules.
