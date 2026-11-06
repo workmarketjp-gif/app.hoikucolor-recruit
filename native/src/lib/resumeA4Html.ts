@@ -7,7 +7,7 @@
  * A4/line-wrap parity must be visually tested before release acceptance.
  */
 import type { ResumeReview, ReviewRow, ReviewSection } from './resumeReviewModel';
-import { resumePdfIdentityRows } from './resumePdfIdentity';
+import { resumePdfIdentityRows } from './resumePdfIdentity.ts';
 
 export type ResumeA4Kind = 'resume' | 'work_history';
 const esc = (v: string): string => v.replace(/[&<>"']/g, (ch) => (

@@ -43,3 +43,24 @@ test('A4 contact rows never merge postal code, telephone, email or alternate add
   ]);
   assert.equal(resumePdfIdentityRows({ postalCode:'', addressKana:'', address:'', phone:'', email:'', contactAddress:'' }).length, 4);
 });
+
+
+test('actual A4 renderer keeps separate contact rows and escapes applicant text', async () => {
+  const { buildResumeA4Html } = await import('../src/lib/resumeA4Html.ts');
+  const identity = buildResumePdfIdentity(
+    { phone: '070-1234-5678', email: 'hana@example.jp' },
+    { postal_code: '100-0001', address_kana: 'とうきょうと', address: '<img src=x>', contact_address: '東京都港区' },
+  );
+  const review = {
+    name: '山田 花子', kana: 'やまだ はなこ', birth: '', gender: '',
+    address: 'legacy summary', contact: 'legacy contact', createdOn: '2026年11月7日現在',
+    history: [], licenses: [], appeal: [], work: [], requests: '希望なし', gaps: [], pdfIdentity: identity,
+  };
+  const html = buildResumeA4Html('resume', review);
+  assert.match(html, /<th scope="row">現住所（ふりがな）<\/th><td>とうきょうと<\/td>/);
+  assert.match(html, /<th scope="row">現住所<\/th><td>〒100-0001 &lt;img src=x&gt;<\/td>/);
+  assert.match(html, /<th scope="row">電話<\/th><td>070-1234-5678<\/td>/);
+  assert.match(html, /<th scope="row">E-mail<\/th><td>hana@example.jp<\/td>/);
+  assert.match(html, /<th scope="row">連絡先（現住所以外）<\/th><td>東京都港区<\/td>/);
+  assert.doesNotMatch(html, /legacy summary|legacy contact|<img src=x>/);
+});

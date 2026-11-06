@@ -1,4 +1,4 @@
-import { buildResumePdfIdentity, type ResumePdfIdentity } from './resumePdfIdentity';
+import { buildResumePdfIdentity, type ResumePdfIdentity } from './resumePdfIdentity.ts';
 
 /** Web /resume final-review presentation from existing candidate-owned canonical records.
  * This is derived display state, NEVER a new record or proof of a verified qualification.
