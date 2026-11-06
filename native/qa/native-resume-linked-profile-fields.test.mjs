@@ -19,6 +19,11 @@ test('unselecting only the matching qualification prunes its date, never other d
   assert.deepEqual(changed.qualifications, ['幼稚園教諭']);
   assert.deepEqual(changed.acquisitionDates, {'幼稚園教諭': '2022-06'});
 });
+test('orphan acquisition dates are pruned on any qualification selection change', () => {
+  const changed = setResumeQualification(['保育士'], {'保育士':'2020-04','削除済み':'2021-01'}, '幼稚園教諭', true);
+  assert.deepEqual(changed.qualifications, ['保育士','幼稚園教諭']);
+  assert.deepEqual(changed.acquisitionDates, {'保育士':'2020-04'});
+});
 test('toggle is idempotent and does not alter inputs', () => {
   const qualifications = ['保育士'];
   const dates = {'保育士':'2020-04'};
