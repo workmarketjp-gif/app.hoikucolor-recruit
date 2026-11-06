@@ -17,6 +17,8 @@ import {
   type JobseekerDocumentType,
 } from '../lib/documentVaultApi';
 import { consumeCameraCaptureRecoveryNotice } from '../lib/cameraCaptureRecovery';
+import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
+import { assertCandidateDocumentListOwner, canActOnCandidateDocument, confirmCandidateDocumentMutation } from '../lib/documentVaultPrivacy';
 
 const labels: Record<JobseekerDocumentType, string> = {
   resume: '履歴書',
@@ -50,19 +52,29 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
   const user = session?.user ?? null;
   const privacy = usePrivateDataQuarantine();
   const { pinCandidateAction } = usePinnedCandidateAction();
-  const [documents, setDocumentsState] = useState<JobseekerDocument[]>([]);
+  const ownerKey = candidateViewOwnerKey(user?.id, session?.id);
+  const ownerKeyRef = useRef(ownerKey);
+  ownerKeyRef.current = ownerKey;
+  const mountedRef = useRef(true);
+  const privateAllowed = Boolean(ownerKey) && !privacy.shieldVisible && privacy.canAccessPrivateData();
+  const freshlyVerifiedOwner = useRef<string | null>(null);
+  if (!privateAllowed) freshlyVerifiedOwner.current = null;
+  const [ownedDocuments, setOwnedDocuments] = useState<CandidateOwnedView<JobseekerDocument[]> | null>(null);
+  const verifiedDocuments = readCandidateFreshlyVerifiedView(ownedDocuments, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
+  const documents = verifiedDocuments ?? [];
   const onDocumentsChangedRef = useRef(onDocumentsChanged);
   onDocumentsChangedRef.current = onDocumentsChanged;
-  const setDocuments = useCallback((next: JobseekerDocument[]) => {
-    setDocumentsState(next);
+  const setDocuments = useCallback((next: JobseekerDocument[], verifiedOwnerKey: string) => {
+    if (!mountedRef.current || !privacy.canAccessPrivateData() || ownerKeyRef.current !== verifiedOwnerKey) return;
+    freshlyVerifiedOwner.current = verifiedOwnerKey;
+    setOwnedDocuments({ ownerKey: verifiedOwnerKey, value: next });
     onDocumentsChangedRef.current?.(next);
-  }, []);
+  }, [privacy.canAccessPrivateData]);
   const [documentType, setDocumentType] = useState<JobseekerDocumentType>(initialType);
   useEffect(() => { setDocumentType(initialType); }, [initialType]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const userIdRef = useRef<string | null>(user?.id ?? null);
-  const mountedRef = useRef(true);
   const loadGenerationRef = useRef(0);
   userIdRef.current = user?.id ?? null;
 
@@ -72,28 +84,47 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
   }, []);
 
   const load = useCallback(async () => {
-    if (!privacy.canAccessPrivateData()) return;
+    const requestOwnerKey = ownerKeyRef.current;
+    if (!requestOwnerKey || !privacy.canAccessPrivateData()) return;
     const generation = ++loadGenerationRef.current;
+    freshlyVerifiedOwner.current = null;
+    setOwnedDocuments(null);
+    onDocumentsChangedRef.current?.([]);
     setLoading(true);
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> = null;
     try {
       pinned = await pinCandidateAction();
-      if (!pinned || generation !== loadGenerationRef.current) return;
+      if (!pinned?.isCurrent() || generation !== loadGenerationRef.current ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestOwnerKey) return;
       const next = await listJobseekerDocuments(pinned.client);
-      if (!pinned.isCurrent() || generation !== loadGenerationRef.current) return;
-      setDocuments(next);
+      if (!pinned.isCurrent() || generation !== loadGenerationRef.current ||
+          ownerKeyRef.current !== requestOwnerKey || !privacy.canAccessPrivateData()) return;
+      assertCandidateDocumentListOwner(next, pinned.ownerId);
+      setDocuments(next, requestOwnerKey);
     } catch (error) {
-      if (generation === loadGenerationRef.current && (!pinned || pinned.isCurrent())) {
+      if (generation === loadGenerationRef.current && ownerKeyRef.current === requestOwnerKey &&
+          privacy.canAccessPrivateData() && (!pinned || pinned.isCurrent())) {
         Alert.alert('応募書類を読み込めませんでした', String((error as { message?: unknown })?.message ?? error));
       }
     } finally {
-      if (generation === loadGenerationRef.current && (!pinned || pinned.isCurrent())) setLoading(false);
+      if (generation === loadGenerationRef.current && ownerKeyRef.current === requestOwnerKey &&
+          privacy.canAccessPrivateData() && (!pinned || pinned.isCurrent())) setLoading(false);
     }
-  }, [pinCandidateAction, privacy.canAccessPrivateData]);
+  }, [pinCandidateAction, privacy.canAccessPrivateData, setDocuments]);
 
   useEffect(() => {
-    if (!privacy.shieldVisible) void load();
-  }, [load, privacy.shieldVisible]);
+    if (!privateAllowed) {
+      loadGenerationRef.current += 1;
+      freshlyVerifiedOwner.current = null;
+      setOwnedDocuments(null);
+      onDocumentsChangedRef.current?.([]);
+      setLoading(true);
+      setBusyId(null);
+      return;
+    }
+    void load();
+    return () => { loadGenerationRef.current += 1; freshlyVerifiedOwner.current = null; };
+  }, [ownerKey, privateAllowed, load]);
 
   useEffect(() => {
     if (privacy.shieldVisible || !user?.id) return;
@@ -132,7 +163,9 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
 
     setBusyId(replacement ? `replace-${replacement.id}` : 'upload');
     const pinned = await pinCandidateAction();
-    if (!pinned || pinned.ownerId !== pickerOwnerId) {
+    const pinnedOwnerKey = pinned ? candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) : null;
+    if (!pinned?.isCurrent() || pinned.ownerId !== pickerOwnerId ||
+        !pinnedOwnerKey || ownerKeyRef.current !== pinnedOwnerKey || !privacy.canAccessPrivateData()) {
       try { await consumePendingDocumentPickerCache(pickerOwnerId, asset.uri); } catch {}
       return;
     }
@@ -192,7 +225,9 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
       if (!pinned.isCurrent()) return;
       canonicalSaved = canonical.find((item) => item.id === saved.id) ?? null;
       canonicalOld = canonical.find((item) => item.id === replacement.id) ?? null;
-      setDocuments(canonical);
+      if (!privacy.canAccessPrivateData() || ownerKeyRef.current !== pinnedOwnerKey) return;
+      assertCandidateDocumentListOwner(canonical, pickerOwnerId);
+      setDocuments(canonical, pinnedOwnerKey);
 
       if (!canonicalSaved) {
         Alert.alert('差し替え結果を確認できません', '新しい書類の状態を確認できませんでした。古い書類は削除しません。一覧を再読み込みして確認してください。');
@@ -211,16 +246,20 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
       return;
     }
 
-    await load();
-    if (mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
-      Alert.alert('保存しました', `${labels[selectedType]}を応募書類として保存しました。`);
-    }
+    // Confirm the uploaded file through candidate-scoped canonical records.
+    // A successful write response alone is not sufficient for a success alert.
+    const canonical = await listJobseekerDocuments(pinned.client);
+    if (!pinned.isCurrent() || !mountedRef.current || ownerKeyRef.current !== pinnedOwnerKey ||
+        !privacy.canAccessPrivateData()) return;
+    confirmCandidateDocumentMutation(canonical, pickerOwnerId, saved.id, 'uploaded');
+    setDocuments(canonical, pinnedOwnerKey);
+    Alert.alert('保存しました', `${labels[selectedType]}を応募書類として保存しました。`);
   }
 
   async function pickAndUpload(replacement: JobseekerDocument | null = null) {
     const pickerOwnerId = userIdRef.current;
     const selectedType = replacement?.document_type ?? documentType;
-    if (!pickerOwnerId || busyId || !privacy.canAccessPrivateData()) return;
+    if (!pickerOwnerId || busyId || verifiedDocuments === null || !privateAllowed) return;
     const pickerCacheGeneration = captureDocumentPickerCacheGeneration();
     setBusyId(replacement ? `replace-picker-${replacement.id}` : 'picker');
 
@@ -250,7 +289,7 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
   async function captureAndUpload(replacement: JobseekerDocument | null = null) {
     const pickerOwnerId = userIdRef.current;
     const selectedType = replacement?.document_type ?? documentType;
-    if (!pickerOwnerId || busyId || !privacy.canAccessPrivateData()) return;
+    if (!pickerOwnerId || busyId || verifiedDocuments === null || !privateAllowed) return;
     setBusyId(replacement ? `replace-camera-permission-${replacement.id}` : 'camera-permission');
 
     try {
@@ -294,6 +333,7 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
   }
 
   async function open(document: JobseekerDocument) {
+    if (!canActOnCandidateDocument(document, verifiedDocuments, user?.id ?? null, ownerKey, freshlyVerifiedOwner.current, privateAllowed)) return;
     setBusyId(document.id);
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> = null;
     try {
@@ -301,9 +341,10 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
       // Never let an async signed-URL request that started under Candidate A
       // complete into Candidate B's UI after Clerk session replacement.
       pinned = await pinCandidateAction();
-      if (!pinned) return;
+      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
       const url = await createJobseekerDocumentSignedUrl(pinned.client, document);
-      if (!pinned.isCurrent()) return;
+      if (!pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey ||
+          !canActOnCandidateDocument(document, verifiedDocuments, user?.id ?? null, ownerKey, freshlyVerifiedOwner.current, true)) return;
       await Linking.openURL(url);
     } catch (error) {
       if (!pinned || pinned.isCurrent()) {
@@ -315,14 +356,18 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
   }
 
   async function makeDefault(document: JobseekerDocument) {
+    if (!canActOnCandidateDocument(document, verifiedDocuments, user?.id ?? null, ownerKey, freshlyVerifiedOwner.current, privateAllowed)) return;
     setBusyId(document.id);
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> = null;
     try {
       pinned = await pinCandidateAction();
-      if (!pinned) return;
+      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !privacy.canAccessPrivateData()) return;
       await setDefaultJobseekerDocument(pinned.client, document.id);
-      if (!pinned.isCurrent()) return;
-      await load();
+      if (!pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
+      const canonical = await listJobseekerDocuments(pinned.client);
+      if (!pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
+      confirmCandidateDocumentMutation(canonical, pinned.ownerId, document.id, 'made-default');
+      setDocuments(canonical, ownerKey!);
     } catch (error) {
       if (!pinned || pinned.isCurrent()) {
         Alert.alert('既定書類を変更できませんでした', String((error as { message?: unknown })?.message ?? error));
@@ -331,6 +376,7 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
   }
 
   function confirmDelete(document: JobseekerDocument) {
+    if (!canActOnCandidateDocument(document, verifiedDocuments, user?.id ?? null, ownerKey, freshlyVerifiedOwner.current, privateAllowed)) return;
     Alert.alert(
       '応募書類を削除しますか？',
       `${document.title}\nすでに応募先へ提出済みのコピーは削除されません。`,
@@ -342,14 +388,18 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
   }
 
   async function remove(document: JobseekerDocument) {
+    if (!canActOnCandidateDocument(document, verifiedDocuments, user?.id ?? null, ownerKey, freshlyVerifiedOwner.current, privateAllowed)) return;
     setBusyId(document.id);
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> = null;
     try {
       pinned = await pinCandidateAction();
-      if (!pinned) return;
+      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !privacy.canAccessPrivateData()) return;
       await deleteJobseekerDocument(pinned.client, document);
-      if (!pinned.isCurrent()) return;
-      await load();
+      if (!pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
+      const canonical = await listJobseekerDocuments(pinned.client);
+      if (!pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
+      confirmCandidateDocumentMutation(canonical, pinned.ownerId, document.id, 'deleted');
+      setDocuments(canonical, ownerKey!);
       Alert.alert('削除しました', '書類庫から削除しました。提出済みの応募書類は保持されます。');
     } catch (error) {
       if (!pinned || pinned.isCurrent()) {
@@ -357,6 +407,8 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
       }
     } finally { if (!pinned || pinned.isCurrent()) setBusyId(null); }
   }
+
+  if (!privateAllowed) return <View testID="document-vault-private-shield"><Text>応募書類を表示するには、ログイン状態を確認してください。</Text></View>;
 
   return <View testID="document-vault-section" style={{ gap: 12 }}>
     <View style={{ gap: 4 }}>
@@ -366,14 +418,19 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
     </View>
 
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-      {types.map((type) => <Button key={type} title={`${documentType === type ? '✓ ' : ''}${labels[type]}`} disabled={busyId !== null} onPress={() => setDocumentType(type)} />)}
+      {types.map((type) => <Button key={type} title={`${documentType === type ? '✓ ' : ''}${labels[type]}`} disabled={busyId !== null || verifiedDocuments === null} onPress={() => setDocumentType(type)} />)}
     </View>
     <View style={{ gap: 8 }}>
-      <Button testID="document-vault-add" title={busyId === 'upload' ? '保存中…' : `${labels[documentType]}をファイルから追加`} disabled={busyId !== null} onPress={() => void pickAndUpload()} />
-      <Button testID="document-vault-camera" title={busyId === 'camera' || busyId === 'camera-permission' ? 'カメラを準備中…' : `${labels[documentType]}をカメラで撮影`} disabled={busyId !== null} onPress={() => void captureAndUpload()} />
+      <Button testID="document-vault-add" title={busyId === 'upload' ? '保存中…' : `${labels[documentType]}をファイルから追加`} disabled={busyId !== null || verifiedDocuments === null} onPress={() => void pickAndUpload()} />
+      <Button testID="document-vault-camera" title={busyId === 'camera' || busyId === 'camera-permission' ? 'カメラを準備中…' : `${labels[documentType]}をカメラで撮影`} disabled={busyId !== null || verifiedDocuments === null} onPress={() => void captureAndUpload()} />
     </View>
 
-    {loading ? <ActivityIndicator /> : documents.length ? documents.map((document) => <View testID={`document-vault-item-${document.id}`} key={document.id} style={{ borderWidth: 1, borderColor: '#ddd', borderRadius: 12, padding: 12, gap: 8 }}>
+    {loading ? <ActivityIndicator /> : verifiedDocuments === null ? (
+      <View testID="document-vault-reload-required" style={{ gap: 8 }}>
+        <Text>応募書類を確認できませんでした。通信状況を確認して再読み込みしてください。</Text>
+        <Button title="再読み込み" onPress={() => void load()} />
+      </View>
+    ) : documents.length ? documents.map((document) => <View testID={`document-vault-item-${document.id}`} key={document.id} style={{ borderWidth: 1, borderColor: '#ddd', borderRadius: 12, padding: 12, gap: 8 }}>
       <View style={{ gap: 2 }}>
         <Text style={{ fontWeight: '700' }}>{labels[document.document_type]}{document.is_default ? ' ・応募時に使用' : ''}</Text>
         <Text numberOfLines={1}>{document.title}</Text>
