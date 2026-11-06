@@ -19,6 +19,7 @@ import { EMPTY_JOB_SEARCH_FILTERS, createJobSearchQuery, hasActiveJobFilters, ty
 import { updateSavedJobAndConfirm } from '../../lib/savedJobsReadback';
 import { shouldRefreshJobsOnReturn, type JobSearchFocusState } from '../../lib/jobSearchFocus';
 import { jobSearchFailureChannel } from '../../lib/jobSearchFailureChannel';
+import { organicJobRankLabels, type OrganicJobRankLabel } from '../../lib/jobRankingDisclosure';
 
 function salary(job: JobseekerJob) {
   const prefix = job.salary_type === 'hourly' ? '時給' : job.salary_type === 'annual' ? '年収' : '月給';
@@ -35,6 +36,7 @@ function salary(job: JobseekerJob) {
 
 function JobCard({
   job,
+  rank,
   saved,
   busy,
   onToggleSaved,
@@ -42,6 +44,7 @@ function JobCard({
 }: {
   key?: string;
   job: JobseekerJob;
+  rank: OrganicJobRankLabel;
   saved: boolean;
   busy: boolean;
   onToggleSaved: () => void;
@@ -49,6 +52,7 @@ function JobCard({
 }) {
   return (
     <View style={styles.jobCard}>
+      <Text style={styles.rankLabel} accessibilityLabel={rank.ariaLabel}>{rank.text}</Text>
       <Text style={styles.jobTitle}>{job.title}</Text>
       <Text style={styles.facility}>{job.facility_name}</Text>
       <Text style={styles.meta}>{[job.prefecture, job.city, job.employment_type].filter(Boolean).join(' ・ ')}</Text>
@@ -111,11 +115,15 @@ export default function JobsScreen() {
   const savedIds = readCandidateOwnedView(ownedSavedIds, ownerKey, privateAllowed);
   const visibleJobs = readCandidateOwnedView(ownedJobs, ownerKey, privateAllowed);
   const jobs = visibleJobs ?? [];
+  // The Web rank is the current visible organic position, never a fabricated
+  // matching score or inferred verified status.
+  const rankLabels = organicJobRankLabels(jobs.map((job) => job.id));
   const [cursor, setCursor] = useState<JobSearchCursor | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
+  const [rankingOpen, setRankingOpen] = useState(false);
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const error = readCandidateOwnedView(ownedError, ownerKey, privateAllowed);
   const [ownedPageError, setOwnedPageError] = useState<CandidateOwnedView<string> | null>(null);
@@ -389,16 +397,30 @@ export default function JobsScreen() {
         )}
       </View>
 
+      <View style={styles.rankingBox}>
+        <Pressable accessibilityRole="button" accessibilityLabel="求人の表示順について"
+          accessibilityState={{ expanded: rankingOpen }} style={styles.rankingToggle}
+          onPress={() => setRankingOpen((value) => !value)}>
+          <Text style={styles.rankingHeadline}>表示順について</Text>
+          <Text style={styles.rankingSummary}>情報公開を優先したオーガニック表示です {rankingOpen ? '▲' : '▼'}</Text>
+        </Pressable>
+        {rankingOpen ? <View style={styles.rankingTextGroup}>
+          <Text style={styles.rankingDetail}>現在は有料の上位表示を適用していません。勤務実績・会計実績の確認状況、情報公開率、公開日時の順で表示します。園の申告内容を確認済みの実績として扱うことはありません。</Text>
+          <Text style={styles.rankingDetail}>検索で絞り込んだ場合の番号は、絞り込み後の表示順です。Google求人などから特定求人を開いた場合は「指定求人」と明示します。将来、有料枠を導入する場合は「PR」と明示し、オーガニック評価と分離します。</Text>
+        </View> : null}
+      </View>
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {loading && jobs.length === 0 ? <ActivityIndicator /> : null}
       {!loading && !error && visibleJobs !== null && jobs.length === 0 ? (
         <View style={styles.noResults}><Text style={styles.noResultsTitle}>条件に合う求人はありません</Text><Text style={styles.subtle}>条件を変えて、もう一度探してみてください。</Text></View>
       ) : null}
 
-      {jobs.map((job) => (
+      {jobs.map((job, index) => (
         <JobCard
           key={job.id}
           job={job}
+          rank={rankLabels[index]}
           saved={savedIds?.includes(job.id) === true}
           busy={busyJobId !== null || savedIds === null || !privateAllowed || loading}
           onToggleSaved={() => void toggleSaved(job.id)}
@@ -470,6 +492,13 @@ const styles = StyleSheet.create({
   primaryButton: { minHeight: 46, borderRadius: 12, backgroundColor: '#E9265A', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   primaryButtonText: { color: '#fff', fontWeight: '800' },
   jobCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 7 },
+  rankLabel: { alignSelf: 'flex-start', color: '#A9204B', backgroundColor: '#FFF0F4', fontSize: 12, fontWeight: '800', borderRadius: 7, paddingHorizontal: 9, paddingVertical: 4 },
+  rankingBox: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#F5DCE4', padding: 12, gap: 10 },
+  rankingToggle: { minHeight: 44, justifyContent: 'center', gap: 3 },
+  rankingHeadline: { fontSize: 14, fontWeight: '800', color: '#4B3441' },
+  rankingSummary: { fontSize: 13, fontWeight: '700', color: '#7D596A', lineHeight: 19 },
+  rankingTextGroup: { gap: 10 },
+  rankingDetail: { fontSize: 14, color: '#645963', lineHeight: 21 },
   jobTitle: { fontSize: 18, fontWeight: '800' },
   facility: { fontWeight: '700' },
   meta: { color: '#5f6670' },
