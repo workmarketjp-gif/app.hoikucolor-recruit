@@ -9,6 +9,7 @@ import { getJobseekerAttentionSummary, type JobseekerAttentionSummary } from '..
 import { listApplications, type JobseekerApplicationSummary } from '../lib/applicationJourneyApi';
 import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import { buildMessageInbox } from '../lib/messageInbox';
+import { messageNavigationLeaseIsCurrent } from '../lib/messageNavigationLease';
 
 /** Web /messages: only authorized application threads, with canonical unread metadata. */
 export default function MessagesScreen() {
@@ -93,9 +94,26 @@ export default function MessagesScreen() {
   const warning = readCandidateFreshlyVerifiedView(attentionFailed, ownerKey, canRead, freshlyVerifiedOwner.current);
   const inbox = buildMessageInbox(visibleApplications ?? [], visibleAttention);
   const openThread = async (applicationId: string) => {
-    if (!visibleApplications || !inbox.rows.some((row) => row.applicationId === applicationId)) return;
+    // A slow session pin can resolve after App Lock, navigation away, or a
+    // different candidate signs in. The captured inbox row is not a valid
+    // navigation capability once that original private-read lease expires.
+    const startedGeneration = generation.current;
+    const expectedOwnerKey = ownerKey;
+    const authorizedApplicationIds = inbox.rows.map((row) => row.applicationId);
+    const leaseIsCurrent = (resolvedOwnerKey: string | null) => messageNavigationLeaseIsCurrent({
+      applicationId,
+      authorizedApplicationIds,
+      expectedOwnerKey,
+      resolvedOwnerKey,
+      freshlyVerifiedOwnerKey: freshlyVerifiedOwner.current,
+      startedGeneration,
+      currentGeneration: generation.current,
+      privateDataAllowed: privacy.canAccessPrivateData(),
+    });
+    if (!visibleApplications || !leaseIsCurrent(expectedOwnerKey)) return;
     const pinned = await pinCandidateAction();
-    if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+    if (!pinned?.isCurrent() ||
+        !leaseIsCurrent(candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId))) return;
     router.push(`/application/${applicationId}?focus=messages` as never);
   };
 
