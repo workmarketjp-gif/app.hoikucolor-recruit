@@ -2,15 +2,17 @@ import { useSession } from '@clerk/expo';
 import * as Crypto from 'expo-crypto';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
+import { ResumeYearMonthField } from '../components/ResumeYearMonthField';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import {
   getCandidateResume, saveCandidateResumeAndConfirm, type CandidateResume,
   type ResumeEducation, type ResumeEmployment,
 } from '../lib/resumeCanonical';
+import { MAX_RESUME_EDUCATION, MAX_RESUME_EMPLOYMENT, canAppendResumeEntry, educationStatusChange, moveResumeEntry, resumeCurrentChange } from '../lib/resumeEditor';
 
 const sections = ['基本情報', '学歴', '職歴', '資格', '保育経験', '自己PR', '確認・保存'] as const;
 const statuses = ['卒業', '卒業見込み', '修了', '中退', '在学中'];
@@ -59,7 +61,7 @@ export default function ResumeScreen() {
   const live = (owner: string, request: number) =>
     request === generation.current && ownerRef.current === owner && privacy.canAccessPrivateData();
   const edit = (update: (value: CandidateResume) => CandidateResume) => {
-    if (!canRead || loadedOwner !== ownerKey) return;
+    if (!canRead || loadedOwner !== ownerKey || ownerRef.current !== ownerKey || !privacy.canAccessPrivateData()) return;
     draftRevision.current += 1;
     setStatus(null);
     setError(null);
@@ -142,6 +144,19 @@ export default function ResumeScreen() {
     }
   };
 
+  const confirmRemove = (kind: 'education' | 'employment', index: number) => {
+    const expectedOwner = ownerKey;
+    const expectedGeneration = generation.current;
+    Alert.alert(kind === 'education' ? 'この学歴を削除しますか？' : 'この職歴を削除しますか？',
+      '削除した内容は保存するまで正式データには反映されません。', [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '削除', style: 'destructive', onPress: () => {
+          if (ownerRef.current !== expectedOwner || generation.current !== expectedGeneration ||
+              !privacy.canAccessPrivateData()) return;
+          edit((current) => ({ ...current, [kind]: current[kind].filter((_, i) => i !== index) }));
+        } },
+      ]);
+  };
   const view = canRead && ownerKey === loadedOwner ? resume : null;
   if (!canRead || !ownerKey) return <View style={styles.center}><ActivityIndicator color="#E9265A" /></View>;
   return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}>
@@ -167,31 +182,45 @@ export default function ResumeScreen() {
           {view.education.map((entry, index) => {
             const patch = (data: Partial<ResumeEducation>) => change('education', view.education.map((e, i) => i === index ? { ...e, ...data } : e));
             return <View style={styles.entry} key={entry.id}>
-              <Text style={styles.entryTitle}>学歴 {index + 1}</Text>
+              <Text style={styles.entryTitle}>{entry.organization || '学校 ' + (index + 1)}</Text>
+              <View style={styles.rowActions}>
+                <Pressable accessibilityRole="button" accessibilityLabel={'学歴 ' + (index + 1) + ' を上へ移動'} disabled={index === 0}
+                  style={[styles.rowAction, index === 0 && styles.disabled]} onPress={() => change('education', moveResumeEntry(view.education, index, -1))}><Text style={styles.buttonText}>↑ 上へ</Text></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={'学歴 ' + (index + 1) + ' を下へ移動'} disabled={index === view.education.length - 1}
+                  style={[styles.rowAction, index === view.education.length - 1 && styles.disabled]} onPress={() => change('education', moveResumeEntry(view.education, index, 1))}><Text style={styles.buttonText}>↓ 下へ</Text></Pressable>
+              </View>
               <Field label="学校名" value={entry.organization} onChange={(v) => patch({ organization: v ?? '' })} />
               <Field label="学部・学科" value={entry.department} onChange={(v) => patch({ department: v })} />
-              <Field label="入学年月" hint="YYYY-MM" value={entry.start_ym} onChange={(v) => patch({ start_ym: v })} />
-              <Field label="卒業・修了年月" hint="YYYY-MM" value={entry.end_ym} onChange={(v) => patch({ end_ym: v })} />
-              <View style={styles.choices}>{statuses.map((label) => <Choice key={label} label={label} selected={entry.education_status === label} onPress={() => patch({ education_status: label })} />)}</View>
-              <View style={styles.toggle}><Text>在学中</Text><Switch value={entry.is_current} onValueChange={(v) => patch({ is_current: v })} /></View>
-              <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => change('education', view.education.filter((_, i) => i !== index))}><Text style={styles.buttonText}>この学歴を削除</Text></Pressable>
+              <ResumeYearMonthField label="入学した年月" value={entry.start_ym} onChange={(v) => patch({ start_ym: v })} />
+              <ResumeYearMonthField label="卒業した年月" value={entry.end_ym} disabled={entry.is_current} onChange={(v) => patch({ end_ym: v })} />
+              <Text style={styles.label}>卒業の状態</Text>
+              <View style={styles.choices}>{statuses.map((label) => <Choice key={label} label={label} selected={entry.education_status === label} onPress={() => patch(educationStatusChange(entry, label))} />)}</View>
+              <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => confirmRemove('education', index)}><Text style={styles.buttonText}>この学歴を削除</Text></Pressable>
             </View>;
           })}
-          <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => change('education', [...view.education, { id: Crypto.randomUUID(), organization: '', department: null, start_ym: null, end_ym: null, is_current: false, education_status: null }])}><Text style={styles.buttonText}>＋ 学歴を追加</Text></Pressable>
+          {canAppendResumeEntry(view.education, MAX_RESUME_EDUCATION)
+            ? <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => change('education', [...view.education, { id: Crypto.randomUUID(), organization: '', department: null, start_ym: null, end_ym: null, is_current: false, education_status: null }])}><Text style={styles.buttonText}>＋ 学校を追加</Text></Pressable>
+            : <Text style={styles.hint}>学歴は{MAX_RESUME_EDUCATION}件まで追加できます。</Text>}
         </> : null}
         {section === 2 ? <>
           {view.employment.map((entry, index) => {
             const patch = (data: Partial<ResumeEmployment>) => change('employment', view.employment.map((e, i) => i === index ? { ...e, ...data } : e));
             return <View style={styles.entry} key={entry.id}>
-              <Text style={styles.entryTitle}>職歴 {index + 1}</Text>
+              <Text style={styles.entryTitle}>{entry.organization || '職場 ' + (index + 1)}</Text>
+              <View style={styles.rowActions}>
+                <Pressable accessibilityRole="button" accessibilityLabel={'職歴 ' + (index + 1) + ' を上へ移動'} disabled={index === 0}
+                  style={[styles.rowAction, index === 0 && styles.disabled]} onPress={() => change('employment', moveResumeEntry(view.employment, index, -1))}><Text style={styles.buttonText}>↑ 上へ</Text></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={'職歴 ' + (index + 1) + ' を下へ移動'} disabled={index === view.employment.length - 1}
+                  style={[styles.rowAction, index === view.employment.length - 1 && styles.disabled]} onPress={() => change('employment', moveResumeEntry(view.employment, index, 1))}><Text style={styles.buttonText}>↓ 下へ</Text></Pressable>
+              </View>
               <Field label="勤務先・施設名" value={entry.organization} onChange={(v) => patch({ organization: v ?? '' })} />
               <Field label="所属・部署" value={entry.department} onChange={(v) => patch({ department: v })} />
               <Field label="施設種類" value={entry.facility_type} onChange={(v) => patch({ facility_type: v })} />
               <Field label="雇用形態" value={entry.employment_type} onChange={(v) => patch({ employment_type: v })} />
               <Field label="職種" value={entry.job_title} onChange={(v) => patch({ job_title: v })} />
-              <Field label="入職年月" hint="YYYY-MM" value={entry.start_ym} onChange={(v) => patch({ start_ym: v })} />
-              <Field label="退職年月" hint="YYYY-MM" value={entry.end_ym} onChange={(v) => patch({ end_ym: v })} />
-              <View style={styles.toggle}><Text>在職中</Text><Switch value={entry.is_current} onValueChange={(v) => patch({ is_current: v })} /></View>
+              <ResumeYearMonthField label="働き始めた年月" value={entry.start_ym} onChange={(v) => patch({ start_ym: v })} />
+              <View style={styles.toggle}><Text style={styles.label}>今もここで働いている</Text><Switch value={entry.is_current} onValueChange={(v) => patch(resumeCurrentChange(entry, v))} /></View>
+              {!entry.is_current ? <ResumeYearMonthField label="辞めた年月" value={entry.end_ym} onChange={(v) => patch({ end_ym: v })} /> : null}
               <Field label="担当人数" value={entry.children_count} onChange={(v) => patch({ children_count: v })} />
               <Field label="役職" value={entry.management_role} onChange={(v) => patch({ management_role: v })} />
               <View style={styles.toggle}><Text>クラス担任</Text><Switch value={entry.class_lead} onValueChange={(v) => patch({ class_lead: v })} /></View>
@@ -200,10 +229,12 @@ export default function ResumeScreen() {
               <Field label="業務内容" value={entry.duties} multiline onChange={(v) => patch({ duties: v })} />
               <Field label="実績・工夫したこと" value={entry.achievements} multiline onChange={(v) => patch({ achievements: v })} />
               <Field label="退職理由" value={entry.leaving_reason} onChange={(v) => patch({ leaving_reason: v })} />
-              <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => change('employment', view.employment.filter((_, i) => i !== index))}><Text style={styles.buttonText}>この職歴を削除</Text></Pressable>
+              <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => confirmRemove('employment', index)}><Text style={styles.buttonText}>この職歴を削除</Text></Pressable>
             </View>;
           })}
-          <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => change('employment', [...view.employment, { id: Crypto.randomUUID(), organization: '', department: null, start_ym: null, end_ym: null, is_current: false, facility_type: null, employment_type: null, job_title: null, age_groups: [], class_lead: false, management_role: null, children_count: null, duties: null, achievements: null, leaving_reason: null }])}><Text style={styles.buttonText}>＋ 職歴を追加</Text></Pressable>
+          {canAppendResumeEntry(view.employment, MAX_RESUME_EMPLOYMENT)
+            ? <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => change('employment', [...view.employment, { id: Crypto.randomUUID(), organization: '', department: null, start_ym: null, end_ym: null, is_current: false, facility_type: null, employment_type: null, job_title: null, age_groups: [], class_lead: false, management_role: null, children_count: null, duties: null, achievements: null, leaving_reason: null }])}><Text style={styles.buttonText}>＋ 職場を追加</Text></Pressable>
+            : <Text style={styles.hint}>職歴は{MAX_RESUME_EMPLOYMENT}件まで追加できます。</Text>}
         </> : null}
         {section === 3 ? <>
           <Text style={styles.hint}>取得済み資格の年月を記録します。資格の追加・削除はマイページから行えます。</Text>
@@ -267,6 +298,8 @@ const styles = StyleSheet.create({
   textArea: { minHeight: 112 },
   entry: { borderWidth: 1, borderColor: '#F4DAE4', backgroundColor: '#FFFDFE', padding: 14, borderRadius: 14, gap: 12 },
   entryTitle: { fontSize: 17, fontWeight: '800', color: '#34232E' },
+  rowActions: { flexDirection: 'row', gap: 8 },
+  rowAction: { flex: 1, minHeight: 44, borderRadius: 10, borderWidth: 1, borderColor: '#E5D1D9', alignItems: 'center', justifyContent: 'center' },
   choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   toggle: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 44 },
   primary: { backgroundColor: '#E9265A', minHeight: 52, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
