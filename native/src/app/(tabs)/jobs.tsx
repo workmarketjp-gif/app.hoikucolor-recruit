@@ -18,6 +18,7 @@ import {
 import { EMPTY_JOB_SEARCH_FILTERS, createJobSearchQuery, hasActiveJobFilters, type JobSearchFilterCriteria } from '../../lib/jobSearchFilterCriteria';
 import { updateSavedJobAndConfirm } from '../../lib/savedJobsReadback';
 import { shouldRefreshJobsOnReturn, type JobSearchFocusState } from '../../lib/jobSearchFocus';
+import { jobSearchFailureChannel } from '../../lib/jobSearchFailureChannel';
 
 function salary(job: JobseekerJob) {
   const prefix = job.salary_type === 'hourly' ? '時給' : job.salary_type === 'annual' ? '年収' : '月給';
@@ -87,6 +88,7 @@ export default function JobsScreen() {
     setOwnedJobs(null);
     setOwnedSavedIds(null);
     setOwnedError(null);
+    setOwnedPageError(null);
     setCursor(null);
     setHasMore(false);
     setTotalCount(0);
@@ -116,12 +118,16 @@ export default function JobsScreen() {
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const error = readCandidateOwnedView(ownedError, ownerKey, privateAllowed);
+  const [ownedPageError, setOwnedPageError] = useState<CandidateOwnedView<string> | null>(null);
+  const pageError = readCandidateOwnedView(ownedPageError, ownerKey, privateAllowed);
   const generation = useRef(0);
   const keywordTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mutationBusyRef = useRef(false);
   const mutationSequence = useRef(0);
   const focusActive = useRef(false);
   const lastFocus = useRef<JobSearchFocusState>({ ownerKey: null, hasBlurred: false });
+  const latestOwnerRef = useRef(ownerKey);
+  latestOwnerRef.current = ownerKey;
 
   const cancelKeywordTimer = () => {
     if (keywordTimer.current) clearTimeout(keywordTimer.current);
@@ -151,6 +157,7 @@ export default function JobsScreen() {
     const currentGeneration = ++generation.current;
     setLoading(true);
     setOwnedError(null);
+    setOwnedPageError(null);
     if (reset) {
       setOwnedJobs(null);
       setOwnedSavedIds(null);
@@ -183,9 +190,17 @@ export default function JobsScreen() {
       setCursor(page.nextCursor);
       setHasMore(page.hasMore);
       setTotalCount(page.totalCount);
-    } catch (loadError) {
-      if (currentGeneration === generation.current) {
-        setOwnedError(ownerKey ? { ownerKey, value: String((loadError as { message?: unknown })?.message ?? loadError) } : null);
+    } catch {
+      const channel = jobSearchFailureChannel({
+        reset, owner: ownerKey, requestedOwner: latestOwnerRef.current,
+        requestGeneration: currentGeneration, currentGeneration: generation.current,
+        privateAllowed: latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible,
+        hasConfirmedResults: visibleJobs !== null, hasConfirmedBookmarks: savedIds !== null,
+      });
+      if (channel === 'pagination' && ownerKey) {
+        setOwnedPageError({ ownerKey, value: '次の求人を読み込めませんでした。表示中の求人はそのままです。' });
+      } else if (channel === 'initial' && ownerKey) {
+        setOwnedError({ ownerKey, value: '求人を検索できませんでした。もう一度お試しください。' });
       }
     } finally {
       if (currentGeneration === generation.current) setLoading(false);
@@ -220,6 +235,7 @@ export default function JobsScreen() {
       setOwnedJobs(null);
       setOwnedSavedIds(null);
       setOwnedError(null);
+      setOwnedPageError(null);
       setCursor(null);
       setHasMore(false);
       setTotalCount(0);
@@ -245,6 +261,7 @@ export default function JobsScreen() {
     setOwnedJobs(null);
     setOwnedSavedIds(null);
     setOwnedError(null);
+    setOwnedPageError(null);
     setCursor(null);
     setHasMore(false);
     setTotalCount(0);
@@ -360,11 +377,11 @@ export default function JobsScreen() {
         <Pressable testID="job-search-submit" style={styles.primaryButton} onPress={() => { cancelKeywordTimer(); void load(true, query); }} disabled={loading}>
           <Text style={styles.primaryButtonText}>検索</Text>
         </Pressable>
-        <Text style={styles.subtle}>{error || loading || visibleJobs === null ? '検索中・確認待ち' : `${totalCount}件の求人`}</Text>
+        <Text style={styles.subtle}>{error ? '求人を検索できませんでした' : visibleJobs === null ? '検索中…' : `${totalCount}件の求人`}</Text>
       </View>
 
       <View style={styles.resultBar}>
-        <Text style={styles.resultCount}>{error || loading || visibleJobs === null ? '—' : `${totalCount}件`}</Text>
+        <Text style={styles.resultCount}>{error || visibleJobs === null ? '—' : `${totalCount}件`}</Text>
         {hasActiveJobFilters(query, filters) ? (
           <Pressable accessibilityRole="button" onPress={clearFilters}><Text style={styles.link}>条件をクリア</Text></Pressable>
         ) : (
@@ -389,11 +406,24 @@ export default function JobsScreen() {
         />
       ))}
 
-      {hasMore && visibleJobs !== null ? (
+      {pageError && visibleJobs !== null ? (
+        <View style={styles.filterFailure}>
+          <Text accessibilityRole="alert" style={styles.error}>{pageError}</Text>
+          <Pressable testID="job-pagination-retry" accessibilityRole="button" style={styles.secondaryButtonWide}
+            disabled={loading} onPress={() => void load(false)}>
+            <Text style={styles.secondaryButtonText}>次の求人を再読み込み</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {hasMore && visibleJobs !== null && !pageError ? (
         <Pressable style={styles.secondaryButtonWide} disabled={loading} onPress={() => void load(false)}>
           {loading ? <ActivityIndicator /> : <Text style={styles.secondaryButtonText}>さらに見る（{Math.min(jobs.length, totalCount)}/{totalCount}件）</Text>}
         </Pressable>
       ) : null}
+      <Pressable accessibilityRole="link" accessibilityLabel="1日だけのスポット勤務を探す" style={styles.secondaryButtonWide}
+        onPress={() => router.push('/spot-jobs' as never)}>
+        <Text style={styles.link}>1日だけのスポット勤務を探す</Text>
+      </Pressable>
       <Modal transparent animationType="slide" visible={picker !== null} onRequestClose={() => setPicker(null)}>
         <View style={styles.modalLayer}>
           <Pressable accessibilityLabel="選択を閉じる" style={styles.modalBackdrop} onPress={() => setPicker(null)} />
