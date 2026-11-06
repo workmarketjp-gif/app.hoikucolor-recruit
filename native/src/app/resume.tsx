@@ -20,7 +20,6 @@ const sections = ['基本情報', '学歴', '職歴', '資格', '保育経験', 
 const sectionQuestions = ['あなたのことを教えてください', 'どの学校を卒業しましたか？', 'これまで、どこで働きましたか？', 'どんな資格・免許を持っていますか？', '保育の経験を教えてください', 'あなたの強みや思いを書きましょう', '入力内容を確認して保存しましょう'] as const;
 const statuses = ['卒業', '卒業見込み', '修了', '中退', '在学中'];
 const ageGroups = ['0歳児', '1歳児', '2歳児', '3歳児', '4歳児', '5歳児', '異年齢', 'フリー'];
-const qualificationOptions = ['保育士', '幼稚園教諭', '保育教諭', '看護師', '准看護師', '栄養士', '管理栄養士', '調理師', '子育て支援員', '普通自動車第一種運転免許'];
 const facilityTypeOptions = ['認可保育園', '認定こども園', '幼稚園', '小規模保育', '企業主導型保育', '事業所内保育', '認可外保育施設', '学童保育', '児童発達支援', '保育以外'];
 const employmentTypeOptions = ['正社員', '契約社員', 'パート・アルバイト', '派遣'];
 const leavingReasonOptions = ['一身上の都合により退職', '契約期間満了により退職', '会社都合により退職', '退職'];
@@ -80,8 +79,6 @@ export default function ResumeScreen() {
   const [resume, setResume] = useState<CandidateResume | null>(null);
   const [loadedOwner, setLoadedOwner] = useState<string | null>(null);
   const [section, setSection] = useState(0);
-  const [childcareActivated, setChildcareActivated] = useState(false);
-  useEffect(() => { if (section === 4) setChildcareActivated(true); }, [section]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -249,6 +246,13 @@ export default function ResumeScreen() {
       </ScrollView>
       <View style={styles.card}>
         <Text style={styles.title}>{sectionQuestions[section]}</Text>
+        {/* One mounted shared-profile editor across basic / qualifications / childcare:
+            never mount competing profile-upsert writers for these steps. */}
+        <ResumeChildcareEditor
+          section={section === 0 ? 'basic' : section === 3 ? 'licenses' : section === 4 ? 'childcare' : null}
+          qualificationAcquired={view.qualification_acquired}
+          onQualificationAcquiredChange={(next) => change('qualification_acquired', next)}
+        />
         {section === 0 ? <>
           <Field label="生年月日" hint="西暦YYYY-MM-DD" value={view.birth_date} onChange={(v) => change('birth_date', v)} />
           <Field label="性別" value={view.gender} onChange={(v) => change('gender', v)} />
@@ -315,21 +319,6 @@ export default function ResumeScreen() {
             ? <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => change('employment', [...view.employment, { id: Crypto.randomUUID(), organization: '', department: null, start_ym: null, end_ym: null, is_current: false, facility_type: null, employment_type: null, job_title: null, age_groups: [], class_lead: false, management_role: null, children_count: null, duties: null, achievements: null, leaving_reason: null }])}><Text style={styles.buttonText}>＋ 職場を追加</Text></Pressable>
             : <Text style={styles.hint}>職歴は{MAX_RESUME_EMPLOYMENT}件まで追加できます。</Text>}
         </> : null}
-        {section === 3 ? <>
-          <Text style={styles.hint}>取得済み資格の年月を記録します。資格の追加・削除はマイページから行えます。</Text>
-          {[...new Set([...qualificationOptions, ...Object.keys(view.qualification_acquired)])].map((name) => (
-            <ResumeYearMonthField key={name} label={name + 'を取得した年月'}
-              value={view.qualification_acquired[name] ?? null}
-              onChange={(v) => {
-                const next = { ...view.qualification_acquired };
-                if (v) next[name] = v; else delete next[name];
-                change('qualification_acquired', next);
-              }} />
-          ))}
-          <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => router.push('/(tabs)/profile')}><Text style={styles.buttonText}>資格・免許の登録を開く</Text></Pressable>
-        </> : null}
-        {section === 4 ? <Text style={styles.hint}>保育経験、担当年齢、リーダー経験は、マイページと同じ正式データを編集します。</Text> : null}
-        {childcareActivated ? <ResumeChildcareEditor visible={section === 4} /> : null}
         {section === 5 ? <>
           <Field label="職務要約" value={view.work_summary} multiline onChange={(v) => change('work_summary', v)} />
           <Field label="自己PR" value={view.self_pr} multiline onChange={(v) => change('self_pr', v)} />
