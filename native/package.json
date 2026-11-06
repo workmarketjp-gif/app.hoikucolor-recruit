@@ -97,7 +97,8 @@
     "test:resume-review": "node --experimental-strip-types --test qa/native-resume-review.test.mjs",
     "test:resume-photo-preview": "node --experimental-strip-types --test qa/native-resume-photo-sanitizer.test.mjs qa/native-resume-photo-cache-record.test.mjs qa/native-resume-photo-cache-wiring.test.mjs qa/native-resume-photo-preview.test.mjs qa/native-resume-photo-dimensions.test.mjs",
     "test:tab-icons": "node --experimental-strip-types --test qa/native-candidate-tab-glyphs.test.mjs qa/native-candidate-tab-icons-wiring.test.mjs",
-    "test:generated-pdf-vault": "node --experimental-strip-types --test qa/native-generated-pdf-document.test.mjs"
+    "test:generated-pdf-vault": "node --experimental-strip-types --test qa/native-generated-pdf-document.test.mjs",
+    "test:resume-a4": "node --experimental-strip-types --test qa/native-resume-a4-html.test.mjs"
   },
   "dependencies": {
     "@clerk/expo": "^3.1.12",
@@ -116,6 +117,7 @@
     "expo-linking": "~55.0.17",
     "expo-local-authentication": "~55.0.18",
     "expo-notifications": "~55.0.0",
+    "expo-print": "~55.0.19",
     "expo-router": "~55.0.0",
     "expo-screen-capture": "~55.0.18",
     "expo-secure-store": "~55.0.0",
