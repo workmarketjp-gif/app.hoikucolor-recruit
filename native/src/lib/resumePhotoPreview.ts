@@ -5,7 +5,8 @@
  * metadata before the in-memory preview is constructed; crop/resampling are
  * still NOT equivalent to Web's 600 x 800 JPEG export.
  */
-import { sanitizeResumePhoto } from './resumePhotoSanitizer';
+import { decodeResumePhotoBase64, sanitizeResumePhoto } from './resumePhotoSanitizer';
+import { inspectResumePhotoDimensions } from './resumePhotoDimensions';
 
 export const RESUME_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 
@@ -49,8 +50,12 @@ export function prepareResumePhotoPreview(asset: PickedResumePhoto): ResumePhoto
     throw new Error('写真の内容と画像形式が一致しません。');
   }
   const clean = sanitizeResumePhoto(encoded, mime);
+  // The actual file header is the dimension authority; Expo picker-reported
+  // dimensions can differ after OS cropping/orientation and are not a
+  // trustworthy basis for generated document layout or cached records.
+  const dimensions = inspectResumePhotoDimensions(decodeResumePhotoBase64(clean.base64), mime);
   return { dataUri: `data:${mime};base64,${clean.base64}`, mimeType: mime,
-    byteLength: clean.byteLength, width: asset.width, height: asset.height };
+    byteLength: clean.byteLength, width: dimensions.width, height: dimensions.height };
 }
 
 /** An OS picker can return after account switch, screen blur or App Lock. */
