@@ -12,10 +12,10 @@ function fixture(overrides = {}) {
   const ops = {
     newId: () => uuid,
     upload: async (path, bytes) => { events.push(['upload',path,bytes.byteLength]); },
-    register: async (args) => { events.push(['register',args.type,args.title,args.size]); recorded = { id:uuid, jobseeker_clerk_user_id:owner, document_type: args.type, file_path:args.path }; return recorded; },
+    register: async (args) => { events.push(['register',args.type,args.title,args.size]); recorded = { id:uuid, jobseeker_clerk_user_id:owner, document_type: args.type, file_path:args.path, is_default:false }; return recorded; },
     readback: async (id) => { events.push(['readback',id]); return recorded; },
     cleanup: async (path) => { events.push(['cleanup',path]); },
-    setDefault: async (id) => { events.push(['default',id]); return recorded; },
+    setDefault: async (id) => { events.push(['default',id]); return { ...recorded, is_default:true }; },
     ...overrides,
   };
   return { events, ops, changeOwner: () => {current = false;}, request: {ownerId:owner,type:'resume',bytes:pdf,canContinue:()=>current,operations:ops} };
@@ -40,12 +40,12 @@ test('successful canonical registration preserves owner/type/path and uses one I
   const result=await saveGeneratedPdfWithReadback(request);
   assert.equal(result.jobseeker_clerk_user_id,owner);
   assert.equal(result.file_path,'jobseekers/'+owner+'/'+uuid+'/document.pdf');
-  assert.deepEqual(events.map(e=>e[0]),['upload','register']);
+  assert.deepEqual(events.map(e=>e[0]),['upload','register','readback']);
   assert.equal(events[1][2],'履歴書');
 });
 test('ambiguous registration is reconciled against exact ID without resubmission', async () => {
   let stored=null;
-  const {request,events}=fixture({register:async a=>{events.push(['register']);stored={id:uuid,jobseeker_clerk_user_id:owner,document_type:a.type,file_path:a.path}; throw new Error('timeout');},readback:async id=>{events.push(['readback']);return stored;}});
+  const {request,events}=fixture({register:async a=>{events.push(['register']);stored={id:uuid,jobseeker_clerk_user_id:owner,document_type:a.type,file_path:a.path,is_default:false}; throw new Error('timeout');},readback:async id=>{events.push(['readback']);return stored;}});
   const row=await saveGeneratedPdfWithReadback(request);
   assert.equal(row.id,uuid);assert.deepEqual(events.map(e=>e[0]),['upload','register','readback']);
 });
@@ -71,8 +71,8 @@ test('session changes before upload or before registration prohibit stale attach
 });
 test('wrong owner, path, type or invalid identifier fail closed',async()=>{
   for(const field of ['jobseeker_clerk_user_id','document_type','file_path']){
-    const f=fixture({register:async a=>({...{id:uuid,jobseeker_clerk_user_id:owner,document_type:a.type,file_path:a.path},[field]:'different'}),readback:async()=>null});
-    await assert.rejects(saveGeneratedPdfWithReadback(f.request),/登録できません/);
+    const f=fixture({register:async a=>({...{id:uuid,jobseeker_clerk_user_id:owner,document_type:a.type,file_path:a.path,is_default:false},[field]:'different'}),readback:async()=>null});
+    await assert.rejects(saveGeneratedPdfWithReadback(f.request),/(登録できません|保存結果を確認)/);
   }
   const f=fixture({newId:()=> '../unsafe'});
   await assert.rejects(saveGeneratedPdfWithReadback(f.request),/識別子/);
@@ -82,6 +82,23 @@ test('explicit default is set only after verified registration and readback',asy
   const f=fixture();
   const row=await saveGeneratedPdfWithReadback({...f.request,type:'work_history',makeDefault:true});
   assert.equal(row.document_type,'work_history');
-  assert.deepEqual(f.events.map(e=>e[0]),['upload','register','default']);
+  assert.deepEqual(f.events.map(e=>e[0]),['upload','register','readback','default']);
   assert.equal(f.events[1][2],'職務経歴書');
+});
+
+test('successful registration still requires an independent canonical re-read', async () => {
+  const f=fixture({readback:async()=>null});
+  await assert.rejects(saveGeneratedPdfWithReadback(f.request),/保存結果を確認/);
+  assert.deepEqual(f.events.map(e=>e[0]),['upload','register']);
+});
+test('default is not acknowledged until server returns is_default=true', async () => {
+  const f=fixture({setDefault:async id=>{f.events.push(['default',id]);return {id:uuid, jobseeker_clerk_user_id:owner, document_type:'resume',file_path:'jobseekers/'+owner+'/'+uuid+'/document.pdf',is_default:false};}});
+  await assert.rejects(saveGeneratedPdfWithReadback({...f.request,makeDefault:true}),/設定を確認/);
+  assert.deepEqual(f.events.map(e=>e[0]),['upload','register','readback','default']);
+});
+
+test('canonical readback with incorrect ownership is refused even if registration succeeded', async () => {
+  const f=fixture({readback:async () => ({id:uuid,jobseeker_clerk_user_id:'user_other',document_type:'resume',file_path:'jobseekers/'+owner+'/'+uuid+'/document.pdf',is_default:false})});
+  await assert.rejects(saveGeneratedPdfWithReadback(f.request),/所有者・種類・パス/);
+  assert.deepEqual(f.events.map(e=>e[0]),['upload','register']);
 });
