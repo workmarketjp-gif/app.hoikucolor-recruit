@@ -3,6 +3,7 @@ import { File } from 'expo-file-system';
 import { consumePendingDocumentPickerCache } from './documentPickerCache';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { saveGeneratedPdfWithReadback, type GeneratedPdfType } from './generatedPdfDocument';
+import { confirmCandidateDocumentWrite } from './documentWriteReadback';
 
 export type CandidateDocumentAsset = {
   uri: string;
@@ -273,24 +274,45 @@ export async function uploadPickedJobseekerDocument(client: SupabaseClient, cler
   const ownerId = clerkUserId.trim();
   if (!ownerId) throw new Error('ログインユーザーを確認できませんでした。');
   const { buffer, mimeType, size } = await readAndValidatePickedAsset(asset, ownerId);
-  if (options.canStartUpload && !options.canStartUpload()) throw new Error('DOCUMENT_UPLOAD_QUARANTINED');
+  const eligible = () => !options.canStartUpload || options.canStartUpload();
+  if (!eligible()) throw new Error('DOCUMENT_UPLOAD_QUARANTINED');
   const id = Crypto.randomUUID();
   const fileName = storageFileNameForMime(mimeType);
   const path = `jobseekers/${ownerId}/${id}/${fileName}`;
   const title = (options.title?.trim() || asset.name.normalize('NFC').trim() || fileName).slice(0, 200);
   await ensureUploadedSourceObject(client, path, buffer, mimeType);
-  const { data, error } = await client.rpc('hc_register_jobseeker_document_source', { p_document_id: id, p_document_type: documentType, p_title: title, p_file_path: path, p_mime_type: mimeType, p_file_size: size });
-  let saved = data as JobseekerDocument | null;
-  if (error || !saved) {
-    try { saved = await findJobseekerDocumentById(client, id); } catch { throw new Error('書類保存の結果を確認できませんでした。画面を再読み込みして確認してください。'); }
-    if (!saved) {
-      try { await cleanupUnregisteredObject(client, path); } catch { throw new Error('書類の保存に失敗し、未登録ファイルの後処理にも失敗しました。もう一度お試しください。'); }
-      if (error) throw error;
-      throw new Error('書類を保存できませんでした。');
-    }
+  // This is the ONLY safe pre-registration cleanup boundary. After a register
+  // RPC has been sent, even a null result/readback cannot prove rollback.
+  if (!eligible()) {
+    try { await cleanupUnregisteredObject(client, path); }
+    catch { throw new Error('登録前に中止しましたが、一時ファイルを削除できませんでした。'); }
+    throw new Error('DOCUMENT_UPLOAD_QUARANTINED');
   }
-  if (saved.file_path !== path || saved.jobseeker_clerk_user_id !== ownerId) throw new Error('保存済み書類の整合性を確認できませんでした。');
-  if (options.makeDefault) return setDefaultJobseekerDocument(client, saved.id);
+  const saved = await confirmCandidateDocumentWrite<JobseekerDocument>({
+    register: async () => {
+      const { data, error } = await client.rpc('hc_register_jobseeker_document_source', {
+        p_document_id: id, p_document_type: documentType, p_title: title,
+        p_file_path: path, p_mime_type: mimeType, p_file_size: size,
+      });
+      if (error) throw error;
+      return (data as JobseekerDocument | null) ?? null;
+    },
+    readback: () => findJobseekerDocumentById(client, id),
+    matches: (row) => row.id === id && row.jobseeker_clerk_user_id === ownerId &&
+      row.document_type === documentType && row.file_path === path,
+    uncertainMessage: '書類の保存結果を確認できませんでした。書類一覧を再読み込みして確認してください。',
+    mismatchMessage: '保存された書類の所有者・種類・保存先が一致しません。',
+  });
+  if (!eligible()) throw new Error('DOCUMENT_UPLOAD_QUARANTINED');
+  if (options.makeDefault) {
+    const selected = await setDefaultJobseekerDocument(client, saved.id);
+    if (!eligible()) throw new Error('DOCUMENT_UPLOAD_QUARANTINED');
+    if (selected.id !== id || selected.jobseeker_clerk_user_id !== ownerId ||
+        selected.document_type !== documentType || selected.file_path !== path || !selected.is_default) {
+      throw new Error('応募時に使う既定の書類設定を確認できませんでした。');
+    }
+    return selected;
+  }
   return saved;
 }
 
@@ -341,7 +363,12 @@ export async function createAttachedApplicationDocumentSignedUrl(client: Supabas
 
 export async function attachJobseekerDocumentToApplication(client: SupabaseClient, document: JobseekerDocument, applicationId: string): Promise<AttachedApplicationDocument> {
   const existing = await findAttachedDocument(client, applicationId, document.id);
-  if (existing) return existing;
+  if (existing) {
+    if (existing.application_id !== applicationId || existing.source_jobseeker_document_id !== document.id) {
+      throw new Error('応募書類の紐づけを確認できませんでした。');
+    }
+    return existing;
+  }
   const { data: application, error: applicationError } = await client.from('hc_applications').select('id,organization_id,facility_id').eq('id', applicationId).single();
   if (applicationError) throw applicationError;
   const pathParts = document.file_path.split('/');
@@ -350,15 +377,22 @@ export async function attachJobseekerDocumentToApplication(client: SupabaseClien
   if (!STORAGE_KEY_SEGMENT.test(fileName)) throw new Error('この書類は提出用にコピーできません。書類を保存し直してからお試しください。');
   const destinationPath = `${application.organization_id}/${application.facility_id}/${application.id}/vault-${document.id}/${fileName}`;
   await ensureApplicationCopy(client, document.file_path, destinationPath);
-  const { data, error } = await client.rpc('hc_register_jobseeker_document_attachment', { p_document_id: document.id, p_application_id: applicationId, p_destination_path: destinationPath });
-  if (!error && data && typeof data === 'object') return data as AttachedApplicationDocument;
-  let recovered: AttachedApplicationDocument | null;
-  try { recovered = await findAttachedDocument(client, applicationId, document.id); } catch { throw new Error('応募書類の登録結果を確認できませんでした。応募管理を再読み込みして確認してください。'); }
-  if (recovered) {
-    if (recovered.file_path !== destinationPath) throw new Error('提出済み書類の保存先が一致しません。');
-    return recovered;
-  }
-  try { await cleanupUnregisteredObject(client, destinationPath); } catch { throw new Error('応募書類への添付に失敗し、未登録コピーの後処理にも失敗しました。もう一度お試しください。'); }
-  if (error) throw error;
-  throw new Error('応募書類へ添付できませんでした。');
+  // The RPC can commit before its reply is lost. Keep the copied source if
+  // readback is inconclusive; deleting it could corrupt a submitted application.
+  return confirmCandidateDocumentWrite<AttachedApplicationDocument>({
+    register: async () => {
+      const { data, error } = await client.rpc('hc_register_jobseeker_document_attachment', {
+        p_document_id: document.id, p_application_id: applicationId, p_destination_path: destinationPath,
+      });
+      if (error) throw error;
+      return (data as AttachedApplicationDocument | null) ?? null;
+    },
+    readback: () => findAttachedDocument(client, applicationId, document.id),
+    matches: (row) => row.application_id === applicationId &&
+      row.source_jobseeker_document_id === document.id &&
+      row.organization_id === application.organization_id &&
+      row.facility_id === application.facility_id && row.file_path === destinationPath,
+    uncertainMessage: '応募書類の登録結果を確認できませんでした。応募管理を再読み込みして確認してください。',
+    mismatchMessage: '提出済み応募書類の施設・所有者・保存先が一致しません。',
+  });
 }
