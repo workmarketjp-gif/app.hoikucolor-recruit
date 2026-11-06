@@ -27,7 +27,8 @@ export async function loadCachedResumePhoto(userId: string): Promise<ResumePhoto
   const record = decodeResumePhotoCacheRecord(await file.text());
   // Re-parse and remove untrusted metadata even if a file was modified on disk.
   const prepared = prepareResumePhotoPreview(record);
-  if (prepared.byteLength !== record.byteLength) {
+  if (prepared.byteLength !== record.byteLength ||
+      prepared.width !== record.width || prepared.height !== record.height) {
     throw new Error('保存された証明写真を確認できませんでした。もう一度選んでください。');
   }
   return prepared;
