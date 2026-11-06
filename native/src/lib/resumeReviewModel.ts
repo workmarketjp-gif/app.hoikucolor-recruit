@@ -1,3 +1,5 @@
+import { buildResumePdfIdentity, type ResumePdfIdentity } from './resumePdfIdentity';
+
 /** Web /resume final-review presentation from existing candidate-owned canonical records.
  * This is derived display state, NEVER a new record or proof of a verified qualification.
  */
@@ -30,6 +32,8 @@ export type ResumeReview = {
   name: string; kana: string; birth: string; gender: string;
   address: string; contact: string; createdOn: string;
   history: ReviewRow[]; licenses: ReviewRow[]; work: ReviewSection[];
+  /** PDF-only field separation; old compact address/contact strings remain for UI compatibility. */
+  pdfIdentity?: ResumePdfIdentity;
   appeal: ReviewSection[]; requests: string; gaps: string[];
 };
 const clean = (value: string | null | undefined) => (value ?? '').trim();
@@ -125,5 +129,6 @@ export function buildResumeReview(profile: ReviewProfile, resume: ReviewResume, 
     address: [clean(resume.postal_code), clean(resume.address_kana), clean(resume.address)].filter(Boolean).join(' / '),
     contact: [clean(profile.phone), clean(profile.email), clean(resume.contact_address)].filter(Boolean).join(' / '),
     history, licenses, work, appeal, requests: clean(resume.personal_requests) || '貴園の規定に従います。', gaps,
+    pdfIdentity: buildResumePdfIdentity(profile, resume),
   };
 }

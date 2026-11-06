@@ -62,8 +62,16 @@ export function ResumeReviewPanel({ review, photoDataUri, loading, error, onRefr
         </View>
         <Detail title="生年月日" value={review.birth} />
         <Detail title="性別" value={review.gender} />
-        <Detail title="住所" value={review.address} />
-        <Detail title="連絡先" value={review.contact} />
+        {review.pdfIdentity ? <>
+          <Detail title="現住所（ふりがな）" value={review.pdfIdentity.addressKana} />
+          <Detail title="現住所" value={[review.pdfIdentity.postalCode ? '〒' + review.pdfIdentity.postalCode : '', review.pdfIdentity.address].filter(Boolean).join(' ')} />
+          <Detail title="電話" value={review.pdfIdentity.phone} />
+          <Detail title="E-mail" value={review.pdfIdentity.email} />
+          {review.pdfIdentity.contactAddress ? <Detail title="連絡先（現住所以外）" value={review.pdfIdentity.contactAddress} /> : null}
+        </> : <>
+          <Detail title="住所" value={review.address} />
+          <Detail title="連絡先" value={review.contact} />
+        </>}
         <Text style={styles.sectionTitle}>学歴・職歴</Text>
         {review.history.map((row, i) => <View key={`history-${i}`} style={styles.historyRow}>
           <Text style={styles.dateCell}>{[row.year, row.month].filter(Boolean).join(' / ')}</Text>
@@ -118,7 +126,7 @@ const styles = StyleSheet.create({
   photoHint: { flex: 1, color: '#645963', fontSize: 12, lineHeight: 18 },
   date: { color: '#60535C', textAlign: 'right', fontSize: 12 },
   detail: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#D8C9D0', paddingVertical: 7, gap: 8 },
-  detailLabel: { width: 68, color: '#5B4E56', fontSize: 13, fontWeight: '700' },
+  detailLabel: { width: 120, color: '#5B4E56', fontSize: 13, fontWeight: '700' },
   detailText: { flex: 1, color: '#32232C', fontSize: 15, lineHeight: 22 },
   section: { gap: 5 },
   sectionTitle: { fontWeight: '800', color: '#4B3441', fontSize: 15, backgroundColor: '#FFF3F7', padding: 7 },

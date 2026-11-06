@@ -7,6 +7,7 @@
  * A4/line-wrap parity must be visually tested before release acceptance.
  */
 import type { ResumeReview, ReviewRow, ReviewSection } from './resumeReviewModel';
+import { resumePdfIdentityRows } from './resumePdfIdentity';
 
 export type ResumeA4Kind = 'resume' | 'work_history';
 const esc = (v: string): string => v.replace(/[&<>"']/g, (ch) => (
@@ -33,11 +34,16 @@ export function buildResumeA4Html(kind: ResumeA4Kind, review: ResumeReview, phot
   if (!review.name.trim()) throw new Error('お名前を入力してからPDFを作成してください。');
   const photo = kind === 'resume' ? assertInlineResumePhoto(photoDataUri) : null;
   const title = kind === 'resume' ? '履歴書' : '職務経歴書';
+  // The compact preview's slash-joined strings must never replace distinct
+  // phone, email and address fields in the formal document (Web PDF parity).
+  const contactRows = review.pdfIdentity
+    ? resumePdfIdentityRows(review.pdfIdentity).map(({ label, value }) => detail(label, value)).join('')
+    : `${detail('現住所', review.address)}${detail('連絡先', review.contact)}`;
   const content = kind === 'resume' ? `
     <div class="personal"><div class="personal-data"><table class="details">
       ${detail('ふりがな', review.kana)}${detail('氏名', review.name)}${detail('生年月日', review.birth)}
       ${review.gender.trim() ? detail('性別', review.gender) : ''}
-      ${detail('現住所', review.address)}${detail('連絡先', review.contact)}
+      ${contactRows}
     </table></div><div class="photo">${photo ? `<img src="${photo}" alt="証明写真">` : '<span>写真</span>'}</div></div>
     ${reviewRows(review.history, '学歴・職歴')}
     ${reviewRows(review.licenses.length ? review.licenses : [{ year: '', month: '', label: '特になし' }], '免許・資格（本人申告）')}

@@ -100,7 +100,8 @@
     "test:generated-pdf-vault": "node --experimental-strip-types --test qa/native-generated-pdf-document.test.mjs",
     "test:document-write-readback": "node --experimental-strip-types --test qa/native-document-write-readback.test.mjs",
     "test:resume-a4": "node --experimental-strip-types --test qa/native-resume-a4-html.test.mjs",
-    "test:resume-pdf-photo-snapshot": "node --experimental-strip-types --test qa/native-resume-pdf-photo-snapshot.test.mjs"
+    "test:resume-pdf-photo-snapshot": "node --experimental-strip-types --test qa/native-resume-pdf-photo-snapshot.test.mjs",
+    "test:resume-pdf-identity": "node --experimental-strip-types --test qa/native-resume-pdf-identity.test.mjs"
   },
   "dependencies": {
     "@clerk/expo": "^3.1.12",
