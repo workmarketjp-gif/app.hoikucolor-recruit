@@ -49,10 +49,29 @@ test('ambiguous registration is reconciled against exact ID without resubmission
   const row=await saveGeneratedPdfWithReadback(request);
   assert.equal(row.id,uuid);assert.deepEqual(events.map(e=>e[0]),['upload','register','readback']);
 });
-test('unregistered upload is cleaned once after confirmed missing row',async()=>{
+test('RPC returned null: a single missing readback must not delete a possibly committed PDF',async()=>{
   const {request,events}=fixture({register:async()=>null,readback:async()=>null});
-  await assert.rejects(saveGeneratedPdfWithReadback(request),/登録できません/);
-  assert.deepEqual(events.map(e=>e[0]),['upload','cleanup']);
+  await assert.rejects(saveGeneratedPdfWithReadback(request),/保存結果を確認/);
+  assert.deepEqual(events.map(e=>e[0]),['upload']);
+});
+test('RPC timeout followed by empty readback preserves the source file for reconciliation',async()=>{
+  const f=fixture({
+    register:async()=>{f.events.push(['register']);throw new Error('timeout');},
+    readback:async()=>{f.events.push(['readback']);return null;},
+    cleanup:async path=>{f.events.push(['UNSAFE_DELETE',path]);},
+  });
+  await assert.rejects(saveGeneratedPdfWithReadback(f.request),/保存結果を確認/);
+  assert.deepEqual(f.events.map(e=>e[0]),['upload','register','readback']);
+});
+test('null RPC response with confirmed canonical row still completes',async()=>{
+  let stored=null;
+  const f=fixture({
+    register:async args=>{stored={id:uuid,jobseeker_clerk_user_id:owner,document_type:args.type,file_path:args.path,is_default:false};return null;},
+    readback:async()=>stored,
+  });
+  const result=await saveGeneratedPdfWithReadback(f.request);
+  assert.equal(result.id,uuid);
+  assert.deepEqual(f.events.map(e=>e[0]),['upload']);
 });
 test('failed verification cannot report success or delete an ambiguously committed object',async()=>{
   const {request,events}=fixture({register:async()=>{throw new Error('timeout')},readback:async()=>{throw new Error('no network')}});
@@ -72,7 +91,7 @@ test('session changes before upload or before registration prohibit stale attach
 test('wrong owner, path, type or invalid identifier fail closed',async()=>{
   for(const field of ['jobseeker_clerk_user_id','document_type','file_path']){
     const f=fixture({register:async a=>({...{id:uuid,jobseeker_clerk_user_id:owner,document_type:a.type,file_path:a.path,is_default:false},[field]:'different'}),readback:async()=>null});
-    await assert.rejects(saveGeneratedPdfWithReadback(f.request),/(登録できません|保存結果を確認)/);
+    await assert.rejects(saveGeneratedPdfWithReadback(f.request),/保存結果を確認/);
   }
   const f=fixture({newId:()=> '../unsafe'});
   await assert.rejects(saveGeneratedPdfWithReadback(f.request),/識別子/);
