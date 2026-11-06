@@ -178,3 +178,50 @@ Phase 2 priority: interview-*, notification-permission, exact-unread-badge, acco
 - `native-document-photo-cache.test.mjs` (16): picker temp-cache ownership/generation/purge; photo cache owner binding and tamper rejection.
 - `native-durable-mutation.test.mjs` (17): idempotent recovery envelopes, no plaintext, expiry, owner purge, message send and interview response readback gates.
 All three were mutation-checked against their production modules.
+
+---
+
+# Phase 2 coverage update
+
+New suites (all mutation-checked: a production guard was removed and the suite failed, then the source was restored):
+- `native-session-freshness.test.mjs` (16): real `sessionLifecycle.ts` hooks in a hook runtime + `accountDeletionPolicy.ts`. Guards checked: post-await identity comparison, offline-vs-revoked handling, `skipCache` token refresh, deletion `canCancel`.
+- `native-application-lifecycle.test.mjs` (18): offer acceptance, withdrawal, visit request/cancel with durable request ids, attention summary normalisation, exact-target links, partial notification reads. Guards checked: offer readback, visit readback, UUID validation of interview id, unread-count-unknown-not-zero.
+
+## Scripts repointed this phase
+| Script | Coverage | Result |
+|---|---|---|
+| `test:session-freshness` | new | FAIL |
+| `test:application-lifecycle` | new | FAIL |
+| `test:session-foreground-freshness` | full | FAIL |
+| `test:clerk-session-identity-atomicity` | full | FAIL |
+| `test:signout-session-handoff` | partial | FAIL |
+| `test:account-deletion-session-quarantine` | partial | FAIL |
+| `test:account-deletion-execution` | partial | FAIL |
+| `test:exact-unread-badge` | partial | FAIL |
+| `test:notification-visibility-count` | partial | FAIL |
+| `test:notification-permission` | partial | FAIL |
+| `test:interview-durable-recovery` | full | FAIL |
+| `test:interview-completion` | partial | FAIL |
+| `test:interview-exact-target` | full | FAIL |
+| `test:interview-push-exact-target` | full | FAIL |
+| `test:attention-summary` | full | FAIL |
+
+"full" = the original contract topic is exercised by the suite; "partial" = only the logic layer (UI/OS behaviour not covered).
+
+## Still backlog (no real test; scripts remain removed)
+- `test:release-gate-continuity`
+- `test:release-gate-session-atomicity`
+- `test:biometric-strong-policy`
+- `test:foreground-reconciliation-fallback`
+- `test:application-read-reliability`
+- `test:private-document-open-session`
+- `test:screen-privacy-session-handoff`
+- `test:visit-facility-message`
+- `test:store-listing-preparation`
+- `test:document-vault-upstream`
+
+These need React context harnesses (ReleaseCompatibilityContext, AppLockContext, SessionFreshnessContext) or device APIs (LocalAuthentication, screen-capture). Not attempted with string-grep tests on purpose.
+
+## Not covered by any automated test in this repository
+- Orchestration in `resume.tsx` (edit -> save -> readback -> photo -> A4 PDF -> vault upload): its parts are unit-tested (`resume-*`, `generated-pdf-vault`, `document-write-readback`, `resume-photo-export`) but the screen itself is not executed.
+- Real expo-print output (A4 size, Japanese glyph rendering, photo orientation), real image-manipulator output, SecureStore, file permissions: BLOCKED, needs a device or emulator.

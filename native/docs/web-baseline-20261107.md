@@ -50,3 +50,20 @@ iOS builds impossible on Windows (no Xcode/simulator).
 - **Bundle-level (source) evidence:** `npx expo export --platform android --platform ios` succeeded (Metro + Hermes): Android 5.8 MB and iOS 5.7 MB bundles. This proves the JS compiles for both targets. It is NOT runtime, emulator, simulator or device evidence.
 - **Android emulator: NOT RUN. Android physical device: NOT RUN. iOS simulator: NOT RUN. iOS physical device: NOT RUN.**
 - Unit/behavioural tests run in Node with synthetic platform stubs; native modules (expo-print, image-manipulator, notifications, SecureStore, file system) were never executed for real.
+
+## Runtime readiness probe (Phase 2, 2026-11-07)
+| Requirement | Found on this machine | Status |
+|---|---|---|
+| JDK 17 (Gradle / RN 0.83) | only `jre1.8.0_501` | MISSING |
+| Android SDK build-tools / cmdline-tools / platforms | only `platform-tools` (adb) | MISSING |
+| Emulator binary + system image + AVD | none; no `~/.android/avd` | MISSING |
+| Connected Android device (`adb devices`) | none | MISSING |
+| CPU virtualization for the emulator | hypervisor present; firmware flag reported False | UNCONFIRMED, likely needs BIOS/VT-x |
+| Free disk | ~7.7 GB on C: (SDK + emulator + image + Gradle needs >= 15 GB) | INSUFFICIENT |
+| Native projects | `android/` and `ios/` not generated (managed Expo); needs `expo prebuild` | NOT GENERATED |
+| macOS / Xcode / iOS Simulator | Windows 11 only | MISSING |
+| EAS / cloud build route | `eas.json` has development/preview/production profiles; NOT used (paid, needs credentials and authorization) | NOT AUTHORIZED |
+
+Result: Android emulator, Android device, iOS simulator and iOS device runs are all BLOCKED. Metro/Hermes bundle export for both platforms succeeds (previous phase) and is compile evidence only.
+
+Needed to unblock Android locally: install JDK 17, Android cmdline-tools + platform 35 + build-tools + emulator + a Google APIs x86_64 image, free >= 15 GB, enable VT-x/WHPX, run `npx expo prebuild --platform android` and `npx expo run:android`; or plug in a USB-debugging phone and install a dev build. For iOS: a Mac with Xcode (simulator) or an authorized EAS internal/ad-hoc build plus an Apple developer account and a registered device.
