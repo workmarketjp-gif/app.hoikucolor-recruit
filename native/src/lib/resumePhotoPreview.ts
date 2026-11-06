@@ -30,10 +30,7 @@ export function prepareResumePhotoPreview(asset: PickedResumePhoto): ResumePhoto
   if (mime !== 'image/jpeg' && mime !== 'image/png') {
     throw new Error('写真はJPEGまたはPNGの画像を選んでください。');
   }
-  if (!Number.isSafeInteger(asset.width) || !Number.isSafeInteger(asset.height) ||
-      asset.width <= 0 || asset.height <= 0) {
-    throw new Error('写真の画像サイズを確認できませんでした。');
-  }
+  // OS-reported width/height are advisory only: verify pixels from sanitized bytes.
   const encoded = asset.base64;
   if (!encoded || encoded.length % 4 !== 0 ||
       !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) {
