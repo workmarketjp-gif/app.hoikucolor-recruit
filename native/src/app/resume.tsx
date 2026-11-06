@@ -17,7 +17,7 @@ import { buildResumeReview, type ResumeReview } from '../lib/resumeReviewModel';
 import { renderNativeResumePdf } from '../lib/renderNativeResumePdf';
 import type { ResumeA4Kind } from '../lib/resumeA4Html';
 import { uploadGeneratedJobseekerPdf } from '../lib/documentVaultApi';
-import { canPresentResumePhoto, prepareResumePhotoPreview, type ResumePhotoPreview } from '../lib/resumePhotoPreview';
+import { canPresentResumePhoto, prepareResumePhotoPreview, RESUME_PHOTO_MAX_BYTES, type ResumePhotoPreview } from '../lib/resumePhotoPreview';
 import { loadCachedResumePhoto, removeCachedResumePhoto, saveCachedResumePhoto } from '../lib/resumePhotoDeviceCache';
 import { captureCandidateLocalStateSessionLease } from '../lib/candidateLocalStateSession';
 import { isPrivateDocumentPickerCacheUri } from '../lib/documentPickerCache';
@@ -233,7 +233,8 @@ export default function ResumeScreen() {
       // sanitized export must be verified before the photo can enter a PDF.
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'], allowsEditing: true, aspect: [3, 4],
-        quality: 0.88, base64: true, exif: false,
+        // Full quality here: the single lossy q0.88 encode happens in resumePhotoExport.
+        quality: 1, base64: true, exif: false,
       });
       if (result.canceled) return;
       const asset = result.assets?.[0];
@@ -245,6 +246,9 @@ export default function ResumeScreen() {
         // Web parity: 3:4 centre crop, 600 x 800, JPEG q0.88.
         const manipulate: PhotoManipulator = (uri, actions, options) =>
           manipulateAsync(uri, actions, { compress: options.compress, base64: options.base64, format: SaveFormat.JPEG });
+        // Keep the original 10 MB ceiling: the output is small, but decoding a huge original is not.
+        const originalBytes = asset.fileSize ?? (asset.base64 ? Math.floor(asset.base64.length * 3 / 4) : 0);
+        if (originalBytes > RESUME_PHOTO_MAX_BYTES) throw new Error('写真は10MB以下の画像を選んでください。');
         const exported = await exportResumePhoto(asset, manipulate);
         exported.temporaryUris.forEach((uri) => temporaryUris.add(uri));
         prepared = prepareResumePhotoPreview({
