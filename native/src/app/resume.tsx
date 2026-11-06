@@ -2,6 +2,8 @@ import { useSession } from '@clerk/expo';
 import * as Crypto from 'expo-crypto';
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { exportResumePhoto, RESUME_PHOTO_EXPORT_HEIGHT, RESUME_PHOTO_EXPORT_WIDTH, type PhotoManipulator } from '../lib/resumePhotoExport';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
@@ -238,22 +240,40 @@ export default function ResumeScreen() {
       if (!asset) throw new Error('写真を確認できませんでした。もう一度選んでください。');
       let prepared: ResumePhotoPreview | null = null;
       let failure: unknown = null;
+      const temporaryUris = new Set<string>([asset.uri]);
       try {
-        prepared = prepareResumePhotoPreview(asset);
-      } catch (cause) {
-        failure = cause;
-      }
-      // ImagePicker creates an app-cache copy. Delete it before retaining the
-      // selected image in JS memory. Never delete an external library original.
-      try {
-        if (!isPrivateDocumentPickerCacheUri(asset.uri)) {
-          throw new Error('写真の一時ファイルを安全に確認できませんでした。');
+        // Web parity: 3:4 centre crop, 600 x 800, JPEG q0.88.
+        const manipulate: PhotoManipulator = (uri, actions, options) =>
+          manipulateAsync(uri, actions, { compress: options.compress, base64: options.base64, format: SaveFormat.JPEG });
+        const exported = await exportResumePhoto(asset, manipulate);
+        exported.temporaryUris.forEach((uri) => temporaryUris.add(uri));
+        prepared = prepareResumePhotoPreview({
+          base64: exported.base64, mimeType: exported.mimeType, width: exported.width, height: exported.height,
+        });
+        // The sanitized file header, not the module's report, is the size authority.
+        if (prepared.width !== RESUME_PHOTO_EXPORT_WIDTH || prepared.height !== RESUME_PHOTO_EXPORT_HEIGHT) {
+          prepared = null;
+          throw new Error('写真を600×800に整えられませんでした。もう一度選んでください。');
         }
-        const temp = new File(asset.uri);
-        if (temp.exists) temp.delete();
-        if (temp.exists) throw new Error('写真の一時ファイルを削除できませんでした。');
       } catch (cause) {
         failure = cause;
+        const leaked = (cause as { temporaryUris?: unknown } | null)?.temporaryUris;
+        if (Array.isArray(leaked)) leaked.forEach((uri) => { if (typeof uri === 'string') temporaryUris.add(uri); });
+      }
+      // ImagePicker and the image module create app-cache copies. Delete every
+      // one before retaining the selected image in JS memory. Never delete an
+      // external library original.
+      for (const uri of temporaryUris) {
+        try {
+          if (!isPrivateDocumentPickerCacheUri(uri)) {
+            throw new Error('写真の一時ファイルを安全に確認できませんでした。');
+          }
+          const temp = new File(uri);
+          if (temp.exists) temp.delete();
+          if (temp.exists) throw new Error('写真の一時ファイルを削除できませんでした。');
+        } catch (cause) {
+          failure = cause;
+        }
       }
       if (!stillEligible()) return;
       if (failure) throw failure;

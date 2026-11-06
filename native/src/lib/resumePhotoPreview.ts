@@ -2,8 +2,8 @@
  * An optional résumé photo remains on the candidate's device and in memory;
  * it is never uploaded on its own or represented as a created PDF.
  * Expo's OS cache is handled by the UI. Sanitization strips JPEG/PNG container
- * metadata before the in-memory preview is constructed; crop/resampling are
- * still NOT equivalent to Web's 600 x 800 JPEG export.
+ * metadata before the in-memory preview is constructed. Crop/resampling to Web's
+ * 600 x 800 JPEG happens beforehand in resumePhotoExport.ts.
  */
 import { decodeResumePhotoBase64, sanitizeResumePhoto } from './resumePhotoSanitizer';
 import { inspectResumePhotoDimensions } from './resumePhotoDimensions';

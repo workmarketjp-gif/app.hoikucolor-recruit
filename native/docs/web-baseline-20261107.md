@@ -40,3 +40,6 @@ Web captures and Native renders on Android and iOS.
 Conclusion: 600x800 is confirmed as the current Web specification, and Native does not yet meet it. Closing the gap needs an
 on-device resize + JPEG re-encode (3:4 cover crop, white background, q0.88). `expo-image-manipulator` is not currently a
 dependency, so adding it is a dependency change that needs your approval and an Expo SDK 55 compatibility check.
+
+## Update: photo export implemented (source + unit tests only)
+`src/lib/resumePhotoExport.ts` + `expo-image-manipulator ~55.0.21` now orient, centre-crop 3:4, resample to 600x800 and re-encode JPEG q0.88 before sanitization; the result is rejected unless the sanitized header reads exactly 600x800. All intermediate cache files are deleted on success and failure. Transparent PNGs (alpha / tRNS) are rejected with a message, a deliberate deviation from Web (white fill), because alpha cannot be flattened without a pixel decoder. NOT verified on Android or iOS: manipulator orientation handling, real output size/quality, and PDF size.

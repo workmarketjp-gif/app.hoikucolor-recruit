@@ -100,6 +100,7 @@
     "test:tab-icons": "node --experimental-strip-types --test qa/native-candidate-tab-glyphs.test.mjs qa/native-candidate-tab-icons-wiring.test.mjs",
     "test:generated-pdf-vault": "node --experimental-strip-types --test qa/native-generated-pdf-document.test.mjs",
     "test:document-write-readback": "node --experimental-strip-types --test qa/native-document-write-readback.test.mjs",
+    "test:resume-photo-export": "node --experimental-strip-types --test qa/native-resume-photo-export.test.mjs",
     "test:resume-a4": "node --experimental-strip-types --test qa/native-resume-a4-html.test.mjs"
   },
   "dependencies": {
@@ -115,6 +116,7 @@
     "expo-document-picker": "~55.0.17",
     "expo-file-system": "~55.0.26",
     "expo-font": "~55.0.8",
+    "expo-image-manipulator": "~55.0.21",
     "expo-image-picker": "~55.0.24",
     "expo-linking": "~55.0.17",
     "expo-local-authentication": "~55.0.18",
