@@ -395,7 +395,7 @@ export default function ResumeScreen() {
         {section === 6 ? <>
           <ResumeReviewPanel review={review?.owner === ownerKey && !dirty && !saving && !autoSavePaused ? review.data : null}
             loading={reviewBusy} error={reviewError}
-            onRefresh={() => setReviewRefresh((n) => n + 1)} />
+            onRefresh={() => setReviewRefresh((n) => n + 1)} onReloadResume={reloadLatest} />
           <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => router.push('/(tabs)/profile')}><Text style={styles.buttonText}>応募書類の管理を開く</Text></Pressable>
         </> : null}
       </View>
