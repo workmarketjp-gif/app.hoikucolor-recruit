@@ -248,18 +248,20 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
     // records: refuse a second mutation while the profile result is unknown.
     if (pausedProfile) {
       setError('資格の保存結果が不明です。正式データを読み込んでから変更してください。');
-      return;
+      return false;
     }
     try {
       const next = setResumeQualification(profile.qualifications, qualificationAcquired, rawName, enabled);
       if (next.qualifications.length === profile.qualifications.length &&
-          next.qualifications.every((name, i) => name === profile.qualifications[i])) return;
+          next.qualifications.every((name, i) => name === profile.qualifications[i])) return true;
       editProfile((current) => ({ ...current, qualifications: next.qualifications }));
       if (Object.keys(next.acquisitionDates).length !== Object.keys(qualificationAcquired).length) {
         onQualificationAcquiredChange(next.acquisitionDates);
       }
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '資格を変更できませんでした。');
+      return false;
     }
   };
   return <View style={styles.panel}>
@@ -297,9 +299,7 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
         <Pressable accessibilityRole="button" accessibilityState={{ disabled: !customQualification.trim() }}
           disabled={!customQualification.trim()} style={styles.action}
           onPress={() => {
-            applyQualification(customQualification, true);
-            // Clear only when the candidate's input was already valid.
-            if (customQualification.trim().length <= 100) setCustomQualification('');
+            if (applyQualification(customQualification, true)) setCustomQualification('');
           }}>
           <Text style={styles.actionText}>追加</Text>
         </Pressable>
@@ -351,7 +351,7 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
     {error ? <Text style={styles.error}>{error}</Text> : null}
     {(dirtyProfile || dirtyPreferences) ? <Text style={styles.note}>
       {pausedProfile || pausedPreferences ? '保存結果が不明です。自動再送信は停止しています。' :
-        savingProfile || savingPreferences ? '保育経験・希望条件を保存しています…' : '変更を約1.2秒後に自動保存します。'}
+        savingProfile || savingPreferences ? 'プロフィール・資格・希望条件を保存しています…' : '変更を約1.2秒後に自動保存します。'}
     </Text> : null}
     {(pausedProfile || pausedPreferences || error) ? <Pressable accessibilityRole="button" style={styles.action} onPress={reload}>
       <Text style={styles.actionText}>最新データを読み込む</Text>
