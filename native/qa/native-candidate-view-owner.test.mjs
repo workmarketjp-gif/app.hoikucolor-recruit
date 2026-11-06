@@ -45,7 +45,7 @@ test('unknown identity and inherited object keys do not grant access', () => {
 const jobsScreenSource = readFileSync(
   fileURLToPath(new URL('../src/app/(tabs)/jobs.tsx', import.meta.url)),
   'utf8',
-);
+).replace(/\r\n/g, '\n');
 
 test('job rows and error text use the same session-owned visibility boundary', () => {
   const jobs = { ownerKey: userA, value: [{ id: 'synthetic-job-A' }] };
@@ -71,7 +71,7 @@ test('real Jobs screen fences rows, errors, count and pagination before renderin
 
 test('search keyword is candidate-session scoped in the real Native Jobs screen', () => {
   assert.match(jobsScreenSource, /const query = readCandidateOwnedView\(ownedQuery, ownerKey, privateAllowed\) \?\? ''/);
-  assert.match(jobsScreenSource, /if \(ownerKey && privateAllowed\) setOwnedQuery\(\{ ownerKey, value \}\)/);
+  assert.match(jobsScreenSource, /if \(!ownerKey \|\| !privateAllowed \|\| privacy\.shieldVisible\) return;\s+setOwnedQuery\(\{ ownerKey, value \}\)/);
   assert.match(jobsScreenSource, /onChangeText=\{editQuery\}/);
   assert.doesNotMatch(jobsScreenSource, /\bsetQuery\(/);
 });
@@ -90,7 +90,7 @@ test('App Lock discards search drafts/results and forces a new canonical read af
   ]) assert.ok(effect.includes(fragment), 'must reset: ' + fragment);
   assert.ok(effect.indexOf('setOwnedQuery(null);') < effect.indexOf('if (privacy.shieldVisible || !ownerKey)'));
   assert.match(effect, /if \(privacy\.shieldVisible \|\| !ownerKey\)/);
-  assert.match(effect, /void load\(true, ''\)/);
+  assert.match(effect, /void load\(true, '', EMPTY_JOB_SEARCH_FILTERS\)/);
   assert.match(effect, /\}, \[ownerKey, privacy\.shieldVisible\]\)/);
 });
 

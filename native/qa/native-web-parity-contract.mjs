@@ -33,7 +33,7 @@ const checks = [
     careerExperience.includes('usePinnedCandidateAction') &&
     careerExperience.includes('candidateViewOwnerKey') &&
     careerExperience.includes('privacy.canAccessPrivateData') &&
-    !careerExperience.includes('Linking.openURL')],
+    (careerExperience.match(/Linking.openURL/g) ?? []).length === 1 && careerExperience.includes("source_url?.startsWith('https://')")],
   ['career market and owner state reuse authoritative Web RPC contracts',
     ['hc_jobseeker_salary_market_v1', 'hc_jobseeker_official_wage_stats_v1', 'hc_jobseeker_holiday_market_v1',
       'hc_jobseeker_career_scenario_jobs_v1', 'hc_jobseeker_get_career_conditions', 'hc_jobseeker_save_career_conditions',

@@ -21,6 +21,8 @@ const privateScreens = {
   'src/app/application/[id].tsx': 'application-detail',
   'src/app/scouts.tsx': 'scouts',
   'src/app/visits.tsx': 'visits',
+  // Job detail embeds the private ApplyDocumentsPanel and candidate profile.
+  'src/app/job/[id].tsx': 'job-detail',
 };
 for (const [file, key] of Object.entries(privateScreens)) {
   const source = read(file);
@@ -28,7 +30,7 @@ for (const [file, key] of Object.entries(privateScreens)) {
 }
 
 // Public discovery must stay shareable.
-for (const file of ['src/app/(tabs)/jobs.tsx', 'src/app/job/[id].tsx', 'src/app/compare.tsx']) {
+for (const file of ['src/app/(tabs)/jobs.tsx', 'src/app/compare.tsx']) {
   check(`${file} stays capturable`, !read(file).includes('usePrivateScreenCapture'));
 }
 
