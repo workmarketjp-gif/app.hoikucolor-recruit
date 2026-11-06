@@ -21,8 +21,10 @@ export function setResumeQualification(
   const qualifications = enabled
     ? (current.includes(name) ? current : [...current, name])
     : current.filter((value) => value !== name);
-  const nextAcquisitionDates = { ...acquisitionDates };
-  if (!enabled) delete nextAcquisitionDates[name];
+  // Web /resume retains acquisition dates only for qualifications still selected.
+  const nextAcquisitionDates = Object.fromEntries(
+    Object.entries(acquisitionDates).filter(([key]) => qualifications.includes(key)),
+  );
   return { qualifications, acquisitionDates: nextAcquisitionDates };
 }
 
