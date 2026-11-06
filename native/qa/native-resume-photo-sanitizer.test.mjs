@@ -13,7 +13,7 @@ const { prepareResumePhotoPreview } = await import('../src/lib/resumePhotoPrevie
 const marker = (code, payload) => Buffer.from([0xff, code, 0, payload.length + 2, ...payload]);
 const sos = marker(0xda, [1, 1, 0, 0, 0, 0]);
 const base = Buffer.from([0xff, 0xd8]);
-const jpeg = (chunks = []) => Buffer.concat([base, ...chunks, marker(0xc0, [1, 2, 3, 4, 5, 6]), sos, Buffer.from([3, 7, 0xff, 0x00, 4, 0xff, 0xd9])]);
+const jpeg = (chunks = []) => Buffer.concat([base, ...chunks, marker(0xc0, [8, 0, 1, 0, 1, 1, 1, 0x11, 0]), sos, Buffer.from([3, 7, 0xff, 0x00, 4, 0xff, 0xd9])]);
 const crc32 = (bytes) => {
   let crc = 0xffffffff;
   for (const byte of bytes) {
