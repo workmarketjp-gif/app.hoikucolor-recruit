@@ -21,7 +21,7 @@
     "test:application-detail-privacy": "node --experimental-strip-types --test qa/native-application-detail-privacy.test.mjs qa/native-application-detail-wiring.test.mjs",
     "test:saved-canonical-readback": "node --experimental-strip-types --test qa/native-saved-jobs-readback.test.mjs",
     "test:job-search-filters": "node --experimental-strip-types --test qa/native-job-search-filters.test.mjs",
-    "test:job-discovery-parity": "node --experimental-strip-types --test qa/native-job-discovery-compilation.test.mjs qa/native-job-card-saved-readback.test.mjs qa/native-saved-jobs-readback.test.mjs qa/native-job-search-filters.test.mjs qa/native-job-search-failure-channel.test.mjs qa/native-job-search-pagination-wiring.test.mjs",
+    "test:job-discovery-parity": "node --experimental-strip-types --test qa/native-job-discovery-compilation.test.mjs qa/native-job-card-saved-readback.test.mjs qa/native-saved-jobs-readback.test.mjs qa/native-job-search-filters.test.mjs qa/native-job-search-failure-channel.test.mjs qa/native-job-search-pagination-wiring.test.mjs qa/native-job-ranking-disclosure.test.mjs",
     "test:document-vault": "node qa/native-document-vault-contract.mjs && node qa/native-document-vault-upstream-rebase-contract.mjs",
     "test:document-vault-upstream": "node qa/native-document-vault-upstream-rebase-contract.mjs",
     "test:account-deletion-execution": "node qa/native-account-deletion-execution-contract.mjs",
