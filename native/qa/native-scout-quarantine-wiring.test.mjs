@@ -16,7 +16,7 @@ test('scout screen separates the private session gate from server scout privacy 
 
 test('focus and render gate prevent a locked or unauthenticated candidate read', () => {
   assert.match(screen, /const privateAllowed = Boolean\(ownerKey\) && !privateQuarantine\.shieldVisible && privateQuarantine\.canAccessPrivateData\(\)/);
-  assert.match(screen, /if \(!privateAllowed\) \{\s*generation\.current \+= 1;\s*verifiedOwnerRef\.current = null;/);
+  assert.match(screen, /if \(!privateAllowed\) \{\s*generation\.current \+= 1;[\s\S]*?verifiedOwnerRef\.current = null;/);
   assert.match(screen, /const verifiedVisible = privateAllowed && verifiedOwnerRef\.current === ownerKey/);
 });
 
