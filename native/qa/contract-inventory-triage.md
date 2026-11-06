@@ -84,3 +84,9 @@ release-e2e, store-compliance, store-listing-preparation.
 
 ## Recommended hygiene (not yet applied)
 Remove the 62 dead npm scripts or point them at real suites, so a green `npm run` is never mistaken for coverage.
+
+## Journey suites written (2026-11-07)
+- `native-application-journey.test.mjs` (14 tests, `npm run test:application-journey`): real `applicationJourneyApi.ts` with a
+  synthetic RPC client. Covers submit validation, identity-field hygiene, canonical readback gate, ambiguous-result rejection,
+  v2->v1 fallback, document dedupe/selection/default handoff, partial attach failure, and handoff repair.
+  Retires inventory entries `application-journey` and (submission half of) `application-confirmation`.
