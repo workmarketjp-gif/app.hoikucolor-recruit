@@ -19,3 +19,23 @@ export function canSubmitCandidateMessage(input: CandidateMessageComposerGate): 
 export function shouldReviewCandidateMessageAfterFailure(requestStarted: boolean): boolean {
   return requestStarted;
 }
+
+/**
+ * The screen captures the IDs visible BEFORE attempting a durable send. A
+ * canonical reload can prove that the uncertain reply has arrived only when a
+ * new message, from the candidate and with the exact submitted body, appears.
+ * An older identical-body message is not evidence of the new send. The caller
+ * must separately fence the read to the same owner, session and application.
+ */
+export function confirmedUncertainCandidateMessage(
+  submittedDraft: string,
+  knownMessageIds: readonly string[],
+  freshlyReadMessages: readonly Readonly<{ id: string; sender_role: string; body: string }>[],
+): boolean {
+  const body = submittedDraft.trim();
+  if (!body) return false;
+  const known = new Set(knownMessageIds);
+  return freshlyReadMessages.some((message) =>
+    typeof message.id === 'string' && message.id.length > 0 &&
+    !known.has(message.id) && message.sender_role === 'jobseeker' && message.body === body);
+}
