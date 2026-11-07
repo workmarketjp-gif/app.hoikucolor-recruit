@@ -9,6 +9,7 @@ import { candidateApplicationDetailKey } from '../../lib/applicationDetailVisibi
 import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } from '../../lib/applicationDocumentHandoffStatus';
 import { applicationStatusLabel } from '../../lib/messageInbox';
 import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
+import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
 import { canSubmitCandidateMessage, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
 import { focusedApplicationMessagesOffset } from '../../lib/focusedApplicationMessages';
 import { applicationVisitExperienceLabel, applicationVisitStatusLabel, canSubmitInterviewResponse, formatApplicationEventDateTimeJapan, interviewStatusLabel } from '../../lib/applicationEventPresentation';
@@ -298,7 +299,11 @@ function ApplicationDetailContent() {
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
       durableRequestStarted = true;
-      await sendApplicationMessageDurable({
+      // The durable adapter already performs a canonical list readback and
+      // verifies the returned message ID, role and body. A second full-detail
+      // reload could fail because of an unrelated document-handoff read,
+      // incorrectly hiding a reply that was *already confirmed as sent*.
+      const confirmedMessage = await sendApplicationMessageDurable({
         client: pinned.client,
         ownerId: pinned.ownerId,
         ownerSessionId: pinned.ownerSessionId,
@@ -306,9 +311,11 @@ function ApplicationDetailContent() {
         body: submittedDraft,
       });
       if (!pinned.isCurrent()) return;
+      setMessages((current) => mergeConfirmedCandidateMessage(current, confirmedMessage, submittedDraft));
       // Do not erase edits typed while the previous message was in flight.
       setMessageDraft((current) => draftAfterConfirmedMessageSend(current, submittedDraft));
-      await load(true);
+      setMessageSendNeedsReview(false);
+      setMessageSendError(null);
     } catch (_sendError) {
       const needsReview = shouldReviewCandidateMessageAfterFailure(durableRequestStarted);
       setMessageSendNeedsReview(needsReview);
