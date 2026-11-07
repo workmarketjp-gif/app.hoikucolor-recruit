@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { SavedJobseekerJob } from '../lib/jobseekerCoreApi';
 import { presentSavedJobCard } from '../lib/savedJobCardPresentation';
+import { presentSavedJobSource } from '../lib/savedJobSourcePresentation';
 import { verifiedEvidence, type VerifiedEvidenceDisplay } from '../lib/jobVerifiedEvidence';
 
 type Props = {
@@ -34,6 +35,7 @@ function Evidence({ title, evidence }: { title: string; evidence: VerifiedEviden
 export function SavedJobPreviewCard({ job, disabled, removing, onOpen, onVisit, onRemove }: Props) {
   const [expanded, setExpanded] = useState(false);
   const info = presentSavedJobCard(job, Date.now());
+  const source = presentSavedJobSource(job);
   const workplace = verifiedEvidence(job.verified_workplace, 'workplace');
   const finance = verifiedEvidence(job.verified_finance, 'finance');
   return <View style={styles.card} testID={'saved-job-' + job.id}>
@@ -66,7 +68,10 @@ export function SavedJobPreviewCard({ job, disabled, removing, onOpen, onVisit, 
       <Text style={styles.section}>仕事内容・保育観</Text>
       <Text style={styles.body}>{job.description || '未掲載'}</Text>
       {info.closed ? <Text style={styles.notice}>募集は終了しています。保存履歴として求人内容を確認できます。</Text> : null}
-      {job.is_external && job.source_name ? <Text style={styles.muted}>出典：{job.source_name}</Text> : null}
+      {source.provenance ? <View style={styles.sourceFooter}>
+        <Text style={styles.muted}>{source.provenance}</Text>
+        {source.lastVerified ? <Text style={styles.muted}>最終確認 {source.lastVerified}</Text> : null}
+      </View> : null}
       {info.directApply ? <Pressable accessibilityRole="button" disabled={disabled} onPress={onVisit} style={styles.visit}><Text style={styles.visitText}>見学・体験を予約</Text></Pressable> : null}
     </View> : null}
     <View style={styles.actions}>
@@ -97,6 +102,7 @@ const styles = StyleSheet.create({
   body: { color: '#39353B', fontSize: 15, lineHeight: 23 },
   value: { fontSize: 17, fontWeight: '800', color: '#30212B' },
   muted: { color: '#6A6570', fontSize: 13, lineHeight: 19 },
+  sourceFooter: { gap: 4, borderTopWidth: 1, borderTopColor: '#F5DCE4', paddingTop: 9 },
   notice: { color: '#A82931', fontSize: 14, lineHeight: 22 },
   evidence: { backgroundColor: '#FFF8FA', borderWidth: 1, borderColor: '#F5DCE4', borderRadius: 12, gap: 6, padding: 12 },
   actions: { flexDirection: 'row', gap: 8 },
