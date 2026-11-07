@@ -16,6 +16,7 @@ import { verifiedCandidateApplicationRows, type VerifiedCandidateApplication } f
 import { assertCandidateApplicationDetailReadback } from './candidateApplicationDetailReadback.ts';
 import { assertCandidateVisitHistoryReadback } from './candidateVisitHistoryReadback.ts';
 import type { JobseekerJob, JobseekerProfile } from './jobseekerCoreApi';
+import { verifiedCandidateJobDetail } from './candidateJobDetailReadback';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -163,8 +164,7 @@ export async function getCandidateJob(client: SupabaseClient, jobId: string): Pr
   assertUuid(jobId, '求人ID');
   const { data, error } = await client.rpc('hc_jobseeker_get_job_v2', { p_job_id: jobId });
   if (error) throw error;
-  const rows = Array.isArray(data) ? data : [];
-  return (rows[0] as JobseekerJob | undefined) ?? null;
+  return verifiedCandidateJobDetail<JobseekerJob>(data, jobId);
 }
 
 /**
