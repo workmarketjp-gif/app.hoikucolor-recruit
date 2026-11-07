@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { verifiedJobSearchRows, verifiedJobSearchFacets } from './jobSearchReadback';
+import { verifiedSavedJobRows } from './savedJobRowsReadback';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -220,8 +221,7 @@ export async function listSavedJobIds(client: SupabaseClient): Promise<string[]>
 export async function listSavedJobs(client: SupabaseClient): Promise<SavedJobseekerJob[]> {
   const { data, error } = await client.rpc('hc_jobseeker_list_saved_jobs_with_status_v2');
   if (error) throw error;
-  if (!Array.isArray(data)) throw new Error('気になる求人を確認できませんでした。');
-  return data as SavedJobseekerJob[];
+  return verifiedSavedJobRows<SavedJobseekerJob>(data);
 }
 
 export async function listRankedJobs(client: SupabaseClient): Promise<JobseekerJob[]> {
