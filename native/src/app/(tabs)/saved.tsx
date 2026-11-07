@@ -1,3 +1,6 @@
+import { SavedJobPreviewCard } from '../../components/SavedJobPreviewCard';
+import { presentSavedJobCard } from '../../lib/savedJobCardPresentation';
+import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { useSession } from '@clerk/expo';
 import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -9,6 +12,7 @@ import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateOwnedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
 
 export default function SavedJobsScreen() {
+  usePrivateScreenCapture('saved');
   const router = useRouter();
   const { session } = useSession();
   const privacy = usePrivateDataQuarantine();
@@ -143,13 +147,18 @@ export default function SavedJobsScreen() {
     }
   };
 
-  const open = async (jobId: string) => {
-    if (!privateVisibleRef.current || !ownerKey || !jobs?.some((job) => job.id === jobId)) return;
+  const open = async (jobId: string, destination: 'detail' | 'visit' = 'detail') => {
+    const chosen = jobs?.find((job) => job.id === jobId);
+    if (!privateVisibleRef.current || !ownerKey || !chosen) return;
+    if (destination === 'visit' && !presentSavedJobCard(chosen, Date.now()).directApply) return;
     const requestGeneration = generation.current;
     const pinned = await pinCandidateAction();
     if (pinned?.isCurrent() &&
         candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey &&
-        canPresent(ownerKey, requestGeneration)) router.push(`/job/${jobId}` as never);
+        canPresent(ownerKey, requestGeneration)) {
+      if (destination === 'visit') router.push(('/visits?jobId=' + encodeURIComponent(jobId)) as never);
+      else router.push(('/job/' + jobId) as never);
+    }
   };
 
   if (!privateVisible || !ownerKey) {
@@ -178,18 +187,11 @@ export default function SavedJobsScreen() {
         </Pressable>
       ) : null}
       {(jobs ?? []).map((job) => (
-        <View key={job.id} style={styles.card}>
-          <Text style={styles.title}>{job.title}</Text>
-          <Text style={styles.facility}>{job.facility_name}</Text>
-          <Text style={styles.meta}>{[job.prefecture, job.city, job.employment_type].filter(Boolean).join(' ・ ')}</Text>
-          {!job.is_open ? <Text style={styles.closed}>この求人は募集を終了しています。</Text> : null}
-          <Pressable style={styles.openButton} onPress={() => void open(job.id)}>
-            <Text style={styles.openButtonText}>求人を見る</Text>
-          </Pressable>
-          <Pressable disabled={loading || busyId !== null} style={styles.button} onPress={() => void remove(job.id)}>
-            {busyId === job.id ? <ActivityIndicator /> : <Text style={styles.buttonText}>保存から外す</Text>}
-          </Pressable>
-        </View>
+        <SavedJobPreviewCard key={ownerKey + ':' + job.id} job={job}
+          disabled={loading || busyId !== null} removing={busyId === job.id}
+          onOpen={() => void open(job.id)}
+          onVisit={() => void open(job.id, 'visit')}
+          onRemove={() => void remove(job.id)} />
       ))}
     </ScrollView>
   );
