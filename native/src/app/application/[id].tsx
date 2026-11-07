@@ -11,6 +11,8 @@ import { applicationStatusLabel } from '../../lib/messageInbox';
 import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
 import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
 import { canSubmitCandidateMessage, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
+import { markVisibleApplicationMessagesRead } from '../../lib/attentionApi';
+import { visibleCandidateFacilityMessageId, type CandidateMessageReadViewport } from '../../lib/candidateMessageReadVisibility';
 import { focusedApplicationMessagesOffset } from '../../lib/focusedApplicationMessages';
 import { applicationVisitExperienceLabel, applicationVisitStatusLabel, canSubmitInterviewResponse, formatApplicationEventDateTimeJapan, interviewStatusLabel } from '../../lib/applicationEventPresentation';
 import {
@@ -227,6 +229,15 @@ function ApplicationDetailContent() {
   const messageViewportHeightRef = useRef(0);
   const messageContentHeightRef = useRef(0);
   const messageAnchorConsumedRef = useRef(false);
+  // Reading the detail does not mean the candidate has actually viewed a
+  // facility message buried below the fold. Record exact bubble geometry.
+  const readViewportRef = useRef<CandidateMessageReadViewport>({
+    facilityMessageId: null, measuredMessageId: null, sectionTop: null,
+    messageTop: null, messageHeight: null, scrollY: 0, viewportHeight: 0,
+  });
+  const acknowledgedFacilityMessageRef = useRef<string | null>(null);
+  const acknowledgingFacilityMessageRef = useRef<string | null>(null);
+  const failedFacilityMessageRef = useRef<string | null>(null);
 
   const load = useCallback(async (_quiet = false) => {
     const current = ++generation.current;
@@ -234,6 +245,12 @@ function ApplicationDetailContent() {
     messageAnchorYRef.current = null;
     messageViewportHeightRef.current = 0;
     messageContentHeightRef.current = 0;
+    readViewportRef.current = {
+      facilityMessageId: null, measuredMessageId: null, sectionTop: null,
+      messageTop: null, messageHeight: null, scrollY: 0, viewportHeight: 0,
+    };
+    // A deliberate canonical refresh permits one retry of a failed read-ack RPC.
+    failedFacilityMessageRef.current = null;
     // Fail closed on refresh or lost permission: do not keep displaying the old
     // application, messages or submitted documents while authorization is retried.
     setLoading(true);
@@ -426,6 +443,38 @@ function ApplicationDetailContent() {
   const missingDocuments = documentState?.missingSourceDocumentIds.length ?? 0;
   const documentReadState = classifyApplicationDocumentHandoff(documentState);
   const orderedMessages = useMemo(() => [...messages].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at)), [messages]);
+  const latestFacilityMessageId = [...orderedMessages].reverse().find((message) => message.sender_role === 'facility')?.id ?? null;
+  const maybeAcknowledgeVisibleFacilityMessage = () => {
+    const target = visibleCandidateFacilityMessageId({
+      ...readViewportRef.current, facilityMessageId: latestFacilityMessageId,
+    });
+    if (!target || target === acknowledgedFacilityMessageRef.current ||
+        target === acknowledgingFacilityMessageRef.current ||
+        target === failedFacilityMessageRef.current) return;
+    const readGeneration = generation.current;
+    acknowledgingFacilityMessageRef.current = target;
+    void (async () => {
+      try {
+        const pinned = await pinCandidateAction();
+        if (!pinned || !pinned.isCurrent() || readGeneration !== generation.current) return;
+        // Do not mark read after a slow session pin if the bubble is now hidden.
+        if (visibleCandidateFacilityMessageId({
+          ...readViewportRef.current, facilityMessageId: latestFacilityMessageId,
+        }) !== target) return;
+        await markVisibleApplicationMessagesRead(pinned.client, applicationId);
+        if (pinned.isCurrent() && readGeneration === generation.current) {
+          acknowledgedFacilityMessageRef.current = target;
+        }
+      } catch {
+        // No fabricated read success; a fresh canonical reload can retry.
+        if (readGeneration === generation.current) failedFacilityMessageRef.current = target;
+      } finally {
+        if (acknowledgingFacilityMessageRef.current === target) {
+          acknowledgingFacilityMessageRef.current = null;
+        }
+      }
+    })();
+  };
 
   if (loading) {
     return <View style={styles.center}><ActivityIndicator /><Text>応募情報を読み込んでいます…</Text></View>;
@@ -449,9 +498,20 @@ function ApplicationDetailContent() {
       ref={messageScrollRef}
       contentContainerStyle={styles.page}
       keyboardShouldPersistTaps="handled"
+      scrollEventThrottle={100}
+      onScroll={(event) => {
+        readViewportRef.current = {
+          ...readViewportRef.current, scrollY: Math.max(0, event.nativeEvent.contentOffset.y),
+        };
+        maybeAcknowledgeVisibleFacilityMessage();
+      }}
       onLayout={(event) => {
         messageViewportHeightRef.current = event.nativeEvent.layout.height;
+        readViewportRef.current = {
+          ...readViewportRef.current, viewportHeight: event.nativeEvent.layout.height,
+        };
         maybeScrollToMessages();
+        maybeAcknowledgeVisibleFacilityMessage();
       }}
       onContentSizeChange={(_width, height) => {
         messageContentHeightRef.current = height;
@@ -562,7 +622,11 @@ function ApplicationDetailContent() {
       <View style={[styles.card, messagesFocused && styles.focusedCard]}
         onLayout={(event) => {
           messageAnchorYRef.current = event.nativeEvent.layout.y;
+          readViewportRef.current = {
+            ...readViewportRef.current, sectionTop: event.nativeEvent.layout.y,
+          };
           maybeScrollToMessages();
+          maybeAcknowledgeVisibleFacilityMessage();
         }}>
         <View style={styles.cardHeadingRow}>
           <Text style={styles.sectionTitle}>園とのメッセージ</Text>
@@ -571,7 +635,16 @@ function ApplicationDetailContent() {
         {messagesFocused ? <Text style={styles.focusLabel}>園とのメッセージを表示しています</Text> : null}
         {orderedMessages.length === 0 ? <Text style={styles.subtle}>メッセージはまだありません。</Text> : null}
         {orderedMessages.map((message) => (
-          <View key={message.id} style={[styles.message, message.sender_role === 'jobseeker' && styles.myMessage]}>
+          <View key={message.id}
+            onLayout={message.id === latestFacilityMessageId ? (event) => {
+              readViewportRef.current = {
+                ...readViewportRef.current, measuredMessageId: message.id,
+                messageTop: event.nativeEvent.layout.y,
+                messageHeight: event.nativeEvent.layout.height,
+              };
+              maybeAcknowledgeVisibleFacilityMessage();
+            } : undefined}
+            style={[styles.message, message.sender_role === 'jobseeker' && styles.myMessage]}>
             <Text style={styles.messageRole}>{message.sender_role === 'jobseeker' ? 'あなた' : '園'}</Text>
             <Text>{message.body}</Text>
             <Text style={styles.meta}>{formatDateTime(message.created_at)}</Text>
