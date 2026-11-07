@@ -8,6 +8,7 @@ import { submitApplication } from '../lib/applicationJourneyApi';
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
+import { canStartSpotApplication } from '../lib/spotReadIntegrity';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import {
   listMySpotAssignments,
@@ -82,6 +83,12 @@ export default function SpotJobsScreen() {
   const privacy = usePrivateDataQuarantine();
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
   const verifiedOwnerRef = useRef<string | null>(null);
+  const currentOwnerRef = useRef(ownerKey);
+  const applyingRef = useRef<{ owner: string; generation: number; jobId: string } | null>(null);
+  if (currentOwnerRef.current !== ownerKey) {
+    currentOwnerRef.current = ownerKey;
+    verifiedOwnerRef.current = null;
+  }
   if (privacy.shieldVisible || !privacy.canAccessPrivateData()) verifiedOwnerRef.current = null;
   const [jobs, setJobs] = useState<SpotJobListing[]>([]);
   const [assignments, setAssignments] = useState<SpotAssignment[]>([]);
@@ -101,49 +108,107 @@ export default function SpotJobsScreen() {
     verifiedOwnerRef.current = null;
     if (!quiet) setLoading(true);
     setError(null);
+    // App Lock and signed-out states must not issue candidate RPCs.
+    if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
+      setJobs([]);
+      setAssignments([]);
+      if (!quiet) setLoading(false);
+      return;
+    }
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
       const [nextJobs, nextAssignments] = await Promise.all([
         listSpotJobs(pinned.client),
         listMySpotAssignments(pinned.client),
       ]);
-      if (!pinned.isCurrent() || current !== generation.current) return;
-      verifiedOwnerRef.current = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
+      if (!pinned.isCurrent() || current !== generation.current ||
+          currentOwnerRef.current !== ownerKey || privacy.shieldVisible ||
+          !privacy.canAccessPrivateData()) return;
+      verifiedOwnerRef.current = ownerKey;
       setJobs(nextJobs);
       setAssignments(nextAssignments);
-    } catch (loadError) {
-      if (current === generation.current) setError(String((loadError as { message?: unknown })?.message ?? loadError));
+    } catch {
+      if (current === generation.current && currentOwnerRef.current === ownerKey &&
+          !privacy.shieldVisible && privacy.canAccessPrivateData()) {
+        setError('スポット勤務の情報を確認できませんでした。再読み込みしてください。');
+      }
     } finally {
       if (current === generation.current && !quiet) setLoading(false);
     }
-  }, [pinCandidateAction]);
+  }, [pinCandidateAction, ownerKey, privacy.shieldVisible, privacy.canAccessPrivateData]);
 
   useFocusEffect(useCallback(() => {
+    if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
+      generation.current += 1;
+      verifiedOwnerRef.current = null;
+      setJobs([]);
+      setAssignments([]);
+      setError(null);
+      setBusyId(null);
+      setLoading(true);
+      return;
+    }
     void load();
-    return () => { generation.current += 1; };
+    return () => {
+      generation.current += 1;
+      verifiedOwnerRef.current = null;
+    };
   }, [load, focusedAssignmentId, ownerKey, privacy.shieldVisible]));
 
   const apply = async (job: SpotJobListing) => {
+    const expectedOwner = ownerKey;
+    const startedGeneration = generation.current;
+    if (!canStartSpotApplication({
+      jobId: job.job_id,
+      visibleJobs: jobs,
+      ownerKey: expectedOwner,
+      verifiedOwnerKey: verifiedOwnerRef.current,
+      privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+      pending: applyingRef.current?.generation === startedGeneration,
+    }) || !expectedOwner) return;
+    // This ref is set synchronously before awaits, unlike a React state update.
+    const token = { owner: expectedOwner, generation: startedGeneration, jobId: job.job_id };
+    applyingRef.current = token;
     setBusyId(job.job_id);
     setError(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      const stillCurrent = () => Boolean(pinned?.isCurrent() &&
+        currentOwnerRef.current === expectedOwner &&
+        candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === expectedOwner &&
+        generation.current === startedGeneration &&
+        verifiedOwnerRef.current === expectedOwner &&
+        !privacy.shieldVisible && privacy.canAccessPrivateData());
+      if (!pinned || !stillCurrent()) return;
       const profile = await getJobseekerProfile(pinned.client);
-      if (!pinned.isCurrent()) return;
+      if (!stillCurrent()) return;
       if (!profile?.name?.trim()) {
         router.push('/(tabs)/profile');
         return;
       }
       const result = await submitApplication(pinned.client, job.job_id, profile);
-      if (!pinned.isCurrent()) return;
-      await load(true);
+      if (!stillCurrent()) return;
+      // A successful submission needs a fresh canonical list before returning.
+      const refreshed = load(true);
+      const refreshGeneration = generation.current;
+      await refreshed;
+      if (!pinned.isCurrent() || currentOwnerRef.current !== expectedOwner ||
+          generation.current !== refreshGeneration || privacy.shieldVisible ||
+          !privacy.canAccessPrivateData()) return;
       router.push(`/application/${result.applicationId}` as never);
-    } catch (applyError) {
-      setError(String((applyError as { message?: unknown })?.message ?? applyError));
+    } catch {
+      if (currentOwnerRef.current === expectedOwner && generation.current === startedGeneration &&
+          !privacy.shieldVisible && privacy.canAccessPrivateData()) {
+        setError('応募結果を確認できませんでした。応募管理を更新してご確認ください。');
+      }
     } finally {
-      setBusyId(null);
+      if (applyingRef.current === token) {
+        applyingRef.current = null;
+        setBusyId(null);
+      }
     }
   };
 
@@ -201,6 +266,7 @@ export default function SpotJobsScreen() {
             key={job.job_id}
             job={job}
             busy={busyId === job.job_id}
+            locked={busyId !== null && busyId !== job.job_id}
             onApply={() => void apply(job)}
             onOpenApplication={() => job.application_id && router.push(`/application/${job.application_id}` as never)}
           />
@@ -243,12 +309,14 @@ function AssignmentCard({ assignment, onOpen, focused }: { key?: string; assignm
 function SpotCard({
   job,
   busy,
+  locked,
   onApply,
   onOpenApplication,
 }: {
   key?: string;
   job: SpotJobListing;
   busy: boolean;
+  locked: boolean;
   onApply: () => void;
   onOpenApplication: () => void;
 }) {
@@ -289,7 +357,7 @@ function SpotCard({
       ) : (
         <Pressable
           style={styles.primaryButtonWide}
-          disabled={busy || job.available_count <= 0}
+          disabled={busy || locked || job.available_count <= 0}
           onPress={onApply}
         >
           <Text style={styles.primaryText}>{busy ? '応募中…' : job.available_count <= 0 ? '満員です' : 'このスポットに応募'}</Text>
