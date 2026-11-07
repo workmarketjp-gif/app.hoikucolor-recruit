@@ -52,3 +52,19 @@ export function readCanonicalSpotAssignments<T>(data: unknown): T[] {
   }
   return data as T[];
 }
+
+/** Stop a double tap, a stale list tap and a post-account-switch submission. */
+export function canStartSpotApplication(input: {
+  jobId: string;
+  visibleJobs: readonly Readonly<{ job_id: string; application_id: string | null; available_count: number }>[];
+  ownerKey: string | null;
+  verifiedOwnerKey: string | null;
+  privateAllowed: boolean;
+  pending: boolean;
+}): boolean {
+  return Boolean(input.privateAllowed && input.ownerKey &&
+    input.ownerKey === input.verifiedOwnerKey && !input.pending &&
+    id(input.jobId) && input.visibleJobs.some((job) =>
+      job.job_id === input.jobId && job.application_id === null &&
+      Number.isSafeInteger(job.available_count) && job.available_count > 0));
+}
