@@ -5,6 +5,7 @@ import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, Vi
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { getJobseekerProfile, listSavedJobIds, saveJob, unsaveJob, type JobseekerJob, type JobseekerProfile } from '../../lib/jobseekerCoreApi';
 import { updateSavedJobAndConfirm } from '../../lib/savedJobsReadback';
+import { recoverAmbiguousApplication } from '../../lib/ambiguousApplicationRecovery';
 import { getCandidateJob, listApplications, submitApplication } from '../../lib/applicationJourneyApi';
 import { ApplyDocumentsPanel } from '../../components/ApplyDocumentsPanel';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
@@ -41,7 +42,8 @@ export default function JobDetailScreen() {
     return <View style={styles.center}><ActivityIndicator color="#E9265A" /></View>;
   }
   if (!jobId) return <View style={styles.center}><Text style={styles.error}>求人IDを確認できませんでした。</Text></View>;
-  return <JobDetailContent key={`${ownerKey}:${jobId}`} jobId={jobId} ownerKey={ownerKey} />;
+  return <JobDetailContent key={`${ownerKey}:${jobId}`} jobId={jobId} ownerKey={ownerKey}
+    ownerId={session?.user?.id ?? ''} ownerSessionId={session?.id ?? ''} />;
 }
 
 function VerifiedEvidenceCard({
@@ -72,12 +74,16 @@ function VerifiedEvidenceCard({
   </View>;
 }
 
-function JobDetailContent({ jobId, ownerKey }: { jobId: string; ownerKey: string }) {
+function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
+  jobId: string; ownerKey: string; ownerId: string; ownerSessionId: string;
+}) {
   const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();
   const [job, setJob] = useState<JobseekerJob | null>(null);
   const [profile, setProfile] = useState<JobseekerProfile | null>(null);
   const [existingApplicationId, setExistingApplicationId] = useState<string | null>(null);
+  const [applicationUncertain, setApplicationUncertain] = useState(false);
+  const applyInFlight = useRef(false);
   const [savedIds, setSavedIds] = useState<string[] | null>(null);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [favoriteError, setFavoriteError] = useState<string | null>(null);
@@ -119,6 +125,8 @@ function JobDetailContent({ jobId, ownerKey }: { jobId: string; ownerKey: string
       setJob(nextJob);
       setProfile(nextProfile);
       setExistingApplicationId(applications.find((application) => application.job_id === jobId)?.id ?? null);
+      // Only an authorized canonical read clears a previous uncertain submit.
+      setApplicationUncertain(false);
     } catch (loadError) {
       if (current === generation.current) setError(String((loadError as { message?: unknown })?.message ?? loadError));
     } finally {
@@ -189,27 +197,22 @@ function JobDetailContent({ jobId, ownerKey }: { jobId: string; ownerKey: string
     router.replace(`/application/${applicationId}${warning}` as never);
   };
 
-  const reconcileAmbiguousApplication = async () => {
-    try {
-      const recoveryPinned = await pinCandidateAction();
-      if (!recoveryPinned) return false;
-      const applications = await listApplications(recoveryPinned.client);
-      if (!recoveryPinned.isCurrent()) return true;
-      const committed = applications.find((application) => application.job_id === jobId);
-      if (!committed) return false;
-      routeToApplication(committed.id);
-      return true;
-    } catch {
-      return false;
-    }
-  };
+  const reconcileAmbiguousApplication = async (requestGeneration: number) => recoverAmbiguousApplication({
+    expectedOwnerId: ownerId,
+    expectedSessionId: ownerSessionId,
+    jobId,
+    canContinue: () => focusActive.current && requestGeneration === generation.current,
+    pin: pinCandidateAction,
+    list: listApplications,
+    onConfirmed: (applicationId) => routeToApplication(applicationId),
+  });
 
   const startApply = () => {
     if (!profile?.name?.trim()) {
       setError('応募前にプロフィールを登録してください。');
       return;
     }
-    if (applying || existingApplicationId) return;
+    if (applying || applyInFlight.current || applicationUncertain || existingApplicationId || !focusActive.current) return;
     if (!job || job.is_external || job.can_apply_direct === false || jobIsClosed(job.closing_at, Date.now())) {
       setError('この求人は現在Hoiku Colorから直接応募できません。');
       return;
@@ -223,29 +226,44 @@ function JobDetailContent({ jobId, ownerKey }: { jobId: string; ownerKey: string
       setError('応募前にプロフィールを登録してください。');
       return;
     }
-    if (applying || existingApplicationId) return;
+    // React state updates do not synchronously prevent repeated submit taps.
+    if (applying || applyInFlight.current || applicationUncertain ||
+        existingApplicationId || !focusActive.current) return;
     if (!job || job.is_external || job.can_apply_direct === false || jobIsClosed(job.closing_at, Date.now())) {
       setChoosingDocuments(false);
       setError('この求人は現在Hoiku Colorから直接応募できません。');
       return;
     }
+    const requestGeneration = generation.current;
+    const canContinue = () => focusActive.current && requestGeneration === generation.current;
+    let submitDispatched = false;
+    applyInFlight.current = true;
     setApplying(true);
     setError(null);
     try {
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!canContinue() || !pinned.isCurrent() ||
+          pinned.ownerId !== ownerId || pinned.ownerSessionId !== ownerSessionId) return;
+      submitDispatched = true;
       const result = await submitApplication(pinned.client, jobId, profile, { documentIds });
-      if (!pinned.isCurrent()) return;
+      if (!canContinue() || !pinned.isCurrent()) return;
       routeToApplication(result.applicationId, result.documentHandoffFailures > 0);
     } catch (applyError) {
-      // A transport error can happen after the server has already committed the
-      // canonical application. Re-read the candidate's own applications before
-      // showing failure or allowing another tap. This keeps process/network
-      // ambiguity from becoming a second application or a false "not applied" UI.
-      if (await reconcileAmbiguousApplication()) return;
+      if (!canContinue()) return;
+      if (submitDispatched) {
+        const outcome = await reconcileAmbiguousApplication(requestGeneration);
+        if (outcome === 'confirmed' || outcome === 'quarantined' || !canContinue()) return;
+        if (outcome === 'read_failed') {
+          setApplicationUncertain(true);
+          setError('応募結果を確認できませんでした。応募状況を再読み込みしてください。');
+          return;
+        }
+      }
       setError(String((applyError as { message?: unknown })?.message ?? applyError));
     } finally {
-      setApplying(false);
+      applyInFlight.current = false;
+      if (canContinue()) setApplying(false);
     }
   };
 
@@ -296,6 +314,12 @@ function JobDetailContent({ jobId, ownerKey }: { jobId: string; ownerKey: string
       ) : <Text style={styles.subtle}>気になるの保存状況を確認中…</Text>}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {applicationUncertain ? (
+        <Pressable accessibilityRole="button" style={styles.secondary}
+          onPress={() => void load()} disabled={loading}>
+          <Text style={styles.secondaryText}>応募状況を再読み込み</Text>
+        </Pressable>
+      ) : null}
 
       {closed ? <Text style={styles.error}>募集終了：保存履歴として求人内容を確認できます。応募はできません。</Text> : null}
       <View style={styles.card}>
