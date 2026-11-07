@@ -10,7 +10,7 @@ import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } fr
 import { applicationStatusLabel } from '../../lib/messageInbox';
 import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
 import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
-import { canSubmitCandidateMessage, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
+import { canSubmitCandidateMessage, confirmedUncertainCandidateMessage, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
 import { markVisibleApplicationMessagesRead } from '../../lib/attentionApi';
 import { visibleCandidateFacilityMessageId, type CandidateMessageReadViewport } from '../../lib/candidateMessageReadVisibility';
 import { focusedApplicationMessagesOffset } from '../../lib/focusedApplicationMessages';
@@ -221,6 +221,13 @@ function ApplicationDetailContent() {
   const [handoffError, setHandoffError] = useState<string | null>(null);
   const generation = useRef(0);
   const messageSendPending = useRef(false);
+  const uncertainMessageRef = useRef<{
+    submittedDraft: string;
+    knownMessageIds: string[];
+    ownerId: string;
+    ownerSessionId: string;
+    applicationId: string;
+  } | null>(null);
   // /messages? -> /application/:id?focus=messages must land at the thread,
   // not at the top of the application summary. A prior focused scroll is never
   // reused across a refresh, focus change or hidden private session.
@@ -307,6 +314,9 @@ function ApplicationDetailContent() {
       needsReview: messageSendNeedsReview,
     })) return;
     const submittedDraft = messageDraft;
+    const knownMessageIds = messages.map((message) => message.id);
+    const messageRequestGeneration = generation.current;
+    let attemptedOwner: { ownerId: string; ownerSessionId: string } | null = null;
     let durableRequestStarted = false;
     messageSendPending.current = true;
     setBusy(true);
@@ -315,6 +325,7 @@ function ApplicationDetailContent() {
     try {
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      attemptedOwner = { ownerId: pinned.ownerId, ownerSessionId: pinned.ownerSessionId };
       durableRequestStarted = true;
       // The durable adapter already performs a canonical list readback and
       // verifies the returned message ID, role and body. A second full-detail
@@ -328,13 +339,20 @@ function ApplicationDetailContent() {
         body: submittedDraft,
       });
       if (!pinned.isCurrent()) return;
+      uncertainMessageRef.current = null;
       setMessages((current) => mergeConfirmedCandidateMessage(current, confirmedMessage, submittedDraft));
       // Do not erase edits typed while the previous message was in flight.
       setMessageDraft((current) => draftAfterConfirmedMessageSend(current, submittedDraft));
       setMessageSendNeedsReview(false);
       setMessageSendError(null);
     } catch (_sendError) {
+      // Do not set a stale candidate's warning or retain their draft on a
+      // different screen generation after an account/session transition.
+      if (messageRequestGeneration !== generation.current) return;
       const needsReview = shouldReviewCandidateMessageAfterFailure(durableRequestStarted);
+      uncertainMessageRef.current = needsReview && attemptedOwner
+        ? { submittedDraft, knownMessageIds, ...attemptedOwner, applicationId }
+        : null;
       setMessageSendNeedsReview(needsReview);
       setMessageSendError(needsReview
         ? '送信が完了した可能性があります。重複を防ぐため、最新のメッセージを読み込んでからご確認ください。'
@@ -355,9 +373,20 @@ function ApplicationDetailContent() {
     try {
       const pinned = await pinCandidateAction();
       if (!pinned || !pinned.isCurrent()) throw new Error('安全なログイン状態を確認できませんでした。');
+      const review = uncertainMessageRef.current;
+      if (review && (review.ownerId !== pinned.ownerId ||
+          review.ownerSessionId !== pinned.ownerSessionId || review.applicationId !== applicationId)) {
+        throw new Error('前のログイン状態のメッセージは確認できません。');
+      }
       const nextMessages = await listApplicationMessages(pinned.client, applicationId);
       if (!pinned.isCurrent() || requestGeneration !== generation.current) return;
       setMessages(nextMessages);
+      // A fresh thread read may prove the ambiguous reply already arrived.
+      // Remove only that exact draft; newer edits must remain intact.
+      if (review && confirmedUncertainCandidateMessage(review.submittedDraft, review.knownMessageIds, nextMessages)) {
+        setMessageDraft((current) => draftAfterConfirmedMessageSend(current, review.submittedDraft));
+      }
+      uncertainMessageRef.current = null;
       setMessageSendNeedsReview(false);
       setMessageSendError(null);
     } catch {
