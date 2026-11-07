@@ -1,6 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
 import { File, Paths } from 'expo-file-system';
 
+import { isDocumentPickerCacheUriWithinDirectory } from './documentPickerCacheUri';
+
 const PICKER_CACHE_REGISTRY_KEY = 'hc.native.document-picker-cache.v1';
 export const DOCUMENT_PICKER_CACHE_GENERATION_CHANGED = 'DOCUMENT_PICKER_CACHE_GENERATION_CHANGED';
 
@@ -26,13 +28,8 @@ function normalizeUserId(userId: string) {
   return normalized;
 }
 
-function normalizedCachePrefix() {
-  const uri = Paths.cache.uri;
-  return uri.endsWith('/') ? uri : `${uri}/`;
-}
-
 export function isPrivateDocumentPickerCacheUri(uri: string) {
-  return typeof uri === 'string' && uri.startsWith(normalizedCachePrefix());
+  return isDocumentPickerCacheUriWithinDirectory(uri, Paths.cache.uri);
 }
 
 function assertPrivateDocumentPickerCacheUri(uri: string) {
