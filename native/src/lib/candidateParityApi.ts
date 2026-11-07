@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { readCanonicalSpotJobs, readCanonicalSpotAssignments } from './spotReadIntegrity';
 
 export type JobseekerScout = {
   scout_id: string;
@@ -221,11 +222,11 @@ export async function saveJobseekerMatchingPreferences(
 export async function listSpotJobs(client: SupabaseClient): Promise<SpotJobListing[]> {
   const { data, error } = await client.rpc('hc_jobseeker_list_spot_jobs');
   if (error) throw error;
-  return (Array.isArray(data) ? data : []) as SpotJobListing[];
+  return readCanonicalSpotJobs<SpotJobListing>(data);
 }
 
 export async function listMySpotAssignments(client: SupabaseClient): Promise<SpotAssignment[]> {
   const { data, error } = await client.rpc('hc_jobseeker_list_my_spot_assignments');
   if (error) throw error;
-  return (Array.isArray(data) ? data : []) as SpotAssignment[];
+  return readCanonicalSpotAssignments<SpotAssignment>(data);
 }
