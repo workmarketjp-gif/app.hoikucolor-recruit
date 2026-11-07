@@ -360,7 +360,7 @@ function SpotCard({
           disabled={busy || locked || job.available_count <= 0}
           onPress={onApply}
         >
-          <Text style={styles.primaryText}>{busy ? '応募中…' : job.available_count <= 0 ? '満員です' : 'このスポットに応募'}</Text>
+          <Text style={styles.primaryText}>{busy ? '応募中…' : locked ? '別の応募を確認中…' : job.available_count <= 0 ? '満員です' : 'このスポットに応募'}</Text>
         </Pressable>
       )}
     </View>
