@@ -167,7 +167,7 @@ export default function SpotJobsScreen() {
       ownerKey: expectedOwner,
       verifiedOwnerKey: verifiedOwnerRef.current,
       privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
-      pending: applyingRef.current?.generation === startedGeneration,
+      pending: applyingRef.current?.owner === expectedOwner,
     }) || !expectedOwner) return;
     // This ref is set synchronously before awaits, unlike a React state update.
     const token = { owner: expectedOwner, generation: startedGeneration, jobId: job.job_id };
