@@ -11,6 +11,7 @@ import {
   prepareDurableMutation,
 } from './durableMutation';
 import { isMissingRpcError, submissionDocumentError } from './jobDocumentRequirementApi';
+import { verifiedCandidateMessageRows } from './candidateMessageReadback';
 import type { JobseekerJob, JobseekerProfile } from './jobseekerCoreApi';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -173,7 +174,9 @@ export async function listApplicationMessages(
     p_application_id: applicationId,
   });
   if (error) throw error;
-  return (Array.isArray(data) ? data : []) as JobseekerMessage[];
+  // The authorized SQL RPC returns [] for a real empty thread, never null.
+  // Fail rather than unlock a previously uncertain message send on bad data.
+  return verifiedCandidateMessageRows(data);
 }
 
 export async function getCandidateJob(client: SupabaseClient, jobId: string): Promise<JobseekerJob | null> {
