@@ -79,3 +79,21 @@ export function nativeAttentionMessageHref(summary: JobseekerAttentionSummary): 
   if (!applicationId || !UUID_PATTERN.test(applicationId)) return '/(tabs)/applications';
   return `/application/${applicationId}?focus=messages`;
 }
+
+/**
+ * Match Web's mark-on-open behavior without acknowledging messages hidden below
+ * the fold. Call only after an authenticated canonical read and visibility gate.
+ * Ownership and read transition are enforced by the existing server RPC.
+ */
+export async function markVisibleApplicationMessagesRead(
+  client: SupabaseClient,
+  applicationId: string,
+): Promise<number> {
+  if (!UUID_PATTERN.test(applicationId)) throw new Error('応募IDを確認できませんでした。');
+  const { data, error } = await client.rpc('hc_jobseeker_mark_application_messages_read', {
+    p_application_id: applicationId,
+  });
+  if (error) throw error;
+  const updated = Number(data ?? 0);
+  return Number.isFinite(updated) && updated > 0 ? Math.floor(updated) : 0;
+}
