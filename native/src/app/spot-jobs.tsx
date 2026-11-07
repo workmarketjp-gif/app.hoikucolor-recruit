@@ -113,7 +113,7 @@ export default function SpotJobsScreen() {
       setJobs([]);
       setAssignments([]);
       if (!quiet) setLoading(false);
-      return;
+      return false;
     }
     try {
       const pinned = await pinCandidateAction();
@@ -126,15 +126,17 @@ export default function SpotJobsScreen() {
       ]);
       if (!pinned.isCurrent() || current !== generation.current ||
           currentOwnerRef.current !== ownerKey || privacy.shieldVisible ||
-          !privacy.canAccessPrivateData()) return;
+          !privacy.canAccessPrivateData()) return false;
       verifiedOwnerRef.current = ownerKey;
       setJobs(nextJobs);
       setAssignments(nextAssignments);
+      return true;
     } catch {
       if (current === generation.current && currentOwnerRef.current === ownerKey &&
           !privacy.shieldVisible && privacy.canAccessPrivateData()) {
         setError('スポット勤務の情報を確認できませんでした。再読み込みしてください。');
       }
+      return false;
     } finally {
       if (current === generation.current && !quiet) setLoading(false);
     }
@@ -194,8 +196,8 @@ export default function SpotJobsScreen() {
       // A successful submission needs a fresh canonical list before returning.
       const refreshed = load(true);
       const refreshGeneration = generation.current;
-      await refreshed;
-      if (!pinned.isCurrent() || currentOwnerRef.current !== expectedOwner ||
+      const refreshConfirmed = await refreshed;
+      if (!refreshConfirmed || !pinned.isCurrent() || currentOwnerRef.current !== expectedOwner ||
           generation.current !== refreshGeneration || privacy.shieldVisible ||
           !privacy.canAccessPrivateData()) return;
       router.push(`/application/${result.applicationId}` as never);
