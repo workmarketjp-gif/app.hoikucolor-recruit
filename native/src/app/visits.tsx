@@ -6,6 +6,7 @@ import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import { canCancelVisibleVisit, canRequestVisibleVisit, formatVisitDateTimeJapan, partitionVisitHistory, visitReadbackConfirmsMutation, visitStatusLabel } from '../lib/visitPresentation';
+import { focusedVisitScrollY, type FocusedVisitMeasurements } from '../lib/focusedVisitScroll';
 import {
   cancelVisit,
   getVisitSettings,
@@ -36,6 +37,20 @@ function allowedTypes(settings: JobseekerVisitSettings | null): VisitExperienceT
   return values;
 }
 
+type VisitFocusLayout = FocusedVisitMeasurements & {
+  key: string | null;
+  rows: JobseekerVisitHistory[] | null;
+  didScroll: boolean;
+  manuallyScrolled: boolean;
+};
+
+function emptyVisitFocusLayout(key: string | null, rows: JobseekerVisitHistory[] | null): VisitFocusLayout {
+  return {
+    key, rows, sectionTop: null, cardTop: null, cardHeight: null,
+    viewportHeight: null, contentHeight: null, didScroll: false, manuallyScrolled: false,
+  };
+}
+
 export default function VisitsScreen() {
   usePrivateScreenCapture('visits');
   const params = useLocalSearchParams<{ visitId?: string | string[]; jobId?: string | string[]; applicationId?: string | string[] }>();
@@ -57,6 +72,8 @@ export default function VisitsScreen() {
   const [busy, setBusy] = useState(false);
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const generation = useRef(0);
+  const scrollRef = useRef<ScrollView>(null);
+  const focusLayoutRef = useRef<VisitFocusLayout>(emptyVisitFocusLayout(null, null));
   // A same-session App Lock/unlock also invalidates every previously rendered visit.
   const freshlyVerifiedOwner = useRef<string | null>(null);
   const privateAllowed = !privacy.shieldVisible && privacy.canAccessPrivateData();
@@ -64,6 +81,22 @@ export default function VisitsScreen() {
   const visits = readCandidateFreshlyVerifiedView(ownedVisits, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
   const settings = readCandidateFreshlyVerifiedView(ownedSettings, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
   const error = readCandidateFreshlyVerifiedView(ownedError, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
+  // Only the current candidate's re-read reservation may control a deep-link jump.
+  const focusKey = ownerKey && privateAllowed && focusedVisitId &&
+    visits?.some((visit) => visit.reservation_id === focusedVisitId)
+    ? JSON.stringify([ownerKey, focusedVisitId]) : null;
+  if (focusLayoutRef.current.key !== focusKey || focusLayoutRef.current.rows !== visits) {
+    focusLayoutRef.current = emptyVisitFocusLayout(focusKey, visits);
+  }
+  const focusLayout = focusLayoutRef.current;
+  const scrollToFocusedVisit = () => {
+    if (!focusKey || focusLayoutRef.current !== focusLayout ||
+        focusLayout.didScroll || focusLayout.manuallyScrolled) return;
+    const y = focusedVisitScrollY(focusLayout);
+    if (y === null || !scrollRef.current) return;
+    focusLayout.didScroll = true;
+    scrollRef.current.scrollTo({ y, animated: true });
+  };
 
   const load = useCallback(async (expected?: { reservationId: string; mutation: 'request' | 'cancel' }): Promise<boolean> => {
     const current = ++generation.current;
@@ -210,6 +243,13 @@ export default function VisitsScreen() {
   const missingTarget = !loading && !error && visits !== null && focusedVisitId !== null &&
     !visits.some((visit) => visit.reservation_id === focusedVisitId);
 
+  const recordSectionTop = (section: 'active' | 'history', top: number) => {
+    if (!focusKey || focusLayoutRef.current !== focusLayout ||
+        !groupedVisits[section].some((visit) => visit.reservation_id === focusedVisitId)) return;
+    focusLayout.sectionTop = top;
+    scrollToFocusedVisit();
+  };
+
   const openRelatedJob = async (reservationId: string, targetJobId: string) => {
     if (!privateAllowed || !visits?.some((visit) =>
       visit.reservation_id === reservationId && visit.job_id === targetJobId)) return;
@@ -223,8 +263,14 @@ export default function VisitsScreen() {
     const cancellable = visit.status === 'requested' || visit.status === 'confirmed';
     const address = [visit.prefecture, visit.city, visit.address].filter(Boolean).join('') || '住所未公開';
     return (
-      <View key={visit.reservation_id} style={[styles.visitCard, focused && styles.focusedCard]}>
-        {focused ? <Text style={styles.focusLabel}>通知からこの予約を開きました</Text> : null}
+      <View key={visit.reservation_id} style={[styles.visitCard, focused && styles.focusedCard]}
+        onLayout={focused ? (event) => {
+          if (focusLayoutRef.current !== focusLayout || !focusKey) return;
+          focusLayout.cardTop = event.nativeEvent.layout.y;
+          focusLayout.cardHeight = event.nativeEvent.layout.height;
+          scrollToFocusedVisit();
+        } : undefined}>
+        {focused ? <Text style={styles.focusLabel}>指定された見学・体験</Text> : null}
         <Text style={styles.visitTitle}>{experienceLabel(visit.experience_type)} ・ {visit.facility_name}</Text>
         <Text style={styles.status}>{visitStatusLabel(visit.status)}</Text>
         <Text style={styles.subtle}>{visit.job_title}</Text>
@@ -253,7 +299,20 @@ export default function VisitsScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+    <ScrollView ref={scrollRef} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled"
+      onLayout={(event) => {
+        if (focusLayoutRef.current !== focusLayout) return;
+        focusLayout.viewportHeight = event.nativeEvent.layout.height;
+        scrollToFocusedVisit();
+      }}
+      onContentSizeChange={(_width, height) => {
+        if (focusLayoutRef.current !== focusLayout) return;
+        focusLayout.contentHeight = height;
+        scrollToFocusedVisit();
+      }}
+      onScrollBeginDrag={() => {
+        if (focusLayoutRef.current === focusLayout) focusLayout.manuallyScrolled = true;
+      }}>
       <View>
         <Text style={styles.title}>見学・体験</Text>
         <Text style={styles.subtle}>園見学・半日体験・1日体験の予約と結果を確認できます。</Text>
@@ -308,13 +367,13 @@ export default function VisitsScreen() {
         </View>
       ) : null}
       {groupedVisits.active.length > 0 ? (
-        <View style={styles.card}>
+        <View style={styles.card} onLayout={(event) => recordSectionTop('active', event.nativeEvent.layout.y)}>
           <Text style={styles.sectionTitle}>これからの見学・体験　{groupedVisits.active.length}件</Text>
           {groupedVisits.active.map(renderVisit)}
         </View>
       ) : null}
       {groupedVisits.history.length > 0 ? (
-        <View style={styles.card}>
+        <View style={styles.card} onLayout={(event) => recordSectionTop('history', event.nativeEvent.layout.y)}>
           <Text style={styles.sectionTitle}>これまでの履歴　{groupedVisits.history.length}件</Text>
           {groupedVisits.history.map(renderVisit)}
         </View>
