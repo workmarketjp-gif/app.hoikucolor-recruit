@@ -9,6 +9,7 @@ import { candidateApplicationDetailKey } from '../../lib/applicationDetailVisibi
 import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } from '../../lib/applicationDocumentHandoffStatus';
 import { applicationStatusLabel } from '../../lib/messageInbox';
 import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
+import { canSubmitCandidateMessage, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
 import { focusedApplicationMessagesOffset } from '../../lib/focusedApplicationMessages';
 import { applicationVisitExperienceLabel, applicationVisitStatusLabel, canSubmitInterviewResponse, formatApplicationEventDateTimeJapan, interviewStatusLabel } from '../../lib/applicationEventPresentation';
 import {
@@ -207,6 +208,8 @@ function ApplicationDetailContent() {
   const [messages, setMessages] = useState<JobseekerMessage[]>([]);
   const [documentState, setDocumentState] = useState<ApplicationDocumentHandoffState | null>(null);
   const [messageDraft, setMessageDraft] = useState('');
+  const [messageSendError, setMessageSendError] = useState<string | null>(null);
+  const [messageSendNeedsReview, setMessageSendNeedsReview] = useState(false);
   const [offerMessage, setOfferMessage] = useState('');
   const [withdrawReason, setWithdrawReason] = useState('');
   const [loading, setLoading] = useState(true);
@@ -228,6 +231,8 @@ function ApplicationDetailContent() {
     const current = ++generation.current;
     messageAnchorConsumedRef.current = false;
     messageAnchorYRef.current = null;
+    messageViewportHeightRef.current = 0;
+    messageContentHeightRef.current = 0;
     // Fail closed on refresh or lost permission: do not keep displaying the old
     // application, messages or submitted documents while authorization is retried.
     setLoading(true);
@@ -244,12 +249,14 @@ function ApplicationDetailContent() {
         listApplicationMessages(pinned.client, applicationId),
         readApplicationDocumentHandoff(() => getApplicationDocumentHandoffState(pinned.client, applicationId)),
       ]);
-      if (!pinned.isCurrent() || current !== generation.current) return;
+      if (!pinned.isCurrent() || current !== generation.current) return false;
       setDetail(nextDetail);
       setMessages(nextMessages);
       setDocumentState(nextDocumentState);
+      return true;
     } catch (loadError) {
       if (current === generation.current) setError(String((loadError as { message?: unknown })?.message ?? loadError));
+      return false;
     } finally {
       if (current === generation.current) setLoading(false);
     }
@@ -266,6 +273,8 @@ function ApplicationDetailContent() {
       generation.current += 1; // Never apply an in-flight read after blur.
       messageAnchorConsumedRef.current = false;
       messageAnchorYRef.current = null;
+      messageViewportHeightRef.current = 0;
+      messageContentHeightRef.current = 0;
       setDetail(null);
       setMessages([]);
       setDocumentState(null);
@@ -275,18 +284,22 @@ function ApplicationDetailContent() {
   }, []));
 
   const sendMessage = async () => {
-    // A synchronous ref gates rapid taps before React commits the busy state.
-    // The adapter already sends a durable request ID and verifies server readback;
-    // never auto-resend if an acknowledgement is ambiguous.
-    if (messageSendPending.current || busy) return;
+    // The durable RPC can finish server-side even if its response is lost.
+    // Require a deliberate canonical re-read before a possible duplicate tap.
+    if (!canSubmitCandidateMessage({
+      draft: messageDraft, busy, pending: messageSendPending.current,
+      needsReview: messageSendNeedsReview,
+    })) return;
     const submittedDraft = messageDraft;
-    if (!submittedDraft.trim()) return;
+    let durableRequestStarted = false;
     messageSendPending.current = true;
     setBusy(true);
     setError(null);
+    setMessageSendError(null);
     try {
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      durableRequestStarted = true;
       await sendApplicationMessageDurable({
         client: pinned.client,
         ownerId: pinned.ownerId,
@@ -298,11 +311,25 @@ function ApplicationDetailContent() {
       // Do not erase edits typed while the previous message was in flight.
       setMessageDraft((current) => draftAfterConfirmedMessageSend(current, submittedDraft));
       await load(true);
-    } catch (sendError) {
-      setError(String((sendError as { message?: unknown })?.message ?? sendError));
+    } catch (_sendError) {
+      const needsReview = shouldReviewCandidateMessageAfterFailure(durableRequestStarted);
+      setMessageSendNeedsReview(needsReview);
+      setMessageSendError(needsReview
+        ? '送信が完了した可能性があります。重複を防ぐため、最新のメッセージを読み込んでからご確認ください。'
+        : '安全なログイン状態を確認できず、送信を開始できませんでした。再度お試しください。');
     } finally {
       messageSendPending.current = false;
       setBusy(false);
+    }
+  };
+
+  const reviewMessageSend = async () => {
+    if (busy) return;
+    // A failed or stale readback never unlocks the composer or claims delivery.
+    const confirmed = await load(true);
+    if (confirmed) {
+      setMessageSendNeedsReview(false);
+      setMessageSendError(null);
     }
   };
 
@@ -539,7 +566,22 @@ function ApplicationDetailContent() {
           maxLength={4000}
           style={styles.textArea}
         />
-        <Pressable style={styles.primaryButton} disabled={busy || !messageDraft.trim()} onPress={() => void sendMessage()}>
+        {messageSendError ? (
+          <View style={styles.messageFeedback} accessibilityLiveRegion="polite">
+            <Text style={styles.error}>{messageSendError}</Text>
+            {messageSendNeedsReview ? (
+              <Pressable style={styles.secondaryButton} disabled={busy} onPress={() => void reviewMessageSend()} accessibilityRole="button">
+                <Text style={styles.secondaryText}>最新のメッセージを確認する</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+        <Pressable style={styles.primaryButton}
+          disabled={!canSubmitCandidateMessage({
+            draft: messageDraft, busy, pending: messageSendPending.current,
+            needsReview: messageSendNeedsReview,
+          })}
+          onPress={() => void sendMessage()}>
           <Text style={styles.primaryText}>{busy ? '送信中…' : '送信'}</Text>
         </Pressable>
       </View>
@@ -577,6 +619,7 @@ const styles = StyleSheet.create({
   withdrawCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 10 },
   offerAccepted: { color: '#067647', fontWeight: '900' },
   focusedCard: { borderWidth: 2, borderColor: '#246bfd' },
+  messageFeedback: { gap: 10, padding: 12, borderRadius: 10, backgroundColor: '#FFF1F0' },
   sectionTitle: { fontSize: 18, fontWeight: '900' },
   cardHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   count: { color: '#606873', fontWeight: '700' },
