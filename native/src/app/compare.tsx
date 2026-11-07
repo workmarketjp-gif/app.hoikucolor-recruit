@@ -7,6 +7,7 @@ import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateOwnedView, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import { reconcileComparedSelection, requestedComparisonJobIds } from '../lib/comparisonSelection';
 import { comparisonSalaryLabel } from '../lib/comparisonSalaryPresentation';
+import { visibleComparisonMetricKeys } from '../lib/comparisonVerifiedRowVisibility';
 import { getJobseekerProfile, listRankedJobs, type JobseekerJob, type JobseekerProfile } from '../lib/jobseekerCoreApi';
 import { getJobseekerMatchingPreferences, type JobseekerMatchingPreferences } from '../lib/candidateParityApi';
 import { matchJob, type JobMatchResult } from '../lib/jobMatching';
@@ -349,7 +350,7 @@ export default function CompareScreen() {
             <ComparisonRow label="配置・人員体制" source="facility" note="求人文面の明示のみ" values={compared.map(({ job }) => explicitTextSignal(job, ['基準以上の配置', '手厚い配置', '配置に余裕', 'ゆとりある配置'], '手厚い配置の記載あり'))} />
             <ComparisonRow label="福利厚生・制度" source="facility" values={compared.map(({ job }) => job.benefits || '未掲載')} />
 
-            {workplacePriority.map((key) => (
+            {visibleComparisonMetricKeys(compared.map(({ job }) => job), 'workplace', workplacePriority).map((key) => (
               <ComparisonRow
                 key={key}
                 label={metricLabel(compared, 'workplace', key)}
@@ -357,7 +358,7 @@ export default function CompareScreen() {
                 values={compared.map(({ job }) => metricValue(job, 'workplace', key))}
               />
             ))}
-            {financePriority.map((key) => (
+            {visibleComparisonMetricKeys(compared.map(({ job }) => job), 'finance', financePriority).map((key) => (
               <ComparisonRow
                 key={key}
                 label={metricLabel(compared, 'finance', key)}
