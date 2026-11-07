@@ -51,3 +51,15 @@ test('invalid mixed result rejects the entire read; no partial success', () => {
   const otherAssignment = {...assignment(), assignment_id: B, start_time: 'bad'};
   assert.throws(() => readCanonicalSpotAssignments([assignment(), otherAssignment]), /確認できません/);
 });
+
+test('spot application tap must be current, available, not already applied, and not concurrent', async () => {
+  const { canStartSpotApplication } = await import('../src/lib/spotReadIntegrity.ts');
+  const input = { jobId: A, visibleJobs: [job()], ownerKey: 'u1:s1',
+    verifiedOwnerKey: 'u1:s1', privateAllowed: true, pending: false };
+  assert.equal(canStartSpotApplication(input), true);
+  for (const changes of [
+    { jobId: B }, { visibleJobs: [] }, { visibleJobs: [{ ...job(), available_count: 0 }] },
+    { visibleJobs: [{ ...job(), application_id: C }] }, { ownerKey: 'u2:s2' },
+    { verifiedOwnerKey: null }, { privateAllowed: false }, { pending: true },
+  ]) assert.equal(canStartSpotApplication({ ...input, ...changes }), false);
+});
