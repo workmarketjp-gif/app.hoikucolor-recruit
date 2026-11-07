@@ -95,3 +95,24 @@ test('an opaque PNG is accepted and exported as JPEG', async () => {
   const r = await x.exportResumePhoto({ uri: 'u', mimeType: 'image/png', base64: opaquePng }, fakeManipulator());
   assert.equal(r.mimeType, 'image/jpeg');
 });
+
+test('nonstandard or frozen native rejections preserve temporary JPEG URIs for private-cache cleanup', async () => {
+  for (const rejection of ['native failure', null, Object.freeze(new Error('frozen native failure'))]) {
+    let call = 0;
+    const manipulate = async () => {
+      call += 1;
+      if (call === 1) {
+        return { uri: 'file:///private/oriented.jpg', width: 600, height: 800 };
+      }
+      throw rejection;
+    };
+    await assert.rejects(
+      x.exportResumePhoto({ uri: 'file:///private/pick.jpg', mimeType: 'image/jpeg' }, manipulate),
+      (error) => error instanceof Error &&
+        Array.isArray(error.temporaryUris) &&
+        error.temporaryUris.length === 1 &&
+        error.temporaryUris[0] === 'file:///private/oriented.jpg',
+    );
+    assert.equal(call, 2);
+  }
+});
