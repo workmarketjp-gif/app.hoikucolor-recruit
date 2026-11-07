@@ -14,6 +14,7 @@ import { isMissingRpcError, submissionDocumentError } from './jobDocumentRequire
 import { verifiedCandidateMessageRows } from './candidateMessageReadback';
 import { verifiedCandidateApplicationRows, type VerifiedCandidateApplication } from './candidateApplicationReadback.ts';
 import { assertCandidateApplicationDetailReadback } from './candidateApplicationDetailReadback.ts';
+import { assertCandidateVisitHistoryReadback } from './candidateVisitHistoryReadback.ts';
 import type { JobseekerJob, JobseekerProfile } from './jobseekerCoreApi';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -411,7 +412,9 @@ export async function getVisitSettings(
 export async function listCandidateVisits(client: SupabaseClient): Promise<JobseekerVisitHistory[]> {
   const { data, error } = await client.rpc('hc_jobseeker_list_my_visits');
   if (error) throw error;
-  return (Array.isArray(data) ? data : []) as JobseekerVisitHistory[];
+  // SQL returns [] for a true empty candidate history; malformed success is an error.
+  assertCandidateVisitHistoryReadback(data);
+  return data as JobseekerVisitHistory[];
 }
 
 export async function requestVisitDurable(params: {
