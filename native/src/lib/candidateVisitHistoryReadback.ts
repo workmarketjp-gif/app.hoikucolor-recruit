@@ -15,7 +15,7 @@ const isNullableText = (value: unknown) => value === null || isText(value);
 const isTimestamp = (value: unknown): value is string => isNonblank(value) && Number.isFinite(Date.parse(value));
 const isNullableTimestamp = (value: unknown) => value === null || isTimestamp(value);
 
-export function assertCandidateVisitHistoryReadback(data: unknown): asserts data is Record<string, unknown>[] {
+export function assertCandidateVisitHistoryReadback(data: unknown): asserts data is unknown[] {
   if (!Array.isArray(data)) throw fail();
   const seen = new Set<string>();
   for (const row of data) {
