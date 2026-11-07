@@ -12,6 +12,7 @@ import {
 } from './durableMutation';
 import { isMissingRpcError, submissionDocumentError } from './jobDocumentRequirementApi';
 import { verifiedCandidateMessageRows } from './candidateMessageReadback';
+import { verifiedCandidateApplicationRows, type VerifiedCandidateApplication } from './candidateApplicationReadback.ts';
 import type { JobseekerJob, JobseekerProfile } from './jobseekerCoreApi';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -25,24 +26,7 @@ function cleanOptionalText(value: string | null | undefined) {
   return trimmed || null;
 }
 
-export type JobseekerApplicationSummary = {
-  id: string;
-  job_id: string;
-  applicant_name: string;
-  status: string;
-  desired_start_date: string | null;
-  message: string | null;
-  applied_at: string;
-  updated_at: string;
-  job_title: string;
-  employment_type: string | null;
-  facility_name: string;
-  prefecture: string | null;
-  city: string | null;
-  candidate_offer_response?: 'accepted' | 'declined' | null;
-  candidate_offer_responded_at?: string | null;
-  candidate_offer_message?: string | null;
-};
+export type JobseekerApplicationSummary = VerifiedCandidateApplication;
 
 export type JobseekerInterviewResponseStatus = 'accepted' | 'reschedule_requested';
 
@@ -141,7 +125,7 @@ export type ApplicationDocumentHandoffState = {
 export async function listApplications(client: SupabaseClient): Promise<JobseekerApplicationSummary[]> {
   const { data, error } = await client.rpc('hc_jobseeker_list_applications');
   if (error) throw error;
-  return (Array.isArray(data) ? data : []) as JobseekerApplicationSummary[];
+  return verifiedCandidateApplicationRows(data);
 }
 
 export async function getApplicationDetail(
