@@ -18,7 +18,7 @@ for (const fragment of [
   'styles.workplaceBadge',
   'styles.financeBadge',
   'styles.matchBadge',
-  'accessibilityLabel={`\${job.facility_name}を比較から外す`}',
+  'accessibilityLabel={`${job.facility_name}を比較から外す`}',
   'readCandidateFreshlyVerifiedView(',
   'listRankedJobs(pinned.client)',
 ]) {
