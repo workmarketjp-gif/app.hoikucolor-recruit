@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const saved = readFileSync(new URL('../src/app/(tabs)/saved.tsx', import.meta.url), 'utf8');
 const card = readFileSync(new URL('../src/components/SavedJobPreviewCard.tsx', import.meta.url), 'utf8');
-const webCard = readFileSync(new URL('../../../src/components/JobCard.tsx', import.meta.url), 'utf8');
+const webCard = readFileSync(new URL('../../src/components/JobCard.tsx', import.meta.url), 'utf8');
 test('Web saved action is a full expandable job card with real conditions', () => {
   for (const label of ['詳しく見る', '園', '条件', '仕事内容・保育観', '募集人数', '見学・体験を予約']) {
     assert.ok(card.includes(label), label);
