@@ -106,7 +106,10 @@ export async function exportResumePhoto(
     return { base64: exported.base64, mimeType: 'image/jpeg', width: exported.width, height: exported.height, temporaryUris };
   } catch (cause) {
     // Surface the files so the caller can delete them even when the export fails.
-    (cause as { temporaryUris?: string[] }).temporaryUris = temporaryUris;
-    throw cause;
+    // Native modules may reject with strings, null or immutable Error objects.
+    // Use a writable Error so the caller can always remove first-pass cache files.
+    const failure = new Error(cause instanceof Error ? cause.message : '写真を加工できませんでした。もう一度選んでください。');
+    (failure as Error & { temporaryUris?: string[] }).temporaryUris = temporaryUris;
+    throw failure;
   }
 }
