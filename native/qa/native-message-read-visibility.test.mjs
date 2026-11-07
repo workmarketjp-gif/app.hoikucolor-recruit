@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { visibleCandidateFacilityMessageId } from '../src/lib/candidateMessageReadVisibility.ts';
+import { markVisibleApplicationMessagesRead } from '../src/lib/attentionApi.ts';
 
 const base = { facilityMessageId: 'facility-2', measuredMessageId: 'facility-2', sectionTop: 600, messageTop: 90, messageHeight: 110, scrollY: 220, viewportHeight: 390 };
 
@@ -39,4 +40,23 @@ test('short bubbles are acknowledged only when at least half is visible', () => 
   const short = { ...base, sectionTop: 0, messageTop: 120, messageHeight: 20, scrollY: 0, viewportHeight: 125 };
   assert.equal(visibleCandidateFacilityMessageId(short), null);
   assert.equal(visibleCandidateFacilityMessageId({ ...short, viewportHeight: 130 }), 'facility-2');
+});
+
+const uuid = 'b7d686d8-8f45-46c3-8e63-186ee2e7183a';
+test('read acknowledgement uses exactly the existing authorized Web RPC and selected application', async () => {
+  const requests = [];
+  const client = { rpc: async (name, params) => { requests.push({ name, params }); return { data: 2, error: null }; } };
+  assert.equal(await markVisibleApplicationMessagesRead(client, uuid), 2);
+  assert.deepEqual(requests, [{ name: 'hc_jobseeker_mark_application_messages_read', params: { p_application_id: uuid } }]);
+});
+test('bad route identifiers cannot cause read write calls', async () => {
+  let calls = 0;
+  const client = { rpc: async () => { calls++; return { data: 1, error: null }; } };
+  await assert.rejects(markVisibleApplicationMessagesRead(client, 'not-an-application'));
+  assert.equal(calls, 0);
+});
+test('server read-ack failures remain failures and zero read counts are authoritative', async () => {
+  const failure = new Error('AUTH_REVOKED');
+  await assert.rejects(markVisibleApplicationMessagesRead({ rpc: async () => ({ data: null, error: failure }) }, uuid), failure);
+  assert.equal(await markVisibleApplicationMessagesRead({ rpc: async () => ({ data: 0, error: null }) }, uuid), 0);
 });
