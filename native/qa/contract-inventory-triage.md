@@ -190,21 +190,21 @@ New suites (all mutation-checked: a production guard was removed and the suite f
 ## Scripts repointed this phase
 | Script | Coverage | Result |
 |---|---|---|
-| `test:session-freshness` | new | FAIL |
-| `test:application-lifecycle` | new | FAIL |
-| `test:session-foreground-freshness` | full | FAIL |
-| `test:clerk-session-identity-atomicity` | full | FAIL |
-| `test:signout-session-handoff` | partial | FAIL |
-| `test:account-deletion-session-quarantine` | partial | FAIL |
-| `test:account-deletion-execution` | partial | FAIL |
-| `test:exact-unread-badge` | partial | FAIL |
-| `test:notification-visibility-count` | partial | FAIL |
-| `test:notification-permission` | partial | FAIL |
-| `test:interview-durable-recovery` | full | FAIL |
-| `test:interview-completion` | partial | FAIL |
-| `test:interview-exact-target` | full | FAIL |
-| `test:interview-push-exact-target` | full | FAIL |
-| `test:attention-summary` | full | FAIL |
+| `test:session-freshness` | new | 16 pass, 0 fail (re-run in Phase 3) |
+| `test:application-lifecycle` | new | 18 pass, 0 fail (re-run in Phase 3) |
+| `test:session-foreground-freshness` | full | 16 pass, 0 fail (re-run in Phase 3) |
+| `test:clerk-session-identity-atomicity` | full | 16 pass, 0 fail (re-run in Phase 3) |
+| `test:signout-session-handoff` | partial | 33 pass, 0 fail (re-run in Phase 3) |
+| `test:account-deletion-session-quarantine` | partial | 33 pass, 0 fail (re-run in Phase 3) |
+| `test:account-deletion-execution` | partial | 16 pass, 0 fail (re-run in Phase 3) |
+| `test:exact-unread-badge` | partial | 36 pass, 0 fail (re-run in Phase 3) |
+| `test:notification-visibility-count` | partial | 26 pass, 0 fail (re-run in Phase 3) |
+| `test:notification-permission` | partial | 18 pass, 0 fail (re-run in Phase 3) |
+| `test:interview-durable-recovery` | full | 35 pass, 0 fail (re-run in Phase 3) |
+| `test:interview-completion` | partial | 22 pass, 0 fail (re-run in Phase 3) |
+| `test:interview-exact-target` | full | 18 pass, 0 fail (re-run in Phase 3) |
+| `test:interview-push-exact-target` | full | 36 pass, 0 fail (re-run in Phase 3) |
+| `test:attention-summary` | full | 21 pass, 0 fail (re-run in Phase 3) |
 
 "full" = the original contract topic is exercised by the suite; "partial" = only the logic layer (UI/OS behaviour not covered).
 
@@ -225,3 +225,5 @@ These need React context harnesses (ReleaseCompatibilityContext, AppLockContext,
 ## Not covered by any automated test in this repository
 - Orchestration in `resume.tsx` (edit -> save -> readback -> photo -> A4 PDF -> vault upload): its parts are unit-tested (`resume-*`, `generated-pdf-vault`, `document-write-readback`, `resume-photo-export`) but the screen itself is not executed.
 - Real expo-print output (A4 size, Japanese glyph rendering, photo orientation), real image-manipulator output, SecureStore, file permissions: BLOCKED, needs a device or emulator.
+
+**Phase 3 correction:** the "FAIL" cells in the Phase 2 table above were a reporting error. They were captured by a verification loop that ran before `package.json` was saved, so `npm run` found no script. The scripts were re-run after saving (all passed in the Phase 2 execution report) and again in Phase 3; the cells above now show the verified counts. Still failing: none.
