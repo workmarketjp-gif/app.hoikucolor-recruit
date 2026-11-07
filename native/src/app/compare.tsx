@@ -103,7 +103,11 @@ function ComparisonRow({
   return (
     <View style={styles.compareRow}>
       <View style={styles.compareLabel}>
-        <Text style={styles.sourceBadge}>{sourceLabel(source)}</Text>
+        <Text style={[styles.sourceBadge,
+          source === 'workplace' ? styles.workplaceBadge :
+          source === 'finance' ? styles.financeBadge :
+          source === 'match' ? styles.matchBadge : styles.facilityBadge,
+        ]}>{sourceLabel(source)}</Text>
         <Text style={styles.rowLabel}>{label}</Text>
         {note ? <Text style={styles.rowNote}>{note}</Text> : null}
       </View>
@@ -262,10 +266,19 @@ export default function CompareScreen() {
         <Text style={styles.title}>園を比較</Text>
         <Text style={styles.bodyMuted}>最大3件を並べて比較できます。</Text>
       </View>
-      <View style={styles.legend}>
-        <Text style={styles.legendText}>園掲載：求人票・園が公開した情報</Text>
-        <Text style={styles.legendText}>勤務実績：実際の勤務記録から集計</Text>
-        <Text style={styles.legendText}>会計実績：確定した会計記録から集計</Text>
+      <View style={styles.legend} accessibilityLabel="比較データの見方">
+        <View style={styles.legendItem}>
+          <Text style={[styles.sourceBadge, styles.facilityBadge]}>園掲載</Text>
+          <Text style={styles.legendText}>求人票・園が公開した情報</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <Text style={[styles.sourceBadge, styles.workplaceBadge]}>勤務実績</Text>
+          <Text style={styles.legendText}>実際の勤務記録から集計</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <Text style={[styles.sourceBadge, styles.financeBadge]}>会計実績</Text>
+          <Text style={styles.legendText}>確定した会計記録から集計</Text>
+        </View>
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -369,8 +382,9 @@ const styles = StyleSheet.create({
   title: { fontSize: 26, fontWeight: '900' },
   bodyMuted: { fontSize: 15, lineHeight: 22, color: '#606873' },
   meta: { fontSize: 14, color: '#7a818b' },
-  legend: { backgroundColor: '#fff', borderRadius: 14, padding: 14, gap: 4 },
-  legendText: { fontSize: 14, lineHeight: 20, color: '#4a4f59' },
+  legend: { backgroundColor: '#fff', borderRadius: 14, padding: 14, gap: 8 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  legendText: { flex: 1, fontSize: 14, lineHeight: 20, color: '#4a4f59' },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 10 },
   headingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { fontSize: 20, fontWeight: '900' },
@@ -388,7 +402,11 @@ const styles = StyleSheet.create({
   compareRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#e6e8ec', backgroundColor: '#fff' },
   compareLabel: { width: 150, padding: 12, gap: 5, justifyContent: 'center' },
   valueCell: { width: 190, padding: 12, gap: 6, justifyContent: 'center', borderLeftWidth: 1, borderLeftColor: '#e6e8ec' },
-  sourceBadge: { alignSelf: 'flex-start', fontSize: 12, fontWeight: '800', backgroundColor: '#f2f4f7', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 4, overflow: 'hidden' },
+  sourceBadge: { alignSelf: 'flex-start', minHeight: 24, fontSize: 13, fontWeight: '800', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3, overflow: 'hidden' },
+  facilityBadge: { backgroundColor: '#f1f2f4', color: '#586270' },
+  workplaceBadge: { backgroundColor: '#e9f8f1', color: '#16714a' },
+  financeBadge: { backgroundColor: '#edf3ff', color: '#365eac' },
+  matchBadge: { backgroundColor: '#fff0f3', color: '#c8173a' },
   rowLabel: { fontSize: 15, fontWeight: '900' },
   rowNote: { fontSize: 12, lineHeight: 18, color: '#626772' },
   valueText: { fontSize: 15, lineHeight: 21 },
