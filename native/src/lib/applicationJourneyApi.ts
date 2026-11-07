@@ -13,6 +13,7 @@ import {
 import { isMissingRpcError, submissionDocumentError } from './jobDocumentRequirementApi';
 import { verifiedCandidateMessageRows } from './candidateMessageReadback';
 import { verifiedCandidateApplicationRows, type VerifiedCandidateApplication } from './candidateApplicationReadback.ts';
+import { assertCandidateApplicationDetailReadback } from './candidateApplicationDetailReadback.ts';
 import type { JobseekerJob, JobseekerProfile } from './jobseekerCoreApi';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -137,16 +138,10 @@ export async function getApplicationDetail(
     p_application_id: applicationId,
   });
   if (error) throw error;
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
-  const row = data as Partial<JobseekerApplicationDetail>;
-  if (!row.application || row.application.id !== applicationId) {
-    throw new Error('応募情報の整合性を確認できませんでした。');
-  }
-  return {
-    application: row.application,
-    interviews: Array.isArray(row.interviews) ? row.interviews : [],
-    visits: Array.isArray(row.visits) ? row.visits : [],
-  };
+  // The authorized SQL returns NULL only when this candidate cannot access
+  // the application. Partial JSON or missing arrays are NOT empty history.
+  assertCandidateApplicationDetailReadback(data, applicationId);
+  return data as JobseekerApplicationDetail | null;
 }
 
 export async function listApplicationMessages(
