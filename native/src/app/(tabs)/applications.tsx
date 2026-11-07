@@ -8,6 +8,7 @@ import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
 import { applicationStatusLabel } from '../../lib/messageInbox';
+import { messageNavigationLeaseIsCurrent } from '../../lib/messageNavigationLease';
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -78,9 +79,25 @@ export default function ApplicationsScreen() {
   }, [ownerKey, privateAllowed, load]));
 
   const openApplication = async (applicationId: string) => {
-    if (!privateAllowed || !applications?.some((application) => application.id === applicationId)) return;
+    // A session pin can resolve after blur, App Lock or a canonical list refresh.
+    // Only the current authorized row, owner AND focus generation may navigate.
+    const startedGeneration = generation.current;
+    const expectedOwnerKey = ownerKey;
+    const authorizedApplicationIds = applications?.map((application) => application.id) ?? [];
+    const leaseIsCurrent = (resolvedOwnerKey: string | null) => messageNavigationLeaseIsCurrent({
+      applicationId,
+      authorizedApplicationIds,
+      expectedOwnerKey,
+      resolvedOwnerKey,
+      freshlyVerifiedOwnerKey: freshlyVerifiedOwner.current,
+      startedGeneration,
+      currentGeneration: generation.current,
+      privateDataAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+    });
+    if (!applications || !leaseIsCurrent(expectedOwnerKey)) return;
     const pinned = await pinCandidateAction();
-    if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+    if (!pinned?.isCurrent() ||
+        !leaseIsCurrent(candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId))) return;
     router.push(`/application/${applicationId}` as never);
   };
 
