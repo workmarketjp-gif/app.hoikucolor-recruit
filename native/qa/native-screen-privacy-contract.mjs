@@ -21,13 +21,17 @@ const privateScreens = {
   'src/app/application/[id].tsx': 'application-detail',
   'src/app/scouts.tsx': 'scouts',
   'src/app/visits.tsx': 'visits',
-  // Job detail embeds the private ApplyDocumentsPanel and candidate profile.
-  'src/app/job/[id].tsx': 'job-detail',
 };
 for (const [file, key] of Object.entries(privateScreens)) {
   const source = read(file);
   check(`${file} protects candidate-private content`, source.includes(`usePrivateScreenCapture('${key}')`));
 }
+
+// Job detail is public discovery content: capture is blocked only while the private documents chooser is mounted.
+const job = read('src/app/job/[id].tsx');
+check('job detail blocks capture only with the documents chooser (active flag)', job.includes("usePrivateScreenCapture('job-apply-documents', choosingDocuments)"));
+check('job detail screen wrapper no longer blocks capture unconditionally', !job.includes("usePrivateScreenCapture('job-detail')"));
+check('hook skips blocking when inactive', hook.includes('if (!active) return undefined;'));
 
 // Public discovery must stay shareable.
 for (const file of ['src/app/(tabs)/jobs.tsx', 'src/app/compare.tsx']) {

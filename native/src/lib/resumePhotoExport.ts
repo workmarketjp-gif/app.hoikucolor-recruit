@@ -3,11 +3,12 @@
  * re-encode as JPEG at quality 0.88 (Web `prepareResumePhoto`). The native image
  * module is injected so the geometry and safety rules are testable without a device.
  *
- * Web fills a white background under the image. Native cannot flatten alpha
- * without a pixel decoder, and a JPEG export of a transparent PNG would render
- * black, so PNGs that carry an alpha channel are rejected instead of mis-rendered.
+ * Web fills a white background under the image. A PNG that carries transparency is
+ * therefore cropped/resampled as PNG (alpha kept), flattened onto white in
+ * pngFlattenOnWhite.ts (exact bytes, unit-tested), and only then encoded once as JPEG.
  */
 import { decodeResumePhotoBase64 } from './resumePhotoSanitizer';
+import { flattenPngOnWhite } from './pngFlattenOnWhite';
 
 export const RESUME_PHOTO_EXPORT_WIDTH = 600;
 export const RESUME_PHOTO_EXPORT_HEIGHT = 800;
@@ -59,8 +60,11 @@ export type ManipulatedImage = { uri: string; width: number; height: number; bas
 export type PhotoManipulator = (
   uri: string,
   actions: ({ crop: PhotoCrop } | { resize: { width: number; height: number } })[],
-  options: { compress: number; base64: boolean },
+  options: { compress: number; base64: boolean; format?: 'jpeg' | 'png' },
 ) => Promise<ManipulatedImage>;
+
+/** Writes bytes to an app-private cache file and returns its URI (caller deletes it via temporaryUris). */
+export type PhotoTempWriter = (bytes: Uint8Array) => Promise<string>;
 
 export type ExportedResumePhoto = {
   base64: string;
@@ -79,25 +83,38 @@ export type ExportedResumePhoto = {
 export async function exportResumePhoto(
   source: { uri: string; mimeType?: string | null; base64?: string | null },
   manipulate: PhotoManipulator,
+  writeTemp?: PhotoTempWriter,
 ): Promise<ExportedResumePhoto> {
   const mime = source.mimeType;
   if (mime !== 'image/jpeg' && mime !== 'image/png') {
     throw new Error('写真はJPEGまたはPNGの画像を選んでください。');
   }
-  if (mime === 'image/png') {
-    if (!source.base64 || pngHasAlpha(source.base64)) {
-      throw new Error('透過のあるPNGは使えません。JPEGの写真、または背景が透過していない画像を選んでください。');
-    }
-  }
+  if (mime === 'image/png' && !source.base64) throw new Error('写真を確認できませんでした。もう一度選んでください。');
+  const transparent = mime === 'image/png' && pngHasAlpha(source.base64 as string);
+  if (transparent && !writeTemp) throw new Error('写真を白背景に整えられませんでした。JPEGの写真を選んでください。');
   const temporaryUris: string[] = [];
-  const oriented = await manipulate(source.uri, [], { compress: 1, base64: false });
+  const oriented = await manipulate(source.uri, [], { compress: 1, base64: false, format: transparent ? 'png' : 'jpeg' });
   temporaryUris.push(oriented.uri);
   try {
     const crop = centerCropTo3x4(oriented.width, oriented.height);
+    const actions = [{ crop }, { resize: { width: RESUME_PHOTO_EXPORT_WIDTH, height: RESUME_PHOTO_EXPORT_HEIGHT } }];
+    let jpegSource = oriented.uri;
+    let cropActions: typeof actions | [] = actions;
+    if (transparent) {
+      const scaled = await manipulate(oriented.uri, actions, { compress: 1, base64: true, format: 'png' });
+      temporaryUris.push(scaled.uri);
+      if (!scaled.base64 || scaled.width !== RESUME_PHOTO_EXPORT_WIDTH || scaled.height !== RESUME_PHOTO_EXPORT_HEIGHT) {
+        throw new Error('写真を600×800に整えられませんでした。もう一度選んでください。');
+      }
+      const flat = flattenPngOnWhite(decodeResumePhotoBase64(scaled.base64));
+      jpegSource = await (writeTemp as PhotoTempWriter)(flat.bytes);
+      temporaryUris.push(jpegSource);
+      cropActions = [];
+    }
     const exported = await manipulate(
-      oriented.uri,
-      [{ crop }, { resize: { width: RESUME_PHOTO_EXPORT_WIDTH, height: RESUME_PHOTO_EXPORT_HEIGHT } }],
-      { compress: RESUME_PHOTO_EXPORT_QUALITY, base64: true },
+      jpegSource,
+      cropActions,
+      { compress: RESUME_PHOTO_EXPORT_QUALITY, base64: true, format: 'jpeg' },
     );
     temporaryUris.push(exported.uri);
     if (!exported.base64 || exported.width !== RESUME_PHOTO_EXPORT_WIDTH || exported.height !== RESUME_PHOTO_EXPORT_HEIGHT) {

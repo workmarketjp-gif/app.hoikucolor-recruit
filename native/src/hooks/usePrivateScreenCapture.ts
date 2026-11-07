@@ -6,14 +6,19 @@ import { bootLog } from '../lib/bootDiagnostics';
 // Candidate-private screens (profile, applications, messages, scouts, visits) must not
 // appear in screenshots, screen recordings or the Android recents thumbnail. Public
 // discovery screens deliberately stay capturable so people can share job listings.
-export function usePrivateScreenCapture(screenKey: string) {
+/**
+ * `active` lets a mostly-public screen (job detail) block capture only while a private
+ * panel is mounted (the apply-documents chooser), so the public listing stays shareable.
+ */
+export function usePrivateScreenCapture(screenKey: string, active = true) {
   useFocusEffect(
     useCallback(() => {
+      if (!active) return undefined;
       const key = `hc-private-${screenKey}`;
       void preventScreenCaptureAsync(key).catch(() => bootLog('HC_SCREEN_PRIVACY_PREVENT_FAILED'));
       return () => {
         void allowScreenCaptureAsync(key).catch(() => undefined);
       };
-    }, [screenKey]),
+    }, [screenKey, active]),
   );
 }

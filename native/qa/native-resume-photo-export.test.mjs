@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { registerHooks } from 'node:module';
 registerHooks({ resolve(specifier, context, nextResolve) {
-  return nextResolve(['./resumePhotoSanitizer'].includes(specifier) ? specifier + '.ts' : specifier, context);
+  return nextResolve(/^\.\/[A-Za-z]+$/.test(specifier) && context.parentURL?.includes('/src/lib/') ? specifier + '.ts' : specifier, context);
 } });
 const x = await import('../src/lib/resumePhotoExport.ts');
 
@@ -84,14 +84,67 @@ test('a failing second pass still reports every temporary file for deletion', as
   await assert.rejects(x.exportResumePhoto({ uri: 'u', mimeType: 'image/jpeg' }, fakeManipulator({ failSecond: true })),
     (e) => Array.isArray(e.temporaryUris) && e.temporaryUris.includes('file:///cache/oriented.jpg'));
 });
-test('unsupported types and transparent PNGs never reach the image module', async () => {
+test('unsupported types and PNGs without bytes never reach the image module', async () => {
   const m = fakeManipulator();
   await assert.rejects(x.exportResumePhoto({ uri: 'u', mimeType: 'image/heic' }, m), /JPEGまたはPNG/);
-  await assert.rejects(x.exportResumePhoto({ uri: 'u', mimeType: 'image/png', base64: withColorType(opaquePng, 6) }, m), /透過/);
-  await assert.rejects(x.exportResumePhoto({ uri: 'u', mimeType: 'image/png', base64: null }, m), /透過/);
+  await assert.rejects(x.exportResumePhoto({ uri: 'u', mimeType: 'image/png', base64: null }, m), /写真を確認できません/);
+  await assert.rejects(x.exportResumePhoto({ uri: 'u', mimeType: 'image/png', base64: withColorType(opaquePng, 6) }, m), /白背景/, 'transparent PNG without a temp writer is refused');
   assert.equal(m.calls.length, 0);
 });
 test('an opaque PNG is accepted and exported as JPEG', async () => {
   const r = await x.exportResumePhoto({ uri: 'u', mimeType: 'image/png', base64: opaquePng }, fakeManipulator());
   assert.equal(r.mimeType, 'image/jpeg');
+});
+
+// ---- transparent PNG: flattened onto white before the single JPEG encode ----------------------------------
+import zlib from 'node:zlib';
+const rgbaPng = (w, h, px) => { // minimal encoder, filter 0, used only as manipulator fixture output
+  const crcT = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = (b) => { let c = 0xffffffff; for (const v of b) c = crcT[(c ^ v) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const ch = (t, d) => { const o = Buffer.alloc(12 + d.length); o.writeUInt32BE(d.length, 0); o.write(t, 4, 'latin1'); d.copy(o, 8); o.writeUInt32BE(crc(o.subarray(4, 8 + d.length)), 8 + d.length); return o; };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+  const raw = Buffer.alloc((w * 4 + 1) * h); for (let y = 0; y < h; y++) for (let x = 0; x < w * 4; x++) raw[y * (w * 4 + 1) + 1 + x] = px(x >> 2, y, x & 3);
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), ch('IHDR', ihdr), ch('IDAT', zlib.deflateSync(raw)), ch('IEND', Buffer.alloc(0))]);
+};
+function pngFlow({ writer } = {}) {
+  const calls = []; const written = [];
+  const scaledPng = rgbaPng(600, 800, (x, y, c) => (x < 300 ? [0, 0, 0, 0][c] : [10, 20, 30, 255][c])); // left half transparent
+  const manipulate = async (uri, actions, options) => {
+    calls.push({ uri, actions, options });
+    if (calls.length === 1) return { uri: 'file:///cache/oriented.png', width: 4000, height: 3000 };
+    if (options.format === 'png') return { uri: 'file:///cache/scaled.png', width: 600, height: 800, base64: scaledPng.toString('base64') };
+    return { uri: 'file:///cache/final.jpg', width: 600, height: 800, base64: 'QUJD' };
+  };
+  const writeTemp = writer ?? (async (bytes) => { written.push(Buffer.from(bytes)); return 'file:///cache/flat.png'; });
+  return { calls, written, manipulate, writeTemp };
+}
+test('transparent PNG: oriented as PNG, scaled as PNG, flattened to white, then ONE jpeg q0.88 encode from the flattened file', async () => {
+  const f = pngFlow();
+  const r = await x.exportResumePhoto({ uri: 'file:///cache/pick.png', mimeType: 'image/png', base64: withColorType(opaquePng, 6) }, f.manipulate, f.writeTemp);
+  assert.equal(f.calls[0].options.format, 'png');
+  assert.equal(f.calls[1].options.format, 'png');
+  assert.deepEqual(f.calls[1].actions[0].crop, { originX: 875, originY: 0, width: 2250, height: 3000 });
+  assert.equal(f.calls[2].uri, 'file:///cache/flat.png');
+  assert.deepEqual(f.calls[2].actions, []);
+  assert.deepEqual([f.calls[2].options.format, f.calls[2].options.compress], ['jpeg', 0.88]);
+  assert.deepEqual([r.mimeType, r.width, r.height], ['image/jpeg', 600, 800]);
+  assert.deepEqual(r.temporaryUris, ['file:///cache/oriented.png', 'file:///cache/scaled.png', 'file:///cache/flat.png', 'file:///cache/final.jpg']);
+});
+test('the bytes handed to the JPEG encoder are opaque RGB with white where the PNG was transparent', async () => {
+  const f = pngFlow();
+  await x.exportResumePhoto({ uri: 'u', mimeType: 'image/png', base64: withColorType(opaquePng, 6) }, f.manipulate, f.writeTemp);
+  const b = f.written[0]; assert.equal(b[25], 2, 'colour type 2 = RGB, no alpha');
+  let o = 8; const idat = []; while (o < b.length) { const len = b.readUInt32BE(o); if (b.toString('latin1', o + 4, o + 8) === 'IDAT') idat.push(b.subarray(o + 8, o + 8 + len)); o += 12 + len; }
+  const raw = zlib.inflateSync(Buffer.concat(idat)); const px = (xx, yy) => [...raw.subarray(yy * (600 * 3 + 1) + 1 + xx * 3, yy * (600 * 3 + 1) + 4 + xx * 3)];
+  assert.deepEqual(px(10, 10), [255, 255, 255]); assert.deepEqual(px(450, 700), [10, 20, 30]);
+});
+test('a failing flatten or temp write still reports every temporary file for deletion', async () => {
+  const f = pngFlow({ writer: async () => { throw new Error('disk full'); } });
+  await assert.rejects(x.exportResumePhoto({ uri: 'u', mimeType: 'image/png', base64: withColorType(opaquePng, 6) }, f.manipulate, f.writeTemp),
+    (e) => /disk full/.test(e.message) && e.temporaryUris.includes('file:///cache/oriented.png') && e.temporaryUris.includes('file:///cache/scaled.png'));
+});
+test('wrong scaled size from the image module is refused before flattening', async () => {
+  const f = pngFlow(); const bad = async (u, a, o) => { const r = await f.manipulate(u, a, o); return o.format === 'png' && r.base64 ? { ...r, width: 599 } : r; };
+  await assert.rejects(x.exportResumePhoto({ uri: 'u', mimeType: 'image/png', base64: withColorType(opaquePng, 6) }, bad, f.writeTemp), /600×800/);
+  assert.equal(f.written.length, 0);
 });

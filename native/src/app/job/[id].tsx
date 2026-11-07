@@ -30,7 +30,6 @@ function salary(job: JobseekerJob) {
 
 /** Candidate-specific job details must never retain a former account's profile or application CTA. */
 export default function JobDetailScreen() {
-  usePrivateScreenCapture('job-detail');
   const { session } = useSession();
   const privacy = usePrivateDataQuarantine();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
@@ -81,6 +80,8 @@ function JobDetailContent({ jobId }: { jobId: string }) {
   const [applying, setApplying] = useState(false);
   // この求人に応募する → this job's documents (ApplyDocumentsPanel) → submit with the chosen documents.
   const [choosingDocuments, setChoosingDocuments] = useState(false);
+  // Public job content stays shareable; only the private documents chooser blocks capture.
+  usePrivateScreenCapture('job-apply-documents', choosingDocuments);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
 

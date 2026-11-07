@@ -101,3 +101,37 @@ Source comparison (previous phase): tabs, secondary destinations and the photo s
 - **D2 Screenshots:** job detail currently blocks screenshots because it embeds private documents, while the product spec says public discovery stays shareable. Choose: keep blocked, or split public job content from the private apply panel. iOS cannot technically block screenshots; confirm the intended iOS behaviour (hide in app switcher only).
 - **D3 External career link:** the career screen opens one https statistics source link in the browser. Keep it (current) or show the source inside the app.
 - **D4 QA backend:** which non-production Clerk instance and Supabase project the QA build should use, and the synthetic accounts and QA facility account to test messages and interviews safely.
+
+---
+
+## 6. Decisions finalised (owner, 2026-11-08) and what changed in source
+
+| ID | Decision | Implementation |
+|---|---|---|
+| D1 | Match Web: transparent PNG is flattened onto white; output 600x800 JPEG q0.88; EXIF removed | `src/lib/pngFlattenOnWhite.ts` (pure JS, `fflate@0.8.2` added as an exact-pinned dependency). A PNG with alpha is oriented as PNG, cropped 3:4 and resized to 600x800 as PNG, flattened onto white in JS, written to the app-private cache and encoded ONCE to JPEG at 0.88. The earlier rejection of transparent PNGs is removed. 8 new tests decode the real output bytes with Node's own zlib (independent of fflate): transparent -> 255,255,255, opaque unchanged, half-alpha blends, all five PNG filters, grey+alpha / tRNS / palette / 4-bit / 16-bit, CRC validation. Five guards mutation-checked. |
+| D2 | Public discovery and comparison stay shareable; private content protected | `usePrivateScreenCapture(key, active)`; job detail blocks capture only while the private documents chooser (`ApplyDocumentsPanel`) is mounted. Job list and compare never block capture. Application, messages, profile, resume, scouts, visits, notifications, career, home keep blocking. iOS cannot prevent screenshots the way Android can: iOS protection is the app-switcher privacy shield and App Lock; the actual iOS behaviour of `preventScreenCaptureAsync` must be recorded on a device (I7). |
+| D3 | Keep the external browser link | No change. |
+| D4 | Dedicated non-production Clerk and Supabase with synthetic accounts | NOT SATISFIED YET, see section 7. |
+
+Plan items changed by D1/D2: **A11** now reads "pick a transparent PNG: the exported photo has a white background (no black/transparent area), is 600x800 JPEG"; **A21** now reads "job detail is capturable until 'この求人に応募する' opens the documents chooser, which blocks capture; the jobs list and compare screens are always capturable".
+
+## 7. Build prerequisite status (2026-11-08)
+
+| Prerequisite | Status | Evidence |
+|---|---|---|
+| GitHub HEAD matches local | OK | `origin/native/color-jobseeker-consolidation-20261107` = `bb8ae36` at start of this step |
+| EAS project ownership | OK | `eas project:info`: `@workmarketjp/hoiku-color`, id `507c2498-2098-4e4c-9699-75c494f00c47` (matches `app.json`); logged-in accounts `workmarket` and `workmarketjp`, role Owner |
+| Free build quota | OK (by history) | `eas build:list`: 5 Android builds in total, 0 created in 2026-11; one more is inside the Free "15 Android builds". The CLI does not report remaining quota; the Expo dashboard billing page is the authoritative check |
+| Dedicated non-production Clerk | EXISTS, not wired | The Clerk application "Hoiku Color" has a `development` instance (`pk_test_...`) separate from its `production` instance. The EAS `preview` environment currently holds a different value set |
+| Dedicated non-production Supabase | NOT CONFIRMED | `preview` currently points at project `kcmmpj...` = "Hoiku Poppy AI" (the main project). The only other active project, `hoiku-poppy-finance330-restore-qa`, has the `hc_*` schema but also contains rows (1 profile, 1 application, 9 messages, 2 documents, 9 jobs); I did not read them and cannot tell whether they are real or synthetic, and I cannot tell whether that project trusts the Clerk development instance |
+| QA variables in a separate EAS environment | NOT DONE | Creating a `qa` environment needs the confirmed Supabase URL and publishable key; the build must not use the `preview` values |
+| Android physical device | NOT AVAILABLE | `adb devices` lists none |
+| Regression after source changes | see section 8 | |
+
+The build is therefore NOT started.
+
+## 8. Regression after the D1/D2 source changes (HEAD before commit: `bb8ae36`)
+- `npm run typecheck`: 0 errors
+- `npm run test:behavioural`: 515 of 515 pass (was 503; +8 PNG flatten, +4 transparent-PNG export tests)
+- `npm run test:contracts:available`: 17 pass, 0 fail (the screen-privacy contract now has 15 checks)
+- Device behaviour of the new code (manipulator PNG output, alpha handling by the real image module, file write to cache): NOT RUN, no device.

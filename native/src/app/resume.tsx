@@ -1,9 +1,9 @@
 import { useSession } from '@clerk/expo';
 import * as Crypto from 'expo-crypto';
 import * as ImagePicker from 'expo-image-picker';
-import { File } from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import { exportResumePhoto, RESUME_PHOTO_EXPORT_HEIGHT, RESUME_PHOTO_EXPORT_WIDTH, type PhotoManipulator } from '../lib/resumePhotoExport';
+import { exportResumePhoto, RESUME_PHOTO_EXPORT_HEIGHT, RESUME_PHOTO_EXPORT_WIDTH, type PhotoManipulator, type PhotoTempWriter } from '../lib/resumePhotoExport';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
@@ -245,11 +245,18 @@ export default function ResumeScreen() {
       try {
         // Web parity: 3:4 centre crop, 600 x 800, JPEG q0.88.
         const manipulate: PhotoManipulator = (uri, actions, options) =>
-          manipulateAsync(uri, actions, { compress: options.compress, base64: options.base64, format: SaveFormat.JPEG });
+          manipulateAsync(uri, actions, { compress: options.compress, base64: options.base64, format: options.format === 'png' ? SaveFormat.PNG : SaveFormat.JPEG });
+        // Flattened (opaque) PNG handed back to the image module; lives only in the app-private cache.
+        const writeTemp: PhotoTempWriter = async (bytes) => {
+          const file = new File(Paths.cache, `hc_resume_photo_flat_${Crypto.randomUUID()}.png`);
+          file.create();
+          file.write(bytes);
+          return file.uri;
+        };
         // Keep the original 10 MB ceiling: the output is small, but decoding a huge original is not.
         const originalBytes = asset.fileSize ?? (asset.base64 ? Math.floor(asset.base64.length * 3 / 4) : 0);
         if (originalBytes > RESUME_PHOTO_MAX_BYTES) throw new Error('写真は10MB以下の画像を選んでください。');
-        const exported = await exportResumePhoto(asset, manipulate);
+        const exported = await exportResumePhoto(asset, manipulate, writeTemp);
         exported.temporaryUris.forEach((uri) => temporaryUris.add(uri));
         prepared = prepareResumePhotoPreview({
           base64: exported.base64, mimeType: exported.mimeType, width: exported.width, height: exported.height,

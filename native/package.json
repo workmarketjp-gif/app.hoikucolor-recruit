@@ -94,7 +94,8 @@
     "test:interview-completion": "node --experimental-strip-types --test qa/native-durable-mutation.test.mjs qa/native-application-event-presentation.test.mjs",
     "test:interview-exact-target": "node --experimental-strip-types --test qa/native-application-lifecycle.test.mjs",
     "test:interview-push-exact-target": "node --experimental-strip-types --test qa/native-application-lifecycle.test.mjs qa/native-push-lifecycle.test.mjs",
-    "test:attention-summary": "node --experimental-strip-types --test qa/native-application-lifecycle.test.mjs qa/native-message-attention-adapter.test.mjs"
+    "test:attention-summary": "node --experimental-strip-types --test qa/native-application-lifecycle.test.mjs qa/native-message-attention-adapter.test.mjs",
+    "test:png-flatten": "node --experimental-strip-types --test qa/native-png-flatten.test.mjs"
   },
   "dependencies": {
     "@clerk/expo": "^3.1.12",
@@ -119,6 +120,7 @@
     "expo-screen-capture": "~55.0.18",
     "expo-secure-store": "~55.0.0",
     "expo-web-browser": "~55.0.0",
+    "fflate": "0.8.2",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-native": "0.83.10",
