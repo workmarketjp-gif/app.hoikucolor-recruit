@@ -6,6 +6,7 @@ import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateOwnedView, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import { reconcileComparedSelection, requestedComparisonJobIds } from '../lib/comparisonSelection';
+import { comparisonSalaryLabel } from '../lib/comparisonSalaryPresentation';
 import { getJobseekerProfile, listRankedJobs, type JobseekerJob, type JobseekerProfile } from '../lib/jobseekerCoreApi';
 import { getJobseekerMatchingPreferences, type JobseekerMatchingPreferences } from '../lib/candidateParityApi';
 import { matchJob, type JobMatchResult } from '../lib/jobMatching';
@@ -33,16 +34,6 @@ const financePriority = [
   'finance_positive_month_ratio_pct',
   'finance_average_result_margin_pct',
 ];
-
-function salary(job: JobseekerJob) {
-  const min = job.salary_min == null ? null : job.salary_min.toLocaleString('ja-JP');
-  const max = job.salary_max == null ? null : job.salary_max.toLocaleString('ja-JP');
-  const prefix = job.salary_type === 'hourly' ? '時給' : job.salary_type === 'annual' ? '年収' : '月給';
-  if (min && max) return min === max ? `${prefix} ${min}円` : `${prefix} ${min}〜${max}円`;
-  if (min) return `${prefix} ${min}円〜`;
-  if (max) return `${prefix} 〜${max}円`;
-  return job.salary_note || '未掲載';
-}
 
 function explicitTextSignal(job: JobseekerJob, phrases: string[], positiveLabel: string) {
   const text = [job.description, job.working_hours, job.holidays, job.benefits].filter(Boolean).join('');
@@ -101,17 +92,20 @@ function ComparisonRow({
   label,
   source,
   values,
+  note,
 }: {
   key?: string;
   label: string;
   source: ComparisonSource;
   values: string[];
+  note?: string;
 }) {
   return (
     <View style={styles.compareRow}>
       <View style={styles.compareLabel}>
         <Text style={styles.sourceBadge}>{sourceLabel(source)}</Text>
         <Text style={styles.rowLabel}>{label}</Text>
+        {note ? <Text style={styles.rowNote}>{note}</Text> : null}
       </View>
       {values.map((value, index) => (
         <View key={`${label}-${index}`} style={styles.valueCell}>
@@ -313,7 +307,9 @@ export default function CompareScreen() {
       ) : null}
 
       {compared.length >= 2 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={styles.table}>
+        <View style={styles.tableFrame}>
+          <Text style={styles.scrollHint}>横にスクロールして比較できます</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={styles.table}>
           <View>
             <View style={styles.compareHeader}>
               <View style={styles.compareLabel}><Text style={styles.rowLabel}>比較項目</Text></View>
@@ -321,7 +317,7 @@ export default function CompareScreen() {
                 <View key={job.id} style={styles.valueCell}>
                   <Text style={styles.headerFacility}>{job.facility_name}</Text>
                   <Text style={styles.headerJob}>{job.title}</Text>
-                  <Pressable style={styles.removeButton} onPress={() => toggleJob(job.id)}>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`${job.facility_name}を比較から外す`} style={styles.removeButton} onPress={() => toggleJob(job.id)}>
                     <Text style={styles.removeText}>外す</Text>
                   </Pressable>
                 </View>
@@ -329,15 +325,15 @@ export default function CompareScreen() {
             </View>
 
             <ComparisonRow label="希望条件マッチ" source="match" values={compared.map(({ match }) => match.condition_score === null ? '希望条件未設定' : `${match.condition_score}%`)} />
-            <ComparisonRow label="保育観サイン" source="match" values={compared.map(({ match }) => match.matched_childcare_values.length ? match.matched_childcare_values.join('・') : '明示的な一致サインなし')} />
+            <ComparisonRow label="保育観サイン" source="match" note="求人文面に明示された表現だけを確認" values={compared.map(({ match }) => match.matched_childcare_values.length ? match.matched_childcare_values.join('・') : '明示的な一致サインなし')} />
             <ComparisonRow label="勤務地" source="facility" values={compared.map(({ job }) => [job.prefecture, job.city, job.address].filter(Boolean).join(' ') || '未掲載')} />
             <ComparisonRow label="雇用形態" source="facility" values={compared.map(({ job }) => job.employment_type || '未掲載')} />
-            <ComparisonRow label="給与" source="facility" values={compared.map(({ job }) => salary(job))} />
+            <ComparisonRow label="給与" source="facility" values={compared.map(({ job }) => comparisonSalaryLabel(job))} />
             <ComparisonRow label="勤務時間" source="facility" values={compared.map(({ job }) => job.working_hours || '未掲載')} />
             <ComparisonRow label="休日" source="facility" values={compared.map(({ job }) => job.holidays || '未掲載')} />
             <ComparisonRow label="応募資格" source="facility" values={compared.map(({ job }) => job.required_qualification || '未掲載')} />
-            <ComparisonRow label="持ち帰り" source="facility" values={compared.map(({ job }) => explicitTextSignal(job, ['持ち帰りなし', '持ち帰り仕事なし', '持ち帰り業務なし'], '持ち帰りなしと明記'))} />
-            <ComparisonRow label="配置・人員体制" source="facility" values={compared.map(({ job }) => explicitTextSignal(job, ['基準以上の配置', '手厚い配置', '配置に余裕', 'ゆとりある配置'], '手厚い配置の記載あり'))} />
+            <ComparisonRow label="持ち帰り" source="facility" note="求人文面の明示のみ" values={compared.map(({ job }) => explicitTextSignal(job, ['持ち帰りなし', '持ち帰り仕事なし', '持ち帰り業務なし'], '持ち帰りなしと明記'))} />
+            <ComparisonRow label="配置・人員体制" source="facility" note="求人文面の明示のみ" values={compared.map(({ job }) => explicitTextSignal(job, ['基準以上の配置', '手厚い配置', '配置に余裕', 'ゆとりある配置'], '手厚い配置の記載あり'))} />
             <ComparisonRow label="福利厚生・制度" source="facility" values={compared.map(({ job }) => job.benefits || '未掲載')} />
 
             {workplacePriority.map((key) => (
@@ -357,7 +353,8 @@ export default function CompareScreen() {
               />
             ))}
           </View>
-        </ScrollView>
+          </ScrollView>
+        </View>
       ) : null}
 
       {compared.length >= 2 ? (
@@ -385,12 +382,15 @@ const styles = StyleSheet.create({
   pickTitle: { fontSize: 16, fontWeight: '900' },
   notice: { fontSize: 15, backgroundColor: '#fff8e6', padding: 12, borderRadius: 10 },
   table: { paddingBottom: 4 },
+  tableFrame: { backgroundColor: '#fff', borderRadius: 14, paddingVertical: 8 },
+  scrollHint: { fontSize: 13, fontWeight: '700', color: '#606873', marginBottom: 6, paddingHorizontal: 12 },
   compareHeader: { flexDirection: 'row', backgroundColor: '#fff', borderTopLeftRadius: 14, borderTopRightRadius: 14 },
   compareRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#e6e8ec', backgroundColor: '#fff' },
   compareLabel: { width: 150, padding: 12, gap: 5, justifyContent: 'center' },
   valueCell: { width: 190, padding: 12, gap: 6, justifyContent: 'center', borderLeftWidth: 1, borderLeftColor: '#e6e8ec' },
   sourceBadge: { alignSelf: 'flex-start', fontSize: 12, fontWeight: '800', backgroundColor: '#f2f4f7', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 4, overflow: 'hidden' },
   rowLabel: { fontSize: 15, fontWeight: '900' },
+  rowNote: { fontSize: 12, lineHeight: 18, color: '#626772' },
   valueText: { fontSize: 15, lineHeight: 21 },
   missing: { color: '#8a909b' },
   headerFacility: { fontSize: 15, fontWeight: '900' },
