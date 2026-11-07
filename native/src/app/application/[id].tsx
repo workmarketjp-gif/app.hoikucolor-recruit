@@ -249,14 +249,12 @@ function ApplicationDetailContent() {
         listApplicationMessages(pinned.client, applicationId),
         readApplicationDocumentHandoff(() => getApplicationDocumentHandoffState(pinned.client, applicationId)),
       ]);
-      if (!pinned.isCurrent() || current !== generation.current) return false;
+      if (!pinned.isCurrent() || current !== generation.current) return;
       setDetail(nextDetail);
       setMessages(nextMessages);
       setDocumentState(nextDocumentState);
-      return true;
     } catch (loadError) {
       if (current === generation.current) setError(String((loadError as { message?: unknown })?.message ?? loadError));
-      return false;
     } finally {
       if (current === generation.current) setLoading(false);
     }
@@ -324,12 +322,26 @@ function ApplicationDetailContent() {
   };
 
   const reviewMessageSend = async () => {
-    if (busy) return;
-    // A failed or stale readback never unlocks the composer or claims delivery.
-    const confirmed = await load(true);
-    if (confirmed) {
+    if (busy || messageSendPending.current) return;
+    // Message review must not depend on an unrelated document-handoff RPC.
+    // Only a current authorized read of this application thread clears the
+    // uncertain-delivery gate. Never resend the submitted message here.
+    const requestGeneration = generation.current;
+    setBusy(true);
+    try {
+      const pinned = await pinCandidateAction();
+      if (!pinned || !pinned.isCurrent()) throw new Error('安全なログイン状態を確認できませんでした。');
+      const nextMessages = await listApplicationMessages(pinned.client, applicationId);
+      if (!pinned.isCurrent() || requestGeneration !== generation.current) return;
+      setMessages(nextMessages);
       setMessageSendNeedsReview(false);
       setMessageSendError(null);
+    } catch {
+      if (requestGeneration === generation.current) {
+        setMessageSendError('最新のメッセージを確認できませんでした。通信状態を確認してから、もう一度お試しください。');
+      }
+    } finally {
+      if (requestGeneration === generation.current) setBusy(false);
     }
   };
 
@@ -582,7 +594,7 @@ function ApplicationDetailContent() {
             needsReview: messageSendNeedsReview,
           })}
           onPress={() => void sendMessage()}>
-          <Text style={styles.primaryText}>{busy ? '送信中…' : '送信'}</Text>
+          <Text style={styles.primaryText}>{busy ? (messageSendNeedsReview ? '確認中…' : '送信中…') : '送信'}</Text>
         </Pressable>
       </View>
 
