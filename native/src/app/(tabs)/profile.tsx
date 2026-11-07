@@ -111,6 +111,7 @@ export default function ProfileScreen() {
   const draftRevision = useRef(0);
   const savingRef = useRef(false);
   const savingOwnerRef = useRef<string | null>(null);
+  const savingGenerationRef = useRef<number | null>(null);
 
   const isLive = (requestOwnerKey: string | null, requestGeneration: number) =>
     canPresentProfileResult(requestOwnerKey, ownerKeyRef.current, requestGeneration,
@@ -179,6 +180,7 @@ export default function ProfileScreen() {
       generation.current += 1;
       savingRef.current = false;
       savingOwnerRef.current = null;
+      savingGenerationRef.current = null;
       setNeedsCanonicalReload(false);
       setHasUnsavedChanges(false);
       setLoadedOwnerKey(null);
@@ -195,6 +197,7 @@ export default function ProfileScreen() {
     if (savingOwnerRef.current && savingOwnerRef.current !== ownerKey) {
       savingRef.current = false;
       savingOwnerRef.current = null;
+      savingGenerationRef.current = null;
       setSaving(false);
     }
     void load();
@@ -213,6 +216,7 @@ export default function ProfileScreen() {
     let writeAttempted = false;
     savingRef.current = true;
     savingOwnerRef.current = requestOwner;
+    savingGenerationRef.current = requestGeneration;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -272,10 +276,13 @@ export default function ProfileScreen() {
     } finally {
       // A prior owner/lock epoch must not release a newer owner's save lease.
       if (savingOwnerRef.current === requestOwner &&
-          isLive(requestOwner, requestGeneration)) {
+          savingGenerationRef.current === requestGeneration) {
         savingRef.current = false;
         savingOwnerRef.current = null;
-        setSaving(false);
+        savingGenerationRef.current = null;
+        // A new canonical refresh can revoke this generation while the same
+        // owner remains mounted. Do not strand its Save button in busy state.
+        if (ownerKeyRef.current === requestOwner) setSaving(false);
       }
     }
   };
