@@ -1,6 +1,7 @@
 import { useSession } from '@clerk/expo';
 import * as Crypto from 'expo-crypto';
 import * as ImagePicker from 'expo-image-picker';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { File } from 'expo-file-system';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -13,6 +14,7 @@ import { ResumeChildcareEditor } from '../components/ResumeChildcareEditor';
 import { ResumeReviewPanel } from '../components/ResumeReviewPanel';
 import { buildResumeReview, type ResumeReview } from '../lib/resumeReviewModel';
 import { renderNativeResumePdf } from '../lib/renderNativeResumePdf';
+import { exportResumePhoto, RESUME_PHOTO_EXPORT_HEIGHT, RESUME_PHOTO_EXPORT_WIDTH, type PhotoManipulator } from '../lib/resumePhotoExport';
 import { isResumePdfPhotoSnapshotCurrent } from '../lib/resumePdfPhotoSnapshot';
 import type { ResumeA4Kind } from '../lib/resumeA4Html';
 import { uploadGeneratedJobseekerPdf } from '../lib/documentVaultApi';
@@ -231,33 +233,64 @@ export default function ResumeScreen() {
     setPhotoError(null);
     try {
       const lease = captureCandidateLocalStateSessionLease(photoOwnerId, session.id);
-      // Expo's native editor may crop differently on iOS. A consistent 3:4
-      // sanitized export must be verified before the photo can enter a PDF.
+      // OS pickers differ on Android/iOS; do NOT rely on their optional crop.
+      // Validate the original container, CRC and decoded dimensions before
+      // forwarding it to the native decoder. Original EXIF is never cached.
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'], allowsEditing: true, aspect: [3, 4],
-        quality: 0.88, base64: true, exif: false,
+        mediaTypes: ['images'], allowsEditing: false,
+        quality: 1, base64: true, exif: false,
       });
       if (result.canceled) return;
       const asset = result.assets?.[0];
       if (!asset) throw new Error('写真を確認できませんでした。もう一度選んでください。');
       let prepared: ResumePhotoPreview | null = null;
       let failure: unknown = null;
-      try {
-        prepared = prepareResumePhotoPreview(asset);
-      } catch (cause) {
-        failure = cause;
-      }
-      // ImagePicker creates an app-cache copy. Delete it before retaining the
-      // selected image in JS memory. Never delete an external library original.
+      const temporaryUris = new Set<string>([asset.uri]);
       try {
         if (!isPrivateDocumentPickerCacheUri(asset.uri)) {
           throw new Error('写真の一時ファイルを安全に確認できませんでした。');
         }
-        const temp = new File(asset.uri);
-        if (temp.exists) temp.delete();
-        if (temp.exists) throw new Error('写真の一時ファイルを削除できませんでした。');
+        const checkedOriginal = prepareResumePhotoPreview(asset);
+        const manipulate: PhotoManipulator = (uri, actions, options) =>
+          manipulateAsync(uri, actions, {
+            compress: options.compress, base64: options.base64, format: SaveFormat.JPEG,
+          });
+        // Re-orient, center-crop to 3:4 and resample to Web 600×800 JPEG q0.88.
+        const exported = await exportResumePhoto({
+          uri: asset.uri, mimeType: asset.mimeType,
+          base64: checkedOriginal.dataUri.slice(checkedOriginal.dataUri.indexOf(',') + 1),
+        }, manipulate);
+        exported.temporaryUris.forEach((uri) => temporaryUris.add(uri));
+        prepared = prepareResumePhotoPreview({
+          base64: exported.base64, mimeType: exported.mimeType,
+          width: exported.width, height: exported.height,
+        });
+        if (prepared.width !== RESUME_PHOTO_EXPORT_WIDTH ||
+            prepared.height !== RESUME_PHOTO_EXPORT_HEIGHT) {
+          throw new Error('写真を600×800に整えられませんでした。もう一度選んでください。');
+        }
       } catch (cause) {
         failure = cause;
+        // A rejected second manipulation still created a first-pass cache file.
+        const leaked = (cause as { temporaryUris?: unknown } | null)?.temporaryUris;
+        if (Array.isArray(leaked)) {
+          leaked.forEach((uri) => { if (typeof uri === 'string') temporaryUris.add(uri); });
+        }
+      }
+      // Delete ImagePicker and BOTH manipulation copies before persisting the
+      // photo in the owner/session-bound private cache. Never delete external
+      // library originals or files outside the app-private cache directory.
+      for (const uri of temporaryUris) {
+        try {
+          if (!isPrivateDocumentPickerCacheUri(uri)) {
+            throw new Error('写真の一時ファイルを安全に確認できませんでした。');
+          }
+          const temp = new File(uri);
+          if (temp.exists) temp.delete();
+          if (temp.exists) throw new Error('写真の一時ファイルを削除できませんでした。');
+        } catch (cause) {
+          failure = cause;
+        }
       }
       if (!stillEligible()) return;
       if (failure) throw failure;
