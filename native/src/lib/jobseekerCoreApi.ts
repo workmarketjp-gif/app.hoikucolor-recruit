@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { verifiedJobSearchRows, verifiedJobSearchFacets } from './jobSearchReadback';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -166,7 +167,7 @@ export async function searchJobseekerJobs(
   });
   if (error) throw error;
 
-  const rows = (Array.isArray(data) ? data : []) as SearchRpcRow[];
+  const rows = verifiedJobSearchRows<SearchRpcRow>(data);
   const last = rows.at(-1) ?? null;
   const hasMore = Boolean(rows[0]?.has_more);
   const jobs = rows.map((row) => {
@@ -198,11 +199,7 @@ export async function searchJobseekerJobs(
 export async function getJobSearchFacets(client: SupabaseClient): Promise<JobSearchFacets> {
   const { data, error } = await client.rpc('hc_jobseeker_job_search_facets_v2');
   if (error) throw error;
-  const row = (Array.isArray(data) ? data[0] : null) as { prefectures?: unknown; employment_types?: unknown } | null;
-  return {
-    prefectures: Array.isArray(row?.prefectures) ? row.prefectures.filter((value): value is string => typeof value === 'string') : [],
-    employmentTypes: Array.isArray(row?.employment_types) ? row.employment_types.filter((value): value is string => typeof value === 'string') : [],
-  };
+  return verifiedJobSearchFacets(data);
 }
 
 export async function listSavedJobIds(client: SupabaseClient): Promise<string[]> {
