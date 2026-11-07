@@ -89,7 +89,7 @@
     "test:visit-private-readback": "node --experimental-strip-types --test qa/native-visit-privacy-readback.test.mjs",
     "test:notification-private-readback": "node --experimental-strip-types --test qa/native-notification-private-readback.test.mjs",
     "test:scoped-notification-route": "node --experimental-strip-types --test qa/native-scoped-notification-route.test.mjs",
-    "test:comparison-private-readback": "node --experimental-strip-types --test qa/native-comparison-selection.test.mjs qa/native-match-saved-readback.test.mjs",
+    "test:comparison-private-readback": "node --experimental-strip-types --test qa/native-comparison-selection.test.mjs qa/native-match-saved-readback.test.mjs qa/native-comparison-verified-row-visibility.test.mjs",
     "test:application-event-presentation": "node --experimental-strip-types --test qa/native-application-event-presentation.test.mjs",
     "test:resume-canonical": "node --experimental-strip-types --test qa/native-resume-canonical.test.mjs",
     "test:resume-linked-profile": "node --experimental-strip-types --test qa/native-resume-linked-profile-fields.test.mjs qa/native-resume-childcare-parity.test.mjs",
