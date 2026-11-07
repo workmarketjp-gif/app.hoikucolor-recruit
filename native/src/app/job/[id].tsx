@@ -3,7 +3,8 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
-import { getJobseekerProfile, type JobseekerJob, type JobseekerProfile } from '../../lib/jobseekerCoreApi';
+import { getJobseekerProfile, listSavedJobIds, saveJob, unsaveJob, type JobseekerJob, type JobseekerProfile } from '../../lib/jobseekerCoreApi';
+import { updateSavedJobAndConfirm } from '../../lib/savedJobsReadback';
 import { getCandidateJob, listApplications, submitApplication } from '../../lib/applicationJourneyApi';
 import { ApplyDocumentsPanel } from '../../components/ApplyDocumentsPanel';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
@@ -40,7 +41,7 @@ export default function JobDetailScreen() {
     return <View style={styles.center}><ActivityIndicator color="#E9265A" /></View>;
   }
   if (!jobId) return <View style={styles.center}><Text style={styles.error}>求人IDを確認できませんでした。</Text></View>;
-  return <JobDetailContent key={`${ownerKey}:${jobId}`} jobId={jobId} />;
+  return <JobDetailContent key={`${ownerKey}:${jobId}`} jobId={jobId} ownerKey={ownerKey} />;
 }
 
 function VerifiedEvidenceCard({
@@ -71,12 +72,17 @@ function VerifiedEvidenceCard({
   </View>;
 }
 
-function JobDetailContent({ jobId }: { jobId: string }) {
+function JobDetailContent({ jobId, ownerKey }: { jobId: string; ownerKey: string }) {
   const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();
   const [job, setJob] = useState<JobseekerJob | null>(null);
   const [profile, setProfile] = useState<JobseekerProfile | null>(null);
   const [existingApplicationId, setExistingApplicationId] = useState<string | null>(null);
+  const [savedIds, setSavedIds] = useState<string[] | null>(null);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const [favoriteError, setFavoriteError] = useState<string | null>(null);
+  const favoriteMutation = useRef(false);
+  const focusActive = useRef(false);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
   // この求人に応募する → this job's documents (ApplyDocumentsPanel) → submit with the chosen documents.
@@ -91,16 +97,25 @@ function JobDetailContent({ jobId }: { jobId: string }) {
     setJob(null);
     setProfile(null);
     setExistingApplicationId(null);
+    setSavedIds(null);
+    setFavoriteError(null);
     setChoosingDocuments(false);
     try {
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
-      const [nextJob, nextProfile, applications] = await Promise.all([
+      const [nextJob, nextProfile, applications, favoriteResult] = await Promise.all([
         getCandidateJob(pinned.client, jobId),
         getJobseekerProfile(pinned.client),
         listApplications(pinned.client),
+        // A saved-list outage must not hide valid job details or block applications.
+        listSavedJobIds(pinned.client)
+          .then((ids) => ({ ids, failed: false } as const))
+          .catch(() => ({ ids: null, failed: true } as const)),
       ]);
-      if (!pinned.isCurrent() || current !== generation.current) return;
+      if (!pinned.isCurrent() || !focusActive.current || current !== generation.current ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      setSavedIds(favoriteResult.ids);
+      setFavoriteError(favoriteResult.failed ? '気になるの保存状態を確認できませんでした。再読み込みしてください。' : null);
       setJob(nextJob);
       setProfile(nextProfile);
       setExistingApplicationId(applications.find((application) => application.job_id === jobId)?.id ?? null);
@@ -109,21 +124,64 @@ function JobDetailContent({ jobId }: { jobId: string }) {
     } finally {
       if (current === generation.current) setLoading(false);
     }
-  }, [jobId, pinCandidateAction]);
+  }, [jobId, ownerKey, pinCandidateAction]);
 
   const latestLoad = useRef(load);
   latestLoad.current = load;
   useFocusEffect(useCallback(() => {
+    focusActive.current = true;
     void latestLoad.current();
     return () => {
+      focusActive.current = false;
       generation.current += 1;
       setJob(null);
       setProfile(null);
       setExistingApplicationId(null);
+      setSavedIds(null);
+      setFavoriteError(null);
       setChoosingDocuments(false);
       setLoading(true);
     };
   }, []));
+
+  // Web job cards expose the same heart action when expanded. Deep-linked
+  // Native detail must preserve that editable flow without optimistic writes.
+  const toggleSaved = async () => {
+    if (!focusActive.current || favoriteMutation.current || savedIds === null || loading || !job) return;
+    const requestGeneration = generation.current;
+    const shouldSave = !savedIds.includes(jobId);
+    favoriteMutation.current = true;
+    setFavoriteBusy(true);
+    setFavoriteError(null);
+    try {
+      const pinned = await pinCandidateAction();
+      if (!pinned?.isCurrent() ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey ||
+          !focusActive.current || requestGeneration !== generation.current) return;
+      const confirmedIds = await updateSavedJobAndConfirm(
+        jobId, shouldSave,
+        () => shouldSave ? saveJob(pinned.client, jobId) : unsaveJob(pinned.client, jobId),
+        () => listSavedJobIds(pinned.client),
+      );
+      if (!pinned.isCurrent() || !focusActive.current ||
+          requestGeneration !== generation.current) return;
+      setSavedIds(confirmedIds);
+    } catch {
+      if (focusActive.current && requestGeneration === generation.current) {
+        // The RPC may have committed even if its acknowledgement was lost.
+        // Quarantine the heart until an explicit canonical re-read.
+        setSavedIds(null);
+        setFavoriteError('保存状況を確認できませんでした。再読み込みしてご確認ください。');
+      }
+    } finally {
+      favoriteMutation.current = false;
+      setFavoriteBusy(false);
+      // A focus refresh may have raced with the mutation: reread after it settles.
+      if (focusActive.current && requestGeneration !== generation.current) {
+        void latestLoad.current();
+      }
+    }
+  };
 
   const routeToApplication = (applicationId: string, documentWarning = false) => {
     setExistingApplicationId(applicationId);
@@ -217,6 +275,25 @@ function JobDetailContent({ jobId }: { jobId: string }) {
       <Text style={styles.facility}>{job.facility_name}</Text>
       <Text style={styles.subtle}>{[job.prefecture, job.city, job.employment_type].filter(Boolean).join(' ・ ')}</Text>
       <Text style={styles.salary}>{salary(job)}</Text>
+      {savedIds !== null ? (
+        <Pressable testID="job-detail-favorite-toggle" accessibilityRole="button"
+          accessibilityLabel={savedIds.includes(jobId) ? '気になるから外す' : '気になるに保存'}
+          accessibilityState={{ selected: savedIds.includes(jobId), disabled: favoriteBusy || loading }}
+          disabled={favoriteBusy || loading} onPress={() => void toggleSaved()}
+          style={[styles.favorite, savedIds.includes(jobId) && styles.favoriteSelected]}>
+          <Text style={[styles.favoriteText, savedIds.includes(jobId) && styles.favoriteTextSelected]}>
+            {favoriteBusy ? '保存を確認中…' : savedIds.includes(jobId) ? '♥ 気になるから外す' : '♡ 気になるに保存'}
+          </Text>
+        </Pressable>
+      ) : favoriteError ? (
+        <View style={styles.favoriteNotice}>
+          <Text style={styles.error}>{favoriteError}</Text>
+          <Pressable style={styles.secondary} accessibilityRole="button" accessibilityLabel="気になるを再読み込み"
+            onPress={() => void latestLoad.current()} disabled={favoriteBusy}>
+            <Text style={styles.secondaryText}>保存状況を再読み込み</Text>
+          </Pressable>
+        </View>
+      ) : <Text style={styles.subtle}>気になるの保存状況を確認中…</Text>}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -292,6 +369,11 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
   title: { fontSize: 25, fontWeight: '900' },
   facility: { fontSize: 17, fontWeight: '800' },
+  favorite: { minHeight: 48, borderRadius: 12, borderWidth: 1, borderColor: '#E9265A', backgroundColor: '#FFFFFF', paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
+  favoriteSelected: { backgroundColor: '#FFF0F4' },
+  favoriteText: { color: '#B72552', fontSize: 15, fontWeight: '800' },
+  favoriteTextSelected: { color: '#99193E' },
+  favoriteNotice: { gap: 8 },
   subtle: { color: '#606873', lineHeight: 20 },
   salary: { fontSize: 19, fontWeight: '900' },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 8 },
