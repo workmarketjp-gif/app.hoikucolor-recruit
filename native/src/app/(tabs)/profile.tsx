@@ -16,6 +16,7 @@ import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
 import { canPresentProfileResult, canonicalProfileMatchesSubmission } from '../../lib/profileSaveGuard';
+import { canAttemptProfileSave, profileWriteFailureNeedsReload, profileReloadNeedsDiscardConfirmation } from '../../lib/profileWriteRecovery';
 
 const positionOptions = ['保育士', '保育教諭', '幼稚園教諭', '保育補助', '看護師', '栄養士', '調理師', '児童指導員', '子育て支援員'];
 const employmentOptions = ['正社員', '契約社員', 'パート・アルバイト', '派遣'];
@@ -104,20 +105,29 @@ export default function ProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [needsCanonicalReload, setNeedsCanonicalReload] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const generation = useRef(0);
   const draftRevision = useRef(0);
   const savingRef = useRef(false);
+  const savingOwnerRef = useRef<string | null>(null);
 
   const isLive = (requestOwnerKey: string | null, requestGeneration: number) =>
     canPresentProfileResult(requestOwnerKey, ownerKeyRef.current, requestGeneration,
       generation.current, privacy.canAccessPrivateData());
+  const canEditDraft = () => Boolean(ownerKeyRef.current && loadedOwnerKey === ownerKeyRef.current &&
+    !privacy.shieldVisible && privacy.canAccessPrivateData());
   const editProfile = (updater: (current: JobseekerProfileInput) => JobseekerProfileInput) => {
+    if (!canEditDraft()) return;
     draftRevision.current += 1;
+    setHasUnsavedChanges(true);
     setMessage(null);
     setProfile(updater);
   };
   const editExperience = (value: string) => {
+    if (!canEditDraft()) return;
     draftRevision.current += 1;
+    setHasUnsavedChanges(true);
     setMessage(null);
     setExperienceText(value);
   };
@@ -137,6 +147,7 @@ export default function ProfileScreen() {
     setExperienceText('');
     setMessage(null);
     setError(null);
+    setHasUnsavedChanges(false);
     setLoading(true);
     try {
       const pinned = await pinCandidateAction();
@@ -152,6 +163,7 @@ export default function ProfileScreen() {
       const primaryEmail = user?.primaryEmailAddress?.emailAddress ?? null;
       hydrate(current ?? { ...emptyProfile, email: primaryEmail });
       draftRevision.current += 1;
+      setNeedsCanonicalReload(false);
       setLoadedOwnerKey(requestOwner);
     } catch {
       if (isLive(requestOwner, requestGeneration)) {
@@ -166,6 +178,9 @@ export default function ProfileScreen() {
     if (!ownerKey || privacy.shieldVisible) {
       generation.current += 1;
       savingRef.current = false;
+      savingOwnerRef.current = null;
+      setNeedsCanonicalReload(false);
+      setHasUnsavedChanges(false);
       setLoadedOwnerKey(null);
       setProfile(emptyProfile);
       setExperienceText('');
@@ -175,17 +190,29 @@ export default function ProfileScreen() {
       setLoading(true);
       return;
     }
+    // The same mounted tab may survive Clerk account/session replacement.
+    // An old owner's late finally must not keep the new owner's Save disabled.
+    if (savingOwnerRef.current && savingOwnerRef.current !== ownerKey) {
+      savingRef.current = false;
+      savingOwnerRef.current = null;
+      setSaving(false);
+    }
     void load();
     return () => { generation.current += 1; };
   }, [ownerKey, privacy.shieldVisible, load]);
 
   const save = async () => {
-    if (!ownerKey || loadedOwnerKey !== ownerKey || loading ||
-        !privacy.canAccessPrivateData() || savingRef.current) return;
+    if (!ownerKey || !canAttemptProfileSave({
+      ownerKey, loadedOwnerKey,
+      privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+      loading, saving: savingRef.current || saving, needsCanonicalReload,
+    })) return;
     const requestOwner = ownerKey;
     const requestGeneration = generation.current;
     const submittedRevision = draftRevision.current;
+    let writeAttempted = false;
     savingRef.current = true;
+    savingOwnerRef.current = requestOwner;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -211,32 +238,67 @@ export default function ProfileScreen() {
       const pinned = await pinCandidateAction();
       if (!pinned?.isCurrent() ||
           candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestOwner ||
-          !isLive(requestOwner, requestGeneration)) return;
+          !isLive(requestOwner, requestGeneration)) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
+      // An interrupted upsert or its follow-up read may have committed. Never
+      // allow the candidate to resend a potentially stale draft automatically.
+      writeAttempted = true;
       await upsertJobseekerProfile(pinned.client, next);
       if (!pinned.isCurrent() || !isLive(requestOwner, requestGeneration)) return;
-      // A successful write response alone is not proof of a durable saved draft.
       const reread = await getJobseekerProfile(pinned.client);
       if (!pinned.isCurrent() || !isLive(requestOwner, requestGeneration)) return;
       if (!reread || reread.clerk_user_id !== pinned.ownerId ||
           !canonicalProfileMatchesSubmission(next, reread)) {
-        throw new Error('保存結果を確認できませんでした。再読み込みしてご確認ください。');
+        throw new Error('保存したプロフィールの再取得が一致しませんでした。');
       }
       if (submittedRevision !== draftRevision.current) {
+        // Keep the edits made while the network write was pending.
         setMessage('保存開始時点の内容は確認できましたが、その後の編集は未保存です。');
       } else {
         hydrate(reread);
+        setHasUnsavedChanges(false);
         setMessage('プロフィールを保存しました。');
       }
     } catch (saveError) {
       if (isLive(requestOwner, requestGeneration)) {
-        setError(String((saveError as { message?: unknown })?.message ?? saveError));
+        if (profileWriteFailureNeedsReload(writeAttempted)) {
+          setNeedsCanonicalReload(true);
+          setError('プロフィールの保存結果が確認できません。再送信せず、最新の内容を読み込んで確認してください。');
+        } else {
+          setError(String((saveError as { message?: unknown })?.message ?? saveError));
+        }
       }
     } finally {
-      if (isLive(requestOwner, requestGeneration)) {
+      // A prior owner/lock epoch must not release a newer owner's save lease.
+      if (savingOwnerRef.current === requestOwner &&
+          isLive(requestOwner, requestGeneration)) {
         savingRef.current = false;
+        savingOwnerRef.current = null;
         setSaving(false);
       }
     }
+  };
+
+  const reloadLatest = () => {
+    if (savingRef.current) return;
+    const expectedOwner = ownerKey;
+    const expectedGeneration = generation.current;
+    const proceed = () => {
+      if (!expectedOwner || ownerKeyRef.current !== expectedOwner ||
+          generation.current !== expectedGeneration ||
+          !privacy.canAccessPrivateData() || savingRef.current) return;
+      void load();
+    };
+    if (!profileReloadNeedsDiscardConfirmation(hasUnsavedChanges)) {
+      proceed();
+      return;
+    }
+    Alert.alert('未保存の変更を破棄しますか？',
+      '最新のプロフィールを読み込むと、この画面で未保存の入力は失われます。', [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '破棄して再読み込み', style: 'destructive', onPress: proceed },
+      ]);
   };
 
   const confirmDeletion = () => {
@@ -295,8 +357,12 @@ export default function ProfileScreen() {
         <Field label="自己紹介" value={profile.self_intro ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, self_intro: value }))} multiline placeholder="経験や大切にしている保育観など" />
         {message ? <Text style={styles.success}>{message}</Text> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        <Pressable style={styles.primaryButton} disabled={saving || loading} onPress={() => void save()}>
+        <Pressable style={styles.primaryButton} disabled={saving || loading || needsCanonicalReload} onPress={() => void save()}>
           {saving ? <ActivityIndicator /> : <Text style={styles.primaryButtonText}>プロフィールを保存</Text>}
+        </Pressable>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} disabled={saving}
+          onPress={reloadLatest}>
+          <Text style={styles.secondaryButtonText}>{needsCanonicalReload ? '保存結果を再取得する' : '最新の内容を読み込む'}</Text>
         </Pressable>
       </View>
 
