@@ -7,7 +7,7 @@ const B='00000000-0000-4000-8000-000000000002';
 
 test('real existing attention API adapter calls the canonical candidate RPC',async()=>{
   let called=[];
-  const client={rpc:async(name)=>{called.push(name);return {data:{unread_messages_count:4,pending_scouts_count:1,next_message:{application_id:A}},error:null}}};
+  const client={rpc:async(name)=>{called.push(name);return {data:{unanswered_interviews_count:0,unread_messages_count:4,pending_scouts_count:1,next_message:{application_id:A}},error:null}}};
   const attention=await getJobseekerAttentionSummary(client);
   assert.deepEqual(called,['hc_jobseeker_attention_summary']);
   assert.equal(attention.unread_messages_count,4);
