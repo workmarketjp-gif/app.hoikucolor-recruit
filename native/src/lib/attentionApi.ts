@@ -45,20 +45,27 @@ export const emptyAttentionSummary: JobseekerAttentionSummary = {
   next_scout: null,
 };
 
-function count(value: unknown) {
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
+/** SQL count(*) and the mark-read RPC return JSON numbers, including a valid 0.
+ * Missing/invalid responses are *unknown*, not evidence of zero unread rows.
+ */
+function confirmedRpcCount(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${label}を確認できませんでした。再読み込みしてください。`);
+  }
+  return value;
 }
 
 export async function getJobseekerAttentionSummary(client: SupabaseClient): Promise<JobseekerAttentionSummary> {
   const { data, error } = await client.rpc('hc_jobseeker_attention_summary');
   if (error) throw error;
-  if (!data || typeof data !== 'object') return emptyAttentionSummary;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('新着情報を確認できませんでした。再読み込みしてください。');
+  }
   const value = data as Partial<JobseekerAttentionSummary>;
   return {
-    unanswered_interviews_count: count(value.unanswered_interviews_count),
-    unread_messages_count: count(value.unread_messages_count),
-    pending_scouts_count: count(value.pending_scouts_count),
+    unanswered_interviews_count: confirmedRpcCount(value.unanswered_interviews_count, '面接の未回答件数'),
+    unread_messages_count: confirmedRpcCount(value.unread_messages_count, 'メッセージの未読件数'),
+    pending_scouts_count: confirmedRpcCount(value.pending_scouts_count, 'スカウトの未回答件数'),
     next_interview: value.next_interview || null,
     next_message: value.next_message || null,
     next_scout: value.next_scout || null,
@@ -94,6 +101,5 @@ export async function markVisibleApplicationMessagesRead(
     p_application_id: applicationId,
   });
   if (error) throw error;
-  const updated = Number(data ?? 0);
-  return Number.isFinite(updated) && updated > 0 ? Math.floor(updated) : 0;
+  return confirmedRpcCount(data, 'メッセージの既読更新結果');
 }
