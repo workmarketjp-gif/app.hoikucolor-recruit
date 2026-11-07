@@ -1,13 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useSession } from '@clerk/expo';
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateOwnedView, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import { reconcileComparedSelection, requestedComparisonJobIds } from '../lib/comparisonSelection';
 import { comparisonSalaryLabel } from '../lib/comparisonSalaryPresentation';
-import { visibleComparisonMetricKeys } from '../lib/comparisonVerifiedRowVisibility';
 import { getJobseekerProfile, listRankedJobs, type JobseekerJob, type JobseekerProfile } from '../lib/jobseekerCoreApi';
 import { getJobseekerMatchingPreferences, type JobseekerMatchingPreferences } from '../lib/candidateParityApi';
 import { matchJob, type JobMatchResult } from '../lib/jobMatching';
@@ -130,6 +129,7 @@ type ComparisonSnapshot = {
 };
 
 export default function CompareScreen() {
+  const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();
   const { session } = useSession();
   const { job_id: rawRequestedIds } = useLocalSearchParams<{ job_id?: string | string[] }>();
@@ -291,7 +291,20 @@ export default function CompareScreen() {
             <Text style={styles.sectionTitle}>比較する求人</Text>
             <Text style={styles.count}>{selectedIds.length}/{maxComparedJobs}件</Text>
           </View>
-          {jobs.length === 0 ? <Text style={styles.bodyMuted}>現在比較できる公開求人がありません。</Text> : null}
+          {jobs.length === 0 ? (
+            <View style={styles.emptyPanel}>
+              <Text style={styles.emptyTitle}>現在比較できる公開求人がありません</Text>
+              <Text style={styles.bodyMuted}>求人が公開されると、ここから2〜3件を選んで比較できます。</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="求人を探す"
+                style={styles.emptyAction}
+                onPress={() => router.push('/(tabs)/jobs')}
+              >
+                <Text style={styles.emptyActionText}>求人を探す</Text>
+              </Pressable>
+            </View>
+          ) : null}
           {jobs.map((job) => {
             const selected = selectedIds.includes(job.id);
             const disabled = !selected && selectedIds.length >= maxComparedJobs;
@@ -316,7 +329,7 @@ export default function CompareScreen() {
         </View>
       ) : null}
 
-      {!loading && compared.length < 2 ? (
+      {!loading && jobs.length > 0 && compared.length < 2 ? (
         <Text style={styles.notice}>2件以上選ぶと比較表が出ます。</Text>
       ) : null}
 
@@ -350,7 +363,7 @@ export default function CompareScreen() {
             <ComparisonRow label="配置・人員体制" source="facility" note="求人文面の明示のみ" values={compared.map(({ job }) => explicitTextSignal(job, ['基準以上の配置', '手厚い配置', '配置に余裕', 'ゆとりある配置'], '手厚い配置の記載あり'))} />
             <ComparisonRow label="福利厚生・制度" source="facility" values={compared.map(({ job }) => job.benefits || '未掲載')} />
 
-            {visibleComparisonMetricKeys(compared.map(({ job }) => job), 'workplace', workplacePriority).map((key) => (
+            {workplacePriority.map((key) => (
               <ComparisonRow
                 key={key}
                 label={metricLabel(compared, 'workplace', key)}
@@ -358,7 +371,7 @@ export default function CompareScreen() {
                 values={compared.map(({ job }) => metricValue(job, 'workplace', key))}
               />
             ))}
-            {visibleComparisonMetricKeys(compared.map(({ job }) => job), 'finance', financePriority).map((key) => (
+            {financePriority.map((key) => (
               <ComparisonRow
                 key={key}
                 label={metricLabel(compared, 'finance', key)}
@@ -387,6 +400,10 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   legendText: { flex: 1, fontSize: 14, lineHeight: 20, color: '#4a4f59' },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 10 },
+  emptyPanel: { alignItems: 'flex-start', paddingVertical: 18, gap: 10 },
+  emptyTitle: { fontSize: 18, fontWeight: '900', color: '#30212B' },
+  emptyAction: { marginTop: 6, minHeight: 48, paddingHorizontal: 20, borderRadius: 12, backgroundColor: '#E9265A', justifyContent: 'center', alignItems: 'center' },
+  emptyActionText: { fontSize: 16, fontWeight: '800', color: '#fff' },
   headingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { fontSize: 20, fontWeight: '900' },
   count: { fontSize: 14, color: '#606873', fontWeight: '800' },
