@@ -68,9 +68,11 @@ function formatBytes(value: number | null) {
  * `initialType` preselects the type to add (the apply step opens this section for a missing
  * document). `onDocumentsChanged` receives every canonical reload so the caller can refresh.
  */
-export function DocumentVaultSection({ initialType = 'resume', onDocumentsChanged, qualifications }: {
+export function DocumentVaultSection({ initialType = 'resume', onDocumentsChanged, onBusyChanged, qualifications }: {
   initialType?: JobseekerDocumentType;
   onDocumentsChanged?: (documents: JobseekerDocument[], change?: ApplyVaultChange, uploadedDocumentId?: string | null) => void;
+  /** Embedded apply form blocks submission while a picker, camera or save is in flight. */
+  onBusyChanged?: (busy: boolean) => void;
   /** Self-declared profile qualifications; uploaded copies are NOT verified credentials. */
   qualifications?: readonly string[];
 } = {}) {
@@ -103,6 +105,10 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
   useEffect(() => { setShowTypes(false); }, [ownerKey, privateAllowed]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const onBusyChangedRef = useRef(onBusyChanged);
+  onBusyChangedRef.current = onBusyChanged;
+  useEffect(() => { onBusyChangedRef.current?.(busyId !== null); }, [busyId]);
+  useEffect(() => () => { onBusyChangedRef.current?.(false); }, []);
   const userIdRef = useRef<string | null>(user?.id ?? null);
   const loadGenerationRef = useRef(0);
   userIdRef.current = user?.id ?? null;
@@ -309,6 +315,8 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
     } catch (error) {
       if (mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
         Alert.alert(replacement ? '書類を差し替えできませんでした' : '書類を保存できませんでした', String((error as { message?: unknown })?.message ?? error));
+        // A network error may follow a committed upload. Reconcile before permitting apply.
+        await load();
       }
     } finally {
       if (mountedRef.current) setBusyId(null);
@@ -355,6 +363,7 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
     } catch (error) {
       if (mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
         Alert.alert(replacement ? '撮影した書類を差し替えできませんでした' : '撮影した書類を保存できませんでした', String((error as { message?: unknown })?.message ?? error));
+        await load();
       }
     } finally {
       if (mountedRef.current) setBusyId(null);
