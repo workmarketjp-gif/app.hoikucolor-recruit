@@ -177,9 +177,21 @@ export function FeaturedHomeJobs() {
               <Text style={styles.buttonText}>見学・体験を予約</Text>
             </Pressable>}
           </View>}
-          <Pressable accessibilityRole="button" style={styles.primary}
+          {!job.is_external && job.can_apply_direct !== false && availability === 'open' ? (
+            <Pressable accessibilityRole="button" style={styles.primary}
+              accessibilityLabel={`${job.facility_name}の求人に応募する`}
+              onPress={() => {
+                if (!privacy.canAccessPrivateData() || privacy.shieldVisible) return;
+                // Navigation only. Job detail re-reads the canonical job, profile,
+                // applications and durable pending receipt before selection.
+                router.push(`/job/${encodeURIComponent(job.id)}?apply=1` as never);
+              }}>
+              <Text style={styles.primaryText}>応募する</Text>
+            </Pressable>
+          ) : null}
+          <Pressable accessibilityRole="button" style={styles.button}
             onPress={() => router.push(`/job/${encodeURIComponent(job.id)}` as never)}>
-            <Text style={styles.primaryText}>求人詳細を見る</Text>
+            <Text style={styles.buttonText}>求人詳細を見る</Text>
           </Pressable>
         </View>;
       })}

@@ -13,6 +13,7 @@ import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
 import { verifiedEvidence, type VerifiedEvidenceDisplay } from '../../lib/jobVerifiedEvidence';
 import { homeInlineApplyDecision } from '../../lib/homeApplyDecision';
+import { canPreopenHomeDocuments } from '../../lib/homeDirectApplyEntry';
 import { homeJobAvailability } from '../../lib/homeFeaturedDetails';
 import { armPendingHomeApplication, clearPendingHomeApplication, hasPendingHomeApplication } from '../../lib/homeApplyPending';
 import { jobDetailReadbackRecovery } from '../../lib/jobDetailReadbackRecovery';
@@ -39,7 +40,9 @@ export default function JobDetailScreen() {
   usePrivateScreenCapture('job-detail');
   const { session } = useSession();
   const privacy = usePrivateDataQuarantine();
-  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const params = useLocalSearchParams<{ id?: string | string[]; apply?: string | string[] }>();
+  // Query is a navigation hint, not an application command or candidate permission.
+  const autoApplyRequested = firstParam(params.apply) === '1';
   // Canonical UUID identity is independent of deep-link letter casing.
   const jobId = (firstParam(params.id) ?? '').toLowerCase();
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
@@ -47,8 +50,9 @@ export default function JobDetailScreen() {
     return <View style={styles.center}><ActivityIndicator color="#E9265A" /></View>;
   }
   if (!jobId) return <View style={styles.center}><Text style={styles.error}>求人IDを確認できませんでした。</Text></View>;
-  return <JobDetailContent key={`${ownerKey}:${jobId}`} jobId={jobId} ownerKey={ownerKey}
-    ownerId={session?.user?.id ?? ''} ownerSessionId={session?.id ?? ''} />;
+  return <JobDetailContent key={`${ownerKey}:${jobId}:${autoApplyRequested ? 'apply' : 'detail'}`} jobId={jobId} ownerKey={ownerKey}
+    ownerId={session?.user?.id ?? ''} ownerSessionId={session?.id ?? ''}
+    autoApplyRequested={autoApplyRequested} />;
 }
 
 function VerifiedEvidenceCard({
@@ -79,8 +83,9 @@ function VerifiedEvidenceCard({
   </View>;
 }
 
-function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
+function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyRequested }: {
   jobId: string; ownerKey: string; ownerId: string; ownerSessionId: string;
+  autoApplyRequested: boolean;
 }) {
   const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();
@@ -100,6 +105,9 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
   const [applying, setApplying] = useState(false);
   // この求人に応募する → this job's documents (ApplyDocumentsPanel) → submit with the chosen documents.
   const [choosingDocuments, setChoosingDocuments] = useState(false);
+  // One shot for this mounted owner/job/intent; focus reloads must not reopen a cancelled form.
+  const autoApplyConsumed = useRef(false);
+  const scrollRef = useRef<ScrollView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
 
@@ -145,12 +153,24 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
       setJob(nextJob);
       setProfile(nextProfile);
       setExistingApplicationId(readback.existingApplicationId);
+      // A Home "応募する" tap enters the SAME vetted document picker as Job Detail.
+      // The server-backed preflight must finish before this UI is exposed.
+      if (autoApplyRequested && !autoApplyConsumed.current) {
+        autoApplyConsumed.current = true;
+        const decision = homeInlineApplyDecision(nextJob, nextProfile, applications, jobId, Date.now());
+        const availability = nextJob ? homeJobAvailability(nextJob, Date.now()) : 'unknown';
+        if (canPreopenHomeDocuments('1', decision, availability, readback.quarantine)) {
+          setChoosingDocuments(true);
+        } else if (!readback.quarantine && availability === 'open' && decision.kind === 'profile_required') {
+          setError('応募前にプロフィールを登録してください。');
+        }
+      }
     } catch (loadError) {
       if (current === generation.current) setError(String((loadError as { message?: unknown })?.message ?? loadError));
     } finally {
       if (current === generation.current) setLoading(false);
     }
-  }, [jobId, ownerKey, pinCandidateAction]);
+  }, [autoApplyRequested, jobId, ownerKey, pinCandidateAction]);
 
   const latestLoad = useRef(load);
   latestLoad.current = load;
@@ -356,11 +376,16 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
   })();
 
   return (
-    <ScrollView contentContainerStyle={styles.page}>
+    <ScrollView ref={scrollRef} contentContainerStyle={styles.page}>
       <Text style={styles.title}>{job.title}</Text>
       <Text style={styles.facility}>{job.facility_name}</Text>
       <Text style={styles.subtle}>{[job.prefecture, job.city, job.employment_type].filter(Boolean).join(' ・ ')}</Text>
       <Text style={styles.salary}>{salary(job)}</Text>
+      {autoApplyRequested && choosingDocuments && directApply && !closed && !unknown &&
+       !applicationUncertain && !existingApplicationId ? (
+        <ApplyDocumentsPanel jobId={job.id} submitting={applying}
+          onCancel={() => setChoosingDocuments(false)} onSubmit={(ids) => void apply(ids)} />
+      ) : null}
       {savedIds !== null ? (
         <Pressable testID="job-detail-favorite-toggle" accessibilityRole="button"
           accessibilityLabel={savedIds.includes(jobId) ? '気になるから外す' : '気になるに保存'}
@@ -436,7 +461,15 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
       ) : applicationUncertain ? (
         <Text style={styles.subtle}>応募結果を確認中です。重複送信を防ぐため応募できません。</Text>
       ) : choosingDocuments ? (
-        <ApplyDocumentsPanel jobId={job.id} submitting={applying} onCancel={() => setChoosingDocuments(false)} onSubmit={(documentIds) => void apply(documentIds)} />
+        autoApplyRequested ? (
+          <Pressable accessibilityRole="button" style={styles.secondary}
+            onPress={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}>
+            <Text style={styles.secondaryText}>画面上部で応募書類を選ぶ</Text>
+          </Pressable>
+        ) : (
+          <ApplyDocumentsPanel jobId={job.id} submitting={applying}
+            onCancel={() => setChoosingDocuments(false)} onSubmit={(documentIds) => void apply(documentIds)} />
+        )
       ) : (
         <Pressable style={styles.primary} disabled={applying} onPress={startApply}>
           <Text style={styles.primaryText}>{applying ? '応募を確認中…' : 'この求人に応募する'}</Text>
