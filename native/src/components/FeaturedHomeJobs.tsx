@@ -9,6 +9,7 @@ import { listSavedJobIds, saveJob, searchJobseekerJobs, unsaveJob, type Jobseeke
 import { updateSavedJobAndConfirm } from '../lib/savedJobsReadback';
 import { homeEvidenceMetrics, homeJobAvailability, homeJobConditions, homeJobSource } from '../lib/homeFeaturedDetails';
 import { homeFeaturedSalary } from '../lib/homeFeaturedSalary';
+import { isExplicitlyDirectJob } from '../lib/homeApplyDecision';
 
 /** The Web's three canonical featured jobs; never a cached or cross-account list. */
 export function FeaturedHomeJobs() {
@@ -172,12 +173,12 @@ export function FeaturedHomeJobs() {
               {metric.sample ? <Text style={styles.subtle}>{metric.sample}</Text> : null}
             </View>)}
             {homeJobSource(job).map((label) => <Text key={label} style={styles.subtle}>{label}</Text>)}
-            {!job.is_external && availability === 'open' && <Pressable accessibilityRole="button" style={styles.button}
+            {job.is_external === false && availability === 'open' && <Pressable accessibilityRole="button" style={styles.button}
               onPress={() => router.push(`/visits?jobId=${encodeURIComponent(job.id)}` as never)}>
               <Text style={styles.buttonText}>見学・体験を予約</Text>
             </Pressable>}
           </View>}
-          {!job.is_external && job.can_apply_direct !== false && availability === 'open' ? (
+          {isExplicitlyDirectJob(job) && availability === 'open' ? (
             <Pressable accessibilityRole="button" style={styles.primary}
               accessibilityLabel={`${job.facility_name}の求人に応募する`}
               onPress={() => {

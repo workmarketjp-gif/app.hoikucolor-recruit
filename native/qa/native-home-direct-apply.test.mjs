@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { homeInlineApplyDecision } from '../src/lib/homeApplyDecision.ts';
+import { homeInlineApplyDecision, isExplicitlyDirectJob } from '../src/lib/homeApplyDecision.ts';
 import { canPreopenHomeDocuments } from '../src/lib/homeDirectApplyEntry.ts';
 
 const JOB_ID = '11111111-2222-4333-8444-555555555555';
@@ -41,7 +41,7 @@ test('candidate-owned existing application never reopens documents; uncertain at
 
 test('featured card offers only the native direct-apply entry for open and direct postings', () => {
   const source = readFileSync(new URL('../src/components/FeaturedHomeJobs.tsx', import.meta.url), 'utf8');
-  assert.match(source, /!job\.is_external && job\.can_apply_direct !== false && availability === 'open'/);
+  assert.match(source, /isExplicitlyDirectJob\(job\) && availability === 'open'/);
   assert.match(source, /router\.push\(`\/job\/\$\{encodeURIComponent\(job\.id\)\}\?apply=1` as never\)/);
   assert.match(source, /<Text style=\{styles\.primaryText\}>応募する<\/Text>/);
   assert.doesNotMatch(source, /submitApplication|sendMessage|newJobApplication/);
@@ -55,5 +55,24 @@ test('job detail gates one-shot preopen behind owner-pinned canonical readback, 
   assert.match(source, /canPreopenHomeDocuments\('1', decision, availability, readback\.quarantine\)/);
   assert.match(source, /<ApplyDocumentsPanel jobId=\{job\.id\} submitting=\{applying\}/);
   assert.match(source, /const alreadyPending = await armPendingHomeApplication\(/);
+  assert.match(source, /const directApply = isExplicitlyDirectJob\(job\)/);
+  assert.match(source, /!isExplicitlyDirectJob\(job\)/);
   assert.match(source, /const result = await submitApplication\(pinned\.client, jobId, freshProfile, \{ documentIds \}\)/);
+});
+
+
+test('direct application needs both explicit v2 source flags, not missing or malformed metadata', () => {
+  assert.equal(isExplicitlyDirectJob(job), true);
+  for (const invalid of [
+    { ...job, is_external: undefined },
+    { ...job, can_apply_direct: undefined },
+    { ...job, is_external: null },
+    { ...job, can_apply_direct: null },
+    { ...job, is_external: true },
+    { ...job, can_apply_direct: false },
+  ]) {
+    assert.equal(isExplicitlyDirectJob(invalid), false);
+    assert.equal(decide(invalid).kind, 'unavailable');
+    assert.equal(canPreopenHomeDocuments('1', decide(invalid), 'open', false), false);
+  }
 });

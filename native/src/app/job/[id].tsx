@@ -12,7 +12,7 @@ import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
 import { verifiedEvidence, type VerifiedEvidenceDisplay } from '../../lib/jobVerifiedEvidence';
-import { homeInlineApplyDecision } from '../../lib/homeApplyDecision';
+import { homeInlineApplyDecision, isExplicitlyDirectJob } from '../../lib/homeApplyDecision';
 import { canPreopenHomeDocuments } from '../../lib/homeDirectApplyEntry';
 import { homeJobAvailability } from '../../lib/homeFeaturedDetails';
 import { armPendingHomeApplication, clearPendingHomeApplication, hasPendingHomeApplication } from '../../lib/homeApplyPending';
@@ -252,7 +252,7 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
     }
     if (applying || applyInFlight.current || applicationUncertain || uncertainRef.current ||
         existingApplicationId || !focusActive.current) return;
-    if (!job || job.is_external || job.can_apply_direct === false ||
+    if (!isExplicitlyDirectJob(job) ||
         homeJobAvailability(job, Date.now()) !== 'open') {
       setError('この求人は現在Hoiku Colorから直接応募できません。');
       return;
@@ -269,7 +269,7 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
     // React state updates do not synchronously prevent repeated submit taps.
     if (applying || applyInFlight.current || applicationUncertain || uncertainRef.current ||
         existingApplicationId || !focusActive.current) return;
-    if (!job || job.is_external || job.can_apply_direct === false ||
+    if (!isExplicitlyDirectJob(job) ||
         homeJobAvailability(job, Date.now()) !== 'open') {
       setChoosingDocuments(false);
       setError('この求人は現在Hoiku Colorから直接応募できません。');
@@ -364,7 +364,7 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
   const availability = homeJobAvailability(job, Date.now());
   const closed = availability === 'closed';
   const unknown = availability === 'unknown';
-  const directApply = !job.is_external && job.can_apply_direct !== false;
+  const directApply = isExplicitlyDirectJob(job);
   const workplaceEvidence = verifiedEvidence(job.verified_workplace, 'workplace');
   const financeEvidence = verifiedEvidence(job.verified_finance, 'finance');
   const safeSourceUrl = (() => {

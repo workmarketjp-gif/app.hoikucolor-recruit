@@ -8,6 +8,13 @@ export type HomeInlineApplyDecision =
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/** Only canonical v2 RPC's explicit flags authorize the direct-apply UI. */
+export function isExplicitlyDirectJob(
+  job: Pick<JobseekerJob, 'is_external' | 'can_apply_direct'> | null | undefined,
+): boolean {
+  return job?.is_external === false && job.can_apply_direct === true;
+}
+
 /**
  * Fail closed until the signed-in candidate has fresh authoritative job,
  * applications and profile reads. The list RPC enforces candidate access, and
@@ -35,7 +42,7 @@ export function homeInlineApplyDecision(
   // An explicit canonical closed flag overrides an absent/future closing date.
   // Keep this AFTER the existing application check so closed jobs remain viewable.
   if ((canonicalJob.is_open !== undefined && typeof canonicalJob.is_open !== 'boolean') ||
-      canonicalJob.is_open === false || canonicalJob.is_external || canonicalJob.can_apply_direct === false) {
+      canonicalJob.is_open === false || !isExplicitlyDirectJob(canonicalJob)) {
     return { kind: 'unavailable' };
   }
   if (canonicalJob.closing_at != null) {

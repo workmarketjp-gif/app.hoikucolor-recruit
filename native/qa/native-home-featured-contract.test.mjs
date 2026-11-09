@@ -18,7 +18,7 @@ test('Home uses canonical search ordering and a confirmed empty result, never in
 });
 
 test('visit booking passes the canonical job ID only for open and internal jobs', () => {
-  assert.match(source, /!job\.is_external && availability === 'open'/);
+  assert.match(source, /job\.is_external === false && availability === 'open'/);
   assert.match(source, /router\.push\(`\/visits\?jobId=\$\{encodeURIComponent\(job\.id\)\}` as never\)/);
   const job = { is_external: false, is_open: false, closing_at: null };
   assert.equal(homeJobAvailability(job, 1800000000000), 'closed');
