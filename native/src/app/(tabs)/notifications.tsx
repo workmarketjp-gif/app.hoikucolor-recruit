@@ -1,18 +1,36 @@
 import { Pressable, ScrollView, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
+import { candidateNotificationCountPresentation, candidateNotificationEmptyPresentation } from '../../lib/notificationListPresentation';
 
 export default function NotificationsScreen() {
   usePrivateScreenCapture('notifications');
   const notifications = useNotifications();
+  const countPresentation = candidateNotificationCountPresentation({
+    loaded: notifications.loaded,
+    loading: notifications.loading,
+    hasCanonicalError: Boolean(notifications.error),
+    visibleCount: notifications.notifications.length,
+    visibleUnreadCount: notifications.notifications.filter((notification) => !notification.read_at).length,
+    unreadCount: notifications.unreadCount,
+  });
+  const emptyPresentation = candidateNotificationEmptyPresentation({
+    loaded: notifications.loaded,
+    loading: notifications.loading,
+    hasCanonicalError: Boolean(notifications.error),
+    visibleCount: notifications.notifications.length,
+    unreadCount: notifications.unreadCount,
+  });
+  // Never mutate from an unavailable or contradictory canonical read.
+  const canMarkAll = countPresentation.kind === 'unread';
 
   return (
     <ScrollView contentContainerStyle={styles.page}>
       <View style={styles.toolbar}>
-        <Text style={styles.count}>{notifications.unreadCount === null ? '未読件数を確認できません' : `${notifications.unreadCount}件未読`}</Text>
+        <Text style={styles.count}>{countPresentation.label}</Text>
         <View style={styles.toolbarActions}>
           <Pressable accessibilityRole="button" onPress={() => void notifications.refresh().catch(() => undefined)}><Text style={styles.link}>更新</Text></Pressable>
-          <Pressable accessibilityRole="button" disabled={!notifications.loaded} onPress={() => void notifications.markAllRead().catch(() => undefined)}><Text style={styles.link}>すべて既読</Text></Pressable>
+          <Pressable accessibilityRole="button" disabled={!canMarkAll} accessibilityState={{ disabled: !canMarkAll }} onPress={() => void notifications.markAllRead().catch(() => undefined)}><Text style={styles.link}>すべて既読</Text></Pressable>
         </View>
       </View>
 
@@ -25,8 +43,13 @@ export default function NotificationsScreen() {
           </Pressable>
         </View>
       ) : null}
-      {!notifications.loading && notifications.loaded && notifications.notifications.length === 0 ? (
+      {emptyPresentation === 'confirmed_empty' ? (
         <Text style={styles.empty}>新しい通知はありません。</Text>
+      ) : null}
+      {(emptyPresentation === 'inconsistent' || countPresentation.kind === 'inconsistent') ? (
+        <View style={styles.permissionCard}>
+          <Text style={styles.error} accessibilityRole="alert">未読件数と通知一覧が一致しません。更新して再確認してください。</Text>
+        </View>
       ) : null}
 
       {notifications.loaded ? notifications.notifications.map((notification) => (

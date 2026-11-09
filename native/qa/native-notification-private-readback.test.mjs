@@ -63,7 +63,9 @@ test('real provider and screens enforce read lease and avoid unknown-to-zero UX'
   assert.match(context, /通知を開けませんでした。もう一度お試しください。/);
   assert.match(context, /通知を既読にできませんでした。もう一度お試しください。/);
   assert.match(context, /catch \(error\) \{/);
-  assert.match(screen, /notifications\.unreadCount === null \? '未読件数を確認できません' :/);
+  assert.match(screen, /candidateNotificationCountPresentation\(/);
+  assert.match(screen, /countPresentation\.label/);
+  assert.match(screen, /disabled=\{!canMarkAll\}/);
   assert.match(screen, /notifications\.error/);
   assert.match(screen, /notifications\.loaded/);
   assert.match(home, /value == null \? '—' : value/);
