@@ -9,6 +9,7 @@ import { listSavedJobIds, saveJob, searchJobseekerJobs, unsaveJob, type Jobseeke
 import { updateSavedJobAndConfirm } from '../lib/savedJobsReadback';
 import { homeEvidenceMetrics, homeJobAvailability, homeJobConditions, homeJobSource } from '../lib/homeFeaturedDetails';
 import { homeFeaturedSalary } from '../lib/homeFeaturedSalary';
+import { homeVerifiedDisclosure } from '../lib/homeVerifiedDisclosure';
 import { isExplicitlyDirectJob } from '../lib/homeApplyDecision';
 
 /** The Web's three canonical featured jobs; never a cached or cross-account list. */
@@ -139,10 +140,10 @@ export function FeaturedHomeJobs() {
         const expanded = expandedId === job.id;
         const isSaved = savedIds?.includes(job.id) ?? false;
         const availability = homeJobAvailability(job, Date.now());
-        const metrics = expanded ? [
-          ...homeEvidenceMetrics(job.verified_workplace, 'workplace'),
-          ...homeEvidenceMetrics(job.verified_finance, 'finance'),
-        ] : [];
+        const workplaceMetrics = homeEvidenceMetrics(job.verified_workplace, 'workplace');
+        const financeMetrics = homeEvidenceMetrics(job.verified_finance, 'finance');
+        const workplaceEvidence = homeVerifiedDisclosure(job.verified_workplace, 'workplace', workplaceMetrics);
+        const financeEvidence = homeVerifiedDisclosure(job.verified_finance, 'finance', financeMetrics);
         return <View key={job.id} style={styles.job}>
           <Text style={styles.jobTitle}>{job.title}</Text>
           <Text style={styles.facility}>{job.facility_name}</Text>
@@ -159,6 +160,10 @@ export function FeaturedHomeJobs() {
           <Text style={styles.subtle}>{[job.prefecture, job.city, job.employment_type].filter(Boolean).join(' ・ ')}</Text>
           <Text style={styles.salary}>{homeFeaturedSalary(job)}</Text>
           {job.is_external && job.source_name ? <Text style={styles.badge}>掲載元：{job.source_name}</Text> : null}
+          {(workplaceEvidence || financeEvidence) && <View style={styles.evidenceTags}>
+            {workplaceEvidence && <Text style={styles.evidenceTag}>{workplaceEvidence.label}</Text>}
+            {financeEvidence && <Text style={styles.financeTag}>{financeEvidence.label}</Text>}
+          </View>}
           {availability === 'closed' && <Text style={styles.error}>募集終了</Text>}
           {availability === 'unknown' && <Text style={styles.error}>募集状況を確認できません</Text>}
           <Pressable accessibilityRole="button" accessibilityState={{ expanded }} style={styles.button}
@@ -168,9 +173,18 @@ export function FeaturedHomeJobs() {
           {expanded && <View style={styles.block}>
             {homeJobConditions(job).map(({ label, value }) => <Text key={label} style={styles.detail}>{label}：{value}</Text>)}
             {job.description?.trim() ? <Text style={styles.detail}>{job.description}</Text> : null}
-            {metrics.map((metric) => <View key={metric.key} style={styles.block}>
-              <Text style={styles.detail}>{metric.label}：{metric.displayValue}</Text>
-              {metric.sample ? <Text style={styles.subtle}>{metric.sample}</Text> : null}
+            {[
+              { evidence: workplaceEvidence, metrics: workplaceMetrics },
+              { evidence: financeEvidence, metrics: financeMetrics },
+            ].map(({ evidence, metrics }) => evidence && <View key={evidence.label} style={styles.evidencePanel}>
+              <Text style={styles.evidenceTitle}>{evidence.label}</Text>
+              {evidence.transparency && <Text style={styles.subtle}>{evidence.transparency}</Text>}
+              {metrics.map((metric) => <View key={metric.key} style={styles.block}>
+                <Text style={styles.detail}>{metric.label}：{metric.displayValue}</Text>
+                {metric.sample && <Text style={styles.subtle}>{metric.sample}</Text>}
+              </View>)}
+              <Text style={styles.subtle}>{[evidence.period, evidence.attribution].filter(Boolean).join(' ・ ')}</Text>
+              {evidence.stabilityCaution && <Text style={styles.subtle}>{evidence.stabilityCaution}</Text>}
             </View>)}
             {homeJobSource(job).map((label) => <Text key={label} style={styles.subtle}>{label}</Text>)}
             {job.is_external === false && availability === 'open' && <Pressable accessibilityRole="button" style={styles.button}
@@ -211,6 +225,11 @@ const styles = StyleSheet.create({
   subtle: { color: '#68616B', fontSize: 14, lineHeight: 22 },
   salary: { color: '#A3163C', fontSize: 15, fontWeight: '800' },
   badge: { alignSelf: 'flex-start', color: '#A3163C', backgroundColor: '#FFF0F4', padding: 6, borderRadius: 8 },
+  evidenceTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  evidenceTag: { overflow: 'hidden', color: '#146149', backgroundColor: '#E8F7F0', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, fontSize: 13, fontWeight: '800' },
+  financeTag: { overflow: 'hidden', color: '#66448D', backgroundColor: '#F4EDFC', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, fontSize: 13, fontWeight: '800' },
+  evidencePanel: { borderRadius: 12, borderWidth: 1, borderColor: '#F1DFE7', padding: 12, gap: 7 },
+  evidenceTitle: { color: '#30212B', fontSize: 15, fontWeight: '800' },
   favorite: { minHeight: 46, borderWidth: 1, borderColor: '#E8C6D1', borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
   favoriteSelected: { backgroundColor: '#FFF0F4', borderColor: '#CC1A3D' },
   favoriteText: { color: '#602738', fontSize: 15, fontWeight: '800' },
