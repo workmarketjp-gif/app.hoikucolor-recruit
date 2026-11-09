@@ -1,4 +1,5 @@
 import type { JobseekerJob, JobseekerProfile } from './jobseekerCoreApi';
+import { homeJobAvailability } from './homeFeaturedDetails.ts';
 
 export type HomeInlineApplyDecision =
   | Readonly<{ kind: 'documents' }>
@@ -39,17 +40,10 @@ export function homeInlineApplyDecision(
   const existing = applications.find((application) => application.job_id.toLowerCase() === requestedJobId.toLowerCase());
   if (existing) return { kind: 'existing', applicationId: existing.id };
 
-  // An explicit canonical closed flag overrides an absent/future closing date.
-  // Keep this AFTER the existing application check so closed jobs remain viewable.
-  if ((canonicalJob.is_open !== undefined && typeof canonicalJob.is_open !== 'boolean') ||
-      canonicalJob.is_open === false || !isExplicitlyDirectJob(canonicalJob)) {
+  // Presentation and submit preflight share the same canonical availability
+  // policy. Preserve the existing-application branch above for closed jobs.
+  if (!isExplicitlyDirectJob(canonicalJob) || homeJobAvailability(canonicalJob, now) !== 'open') {
     return { kind: 'unavailable' };
-  }
-  if (canonicalJob.closing_at != null) {
-    const closing = typeof canonicalJob.closing_at === 'string' && canonicalJob.closing_at.trim()
-      ? Date.parse(canonicalJob.closing_at) : NaN;
-    // An ambiguous closing date is not authoritative evidence the vacancy is open.
-    if (!Number.isFinite(closing) || closing < now) return { kind: 'unavailable' };
   }
   if (!profile?.name?.trim()) return { kind: 'profile_required' };
   return { kind: 'documents' };
