@@ -11,7 +11,11 @@ import { ApplyDocumentsPanel } from '../../components/ApplyDocumentsPanel';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
-import { jobIsClosed, verifiedEvidence, type VerifiedEvidenceDisplay } from '../../lib/jobVerifiedEvidence';
+import { verifiedEvidence, type VerifiedEvidenceDisplay } from '../../lib/jobVerifiedEvidence';
+import { homeInlineApplyDecision } from '../../lib/homeApplyDecision';
+import { homeJobAvailability } from '../../lib/homeFeaturedDetails';
+import { armPendingHomeApplication, clearPendingHomeApplication, hasPendingHomeApplication } from '../../lib/homeApplyPending';
+import { jobDetailReadbackRecovery } from '../../lib/jobDetailReadbackRecovery';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -36,7 +40,8 @@ export default function JobDetailScreen() {
   const { session } = useSession();
   const privacy = usePrivateDataQuarantine();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
-  const jobId = firstParam(params.id) ?? '';
+  // Canonical UUID identity is independent of deep-link letter casing.
+  const jobId = (firstParam(params.id) ?? '').toLowerCase();
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
   if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
     return <View style={styles.center}><ActivityIndicator color="#E9265A" /></View>;
@@ -83,6 +88,8 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
   const [profile, setProfile] = useState<JobseekerProfile | null>(null);
   const [existingApplicationId, setExistingApplicationId] = useState<string | null>(null);
   const [applicationUncertain, setApplicationUncertain] = useState(false);
+  // A transport-ambiguous submit remains quarantined across rerenders.
+  const uncertainRef = useRef(false);
   const applyInFlight = useRef(false);
   const [savedIds, setSavedIds] = useState<string[] | null>(null);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
@@ -120,13 +127,24 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
       ]);
       if (!pinned.isCurrent() || !focusActive.current || current !== generation.current ||
           candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      // The private pending receipt is not proof of a successful server submit.
+      const pending = await hasPendingHomeApplication(pinned.ownerId, jobId);
+      if (!pinned.isCurrent() || !focusActive.current || current !== generation.current) return;
+      const readback = jobDetailReadbackRecovery(
+        nextJob, nextProfile, applications, jobId, pending, uncertainRef.current, Date.now(),
+      );
+      if (readback.existingApplicationId) {
+        // Cleanup failure cannot hide a verified candidate-owned application.
+        await clearPendingHomeApplication(pinned.ownerId, jobId).catch(() => undefined);
+        if (!pinned.isCurrent() || !focusActive.current || current !== generation.current) return;
+      }
+      uncertainRef.current = readback.quarantine;
+      setApplicationUncertain(readback.quarantine);
       setSavedIds(favoriteResult.ids);
       setFavoriteError(favoriteResult.failed ? '気になるの保存状態を確認できませんでした。再読み込みしてください。' : null);
       setJob(nextJob);
       setProfile(nextProfile);
-      setExistingApplicationId(applications.find((application) => application.job_id === jobId)?.id ?? null);
-      // Only an authorized canonical read clears a previous uncertain submit.
-      setApplicationUncertain(false);
+      setExistingApplicationId(readback.existingApplicationId);
     } catch (loadError) {
       if (current === generation.current) setError(String((loadError as { message?: unknown })?.message ?? loadError));
     } finally {
@@ -212,8 +230,10 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
       setError('応募前にプロフィールを登録してください。');
       return;
     }
-    if (applying || applyInFlight.current || applicationUncertain || existingApplicationId || !focusActive.current) return;
-    if (!job || job.is_external || job.can_apply_direct === false || jobIsClosed(job.closing_at, Date.now())) {
+    if (applying || applyInFlight.current || applicationUncertain || uncertainRef.current ||
+        existingApplicationId || !focusActive.current) return;
+    if (!job || job.is_external || job.can_apply_direct === false ||
+        homeJobAvailability(job, Date.now()) !== 'open') {
       setError('この求人は現在Hoiku Colorから直接応募できません。');
       return;
     }
@@ -227,9 +247,10 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
       return;
     }
     // React state updates do not synchronously prevent repeated submit taps.
-    if (applying || applyInFlight.current || applicationUncertain ||
+    if (applying || applyInFlight.current || applicationUncertain || uncertainRef.current ||
         existingApplicationId || !focusActive.current) return;
-    if (!job || job.is_external || job.can_apply_direct === false || jobIsClosed(job.closing_at, Date.now())) {
+    if (!job || job.is_external || job.can_apply_direct === false ||
+        homeJobAvailability(job, Date.now()) !== 'open') {
       setChoosingDocuments(false);
       setError('この求人は現在Hoiku Colorから直接応募できません。');
       return;
@@ -245,20 +266,65 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
       if (!canContinue() || !pinned.isCurrent() ||
           pinned.ownerId !== ownerId || pinned.ownerSessionId !== ownerSessionId) return;
-      submitDispatched = true;
-      const result = await submitApplication(pinned.client, jobId, profile, { documentIds });
+      // Refresh authoritative inputs immediately before the attempted write.
+      const [freshJob, freshProfile, applications] = await Promise.all([
+        getCandidateJob(pinned.client, jobId),
+        getJobseekerProfile(pinned.client),
+        listApplications(pinned.client),
+      ]);
       if (!canContinue() || !pinned.isCurrent()) return;
+      const decision = homeInlineApplyDecision(freshJob, freshProfile, applications, jobId, Date.now());
+      if (decision.kind === 'existing') {
+        // The application is verified and candidate-owned. Cleanup failures
+        // cannot hide it; a lingering receipt still quarantines future submit.
+        await clearPendingHomeApplication(ownerId, jobId).catch(() => undefined);
+        if (canContinue() && pinned.isCurrent()) routeToApplication(decision.applicationId);
+        return;
+      }
+      if (decision.kind !== 'documents' || !freshProfile) {
+        setChoosingDocuments(false);
+        setError('募集状況または応募情報が更新されました。内容を再読み込みしてください。');
+        return;
+      }
+      // Private durable quarantine is written before the first network submit.
+      // It is not a server-side idempotency key; never auto-retry it.
+      const alreadyPending = await armPendingHomeApplication(ownerId, ownerSessionId, jobId, documentIds);
+      uncertainRef.current = true;
+      if (alreadyPending) {
+        setApplicationUncertain(true);
+        setError('前回の応募結果が未確認です。重複応募を防ぐため再送信できません。');
+        return;
+      }
+      if (!canContinue() || !pinned.isCurrent()) return;
+      submitDispatched = true;
+      const result = await submitApplication(pinned.client, jobId, freshProfile, { documentIds });
+      if (!canContinue() || !pinned.isCurrent()) return;
+      await clearPendingHomeApplication(ownerId, jobId);
+      if (!canContinue() || !pinned.isCurrent()) return;
+      uncertainRef.current = false;
+      setApplicationUncertain(false);
       routeToApplication(result.applicationId, result.documentHandoffFailures > 0);
     } catch (applyError) {
       if (!canContinue()) return;
       if (submitDispatched) {
-        const outcome = await reconcileAmbiguousApplication(requestGeneration);
-        if (outcome === 'confirmed' || outcome === 'quarantined' || !canContinue()) return;
-        if (outcome === 'read_failed') {
-          setApplicationUncertain(true);
-          setError('応募結果を確認できませんでした。応募状況を再読み込みしてください。');
+        const outcome = await reconcileAmbiguousApplication(requestGeneration).catch(() => 'read_failed' as const);
+        if (outcome === 'confirmed') {
+          await clearPendingHomeApplication(ownerId, jobId).catch(() => undefined);
           return;
         }
+        // An empty read is not conclusive evidence of a failed RPC write.
+        uncertainRef.current = true;
+        setApplicationUncertain(true);
+        setError('応募結果が未確認です。応募管理でも確認し、再応募しないでください。');
+        return;
+      }
+      // A failed SecureStore write may still have created a receipt.
+      const pending = await hasPendingHomeApplication(ownerId, jobId).catch(() => true);
+      if (pending) {
+        uncertainRef.current = true;
+        setApplicationUncertain(true);
+        setError('応募状況を確認できません。再送信せず応募管理で確認してください。');
+        return;
       }
       setError(String((applyError as { message?: unknown })?.message ?? applyError));
     } finally {
@@ -275,7 +341,9 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
   }
   if (!job) return <View style={styles.center}><Text>この求人は現在確認できません。</Text></View>;
 
-  const closed = jobIsClosed(job.closing_at, Date.now());
+  const availability = homeJobAvailability(job, Date.now());
+  const closed = availability === 'closed';
+  const unknown = availability === 'unknown';
   const directApply = !job.is_external && job.can_apply_direct !== false;
   const workplaceEvidence = verifiedEvidence(job.verified_workplace, 'workplace');
   const financeEvidence = verifiedEvidence(job.verified_finance, 'finance');
@@ -322,6 +390,7 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
       ) : null}
 
       {closed ? <Text style={styles.error}>募集終了：保存履歴として求人内容を確認できます。応募はできません。</Text> : null}
+      {unknown ? <Text style={styles.error}>募集状況を確認できません。応募する前に求人情報を再確認してください。</Text> : null}
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>園</Text>
         <Text style={styles.body}>{job.facility_name}{job.facility_type ? `（${job.facility_type}）` : ''}</Text>
@@ -362,6 +431,10 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
         </View>
       ) : closed ? (
         <Text style={styles.subtle}>募集は終了しています。</Text>
+      ) : unknown ? (
+        <Text style={styles.subtle}>募集状況を確認できないため、今は応募できません。</Text>
+      ) : applicationUncertain ? (
+        <Text style={styles.subtle}>応募結果を確認中です。重複送信を防ぐため応募できません。</Text>
       ) : choosingDocuments ? (
         <ApplyDocumentsPanel jobId={job.id} submitting={applying} onCancel={() => setChoosingDocuments(false)} onSubmit={(documentIds) => void apply(documentIds)} />
       ) : (
@@ -370,13 +443,13 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId }: {
         </Pressable>
       )}
 
-      {directApply && !closed && !profile?.name?.trim() && !existingApplicationId ? (
+      {directApply && !closed && !unknown && !profile?.name?.trim() && !existingApplicationId ? (
         <Pressable style={styles.secondary} onPress={() => router.push('/(tabs)/profile')}>
           <Text style={styles.secondaryText}>プロフィールを登録する</Text>
         </Pressable>
       ) : null}
 
-      {directApply && !closed ? (
+      {directApply && !closed && !unknown ? (
         <Pressable style={styles.secondary} onPress={() => router.push(`/visits?jobId=${encodeURIComponent(job.id)}` as never)}>
           <Text style={styles.secondaryText}>見学・体験を予約</Text>
         </Pressable>

@@ -1,7 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 
-export type DurableMutationKind = 'message' | 'visit' | 'interview';
+export type DurableMutationKind = 'message' | 'visit' | 'interview' | 'application';
 
 export type DurableMutationEnvelope = {
   version: 1;
@@ -109,7 +109,7 @@ function isEnvelope(value: unknown): value is DurableMutationEnvelope {
   const row = value as Record<string, unknown>;
   return (
     row.version === 1 &&
-    (row.kind === 'message' || row.kind === 'visit' || row.kind === 'interview') &&
+    (row.kind === 'message' || row.kind === 'visit' || row.kind === 'interview' || row.kind === 'application') &&
     typeof row.scopeId === 'string' &&
     typeof row.requestId === 'string' &&
     typeof row.payloadHash === 'string' &&
@@ -233,7 +233,7 @@ export async function loadDurableMutation(params: {
     return null;
   }
   const created = Date.parse(parsed.createdAt);
-  if (!Number.isFinite(created) || Date.now() - created > MAX_AGE_MS) {
+  if (!Number.isFinite(created) || (parsed.kind !== 'application' && Date.now() - created > MAX_AGE_MS)) {
     await discardEnvelope(params.userId, key);
     return null;
   }
