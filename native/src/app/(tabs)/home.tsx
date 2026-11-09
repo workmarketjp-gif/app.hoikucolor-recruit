@@ -2,6 +2,7 @@ import { useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { CareerExperience } from '../../components/CareerExperience';
+import { FeaturedHomeJobs } from '../../components/FeaturedHomeJobs';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { useNotifications } from '../../contexts/NotificationContext';
 
@@ -69,6 +70,7 @@ export default function HomeScreen() {
       </View>
 
       <CareerExperience variant="home" />
+      <FeaturedHomeJobs />
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>あなたに合う園を探す</Text>
