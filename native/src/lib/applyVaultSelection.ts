@@ -40,3 +40,21 @@ export function reconcileApplyVaultSelection(
   }
   return updated;
 }
+
+/**
+ * An embedded vault may have an OS picker, camera permission prompt or network
+ * upload in flight while its last canonical document list is still rendered.
+ * Never allow the parent application to submit that stale selection.
+ * Missing required documents are handled separately to retain the Web's inline
+ * validation feedback when the user taps Submit.
+ */
+export type ApplySubmissionAvailability = Readonly<{
+  requirementsReady: boolean;
+  submitting: boolean;
+  vaultRefreshing: boolean;
+  vaultBusy: boolean;
+}>;
+
+export function isApplySubmissionUnavailable(state: ApplySubmissionAvailability): boolean {
+  return !state.requirementsReady || state.submitting || state.vaultRefreshing || state.vaultBusy;
+}
