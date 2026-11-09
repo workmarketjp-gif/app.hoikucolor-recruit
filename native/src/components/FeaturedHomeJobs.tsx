@@ -8,16 +8,7 @@ import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { listSavedJobIds, saveJob, searchJobseekerJobs, unsaveJob, type JobseekerJob } from '../lib/jobseekerCoreApi';
 import { updateSavedJobAndConfirm } from '../lib/savedJobsReadback';
 import { homeEvidenceMetrics, homeJobAvailability, homeJobConditions, homeJobSource } from '../lib/homeFeaturedDetails';
-
-function salary(job: JobseekerJob): string | null {
-  if (job.salary_note?.trim()) return job.salary_note;
-  if (job.salary_min === null) return null;
-  const prefix = job.salary_type === 'hourly' ? '時給' : job.salary_type === 'annual' ? '年収' : '月給';
-  const min = job.salary_min.toLocaleString('ja-JP');
-  const max = job.salary_max === null ? '〜' : job.salary_max === job.salary_min
-    ? '' : `〜${job.salary_max.toLocaleString('ja-JP')}`;
-  return job.salary_max === null ? `${prefix} ${min}円〜` : `${prefix} ${min}${max}円`;
-}
+import { homeFeaturedSalary } from '../lib/homeFeaturedSalary';
 
 /** The Web's three canonical featured jobs; never a cached or cross-account list. */
 export function FeaturedHomeJobs() {
@@ -165,7 +156,7 @@ export function FeaturedHomeJobs() {
             </Text>
           </Pressable> : !favoriteError ? <Text style={styles.subtle}>気になるの保存状況を確認中…</Text> : null}
           <Text style={styles.subtle}>{[job.prefecture, job.city, job.employment_type].filter(Boolean).join(' ・ ')}</Text>
-          {salary(job) ? <Text style={styles.salary}>{salary(job)}</Text> : null}
+          <Text style={styles.salary}>{homeFeaturedSalary(job)}</Text>
           {job.is_external && job.source_name ? <Text style={styles.badge}>掲載元：{job.source_name}</Text> : null}
           {availability === 'closed' && <Text style={styles.error}>募集終了</Text>}
           {availability === 'unknown' && <Text style={styles.error}>募集状況を確認できません</Text>}
