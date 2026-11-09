@@ -9,7 +9,9 @@ type CandidateDocumentRef = Readonly<{ id: string; document_type: string }>;
  * Never turn its temporary [] loading signal into an empty confirmed list,
  * nor silently select all existing documents when the vault first opens.
  * A newly uploaded document can be preselected only for the type the
- * candidate explicitly opened and only when its new identity is unambiguous.
+ * candidate explicitly opened AND the exact canonical ID reported by the upload.
+ * A list diff alone cannot identify a user-initiated upload in the presence of
+ * concurrent saves on a different device or session.
  */
 export function reconcileApplyVaultSelection(
   previous: readonly CandidateDocumentRef[],
@@ -17,6 +19,7 @@ export function reconcileApplyVaultSelection(
   selection: ApplyDocumentSelection,
   addingType: JobseekerDocumentType | null,
   change: Exclude<ApplyVaultChange, 'loading'>,
+  uploadedDocumentId: string | null = null,
 ): ApplyDocumentSelection {
   const updated: ApplyDocumentSelection = { ...selection };
   for (const type of Object.keys(updated) as JobseekerDocumentType[]) {
@@ -26,12 +29,14 @@ export function reconcileApplyVaultSelection(
     }
   }
 
-  if (change === 'uploaded' && addingType) {
-    const known = new Set(previous.map((document) => document.id));
-    const added = next.filter((document) =>
-      document.document_type === addingType && document.id.length > 0 && !known.has(document.id),
+  if (change === 'uploaded' && addingType && uploadedDocumentId) {
+    // The child verifies the RPC save by re-reading canonical records and passes
+    // the confirmed saved ID. Never infer upload identity from list additions.
+    const wasAlreadyKnown = previous.some((document) => document.id === uploadedDocumentId);
+    const confirmedUpload = next.some((document) =>
+      document.id === uploadedDocumentId && document.document_type === addingType,
     );
-    if (added.length === 1) updated[addingType] = added[0].id;
+    if (!wasAlreadyKnown && confirmedUpload) updated[addingType] = uploadedDocumentId;
   }
   return updated;
 }

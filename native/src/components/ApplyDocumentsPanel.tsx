@@ -80,7 +80,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
 
   // The vault sends [] during loading. It is not a verified empty list.
   // A new file is selected only after an explicit canonical upload.
-  const onVaultChanged = useCallback((next: JobseekerDocument[], change: ApplyVaultChange = 'loaded') => {
+  const onVaultChanged = useCallback((next: JobseekerDocument[], change: ApplyVaultChange = 'loaded', uploadedDocumentId: string | null = null) => {
     if (change === 'loading') {
       setVaultRefreshing(true);
       return;
@@ -89,7 +89,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
     knownDocuments.current = next;
     setDocuments(next);
     setVaultRefreshing(false);
-    setSelection((current) => reconcileApplyVaultSelection(previous, next, current, addingType, change));
+    setSelection((current) => reconcileApplyVaultSelection(previous, next, current, addingType, change, uploadedDocumentId));
   }, [addingType]);
 
   const submit = () => {

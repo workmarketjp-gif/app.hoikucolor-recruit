@@ -70,7 +70,7 @@ function formatBytes(value: number | null) {
  */
 export function DocumentVaultSection({ initialType = 'resume', onDocumentsChanged, qualifications }: {
   initialType?: JobseekerDocumentType;
-  onDocumentsChanged?: (documents: JobseekerDocument[], change?: ApplyVaultChange) => void;
+  onDocumentsChanged?: (documents: JobseekerDocument[], change?: ApplyVaultChange, uploadedDocumentId?: string | null) => void;
   /** Self-declared profile qualifications; uploaded copies are NOT verified credentials. */
   qualifications?: readonly string[];
 } = {}) {
@@ -91,11 +91,11 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
   const documents = verifiedDocuments ?? [];
   const onDocumentsChangedRef = useRef(onDocumentsChanged);
   onDocumentsChangedRef.current = onDocumentsChanged;
-  const setDocuments = useCallback((next: JobseekerDocument[], verifiedOwnerKey: string, change: Exclude<ApplyVaultChange, 'loading'> = 'loaded') => {
+  const setDocuments = useCallback((next: JobseekerDocument[], verifiedOwnerKey: string, change: Exclude<ApplyVaultChange, 'loading'> = 'loaded', uploadedDocumentId: string | null = null) => {
     if (!mountedRef.current || !privacy.canAccessPrivateData() || ownerKeyRef.current !== verifiedOwnerKey) return;
     freshlyVerifiedOwner.current = verifiedOwnerKey;
     setOwnedDocuments({ ownerKey: verifiedOwnerKey, value: next });
-    onDocumentsChangedRef.current?.(next, change);
+    onDocumentsChangedRef.current?.(next, change, uploadedDocumentId);
   }, [privacy.canAccessPrivateData]);
   const [documentType, setDocumentType] = useState<JobseekerDocumentType>(initialType);
   const [showTypes, setShowTypes] = useState(false);
@@ -281,7 +281,7 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
     if (!pinned.isCurrent() || !mountedRef.current || ownerKeyRef.current !== pinnedOwnerKey ||
         !privacy.canAccessPrivateData()) return;
     confirmCandidateDocumentMutation(canonical, pickerOwnerId, saved.id, 'uploaded');
-    setDocuments(canonical, pinnedOwnerKey, 'uploaded');
+    setDocuments(canonical, pinnedOwnerKey, 'uploaded', saved.id);
     Alert.alert('保存しました', `${labels[selectedType]}を応募書類として保存しました。`);
   }
 
