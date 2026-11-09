@@ -1,4 +1,5 @@
 import type { JobseekerJob, VerifiedProfile } from './jobseekerCoreApi';
+import { verifiedEvidence } from './jobVerifiedEvidence.ts';
 
 export type JobCondition = Readonly<{ label: string; value: string }>;
 export type EvidenceMetric = Readonly<{
@@ -28,39 +29,22 @@ export function homeJobConditions(job: JobseekerJob): JobCondition[] {
   ));
 }
 
-const workplacePriority = [
-  'average_monthly_overtime_hours', 'paid_leave_usage_rate_pct',
-  'average_tenure_years', 'average_monthly_saturday_shift_count',
-  'nursery_teacher_ratio_pct', 'average_experience_years',
-  'average_monthly_early_shift_count', 'average_monthly_late_shift_count',
-  'full_time_ratio_pct', 'average_age_years',
-] as const;
-
-/** A badge/count alone is not proof of any metric. Only actual RPC values are rendered. */
+/** Keep the Home evidence card on the same approved metric list, source gate and
+ * metric ordering as the Web-equivalent Native job detail. Finance samples
+ * represent months, whereas workplace samples represent individual records.
+ * Explicitly declared/conflicting provenance is never presented as verified.
+ * Older verified RPC rows without a per-metric source remain compatible.
+ */
 export function homeEvidenceMetrics(profile: VerifiedProfile | null | undefined, kind: 'workplace' | 'finance'): EvidenceMetric[] {
-  if (!profile || typeof profile.verified_metric_count !== 'number' ||
-      !Number.isFinite(profile.verified_metric_count) || profile.verified_metric_count <= 0 ||
-      !profile.verified_metrics) return [];
-  const values = profile.verified_metrics;
-  const keys = kind === 'workplace'
-    ? workplacePriority.filter((key) => Object.prototype.hasOwnProperty.call(values, key))
-    : Object.keys(values).sort();
-  const metrics: EvidenceMetric[] = [];
-  for (const key of keys) {
-    const metric = values[key];
-    if (!metric || typeof metric.label !== 'string' || !metric.label.trim() ||
-        (typeof metric.value !== 'number' && typeof metric.value !== 'string') ||
-        (typeof metric.value === 'number' && !Number.isFinite(metric.value)) ||
-        (typeof metric.value === 'string' && !metric.value.trim())) continue;
-    const value = typeof metric.value === 'number' ? Number(metric.value.toFixed(1)) : metric.value;
-    metrics.push({
-      key, label: metric.label, displayValue: `${value}${typeof metric.unit === 'string' ? metric.unit : ''}`,
-      sample: typeof metric.sample_size === 'number' && Number.isSafeInteger(metric.sample_size) && metric.sample_size >= 0
-        ? `${metric.sample_size}件の記録` : null,
-    });
-    if (metrics.length === 10) break;
-  }
-  return metrics;
+  const verified = verifiedEvidence(profile, kind);
+  if (!verified) return [];
+  const sampleUnit = kind === 'finance' ? 'か月分の記録' : '件の記録';
+  return verified.metrics.map((metric) => ({
+    key: metric.key,
+    label: metric.label,
+    displayValue: metric.value,
+    sample: metric.recordCount === null ? null : `${metric.recordCount}${sampleUnit}`,
+  }));
 }
 
 /** Imported source metadata never creates a claim that a posting is verified. */
