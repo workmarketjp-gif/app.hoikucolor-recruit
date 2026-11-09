@@ -22,6 +22,7 @@ import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type Candidate
 import { assertCandidateDocumentListOwner, canActOnCandidateDocument, confirmCandidateDocumentMutation } from '../lib/documentVaultPrivacy';
 import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_ORDER, evidenceTypesForQualification } from '../lib/documentTypes';
 import { qualificationEvidenceCounts } from '../lib/qualificationEvidenceCounts';
+import type { ApplyVaultChange } from '../lib/applyVaultSelection';
 
 // Keep the document catalogue and exact qualification mapping in sync with Web.
 const labels = DOCUMENT_TYPE_LABELS;
@@ -69,7 +70,7 @@ function formatBytes(value: number | null) {
  */
 export function DocumentVaultSection({ initialType = 'resume', onDocumentsChanged, qualifications }: {
   initialType?: JobseekerDocumentType;
-  onDocumentsChanged?: (documents: JobseekerDocument[]) => void;
+  onDocumentsChanged?: (documents: JobseekerDocument[], change?: ApplyVaultChange) => void;
   /** Self-declared profile qualifications; uploaded copies are NOT verified credentials. */
   qualifications?: readonly string[];
 } = {}) {
@@ -90,11 +91,11 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
   const documents = verifiedDocuments ?? [];
   const onDocumentsChangedRef = useRef(onDocumentsChanged);
   onDocumentsChangedRef.current = onDocumentsChanged;
-  const setDocuments = useCallback((next: JobseekerDocument[], verifiedOwnerKey: string) => {
+  const setDocuments = useCallback((next: JobseekerDocument[], verifiedOwnerKey: string, change: Exclude<ApplyVaultChange, 'loading'> = 'loaded') => {
     if (!mountedRef.current || !privacy.canAccessPrivateData() || ownerKeyRef.current !== verifiedOwnerKey) return;
     freshlyVerifiedOwner.current = verifiedOwnerKey;
     setOwnedDocuments({ ownerKey: verifiedOwnerKey, value: next });
-    onDocumentsChangedRef.current?.(next);
+    onDocumentsChangedRef.current?.(next, change);
   }, [privacy.canAccessPrivateData]);
   const [documentType, setDocumentType] = useState<JobseekerDocumentType>(initialType);
   const [showTypes, setShowTypes] = useState(false);
@@ -117,7 +118,7 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
     const generation = ++loadGenerationRef.current;
     freshlyVerifiedOwner.current = null;
     setOwnedDocuments(null);
-    onDocumentsChangedRef.current?.([]);
+    onDocumentsChangedRef.current?.([], 'loading');
     setLoading(true);
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> = null;
     try {
@@ -145,7 +146,7 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
       loadGenerationRef.current += 1;
       freshlyVerifiedOwner.current = null;
       setOwnedDocuments(null);
-      onDocumentsChangedRef.current?.([]);
+      onDocumentsChangedRef.current?.([], 'loading');
       setLoading(true);
       setBusyId(null);
       return;
@@ -280,7 +281,7 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
     if (!pinned.isCurrent() || !mountedRef.current || ownerKeyRef.current !== pinnedOwnerKey ||
         !privacy.canAccessPrivateData()) return;
     confirmCandidateDocumentMutation(canonical, pickerOwnerId, saved.id, 'uploaded');
-    setDocuments(canonical, pinnedOwnerKey);
+    setDocuments(canonical, pinnedOwnerKey, 'uploaded');
     Alert.alert('保存しました', `${labels[selectedType]}を応募書類として保存しました。`);
   }
 
