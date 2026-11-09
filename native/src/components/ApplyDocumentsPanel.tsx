@@ -15,7 +15,7 @@ import {
 } from '../lib/documentTypes';
 import { getJobDocumentRequirements } from '../lib/jobDocumentRequirementApi';
 import { DocumentVaultSection } from './DocumentVaultSection';
-import { reconcileApplyVaultSelection, type ApplyVaultChange } from '../lib/applyVaultSelection';
+import { isApplySubmissionUnavailable, reconcileApplyVaultSelection, type ApplyVaultChange } from '../lib/applyVaultSelection';
 
 type Props = {
   jobId: string;
@@ -39,6 +39,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
   const [addingType, setAddingType] = useState<JobseekerDocumentType | null>(null);
   const [triedSubmit, setTriedSubmit] = useState(false);
   const [vaultRefreshing, setVaultRefreshing] = useState(false);
+  const [vaultBusy, setVaultBusy] = useState(false);
   const knownDocuments = useRef<JobseekerDocument[]>([]);
   const generation = useRef(0);
 
@@ -51,6 +52,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
     setSelection({});
     setAddingType(null);
     setVaultRefreshing(false);
+    setVaultBusy(false);
     setTriedSubmit(false);
     setLoadError(null);
     try {
@@ -77,6 +79,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
 
   const rows = useMemo(() => (requirements ? buildApplyDocumentRows(requirements, documents) : []), [requirements, documents]);
   const missing = useMemo(() => missingRequiredDocuments(rows, selection), [rows, selection]);
+  const submissionUnavailable = isApplySubmissionUnavailable({ requirementsReady: requirements !== null, submitting, vaultRefreshing, vaultBusy });
 
   // The vault sends [] during loading. It is not a verified empty list.
   // A new file is selected only after an explicit canonical upload.
@@ -94,7 +97,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
 
   const submit = () => {
     setTriedSubmit(true);
-    if (missing.length || submitting || vaultRefreshing || !requirements) return;
+    if (missing.length || submissionUnavailable) return;
     onSubmit(selectedDocumentIds(rows, selection));
   };
 
@@ -133,7 +136,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
           onPress={() => setSelection((current) => ({ ...current, [row.type]: document.id }))}
           accessibilityRole="radio"
           accessibilityState={{ checked: selectedId === document.id }}
-          disabled={submitting || vaultRefreshing}
+          disabled={submitting || vaultRefreshing || vaultBusy}
         >
           <Text numberOfLines={1} style={styles.optionText}>{selectedId === document.id ? '● ' : '○ '}{document.title}</Text>
           {document.is_default ? <Text style={styles.optionSub}>応募時に使う書類</Text> : null}
@@ -143,32 +146,33 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
           onPress={() => setSelection((current) => ({ ...current, [row.type]: null }))}
           accessibilityRole="radio"
           accessibilityState={{ checked: !selectedId }}
-          disabled={submitting || vaultRefreshing}
+          disabled={submitting || vaultRefreshing || vaultBusy}
         >
           <Text style={styles.optionText}>{!selectedId ? '● ' : '○ '}{row.level === 'requested_later' ? '今は送らない' : '送らない'}</Text>
         </Pressable> : null}
         {!row.candidates.length ? <Text style={styles.empty}>{row.level === 'required' ? 'まだ保存されていません。この応募に必要です。' : 'まだ保存されていません。'}</Text> : null}
-        <Pressable style={styles.secondary} disabled={submitting} onPress={() => {
+        <Pressable style={styles.secondary} disabled={submitting || vaultBusy} onPress={() => {
           const closing = addingType === row.type;
           setAddingType(closing ? null : row.type);
           if (closing && vaultRefreshing) void load();
         }} accessibilityRole="button">
           <Text style={styles.secondaryText}>{addingType === row.type ? '閉じる' : `${DOCUMENT_TYPE_LABELS[row.type]}を追加`}</Text>
         </Pressable>
-        {addingType === row.type ? <DocumentVaultSection initialType={row.type} onDocumentsChanged={onVaultChanged} /> : null}
+        {addingType === row.type ? <DocumentVaultSection initialType={row.type} onDocumentsChanged={onVaultChanged} onBusyChanged={setVaultBusy} /> : null}
       </View>;
     }) : <Text style={styles.subtle}>送る書類はありません。書類なしで応募できます。履歴書などは、応募後に応募内容の画面から追加で提出することもできます。</Text>}
 
     <Text style={styles.note}>選んだ書類は、この応募先の園にだけ提出用のコピーが共有されます。</Text>
     {vaultRefreshing ? <Text style={styles.hint} accessibilityLiveRegion="polite">書類一覧を再確認しています。確認が終わるまで応募できません。</Text> : null}
+    {vaultBusy ? <Text style={styles.hint} accessibilityLiveRegion="polite">書類の選択・保存中は応募できません。</Text> : null}
     {missing.length ? <Text style={triedSubmit ? styles.error : styles.hint} accessibilityLiveRegion="polite">
       {joinDocumentLabels(missing)}はこの求人の応募に必要です。保存済みの書類を選ぶか、ここで追加してください。
     </Text> : null}
 
-    <Pressable style={styles.primary} disabled={submitting || vaultRefreshing} onPress={submit} accessibilityRole="button" accessibilityState={{ disabled: submitting || vaultRefreshing }}>
+    <Pressable style={styles.primary} disabled={submissionUnavailable} onPress={submit} accessibilityRole="button" accessibilityState={{ disabled: submissionUnavailable }}>
       <Text style={styles.primaryText}>{submitting ? '応募しています…' : 'この内容で応募する'}</Text>
     </Pressable>
-    <Pressable style={styles.secondary} disabled={submitting} onPress={onCancel} accessibilityRole="button">
+    <Pressable style={styles.secondary} disabled={submitting || vaultBusy} onPress={onCancel} accessibilityRole="button">
       <Text style={styles.secondaryText}>戻る</Text>
     </Pressable>
   </View>;
