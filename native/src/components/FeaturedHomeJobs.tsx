@@ -112,7 +112,7 @@ export function FeaturedHomeJobs() {
           </View>}
           <Pressable accessibilityRole="button" style={styles.primary}
             onPress={() => router.push(`/job/${encodeURIComponent(job.id)}` as never)}>
-            <Text style={styles.primaryText}>求人詳細・応募・気になる</Text>
+            <Text style={styles.primaryText}>求人詳細を見る</Text>
           </Pressable>
         </View>;
       })}
