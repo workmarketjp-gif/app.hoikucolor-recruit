@@ -82,13 +82,23 @@ export function homeJobSource(job: JobseekerJob): string[] {
  * The Web's boolean JobCard check treats an invalid timestamp as "not closed",
  * but Native must not display an actionable inline application that its own
  * canonical preflight rejects. A valid, absent optional deadline is different
- * from a malformed deadline. This is presentation, never authorization.
+ * from a malformed deadline. The authenticated v2 search/get-job RPCs do not
+ * return is_open; the separately authorized saved-jobs RPC explicitly does.
+ * If is_open is absent, accept only the exact v2 source identity/eligibility
+ * pair instead of assuming an arbitrary partial object is open. This is a
+ * presentation guard, never a replacement for server-side authorization.
  */
 export type HomeJobAvailability = 'open' | 'closed' | 'unknown';
 
 export function homeJobAvailability(job: JobseekerJob & { is_open?: boolean }, now: number): HomeJobAvailability {
   if (job.is_open === false) return 'closed';
-  if (!Number.isFinite(now) || (job.is_open !== undefined && job.is_open !== true)) return 'unknown';
+  const source = job.source_kind;
+  const canonicalLiveFeed = job.is_open === undefined && typeof source === 'string' && (
+    (source === 'hoiku_color' && job.is_external === false && job.can_apply_direct === true) ||
+    (source.trim().length > 0 && source !== 'hoiku_color' &&
+      job.is_external === true && job.can_apply_direct === false)
+  );
+  if (!Number.isFinite(now) || (job.is_open !== true && !canonicalLiveFeed)) return 'unknown';
   if (job.closing_at == null) return 'open';
   if (typeof job.closing_at !== 'string' || !job.closing_at.trim()) return 'unknown';
   const end = Date.parse(job.closing_at);
