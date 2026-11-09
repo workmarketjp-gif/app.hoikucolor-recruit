@@ -52,3 +52,22 @@ test('job closing checks past, future and unknown timestamps', () => {
   assert.equal(jobIsClosed('invalid',now),false);
   assert.equal(jobIsClosed(null,now),false);
 });
+
+
+test('unverified fractional totals cannot authenticate a verified metric', () => {
+  assert.equal(verifiedEvidence({ ...workplace, verified_metric_count: 0.5 }, 'workplace'), null);
+  assert.equal(verifiedEvidence({ ...workplace, verified_metric_count: 1.5 }, 'workplace'), null);
+});
+
+test('impossible calendar dates cannot be asserted as an evidence period', () => {
+  for (const invalid of ['2026-02-30', '2026-02-29', '2026-04-31', '2026-02-99']) {
+    assert.equal(verifiedEvidence({ ...workplace, period_start: invalid }, 'workplace')?.period, null, invalid);
+    assert.equal(verifiedEvidence({ ...workplace, period_end: invalid }, 'workplace')?.period, null, invalid);
+  }
+  assert.equal(verifiedEvidence({ ...workplace, period_start: '2024-02-29', period_end: '2024-03-31' }, 'workplace')?.period, '2024年2月〜2024年3月');
+});
+
+test('reversed or incomplete evidence periods are never shown as real coverage', () => {
+  assert.equal(verifiedEvidence({ ...workplace, period_start: '2026-04-01', period_end: '2026-03-31' }, 'workplace')?.period, null);
+  assert.equal(verifiedEvidence({ ...workplace, period_start: null, period_end: '2026-03-31' }, 'workplace')?.period, null);
+});

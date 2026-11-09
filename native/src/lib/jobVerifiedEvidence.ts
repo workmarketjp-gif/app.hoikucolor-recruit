@@ -29,13 +29,18 @@ export type VerifiedEvidenceDisplay = {
   period: string | null;
 };
 
-function month(value: unknown): string | null {
+function month(value: unknown): { order: number; label: string } | null {
   if (typeof value !== 'string') return null;
-  const match = /^(\d{4})-(\d{2})(?:-\d{2})?$/.exec(value);
+  const match = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(value);
   if (!match) return null;
   const year = Number(match[1]);
   const n = Number(match[2]);
-  return year >= 1900 && year <= 9999 && n >= 1 && n <= 12 ? `${year}年${n}月` : null;
+  if (year < 1900 || year > 9999 || n < 1 || n > 12) return null;
+  if (match[3] !== undefined) {
+    const day = Number(match[3]);
+    if (day < 1 || day > new Date(Date.UTC(year, n, 0)).getUTCDate()) return null;
+  }
+  return { order: year * 12 + n, label: `${year}年${n}月` };
 }
 
 /** Never promote missing or malformed evidence to "verified". */
@@ -43,7 +48,7 @@ export function verifiedEvidence(
   profile: VerifiedProfile | null | undefined,
   kind: 'workplace' | 'finance',
 ): VerifiedEvidenceDisplay | null {
-  if (!profile || !Number.isFinite(profile.verified_metric_count) ||
+  if (!profile || !Number.isSafeInteger(profile.verified_metric_count) ||
       (profile.verified_metric_count ?? 0) <= 0 || !profile.verified_metrics ||
       typeof profile.verified_metrics !== 'object') return null;
   const allowed = kind === 'workplace' ? WORKPLACE_METRICS : FINANCE_METRICS;
@@ -71,7 +76,8 @@ export function verifiedEvidence(
     ? Math.round(transparency) : null;
   const start = month(profile.period_start);
   const end = month(profile.period_end);
-  return { metrics, transparencyPercent, period: start && end ? `${start}〜${end}` : null };
+  return { metrics, transparencyPercent, period: start && end && start.order <= end.order
+    ? `${start.label}〜${end.label}` : null };
 }
 
 /** Avoid both a made-up closure and accepting an already expired listing. */
