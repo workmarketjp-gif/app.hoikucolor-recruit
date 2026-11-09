@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { reconcileApplyVaultSelection } from '../src/lib/applyVaultSelection.ts';
+import { reconcileApplyVaultSelection, isApplySubmissionUnavailable } from '../src/lib/applyVaultSelection.ts';
 
 const resume = { id: 'resume-original', document_type: 'resume' };
 const license = { id: 'license-original', document_type: 'nursery_teacher_license' };
@@ -70,4 +70,14 @@ test('wrong-type and unknown uploaded IDs cannot change selected attachments', (
   const next = [resume, license, { id: 'new-license', document_type: 'nursery_teacher_license' }];
   assert.deepEqual(reconcileApplyVaultSelection([resume, license], next, current, 'resume', 'uploaded', 'new-license'), current);
   assert.deepEqual(reconcileApplyVaultSelection([resume, license], next, current, 'resume', 'uploaded', 'unknown'), current);
+});
+
+
+test('application stays blocked while the embedded document picker or upload is active', () => {
+  const base = { requirementsReady: true, submitting: false, vaultRefreshing: false, vaultBusy: false };
+  assert.equal(isApplySubmissionUnavailable(base), false);
+  assert.equal(isApplySubmissionUnavailable({ ...base, vaultBusy: true }), true);
+  assert.equal(isApplySubmissionUnavailable({ ...base, vaultRefreshing: true }), true);
+  assert.equal(isApplySubmissionUnavailable({ ...base, submitting: true }), true);
+  assert.equal(isApplySubmissionUnavailable({ ...base, requirementsReady: false }), true);
 });
