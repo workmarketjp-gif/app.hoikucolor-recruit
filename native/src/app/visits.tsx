@@ -6,6 +6,7 @@ import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import { canCancelVisibleVisit, canRequestVisibleVisit, formatVisitDateTimeJapan, partitionVisitHistory, visitReadbackConfirmsMutation, visitStatusLabel } from '../lib/visitPresentation';
+import { currentJobVisitReservation, isSelectableVisitDateTime, isValidVisitCalendarDate, visitStartTimeSlots } from '../lib/visitBookingForm';
 import { focusedVisitScrollY, type FocusedVisitMeasurements } from '../lib/focusedVisitScroll';
 import {
   cancelVisit,
@@ -27,6 +28,8 @@ function experienceLabel(value: VisitExperienceType) {
   if (value === 'half_day_trial') return '半日体験';
   return '1日体験';
 }
+
+const weekdayLabels = ['月', '火', '水', '木', '金', '土', '日'];
 
 function allowedTypes(settings: JobseekerVisitSettings | null): VisitExperienceType[] {
   if (!settings) return [];
@@ -162,7 +165,14 @@ export default function VisitsScreen() {
   }, [ownerKey, privacy.shieldVisible, jobId, applicationId]);
 
   const availableTypes = allowedTypes(settings);
-  const canRequest = privateAllowed && !loading && !busy && !error &&
+  const timeSlots = useMemo(() => visitStartTimeSlots(settings), [settings]);
+  const activeJobReservation = currentJobVisitReservation(visits, jobId);
+  useEffect(() => {
+    setLocalTime((current) => timeSlots.includes(current) ? current : timeSlots[0] ?? '');
+  }, [timeSlots]);
+
+  const canRequest = privateAllowed && !loading && !busy && !error && !activeJobReservation &&
+    isSelectableVisitDateTime(localDate, localTime, timeSlots) &&
     canRequestVisibleVisit(
       ownerKey, freshlyVerifiedOwner.current, jobId,
       availableTypes, experienceType, localDate, localTime,
@@ -327,33 +337,89 @@ export default function VisitsScreen() {
 
       {jobId && settings ? (
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>新しい予約</Text>
-          {settings.public_note ? <Text style={styles.subtle}>{settings.public_note}</Text> : null}
-          {availableTypes.length === 0 ? <Text style={styles.subtle}>この園では現在、見学・体験予約を受け付けていません。</Text> : null}
-          <View style={styles.typeRow}>
-            {availableTypes.map((type) => (
-              <Pressable
-                key={type}
-                style={[styles.typeButton, experienceType === type && styles.typeButtonSelected]}
-                onPress={() => setExperienceType(type)}
-              >
-                <Text style={styles.typeButtonText}>{experienceLabel(type)}</Text>
-              </Pressable>
-            ))}
-          </View>
-          {availableTypes.length ? (
+          <Text style={styles.sectionTitle}>応募前に、園を見てみる</Text>
+          {activeJobReservation ? (
+            <View style={styles.activeBooking}>
+              <Text style={styles.bodyStrong}>この求人には見学・体験の予約があります</Text>
+              <Text style={styles.subtle}>現在の状態：{visitStatusLabel(activeJobReservation.status)}</Text>
+              <Text style={styles.subtle}>重複予約を避けるため、新しい申込欄は表示していません。下の予約一覧で日時や状況をご確認ください。</Text>
+            </View>
+          ) : (
             <>
-              <TextInput value={localDate} onChangeText={setLocalDate} placeholder="希望日 YYYY-MM-DD" autoCapitalize="none" style={styles.input} />
-              <TextInput value={localTime} onChangeText={setLocalTime} placeholder={`希望時刻 HH:MM（${settings.first_start_time}〜${settings.last_start_time}）`} autoCapitalize="none" style={styles.input} />
-              <TextInput value={candidateMessage} onChangeText={setCandidateMessage} placeholder="園への連絡事項（任意）" multiline style={styles.textArea} />
-              <Pressable style={styles.primary} disabled={!canRequest} onPress={() => void requestVisit()}>
-                <Text style={styles.primaryText}>{busy ? '予約を確認中…' : '見学・体験を申し込む'}</Text>
-              </Pressable>
+              {availableTypes.length === 0 ? <Text style={styles.subtle}>この園では現在、見学・体験予約を受け付けていません。</Text> : null}
+              <View style={styles.typeRow}>
+                {availableTypes.map((type) => (
+                  <Pressable
+                    key={type}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: experienceType === type }}
+                    style={[styles.typeButton, experienceType === type && styles.typeButtonSelected]}
+                    onPress={() => setExperienceType(type)}
+                  >
+                    <Text style={styles.typeButtonText}>{experienceLabel(type)}</Text>
+                    <Text style={styles.subtle}>{type === 'visit' ? settings.visit_duration_minutes + '分' :
+                      type === 'half_day_trial' ? '約' + Math.round(settings.half_day_duration_minutes / 60) + '時間' :
+                      '約' + Math.round(settings.full_day_duration_minutes / 60) + '時間'}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              {availableTypes.length > 0 ? (
+                <>
+                  <Text style={styles.fieldLabel}>希望日（園の現地時間）</Text>
+                  <TextInput
+                    accessibilityLabel="希望日（年4桁-月2桁-日2桁）"
+                    value={localDate}
+                    onChangeText={setLocalDate}
+                    placeholder="YYYY-MM-DD"
+                    autoCapitalize="none"
+                    maxLength={10}
+                    style={styles.input}
+                  />
+                  {localDate.length > 0 && !isValidVisitCalendarDate(localDate) ?
+                    <Text style={styles.error}>日付をYYYY-MM-DD形式で入力してください。</Text> : null}
+                  <Text style={styles.fieldLabel}>開始時間</Text>
+                  {timeSlots.length ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timeSlots}>
+                      {timeSlots.map((time) => (
+                        <Pressable
+                          key={time}
+                          accessibilityRole="button"
+                          accessibilityLabel={'開始時間 ' + time}
+                          accessibilityState={{ selected: localTime === time }}
+                          style={[styles.timeSlot, localTime === time && styles.timeSlotSelected]}
+                          onPress={() => setLocalTime(time)}
+                        >
+                          <Text style={[styles.timeSlotText, localTime === time && styles.timeSlotTextSelected]}>{time}</Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  ) : <Text style={styles.error}>予約時間を確認できません。園の受付設定をご確認ください。</Text>}
+                  <Text style={styles.subtle}>受付曜日：{(settings.available_weekdays ?? []).map((day) => weekdayLabels[day - 1]).filter(Boolean).join('・') || '設定中'} ／ {settings.first_start_time.slice(0, 5)}〜{settings.last_start_time.slice(0, 5)} ／ {settings.min_notice_hours}時間前まで ／ 最大{settings.max_days_ahead}日先まで</Text>
+                  <Text style={styles.fieldLabel}>園へのひとこと（任意）</Text>
+                  <TextInput
+                    accessibilityLabel="園へのひとこと（任意）"
+                    value={candidateMessage}
+                    onChangeText={setCandidateMessage}
+                    placeholder="見学で確認したいことなどがあれば入力してください"
+                    multiline
+                    maxLength={1000}
+                    style={styles.textArea}
+                  />
+                  <Text style={styles.subtle}>{candidateMessage.length}/1000文字</Text>
+                  {settings.public_note ? <Text style={styles.subtle}>{settings.public_note}</Text> : null}
+                  {settings.what_to_bring ? <Text style={styles.subtle}>持ち物：{settings.what_to_bring}</Text> : null}
+                  {settings.dress_code ? <Text style={styles.subtle}>服装：{settings.dress_code}</Text> : null}
+                  <Pressable accessibilityRole="button" style={[styles.primary, !canRequest && styles.disabled]}
+                    accessibilityState={{ disabled: !canRequest }} disabled={!canRequest} onPress={() => void requestVisit()}>
+                    <Text style={styles.primaryText}>{busy ? '申込中…' : experienceLabel(experienceType) + 'を申し込む'}</Text>
+                  </Pressable>
+                  <Text style={styles.subtle}>日時は園の現地時間です。申込後、園が確認すると予約確定になります。</Text>
+                </>
+              ) : null}
             </>
-          ) : null}
+          )}
         </View>
       ) : null}
-
       {missingTarget ? (
         <Text style={styles.subtle}>指定された見学・体験は見つかりませんでした。現在の予約・履歴のみ表示しています。</Text>
       ) : null}
@@ -387,19 +453,28 @@ export default function VisitsScreen() {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, gap: 12, backgroundColor: '#f7f8fa' },
+  page: { padding: 16, gap: 12, paddingBottom: 32, backgroundColor: '#FFF8FA' },
   title: { fontSize: 24, fontWeight: '900', marginBottom: 4 },
   subtle: { color: '#606873', lineHeight: 20 },
   error: { color: '#b42318', backgroundColor: '#fff1f0', padding: 12, borderRadius: 10 },
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 10 },
+  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 10, borderWidth: 1, borderColor: '#F5DDE5' },
+  fieldLabel: { color: '#30212B', fontSize: 16, fontWeight: '800' },
+  bodyStrong: { color: '#30212B', fontSize: 16, fontWeight: '800' },
+  activeBooking: { backgroundColor: '#FFF0F4', borderRadius: 12, padding: 14, gap: 8 },
+  timeSlots: { gap: 8, paddingVertical: 4, paddingRight: 12 },
+  timeSlot: { minHeight: 44, minWidth: 70, borderRadius: 12, borderWidth: 1, borderColor: '#D7DCE2', paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
+  timeSlotSelected: { backgroundColor: '#FFF0F4', borderColor: '#E9265A' },
+  timeSlotText: { color: '#30212B', fontSize: 15, fontWeight: '700' },
+  timeSlotTextSelected: { color: '#CF2050', fontWeight: '900' },
+  disabled: { opacity: 0.5 },
   sectionTitle: { fontSize: 18, fontWeight: '900' },
   typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  typeButton: { borderWidth: 1, borderColor: '#d7dce2', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
-  typeButtonSelected: { backgroundColor: '#edf4ff', borderColor: '#246bfd' },
+  typeButton: { minHeight: 52, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  typeButtonSelected: { backgroundColor: '#FFF0F4', borderColor: '#E9265A' },
   typeButtonText: { fontWeight: '800' },
   input: { borderWidth: 1, borderColor: '#d7dce2', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11 },
   textArea: { minHeight: 80, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 12, padding: 12, textAlignVertical: 'top' },
-  primary: { minHeight: 48, borderRadius: 12, backgroundColor: '#191c20', alignItems: 'center', justifyContent: 'center' },
+  primary: { minHeight: 48, borderRadius: 12, backgroundColor: '#E9265A', alignItems: 'center', justifyContent: 'center' },
   primaryText: { color: '#fff', fontWeight: '900' },
   visitCard: { borderWidth: 1, borderColor: '#e0e4e9', borderRadius: 12, padding: 12, gap: 6 },
   focusedCard: { borderWidth: 2, borderColor: '#246bfd' },
