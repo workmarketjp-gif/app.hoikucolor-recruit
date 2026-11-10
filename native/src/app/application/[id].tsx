@@ -17,7 +17,7 @@ import { canSubmitCandidateMessage, confirmedUncertainCandidateMessage, shouldRe
 import { markVisibleApplicationMessagesRead } from '../../lib/attentionApi';
 import { visibleCandidateFacilityMessageId, type CandidateMessageReadViewport } from '../../lib/candidateMessageReadVisibility';
 import { focusedApplicationMessagesOffset } from '../../lib/focusedApplicationMessages';
-import { applicationVisitExperienceLabel, applicationVisitStatusLabel, canSubmitInterviewResponse, formatApplicationEventDateTimeJapan, interviewStatusLabel } from '../../lib/applicationEventPresentation';
+import { applicationVisitExperienceLabel, applicationVisitStatusLabel, canSubmitInterviewResponse, formatApplicationEventDateTimeJapan, formatApplicationVisitDuration, interviewStatusLabel } from '../../lib/applicationEventPresentation';
 import {
   acceptOffer,
   getApplicationDetail,
@@ -762,10 +762,10 @@ function ApplicationDetailContent() {
 
       <View style={styles.card}>
         <View style={styles.cardHeadingRow}>
-          <Text style={styles.sectionTitle}>面接</Text>
+          <Text style={styles.sectionTitle}>面接予定</Text>
           <Text style={styles.count}>{detail.interviews.length}件</Text>
         </View>
-        {detail.interviews.length === 0 ? <Text style={styles.subtle}>面接予定はまだありません。</Text> : null}
+        {detail.interviews.length === 0 ? <Text style={styles.subtle}>面接予定はまだ登録されていません。日程が決まるとここに表示されます。</Text> : null}
         {detail.interviews.map((interview) => (
           <InterviewCard
             key={interview.id}
@@ -784,16 +784,23 @@ function ApplicationDetailContent() {
           <Text style={styles.sectionTitle}>見学・体験</Text>
           <Text style={styles.count}>{detail.visits.length}件</Text>
         </View>
-        {detail.visits.map((visit) => (
-          <Pressable
-            key={visit.id}
-            style={styles.eventCard}
-            onPress={() => router.push(`/visits?visitId=${encodeURIComponent(visit.id)}&jobId=${encodeURIComponent(detail.application.job_id)}&applicationId=${encodeURIComponent(applicationId)}` as never)}
-          >
-            <Text style={styles.eventTitle}>{applicationVisitExperienceLabel(visit.experience_type)} ・ {formatApplicationEventDateTimeJapan(visit.starts_at)}</Text>
-            <Text style={styles.subtle}>{applicationVisitStatusLabel(visit.status)}</Text>
-          </Pressable>
-        ))}
+        {detail.visits.length === 0 ? (
+          <Text style={styles.subtle}>この求人に関連する見学・体験予約はありません。</Text>
+        ) : null}
+        {detail.visits.map((visit) => {
+          const duration = formatApplicationVisitDuration(visit.starts_at, visit.ends_at);
+          return (
+            <Pressable
+              key={visit.id}
+              style={styles.eventCard}
+              onPress={() => router.push(`/visits?visitId=${encodeURIComponent(visit.id)}&jobId=${encodeURIComponent(detail.application.job_id)}&applicationId=${encodeURIComponent(applicationId)}` as never)}
+            >
+              <Text style={styles.eventTitle}>{applicationVisitExperienceLabel(visit.experience_type)} ・ {formatApplicationEventDateTimeJapan(visit.starts_at)}</Text>
+              <Text style={styles.subtle}>{applicationVisitStatusLabel(visit.status)}{duration ? ` ・ ${duration}` : ''}</Text>
+              {visit.candidate_message ? <Text style={styles.subtle}>{visit.candidate_message}</Text> : null}
+            </Pressable>
+          );
+        })}
         <Pressable
           style={styles.secondaryButton}
           onPress={() => router.push(`/visits?jobId=${encodeURIComponent(detail.application.job_id)}&applicationId=${encodeURIComponent(applicationId)}` as never)}
