@@ -42,9 +42,13 @@ export function ApplicationDocumentsSection({
   const requestVersion = useRef(0);
   const mutationPending = useRef(false);
 
-  useEffect(() => () => {
-    alive.current = false;
-    requestVersion.current += 1;
+  useEffect(() => {
+    // React StrictMode can replay mount effects; reset the private-view lease.
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      requestVersion.current += 1;
+    };
   }, []);
 
   const refresh = async () => {
