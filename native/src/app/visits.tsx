@@ -19,6 +19,7 @@ import {
 } from '../lib/applicationJourneyApi';
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { VisitDateCalendar } from '../components/VisitDateCalendar';
+import { navigateFromCandidateVisitWithLease } from '../lib/visitRelatedNavigationLease';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -242,12 +243,33 @@ export default function VisitsScreen() {
     }
   };
 
-  const openRelatedApplication = async (reservationId: string, targetApplicationId: string) => {
-    if (!privateAllowed || !visits?.some((visit) =>
-      visit.reservation_id === reservationId && visit.application_id === targetApplicationId)) return;
-    const pinned = await pinCandidateAction();
-    if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
-    router.push(`/application/${targetApplicationId}` as never);
+  const openRelatedVisitTarget = async (
+    reservationId: string,
+    targetId: string,
+    target: 'application' | 'job',
+  ) => {
+    const tappedGeneration = generation.current;
+    await navigateFromCandidateVisitWithLease({
+      visits,
+      reservationId,
+      targetId,
+      target,
+      expectedOwnerKey: ownerKey,
+      // Focus departure, canonical refresh, or same-session App Lock revokes a
+      // previously visible reservation while the Clerk pin is still pending.
+      isViewCurrent: () => generation.current === tappedGeneration &&
+        privacy.canAccessPrivateData() && freshlyVerifiedOwner.current === ownerKey,
+      pin: async () => {
+        const pinned = await pinCandidateAction();
+        return pinned ? {
+          ownerKey: candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId),
+          isCurrent: pinned.isCurrent,
+        } : null;
+      },
+      navigate: () => router.push((target === 'application'
+        ? `/application/${targetId}`
+        : `/job/${targetId}`) as never),
+    });
   };
 
   const groupedVisits = useMemo(
@@ -261,14 +283,6 @@ export default function VisitsScreen() {
         !groupedVisits[section].some((visit) => visit.reservation_id === focusedVisitId)) return;
     focusLayout.sectionTop = top;
     scrollToFocusedVisit();
-  };
-
-  const openRelatedJob = async (reservationId: string, targetJobId: string) => {
-    if (!privateAllowed || !visits?.some((visit) =>
-      visit.reservation_id === reservationId && visit.job_id === targetJobId)) return;
-    const pinned = await pinCandidateAction();
-    if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
-    router.push(`/job/${targetJobId}` as never);
   };
 
   const renderVisit = (visit: JobseekerVisitHistory) => {
@@ -299,12 +313,12 @@ export default function VisitsScreen() {
         ) : null}
         {visit.application_id ? (
           <Pressable style={styles.linkButton}
-            onPress={() => void openRelatedApplication(visit.reservation_id, visit.application_id!)}>
+            onPress={() => void openRelatedVisitTarget(visit.reservation_id, visit.application_id!, 'application')}>
             <Text style={styles.link}>応募状況を見る</Text>
           </Pressable>
         ) : null}
         <Pressable style={styles.linkButton}
-          onPress={() => void openRelatedJob(visit.reservation_id, visit.job_id)}>
+          onPress={() => void openRelatedVisitTarget(visit.reservation_id, visit.job_id, 'job')}>
           <Text style={styles.link}>求人を見る</Text>
         </Pressable>
       </View>

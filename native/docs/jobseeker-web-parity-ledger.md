@@ -840,3 +840,9 @@ Integrate previously preserved `/career` candidate into the checked-out Expo pro
 - **Android:** Common TypeScript code integrated, real Android launch, UI parity, session/cancel/readback E2E, screenshot and signed installable APK **NOT VERIFIED**.
 - **iOS:** Common TypeScript code integrated, real iOS launch, UI parity, session/cancel/readback E2E, screenshot and TestFlight/ad-hoc install **NOT VERIFIED**.
 - **Cost/release:** Branch-only commits, no PR/main merge/production change/paid EAS or Actions dispatch; CI workflow triggers on PR/main. External Cloudflare and billing coverage incomplete. **IMPLEMENTING**, not READY_FOR_MASA_ACCEPTANCE. Next: dependency-backed Expo typecheck, same-state actual both-OS booking/cancel readback, end-to-end search→detail→apply→message and signed acceptance builds through authorized distribution.
+
+
+## r151 — Visit related-link navigation session/focus lease (2026-11-11 NZ)
+- Web source: current main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6` visit history→linked application/job detail, authenticated synthetic candidate, no same-state screenshots. Color Native owner branch `native/color-visit-related-navigation-lease-r151-20261111`, parent `045512c08312c9cf1672a018fc4e517ad2727ebf`, no open PR at start.
+- Source gap: async Clerk pin in the two visit-card links previously allowed focus/lock/session-stale navigation. Both now reuse one tested visit navigation lease requiring exact current reservation→target relation, matched pinned account, current focus-generation and newly verified private view.
+- Node helper behavior 8/8 PASS and isolated strict tsc PASS; eight real Native screen wiring checks PASS. Android runtime/visual/canonical save-readback and iOS runtime/visual/canonical save-readback NOT VERIFIED; no signed installable builds. No PR, CI/main/Cloudflare, paid build or real candidate actions. IMPLEMENTING.
