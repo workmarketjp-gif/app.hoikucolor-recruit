@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { reconcileApplyVaultSelection, isApplySubmissionUnavailable } from '../src/lib/applyVaultSelection.ts';
+import { reconcileApplyVaultSelection, isApplySubmissionUnavailable, canUseApplyDocumentState } from '../src/lib/applyVaultSelection.ts';
 
 const resume = { id: 'resume-original', document_type: 'resume' };
 const license = { id: 'license-original', document_type: 'nursery_teacher_license' };
@@ -80,4 +80,25 @@ test('application stays blocked while the embedded document picker or upload is 
   assert.equal(isApplySubmissionUnavailable({ ...base, vaultRefreshing: true }), true);
   assert.equal(isApplySubmissionUnavailable({ ...base, submitting: true }), true);
   assert.equal(isApplySubmissionUnavailable({ ...base, requirementsReady: false }), true);
+});
+
+const ownerA = JSON.stringify(['candidate-a', 'session-a']);
+const ownerB = JSON.stringify(['candidate-b', 'session-a']);
+const ownerASecondSession = JSON.stringify(['candidate-a', 'session-b']);
+
+test('apply document state is only actionable for the exact freshly loaded user and session', () => {
+  assert.equal(canUseApplyDocumentState({ loadedOwnerKey: ownerA, currentOwnerKey: ownerA, privateAllowed: true }), true);
+  assert.equal(canUseApplyDocumentState({ loadedOwnerKey: ownerA, currentOwnerKey: ownerB, privateAllowed: true }), false);
+  assert.equal(canUseApplyDocumentState({ loadedOwnerKey: ownerA, currentOwnerKey: ownerASecondSession, privateAllowed: true }), false);
+  assert.equal(canUseApplyDocumentState({ loadedOwnerKey: ownerA, currentOwnerKey: ownerA, privateAllowed: false }), false);
+  assert.equal(canUseApplyDocumentState({ loadedOwnerKey: null, currentOwnerKey: ownerA, privateAllowed: true }), false);
+  assert.equal(canUseApplyDocumentState({ loadedOwnerKey: ownerA, currentOwnerKey: null, privateAllowed: true }), false);
+});
+
+test('signed-out and App Lock state cannot revive an earlier document selection without readback', () => {
+  const ready = { loadedOwnerKey: ownerA, currentOwnerKey: ownerA, privateAllowed: true };
+  assert.equal(canUseApplyDocumentState(ready), true);
+  assert.equal(canUseApplyDocumentState({ ...ready, privateAllowed: false }), false);
+  assert.equal(canUseApplyDocumentState({ ...ready, loadedOwnerKey: null }), false);
+  assert.equal(canUseApplyDocumentState({ ...ready, loadedOwnerKey: null, privateAllowed: true }), false);
 });
