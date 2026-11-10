@@ -69,24 +69,42 @@ function InterviewCard({
   const [rescheduleOpen, setRescheduleOpen] = useState(interview.candidate_response_status === 'reschedule_requested');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const actionPending = useRef(false);
+  // Same-frame duplicate taps need a ref-backed lease, not React busy state.
+  // A blurred/App Locked screen loses presentation rights, while an in-flight
+  // answer remains locked until its canonical readback settles.
+  const responseGate = useRef(createApplicationDecisionGate()).current;
+  const isFocusedRef = useRef(false);
+  useFocusEffect(useCallback(() => {
+    isFocusedRef.current = true;
+    setBusy(responseGate.isBusy());
+    return () => {
+      isFocusedRef.current = false;
+      responseGate.revoke();
+    };
+  }, [responseGate]));
   const meetingUrl = safeHttps(interview.meeting_url);
   const canRespond = interview.status === 'scheduled';
 
   const respond = async (responseStatus: 'accepted' | 'reschedule_requested') => {
-    if (actionPending.current) return; // Prevent a double tap before React commits busy.
+    if (!isFocusedRef.current || responseGate.isBusy()) return;
     if (!canSubmitInterviewResponse(interview, responseStatus, message)) {
       setError(responseStatus === 'reschedule_requested'
         ? '希望日時や都合のよい時間帯を入力してください。'
         : '面接の最新状態を確認してから回答してください。');
       return;
     }
-    actionPending.current = true;
+    const token = responseGate.begin();
+    if (token === null) return;
+    const stillCurrent = () => isFocusedRef.current && responseGate.isCurrent(token);
+    const submittedMessage = responseStatus === 'reschedule_requested' ? message.trim() : null;
     setBusy(true);
     setError(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      // A slow session pin may return after navigation, App Lock, or logout.
+      if (!pinned || !pinned.isCurrent() || !stillCurrent()) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
       await respondToInterviewDurable({
         client: pinned.client,
         ownerId: pinned.ownerId,
@@ -94,16 +112,19 @@ function InterviewCard({
         applicationId,
         interviewId: interview.id,
         responseStatus,
-        candidateMessage: responseStatus === 'reschedule_requested' ? message.trim() : null,
+        candidateMessage: submittedMessage,
       });
-      if (!pinned.isCurrent()) return;
+      if (!pinned.isCurrent() || !stillCurrent()) return;
       await onChanged();
+      if (!pinned.isCurrent() || !stillCurrent()) return;
       if (responseStatus === 'accepted') setRescheduleOpen(false);
     } catch (responseError) {
-      setError(String((responseError as { message?: unknown })?.message ?? responseError));
+      if (stillCurrent()) setError(String((responseError as { message?: unknown })?.message ?? responseError));
     } finally {
-      actionPending.current = false;
-      setBusy(false);
+      responseGate.finish(token);
+      // A resumed screen can survive the blur. Reset only its non-private
+      // spinner after a revoked answer settles; do not show the old result.
+      if (isFocusedRef.current && !responseGate.isBusy()) setBusy(false);
     }
   };
 
@@ -129,16 +150,16 @@ function InterviewCard({
       {canRespond ? (
         <>
           {interview.candidate_response_status !== 'accepted' ? (
-            <Pressable style={styles.primaryButton} disabled={busy} onPress={() => void respond('accepted')} accessibilityRole="button">
+            <Pressable style={styles.primaryButton} disabled={busy || responseGate.isBusy()} onPress={() => void respond('accepted')} accessibilityRole="button">
               <Text style={styles.primaryText}>{busy ? '送信中…' : 'この日時でOK'}</Text>
             </Pressable>
           ) : null}
           <Pressable
             style={styles.secondaryButton}
-            disabled={busy}
+            disabled={busy || responseGate.isBusy()}
             accessibilityRole="button"
             accessibilityState={{ expanded: rescheduleOpen, disabled: busy }}
-            onPress={() => { setRescheduleOpen((open) => !open); setError(null); }}
+            onPress={() => { if (responseGate.isBusy()) return; setRescheduleOpen((open) => !open); setError(null); }}
           >
             <Text style={styles.secondaryText}>{rescheduleOpen ? '日程変更を閉じる' : '日程変更を希望'}</Text>
           </Pressable>
@@ -157,7 +178,7 @@ function InterviewCard({
               <Text style={styles.meta}>{message.length}/1000</Text>
               <Pressable
                 style={styles.primaryButton}
-                disabled={busy || !canSubmitInterviewResponse(interview, 'reschedule_requested', message)}
+                disabled={busy || responseGate.isBusy() || !canSubmitInterviewResponse(interview, 'reschedule_requested', message)}
                 onPress={() => void respond('reschedule_requested')}
                 accessibilityRole="button"
               >
