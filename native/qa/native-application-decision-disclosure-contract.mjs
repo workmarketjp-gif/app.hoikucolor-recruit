@@ -7,6 +7,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const result = spawnSync(process.execPath, [
   '--experimental-strip-types', '--test',
   'qa/native-application-decision-disclosure.test.mjs',
+  'qa/native-application-withdrawal-freshness.test.mjs',
   'qa/native-application-decision-disclosure-wiring.test.mjs',
 ], { cwd: root, stdio: 'inherit' });
 if (result.error) throw result.error;

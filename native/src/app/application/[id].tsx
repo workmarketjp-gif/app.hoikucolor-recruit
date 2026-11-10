@@ -10,7 +10,7 @@ import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } fr
 import { applicationStatusLabel } from '../../lib/messageInbox';
 import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
 import { createApplicationDecisionGate } from '../../lib/applicationDecisionGate';
-import { applicationDecisionDisclosure, canConfirmApplicationWithdrawal } from '../../lib/applicationDecisionDisclosure';
+import { applicationDecisionDisclosure, canConfirmApplicationWithdrawal, isFreshApplicationWithdrawal } from '../../lib/applicationDecisionDisclosure';
 import { applicationSelectionTimeline, webNextScheduledInterview } from '../../lib/applicationSelectionTimeline';
 import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
 import { canSubmitCandidateMessage, confirmedUncertainCandidateMessage, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
@@ -294,6 +294,8 @@ function ApplicationDetailContent() {
     setMessages([]);
     setDocumentState(null);
     setHandoffError(null);
+    setWithdrawOpen(false);
+    setWithdrawReason('');
     setError(null);
     try {
       const pinned = await pinCandidateAction();
@@ -461,8 +463,9 @@ function ApplicationDetailContent() {
   const withdrawCurrentApplication = async () => {
     // Opening the disclosure is not consent to an irreversible withdrawal.
     // Recheck the exact canonical status even if an old confirm handler fires.
-    const status = detail?.application.status;
-    const offerResponse = detail?.application.candidate_offer_response;
+    const confirmation = detail?.application;
+    const status = confirmation?.status;
+    const offerResponse = confirmation?.candidate_offer_response;
     if (!canConfirmApplicationWithdrawal(status, offerResponse, withdrawOpen)) return;
     await runDecision(async (stillCurrent) => {
       setError(null);
@@ -470,6 +473,15 @@ function ApplicationDetailContent() {
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
       if (!pinned.isCurrent() || !stillCurrent()) return;
       if (!canConfirmApplicationWithdrawal(status, offerResponse, withdrawOpen)) return;
+      // This deliberate confirmation does not authorize an action on changed
+      // canonical selection or offer state. Re-read through the candidate RPC.
+      const freshDetail = await getApplicationDetail(pinned.client, applicationId);
+      if (!pinned.isCurrent() || !stillCurrent()) return;
+      if (!isFreshApplicationWithdrawal(confirmation, freshDetail?.application)) {
+        setWithdrawOpen(false);
+        setWithdrawReason('');
+        throw new Error('応募状況が更新されました。最新の状態に更新してから操作してください。');
+      }
       const next = await withdrawApplication(pinned.client, applicationId, withdrawReason);
       if (!pinned.isCurrent() || !stillCurrent()) return;
       setDetail(next);
@@ -601,6 +613,17 @@ function ApplicationDetailContent() {
           <Text style={styles.subtle}>{[detail.application.prefecture, detail.application.city, detail.application.employment_type].filter(Boolean).join(' ・ ')}</Text>
         </View>
         <Text style={styles.status}>{applicationStatusLabel(detail.application.status)}</Text>
+      </View>
+      <View style={styles.refreshRow}>
+        <Pressable
+          testID="application-detail-canonical-refresh"
+          style={styles.secondaryButton}
+          accessibilityRole="button"
+          disabled={busy || decisionGate.isBusy() || messageSendPending.current}
+          onPress={() => void load(false)}
+        >
+          <Text style={styles.secondaryText}>最新の状態に更新</Text>
+        </Pressable>
       </View>
 
       {nextInterview ? (
@@ -850,6 +873,7 @@ const styles = StyleSheet.create({
   page: { padding: 16, gap: 12, backgroundColor: '#f7f8fa' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
   heading: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  refreshRow: { flexDirection: 'row', justifyContent: 'flex-end' },
   title: { fontSize: 23, fontWeight: '900' },
   facility: { fontSize: 16, fontWeight: '800', marginTop: 3 },
   status: { backgroundColor: '#eef0f3', borderRadius: 9, paddingHorizontal: 9, paddingVertical: 6, fontWeight: '800', overflow: 'hidden' },

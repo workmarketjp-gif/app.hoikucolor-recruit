@@ -39,3 +39,25 @@ export function canConfirmApplicationWithdrawal(
 ): boolean {
   return confirmationOpen && applicationDecisionDisclosure(status, offerResponse) !== null;
 }
+
+/**
+ * The withdrawal sheet is a snapshot, not an authorization to act on a later
+ * facility decision. Compare it with a fresh authorized application readback
+ * immediately before invoking the irreversible withdrawal RPC.
+ * This is a UI safety gate; the backend remains the final authority.
+ */
+type WithdrawalApplicationSnapshot = {
+  id: string;
+  status: string;
+  candidate_offer_response?: string | null;
+};
+
+export function isFreshApplicationWithdrawal(
+  confirmation: WithdrawalApplicationSnapshot | null | undefined,
+  canonical: WithdrawalApplicationSnapshot | null | undefined,
+): boolean {
+  if (!confirmation || !canonical || !confirmation.id || confirmation.id !== canonical.id) return false;
+  if (confirmation.status !== canonical.status ||
+      (confirmation.candidate_offer_response ?? null) !== (canonical.candidate_offer_response ?? null)) return false;
+  return applicationDecisionDisclosure(canonical.status, canonical.candidate_offer_response) !== null;
+}

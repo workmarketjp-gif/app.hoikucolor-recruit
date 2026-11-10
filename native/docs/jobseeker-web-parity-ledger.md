@@ -2,6 +2,10 @@
 
 Updated: 2026-11-10 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either platform.
 
+## Latest isolated delta (r139, 2026-11-10)
+
+See [r139 canonical withdrawal freshness](parity-delta-r139-withdrawal-canonical-freshness.md), branch native/color-withdrawal-canonical-freshness-r139-20261110 from r138 6c558d72291f26eb8c2e87643146f57a5ab67de9. Source change: authorization is now rechecked with a fresh canonical application read before destructive withdrawal, stale confirmations are invalidated and Web's manual refresh is restored. Local helper tests **24/24 PASS**, standalone helper tsc PASS; screen wiring contract committed but full Expo Node/typecheck not run. Android/iOS runtime, authenticated API, visual and signed builds **NOT VERIFIED**. No PR/main/production change.
+
 ## Latest isolated delta (r138, 2026-11-10)
 
 See [r138 withdrawal confirmation parity](parity-delta-r138-withdrawal-confirmation.md), isolated Color-only branch `native/color-withdraw-confirmation-web-parity-r138-20261110` based on r137 `778b40e272ffd0efad76437cd05d498cefb86897`. Web main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, `src/components/ApplicationDetail.tsx`, candidate synthetic state. Closed **source** gap: Native applicant/accepted-offer withdrawal formerly sent the durable RPC on the opener tap; Native now shows Web's irreversible warning, editable reason, cancel and explicit second confirmation. Server/Clerk/single-flight protections remain. Exact-source helper Node 14/14 PASS and isolated helper tsc PASS; GitHub connected-source static checks 10/10 PASS; **committed screen wiring Node test, full Expo typecheck, Android/iOS rendered QA, authenticated canonical readback and signed artifacts NOT VERIFIED**. GitHub branch only, no PR/main/production, no observed Actions runs on branch. Other historical deltas remain valid at their exact SHAs.

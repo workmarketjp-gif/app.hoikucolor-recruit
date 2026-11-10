@@ -32,3 +32,16 @@ test('Web-equivalent accepted offer and cancel control remain visible', () => {
   assert.match(source, /やめる/);
   assert.match(source, /内定を承諾する/);
 });
+
+test('fresh authorized application state is read before irreversible RPC', () => {
+  const start = source.indexOf('  const withdrawCurrentApplication = async () => {');
+  const end = source.indexOf('  const repairDocuments = async () => {', start);
+  const handler = source.slice(start, end);
+  const read = handler.indexOf('await getApplicationDetail(pinned.client, applicationId)');
+  const guard = handler.indexOf('isFreshApplicationWithdrawal(confirmation, freshDetail?.application)');
+  const mutation = handler.indexOf('await withdrawApplication(pinned.client, applicationId, withdrawReason)');
+  assert.ok(read > 0 && guard > read && mutation > guard, 'canonical read and freshness gate must precede withdrawal RPC');
+  assert.match(handler, /if \(!pinned\.isCurrent\(\) \|\| !stillCurrent\(\)\) return;\s+if \(!isFreshApplicationWithdrawal/);
+  assert.match(source, /testID="application-detail-canonical-refresh"/);
+  assert.match(source, /setWithdrawOpen\(false\);\s+setWithdrawReason\(''\);\s+setError\(null\);/);
+});
