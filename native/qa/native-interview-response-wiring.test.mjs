@@ -9,11 +9,14 @@ const start = source.indexOf('function InterviewCard(');
 const end = source.indexOf('/**\n * Keeping the data-bearing subtree', start);
 assert.ok(start >= 0 && end > start, 'InterviewCard source is present');
 const card = source.slice(start, end);
+const parent = source.slice(source.indexOf('function ApplicationDetailContent()'));
 
-test('interview action acquires synchronous lease and revokes it on screen blur', () => {
+test('interview response uses parent-persistent lease and parent revokes on blur', () => {
   assert.match(card, /const token = responseGate\.begin\(\);/);
   assert.match(card, /useFocusEffect\(useCallback\(/);
-  assert.match(card, /responseGate\.revoke\(\);/);
+  assert.match(parent, /responseGate=\{decisionGate\}/);
+  assert.match(parent, /decisionGate\.revoke\(\);/);
+  assert.doesNotMatch(card, /useRef\(createApplicationDecisionGate\(\)\)/);
   assert.doesNotMatch(card, /actionPending/);
 });
 
@@ -28,5 +31,7 @@ test('stale responses cannot update the screen and answer buttons remain gated',
   assert.match(card, /await onChanged\(\);\s+if \(!pinned\.isCurrent\(\) \|\| !stillCurrent\(\)\) return;/);
   assert.match(card, /if \(stillCurrent\(\)\) setError\(/);
   assert.match(card, /responseGate\.finish\(token\);/);
+  assert.match(card, /onResponseSettled\(\);/);
+  assert.match(parent, /setInterviewLeaseRevision\(\(revision\) => revision \+ 1\)/);
   assert.equal((card.match(/disabled=\{busy \|\| responseGate\.isBusy\(\)/g) ?? []).length, 3);
 });
