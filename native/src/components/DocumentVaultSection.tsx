@@ -23,6 +23,7 @@ import { assertCandidateDocumentListOwner, canActOnCandidateDocument, confirmCan
 import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_ORDER, evidenceTypesForQualification } from '../lib/documentTypes';
 import { qualificationEvidenceCounts } from '../lib/qualificationEvidenceCounts';
 import { resolveVaultUploadType, type ApplyVaultChange } from '../lib/applyVaultSelection';
+import { createVaultOperationLease } from '../lib/vaultOperationLease';
 
 // Keep the document catalogue and exact qualification mapping in sync with Web.
 const labels = DOCUMENT_TYPE_LABELS;
@@ -107,6 +108,13 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
   useEffect(() => { setShowTypes(false); }, [ownerKey, privateAllowed]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Acquire synchronously: two OS touch events can arrive before React disables controls.
+  // Invalidate old leases when the Clerk owner or foreground privacy state changes.
+  const operationLeaseRef = useRef(createVaultOperationLease());
+  useEffect(() => {
+    operationLeaseRef.current.reset();
+    setBusyId(null);
+  }, [ownerKey, privateAllowed]);
   const onBusyChangedRef = useRef(onBusyChanged);
   onBusyChangedRef.current = onBusyChanged;
   useEffect(() => { onBusyChangedRef.current?.(busyId !== null); }, [busyId]);
@@ -297,6 +305,8 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     const pickerOwnerId = userIdRef.current;
     const selectedType = resolveVaultUploadType(replacement?.document_type ?? null, lockedType, explicitType, documentType);
     if (!pickerOwnerId || busyId || verifiedDocuments === null || !privateAllowed) return;
+    const lease = operationLeaseRef.current.tryAcquire();
+    if (lease === null) return;
     const pickerCacheGeneration = captureDocumentPickerCacheGeneration();
     setBusyId(replacement ? `replace-picker-${replacement.id}` : 'picker');
 
@@ -321,7 +331,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
         await load();
       }
     } finally {
-      if (mountedRef.current) setBusyId(null);
+      if (operationLeaseRef.current.release(lease) && mountedRef.current) setBusyId(null);
     }
   }
 
@@ -329,6 +339,8 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     const pickerOwnerId = userIdRef.current;
     const selectedType = resolveVaultUploadType(replacement?.document_type ?? null, lockedType, null, documentType);
     if (!pickerOwnerId || busyId || verifiedDocuments === null || !privateAllowed) return;
+    const lease = operationLeaseRef.current.tryAcquire();
+    if (lease === null) return;
     setBusyId(replacement ? `replace-camera-permission-${replacement.id}` : 'camera-permission');
 
     try {
@@ -368,12 +380,14 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
         await load();
       }
     } finally {
-      if (mountedRef.current) setBusyId(null);
+      if (operationLeaseRef.current.release(lease) && mountedRef.current) setBusyId(null);
     }
   }
 
   async function open(document: JobseekerDocument) {
     if (!canActOnCandidateDocument(document, verifiedDocuments, user?.id ?? null, ownerKey, freshlyVerifiedOwner.current, privateAllowed)) return;
+    const lease = operationLeaseRef.current.tryAcquire();
+    if (lease === null) return;
     setBusyId(document.id);
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> = null;
     try {
@@ -391,12 +405,14 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
         Alert.alert('書類を開けませんでした', String((error as { message?: unknown })?.message ?? error));
       }
     } finally {
-      if (!pinned || pinned.isCurrent()) setBusyId(null);
+      if (operationLeaseRef.current.release(lease) && mountedRef.current) setBusyId(null);
     }
   }
 
   async function makeDefault(document: JobseekerDocument) {
     if (!canActOnCandidateDocument(document, verifiedDocuments, user?.id ?? null, ownerKey, freshlyVerifiedOwner.current, privateAllowed)) return;
+    const lease = operationLeaseRef.current.tryAcquire();
+    if (lease === null) return;
     setBusyId(document.id);
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> = null;
     try {
@@ -412,7 +428,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
       if (!pinned || pinned.isCurrent()) {
         Alert.alert('既定書類を変更できませんでした', String((error as { message?: unknown })?.message ?? error));
       }
-    } finally { if (!pinned || pinned.isCurrent()) setBusyId(null); }
+    } finally { if (operationLeaseRef.current.release(lease) && mountedRef.current) setBusyId(null); }
   }
 
   function confirmDelete(document: JobseekerDocument) {
@@ -429,6 +445,8 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
 
   async function remove(document: JobseekerDocument) {
     if (!canActOnCandidateDocument(document, verifiedDocuments, user?.id ?? null, ownerKey, freshlyVerifiedOwner.current, privateAllowed)) return;
+    const lease = operationLeaseRef.current.tryAcquire();
+    if (lease === null) return;
     setBusyId(document.id);
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> = null;
     try {
@@ -445,7 +463,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
       if (!pinned || pinned.isCurrent()) {
         Alert.alert('書類を削除できませんでした', String((error as { message?: unknown })?.message ?? error));
       }
-    } finally { if (!pinned || pinned.isCurrent()) setBusyId(null); }
+    } finally { if (operationLeaseRef.current.release(lease) && mountedRef.current) setBusyId(null); }
   }
 
   if (!privateAllowed) return <View testID="document-vault-private-shield"><Text>応募書類を表示するには、ログイン状態を確認してください。</Text></View>;
