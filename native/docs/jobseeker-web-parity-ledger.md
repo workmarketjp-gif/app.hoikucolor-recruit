@@ -2,9 +2,9 @@
 
 Updated: 2026-11-10 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either platform.
 
-## Latest isolated delta (r136, 2026-11-10)
+## Latest isolated delta (r138, 2026-11-10)
 
-See [r136 interview response lease](parity-delta-r136-interview-response-lease.md). On isolated branch `native/color-interview-response-lease-r136-20261110` based on r135 `94a41d77ff10c2f6022c0635589a144bf9b0a30a`, the Native interview response now rechecks the pinned Clerk session before the durable RPC and revokes asynchronous screen presentation after blur/App Lock. Source baseline: Web main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, `src/components/ApplicationDetail.tsx`, authenticated synthetic jobseeker. Source helper test 9/9 PASS, connected screen wiring checks 11/11 PASS; **committed full-screen wiring test, Expo typecheck, Android/iOS rendered QA, canonical backend readback and signed builds NOT VERIFIED**. No PR, main or production change. Historical r129 and r130–r135 delta records remain authoritative for their individual isolated work.
+See [r138 withdrawal confirmation parity](parity-delta-r138-withdrawal-confirmation.md), isolated Color-only branch `native/color-withdraw-confirmation-web-parity-r138-20261110` based on r137 `778b40e272ffd0efad76437cd05d498cefb86897`. Web main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, `src/components/ApplicationDetail.tsx`, candidate synthetic state. Closed **source** gap: Native applicant/accepted-offer withdrawal formerly sent the durable RPC on the opener tap; Native now shows Web's irreversible warning, editable reason, cancel and explicit second confirmation. Server/Clerk/single-flight protections remain. Exact-source helper Node 14/14 PASS and isolated helper tsc PASS; GitHub connected-source static checks 10/10 PASS; **committed screen wiring Node test, full Expo typecheck, Android/iOS rendered QA, authenticated canonical readback and signed artifacts NOT VERIFIED**. GitHub branch only, no PR/main/production, no observed Actions runs on branch. Other historical deltas remain valid at their exact SHAs.
 
 ## Versioned reference
 - Web source: `workmarketjp-gif/app.hoikucolor-recruit` main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, `src/App.tsx`, `src/components/CandidateShell.tsx`.
