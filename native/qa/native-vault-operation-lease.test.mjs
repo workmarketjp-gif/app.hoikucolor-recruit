@@ -73,4 +73,8 @@ test('real Native vault serializes picker, camera, open, default, and delete pat
   assert.match(source, /operationLeaseRef\.current\.reset\(\)/);
   assert.equal((source.match(/operationLeaseRef\.current\.tryAcquire\(\)/g) ?? []).length, 5);
   assert.equal((source.match(/operationLeaseRef\.current\.release\(lease\)/g) ?? []).length, 5);
+  assert.match(source, /const operationValid = \(\) => operationLeaseRef\.current\.isCurrent\(lease\)/);
+  assert.equal((source.match(/}, pickerCacheGeneration, lease, replacement\);/g) ?? []).length, 2);
+  assert.match(source, /canStartUpload: \(\) =>\s+operationValid\(\) && pinned\.isCurrent\(\)/);
+  assert.ok((source.match(/operationLeaseRef\.current\.isCurrent\(lease\)/g) ?? []).length >= 12);
 });
