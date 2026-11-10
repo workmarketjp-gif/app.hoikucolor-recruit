@@ -75,3 +75,18 @@ export function canUseApplyDocumentState(state: ApplyDocumentOwnerState): boolea
   return Boolean(state.privateAllowed && state.currentOwnerKey &&
     state.loadedOwnerKey === state.currentOwnerKey);
 }
+
+
+/**
+ * Web's apply step fixes the document type to the requirement row in which
+ * upload was opened. The standalone vault keeps its editable type picker.
+ * A replacement always retains the existing saved document's category.
+ */
+export function resolveVaultUploadType(
+  replacementType: JobseekerDocumentType | null,
+  lockedType: JobseekerDocumentType | null,
+  explicitType: JobseekerDocumentType | null,
+  selectedType: JobseekerDocumentType,
+): JobseekerDocumentType {
+  return replacementType ?? lockedType ?? explicitType ?? selectedType;
+}
