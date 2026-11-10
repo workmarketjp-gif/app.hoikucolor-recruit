@@ -57,12 +57,16 @@ function InterviewCard({
   applicationId,
   focused,
   onChanged,
+  responseGate,
+  onResponseSettled,
 }: {
   key?: string;
   interview: JobseekerInterview;
   applicationId: string;
   focused: boolean;
   onChanged: () => Promise<void>;
+  responseGate: ReturnType<typeof createApplicationDecisionGate>;
+  onResponseSettled: () => void;
 }) {
   const { pinCandidateAction } = usePinnedCandidateAction();
   const [message, setMessage] = useState(interview.candidate_response_message ?? '');
@@ -72,16 +76,13 @@ function InterviewCard({
   // Same-frame duplicate taps need a ref-backed lease, not React busy state.
   // A blurred/App Locked screen loses presentation rights, while an in-flight
   // answer remains locked until its canonical readback settles.
-  const responseGate = useRef(createApplicationDecisionGate()).current;
+  // The parent retains the response gate while InterviewCard unmounts during
+  // canonical refresh or navigation. The parent's blur hook revokes the lease.
   const isFocusedRef = useRef(false);
   useFocusEffect(useCallback(() => {
     isFocusedRef.current = true;
-    setBusy(responseGate.isBusy());
-    return () => {
-      isFocusedRef.current = false;
-      responseGate.revoke();
-    };
-  }, [responseGate]));
+    return () => { isFocusedRef.current = false; };
+  }, []));
   const meetingUrl = safeHttps(interview.meeting_url);
   const canRespond = interview.status === 'scheduled';
 
@@ -122,8 +123,9 @@ function InterviewCard({
       if (stillCurrent()) setError(String((responseError as { message?: unknown })?.message ?? responseError));
     } finally {
       responseGate.finish(token);
-      // A resumed screen can survive the blur. Reset only its non-private
-      // spinner after a revoked answer settles; do not show the old result.
+      // Remounted interview cards also need a render to release the disabled
+      // controls after the previous answer settles; the update is non-private.
+      onResponseSettled();
       if (isFocusedRef.current && !responseGate.isBusy()) setBusy(false);
     }
   };
@@ -244,6 +246,7 @@ function ApplicationDetailContent() {
   const generation = useRef(0);
   const messageSendPending = useRef(false);
   const decisionGate = useRef(createApplicationDecisionGate()).current;
+  const [, setInterviewLeaseRevision] = useState(0);
   const uncertainMessageRef = useRef<{
     submittedDraft: string;
     knownMessageIds: string[];
@@ -649,6 +652,8 @@ function ApplicationDetailContent() {
             applicationId={applicationId}
             focused={focus === 'interview' && focusedInterviewId === interview.id}
             onChanged={() => load(true)}
+            responseGate={decisionGate}
+            onResponseSettled={() => setInterviewLeaseRevision((revision) => revision + 1)}
           />
         ))}
       </View>
