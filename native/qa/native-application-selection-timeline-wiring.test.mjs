@@ -8,7 +8,7 @@ const styles = source.slice(source.indexOf('const styles = StyleSheet.create('))
 const view = source.slice(source.indexOf('  const selectionTimeline ='), source.indexOf('      {error ?', source.indexOf('  const selectionTimeline =')));
 
 test('Native application detail includes the canonical Web five-stage timeline', () => {
-  assert.match(source, /import \{ applicationSelectionTimeline \} from '\.\.\/\.\.\/lib\/applicationSelectionTimeline';/);
+  assert.ok(source.includes("import { applicationSelectionTimeline, webNextScheduledInterview } from '../../lib/applicationSelectionTimeline';"));
   assert.match(view, /applicationSelectionTimeline\(detail\.application\.status\)/);
   assert.match(view, /testID="application-selection-timeline"/);
   assert.match(view, /selectionTimeline\.steps\.map/);
