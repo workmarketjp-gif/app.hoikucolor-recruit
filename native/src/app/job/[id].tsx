@@ -17,6 +17,7 @@ import { canPreopenHomeDocuments } from '../../lib/homeDirectApplyEntry';
 import { homeJobAvailability } from '../../lib/homeFeaturedDetails';
 import { armPendingHomeApplication, clearPendingHomeApplication, hasPendingHomeApplication } from '../../lib/homeApplyPending';
 import { jobDetailReadbackRecovery } from '../../lib/jobDetailReadbackRecovery';
+import { presentSavedJobSource } from '../../lib/savedJobSourcePresentation';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -367,6 +368,7 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
   const directApply = isExplicitlyDirectJob(job);
   const workplaceEvidence = verifiedEvidence(job.verified_workplace, 'workplace');
   const financeEvidence = verifiedEvidence(job.verified_finance, 'finance');
+  const sourcePresentation = presentSavedJobSource(job);
   const safeSourceUrl = (() => {
     try {
       if (!job.source_url) return null;
@@ -452,7 +454,10 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
           {safeSourceUrl ? <Pressable style={styles.primary} accessibilityRole="link" onPress={() => void Linking.openURL(safeSourceUrl)}>
             <Text style={styles.primaryText}>{job.source_kind === 'hellowork' ? 'ハローワークで応募方法を確認' : '掲載元で応募方法を確認'}</Text>
           </Pressable> : null}
-          {job.source_name ? <Text style={styles.subtle}>出典：{job.source_name}{job.source_job_id ? `（求人番号 ${job.source_job_id}）` : ''}</Text> : null}
+          {sourcePresentation.provenance ? <View style={styles.sourceProvenance} testID="job-detail-external-provenance">
+            <Text style={styles.subtle}>{sourcePresentation.provenance}</Text>
+            {sourcePresentation.lastVerified ? <Text style={styles.subtle}>最終確認 {sourcePresentation.lastVerified}</Text> : null}
+          </View> : null}
         </View>
       ) : closed ? (
         <Text style={styles.subtle}>募集は終了しています。</Text>
@@ -513,6 +518,7 @@ const styles = StyleSheet.create({
   evidenceValue: { fontSize: 19, fontWeight: '900', color: '#24212A' },
   evidenceFoot: { color: '#606873', fontSize: 12, lineHeight: 18 },
   externalCard: { backgroundColor: '#fff8e6', borderRadius: 16, padding: 16, gap: 10 },
+  sourceProvenance: { borderTopWidth: 1, borderTopColor: '#EDDDAA', paddingTop: 8, gap: 4 },
   sectionTitle: { fontSize: 18, fontWeight: '900' },
   body: { lineHeight: 22 },
   primary: { minHeight: 50, borderRadius: 13, backgroundColor: '#191c20', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
