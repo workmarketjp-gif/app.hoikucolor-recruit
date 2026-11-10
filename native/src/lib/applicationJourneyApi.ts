@@ -19,6 +19,7 @@ import { assertCandidateVisitHistoryReadback } from './candidateVisitHistoryRead
 import type { JobseekerJob, JobseekerProfile } from './jobseekerCoreApi';
 import { verifiedCandidateJobDetail } from './candidateJobDetailReadback';
 import { verifiedVisitSettingsReadback, type VerifiedVisitSettings } from './visitSettingsReadback';
+import { confirmsRequestedVisit } from './visitRequestReadback';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -440,8 +441,16 @@ export async function requestVisitDurable(params: {
   if (typeof data !== 'string' || !UUID_PATTERN.test(data)) throw new Error('見学・体験予約結果を確認できませんでした。');
 
   const visits = await listCandidateVisits(params.client);
-  if (!visits.some((visit) => visit.reservation_id === data)) {
-    throw new Error('見学・体験予約結果を確認できませんでした。再読み込みして確認してください。');
+  if (!confirmsRequestedVisit(visits, {
+    reservationId: data,
+    jobId: params.jobId,
+    applicationId: params.applicationId ?? null,
+    experienceType: params.experienceType,
+    localDate: params.localDate,
+    localTime: params.localTime.slice(0, 5),
+    candidateMessage: message,
+  })) {
+    throw new Error('予約結果の求人・日時・申込内容を確認できませんでした。再送信せず予約履歴を再読み込みしてください。');
   }
   await clearDurableMutation({ userId: params.ownerId, kind: 'visit', scopeId });
   return data;
