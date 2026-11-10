@@ -2,6 +2,10 @@
 
 Updated: 2026-11-11 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either platform.
 
+## Latest isolated delta (r146, 2026-11-11)
+
+See [r146 visit settings readback integrity](parity-delta-r146-visit-settings-readback.md): authenticated jobseeker visit-settings RPC adapter now rejects invalid or ambiguous success responses instead of showing misleading empty UI or using malformed booking settings. Valid/null payloads retain canonical meaning; focused real-source helper 6/6 PASS and standalone helper tsc PASS. `native/color-visit-settings-readback-r146-20261111`, base `ebc94b029bed7bc4add246725c7c191934804b2b`; full Expo typecheck, connected adapter contract, Android/iOS rendering and actual save/re-read NOT VERIFIED. No PR/main/production or paid build.
+
 ## Latest isolated delta (r145, 2026-11-11)
 
 See [r145 venue-calendar selection](parity-delta-r145-visit-calendar.md): Web `/jobs` `<input type="date">` versus Native visits free-form date input now implemented as a dependency-free, venue-JST calendar with weekday/max-window controls. Color-only branch `native/color-visit-calendar-web-parity-r145-20261111`, base r144 `701ded19af6f235f09412f38b606b2e199d84d90`. Exact helper Node tests **6/6 PASS**, helper tsc PASS, remote screen/component static checks **12/12 PASS**. Full Expo/component contract, Android/iOS real runtime, canonical booking readback, visual accessibility and signed artifacts **NOT VERIFIED**. Do not present this in-app picker as OS-native. No PR/main/production or paid build.

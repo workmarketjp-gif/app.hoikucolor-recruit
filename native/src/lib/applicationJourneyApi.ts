@@ -18,6 +18,7 @@ import { assertCandidateApplicationDetailReadback } from './candidateApplication
 import { assertCandidateVisitHistoryReadback } from './candidateVisitHistoryReadback.ts';
 import type { JobseekerJob, JobseekerProfile } from './jobseekerCoreApi';
 import { verifiedCandidateJobDetail } from './candidateJobDetailReadback';
+import { verifiedVisitSettingsReadback, type VerifiedVisitSettings } from './visitSettingsReadback';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -79,25 +80,7 @@ export type JobseekerMessage = {
 
 export type VisitExperienceType = 'visit' | 'half_day_trial' | 'full_day_trial';
 
-export type JobseekerVisitSettings = {
-  id: string;
-  facility_id: string;
-  visit_enabled: boolean;
-  half_day_trial_enabled: boolean;
-  full_day_trial_enabled: boolean;
-  available_weekdays: number[];
-  first_start_time: string;
-  last_start_time: string;
-  slot_interval_minutes: number;
-  visit_duration_minutes: number;
-  half_day_duration_minutes: number;
-  full_day_duration_minutes: number;
-  min_notice_hours: number;
-  max_days_ahead: number;
-  public_note: string | null;
-  what_to_bring: string | null;
-  dress_code: string | null;
-};
+export type JobseekerVisitSettings = VerifiedVisitSettings;
 
 export type JobseekerVisitHistory = {
   reservation_id: string;
@@ -407,8 +390,7 @@ export async function getVisitSettings(
   assertUuid(jobId, '求人ID');
   const { data, error } = await client.rpc('hc_jobseeker_get_visit_settings', { p_job_id: jobId });
   if (error) throw error;
-  const row = Array.isArray(data) ? data[0] : data;
-  return row && typeof row === 'object' ? row as JobseekerVisitSettings : null;
+  return verifiedVisitSettingsReadback(data);
 }
 
 export async function listCandidateVisits(client: SupabaseClient): Promise<JobseekerVisitHistory[]> {
