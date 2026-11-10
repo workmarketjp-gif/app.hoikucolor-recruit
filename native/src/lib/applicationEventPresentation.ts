@@ -60,3 +60,15 @@ export function canSubmitInterviewResponse(
   if (responseStatus === 'accepted') return interview.candidate_response_status !== 'accepted';
   return candidateMessage.trim().length > 0;
 }
+
+/** Web ApplicationDetail.tsx formatDuration: elapsed absolute time, no inferred schedule. */
+export function formatApplicationVisitDuration(startValue: string, endValue: string): string {
+  const start = new Date(startValue).getTime();
+  const end = new Date(endValue).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return '';
+  const minutes = Math.round((end - start) / 60_000);
+  if (minutes < 60) return `${minutes}分`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours}時間${remainder}分` : `${hours}時間`;
+}
