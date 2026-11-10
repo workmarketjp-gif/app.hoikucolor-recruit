@@ -7,6 +7,7 @@ const hook = readFileSync(new URL('../src/hooks/usePinnedCandidateAction.ts', im
 
 test('React effect setup activates and cleanup revokes the same lifetime lease', () => {
   assert.match(hook, /useEffect\(\(\) => \{\s*mountLease\.activate\(\);\s*return \(\) => \{ mountLease\.revoke\(\); \};/);
+  assert.match(hook, /\[mountLease, session\?\.user\?\.id, session\?\.id\]/);
 });
 
 test('pinned session snapshots epoch before token acquisition and verifies it afterwards', () => {
