@@ -65,7 +65,6 @@ export function confirmsCandidateVisitCancellation(
     after.created_at === before.created_at;
 }
 
-
 /**
  * Run a candidate-scoped cancellation without crossing a revoked session lease.
  * The caller supplies the pinned-client reads and the one canonical RPC call.
