@@ -22,7 +22,7 @@ import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type Candidate
 import { assertCandidateDocumentListOwner, canActOnCandidateDocument, confirmCandidateDocumentMutation } from '../lib/documentVaultPrivacy';
 import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_ORDER, evidenceTypesForQualification } from '../lib/documentTypes';
 import { qualificationEvidenceCounts } from '../lib/qualificationEvidenceCounts';
-import type { ApplyVaultChange } from '../lib/applyVaultSelection';
+import { resolveVaultUploadType, type ApplyVaultChange } from '../lib/applyVaultSelection';
 
 // Keep the document catalogue and exact qualification mapping in sync with Web.
 const labels = DOCUMENT_TYPE_LABELS;
@@ -68,8 +68,10 @@ function formatBytes(value: number | null) {
  * `initialType` preselects the type to add (the apply step opens this section for a missing
  * document). `onDocumentsChanged` receives every canonical reload so the caller can refresh.
  */
-export function DocumentVaultSection({ initialType = 'resume', onDocumentsChanged, onBusyChanged, qualifications }: {
+export function DocumentVaultSection({ initialType = 'resume', lockedType = null, onDocumentsChanged, onBusyChanged, qualifications }: {
   initialType?: JobseekerDocumentType;
+  /** In an application requirement row, only new uploads of that category are offered. */
+  lockedType?: JobseekerDocumentType | null;
   onDocumentsChanged?: (documents: JobseekerDocument[], change?: ApplyVaultChange, uploadedDocumentId?: string | null) => void;
   /** Embedded apply form blocks submission while a picker, camera or save is in flight. */
   onBusyChanged?: (busy: boolean) => void;
@@ -293,7 +295,7 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
 
   async function pickAndUpload(replacement: JobseekerDocument | null = null, explicitType: JobseekerDocumentType | null = null) {
     const pickerOwnerId = userIdRef.current;
-    const selectedType = replacement?.document_type ?? explicitType ?? documentType;
+    const selectedType = resolveVaultUploadType(replacement?.document_type ?? null, lockedType, explicitType, documentType);
     if (!pickerOwnerId || busyId || verifiedDocuments === null || !privateAllowed) return;
     const pickerCacheGeneration = captureDocumentPickerCacheGeneration();
     setBusyId(replacement ? `replace-picker-${replacement.id}` : 'picker');
@@ -325,7 +327,7 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
 
   async function captureAndUpload(replacement: JobseekerDocument | null = null) {
     const pickerOwnerId = userIdRef.current;
-    const selectedType = replacement?.document_type ?? documentType;
+    const selectedType = resolveVaultUploadType(replacement?.document_type ?? null, lockedType, null, documentType);
     if (!pickerOwnerId || busyId || verifiedDocuments === null || !privateAllowed) return;
     setBusyId(replacement ? `replace-camera-permission-${replacement.id}` : 'camera-permission');
 
@@ -456,7 +458,9 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
 
     <View style={{ gap: 8 }}>
       <Text style={{ fontSize: 14, fontWeight: '700', color: '#30232c' }}>追加する書類の種類</Text>
-      <Pressable
+      {lockedType ? <View testID="document-vault-locked-type" style={{ borderWidth: 1, borderColor: '#e8b5c9', borderRadius: 10, minHeight: 48, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: '#fff0f6', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 16, fontWeight: '700', color: '#30232c' }}>{labels[lockedType]}（この応募で追加する書類）</Text>
+      </View> : <Pressable
         testID="document-vault-type-selector"
         accessibilityRole="button"
         disabled={busyId !== null || verifiedDocuments === null}
@@ -465,8 +469,8 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
       >
         <Text style={{ fontSize: 16, fontWeight: '600', color: '#30232c' }}>{labels[documentType]}</Text>
         <Text style={{ fontSize: 16, color: '#9a315d' }}>{showTypes ? '⌃' : '⌄'}</Text>
-      </Pressable>
-      {showTypes ? <View testID="document-vault-type-options" style={{ borderWidth: 1, borderColor: '#efc7d7', borderRadius: 10, overflow: 'hidden', backgroundColor: '#fff' }}>
+      </Pressable>}
+      {!lockedType && showTypes ? <View testID="document-vault-type-options" style={{ borderWidth: 1, borderColor: '#efc7d7', borderRadius: 10, overflow: 'hidden', backgroundColor: '#fff' }}>
         {types.map((type) => <Pressable
           key={type}
           testID={`document-vault-type-${type}`}
@@ -537,7 +541,7 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
     </View> : <View style={{ backgroundColor: '#fff7fa', borderRadius: 12, borderWidth: 1, borderColor: '#f0d2df', padding: 16, gap: 10 }}>
       <Text style={{ fontSize: 16, fontWeight: '700', color: '#30232c' }}>保存した応募書類はまだありません</Text>
       <Text style={{ fontSize: 14, color: '#65515b', lineHeight: 21 }}>まずは履歴書を1件保存してください。保育士証などはあとから追加できます。</Text>
-      <VaultAction title="履歴書を追加" primary disabled={busyId !== null} onPress={() => void pickAndUpload(null, 'resume')} />
+      <VaultAction title={lockedType ? `${labels[lockedType]}を追加` : "履歴書を追加"} primary disabled={busyId !== null} onPress={() => void pickAndUpload(null, lockedType ?? "resume")} />
     </View>}
   </View>;
 }
