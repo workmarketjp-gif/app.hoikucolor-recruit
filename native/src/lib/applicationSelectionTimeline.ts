@@ -45,3 +45,8 @@ export function applicationSelectionTimeline(status: string) {
     })),
   } as const;
 }
+
+/** Web displays the first scheduled interview in canonical readback order. */
+export function webNextScheduledInterview<T extends { status: string }>(interviews: readonly T[]): T | null {
+  return interviews.find((interview) => interview.status === 'scheduled') ?? null;
+}
