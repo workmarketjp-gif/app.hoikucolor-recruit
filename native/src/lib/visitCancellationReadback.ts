@@ -64,3 +64,41 @@ export function confirmsCandidateVisitCancellation(
     after.candidate_message === before.candidate_message &&
     after.created_at === before.created_at;
 }
+
+
+/**
+ * Run a candidate-scoped cancellation without crossing a revoked session lease.
+ * The caller supplies the pinned-client reads and the one canonical RPC call.
+ * A revoked lease aborts before the write even if a history request was in flight.
+ * Once an RPC has been invoked, uncertainty is never retried automatically.
+ */
+export async function cancelCandidateVisitWithLease(params: {
+  reservationId: string;
+  isCurrent: () => boolean;
+  readVisits: () => Promise<readonly CanonicalVisit[]>;
+  invokeCancel: () => Promise<boolean>;
+}): Promise<void> {
+  const assertCurrent = () => {
+    if (!params.isCurrent()) {
+      throw new Error('認証状態が変更されました。再送信せず予約履歴をご確認ください。');
+    }
+  };
+  assertCurrent();
+  const before = await params.readVisits();
+  assertCurrent();
+  if (!candidateMayCancelVisit(before, params.reservationId)) {
+    throw new Error('予約の最新状態が変わりました。再読み込みしてから確認してください。');
+  }
+  // No await between the lease check and invocation of the canonical RPC.
+  assertCurrent();
+  const confirmedByRpc = await params.invokeCancel();
+  assertCurrent();
+  if (confirmedByRpc !== true) {
+    throw new Error('予約キャンセルの処理結果を確認できませんでした。再送信せず予約履歴をご確認ください。');
+  }
+  const after = await params.readVisits();
+  assertCurrent();
+  if (!confirmsCandidateVisitCancellation(before, after, params.reservationId)) {
+    throw new Error('キャンセル結果の予約内容を確認できませんでした。再送信せず予約履歴を再読み込みしてください。');
+  }
+}
