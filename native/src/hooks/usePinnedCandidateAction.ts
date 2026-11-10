@@ -39,7 +39,7 @@ export function usePinnedCandidateAction() {
   useEffect(() => {
     mountLease.activate();
     return () => { mountLease.revoke(); };
-  }, [mountLease]);
+  }, [mountLease, session?.user?.id, session?.id]);
 
   const isCurrentSession = useCallback((ownerId: string, ownerSessionId: string) => {
     const current = identityRef.current;
