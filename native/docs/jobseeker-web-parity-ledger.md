@@ -40,7 +40,7 @@ See [r138 withdrawal confirmation parity](parity-delta-r138-withdrawal-confirmat
 
 | Web jobseeker workflow | Native branch source | Android rendered + canonical readback | iOS rendered + canonical readback |
 | --- | --- | --- | --- |
-| Auth, signup, recovery, session restart | Existing source; no new claim this run | NOT VERIFIED for current SHA | NOT VERIFIED for current SHA |
+| Auth, signup, recovery, session restart | r142 pinned-session StrictMode/session switch lease integrated in source; full flow parity not yet verified | NOT VERIFIED for r142 SHA | NOT VERIFIED for r142 SHA |
 | Search, results, detail, favorites | Existing source; new A/B presentation fence on branch | NOT VERIFIED | NOT VERIFIED |
 | Applications/detail/replies | Existing source; new A/B presentation fence on branch | NOT VERIFIED | NOT VERIFIED |
 | Messages list, canonical unread, thread entry, scouts link | **Added this run**, source and focused unit tests | NOT VERIFIED | NOT VERIFIED |
