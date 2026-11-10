@@ -374,6 +374,9 @@ function ApplicationDetailContent() {
         ownerSessionId: pinned.ownerSessionId,
         applicationId,
         body: submittedDraft,
+        // A pinned token by itself is insufficient: navigation/focus changes
+        // must also fence the write after asynchronous SecureStore preparation.
+        isCurrent: () => pinned.isCurrent() && messageRequestGeneration === generation.current,
       });
       if (!pinned.isCurrent() || messageRequestGeneration !== generation.current) return;
       uncertainMessageRef.current = null;
