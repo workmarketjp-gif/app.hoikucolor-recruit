@@ -42,7 +42,8 @@ test('stale, cancelled, declined or missing pre-RPC booking is not cancellable',
 test('RPC success is not enough: row must be cancelled with cancellation timestamp', () => {
   for (const patch of [
     { status: 'confirmed' }, { status: 'declined' }, { cancelled_at: null },
-    { cancelled_at: 'not-a-date' }, { cancelled_at: '2026-11-09T00:00:00Z' },
+    { cancelled_at: 'not-a-date' }, { cancelled_at: '2026-11-11T00:01:00' },
+    { cancelled_at: '2026-11-09T00:00:00Z' }, { updated_at: '2026-11-11T00:01:00' },
     { updated_at: before.updated_at },
   ]) assert.equal(confirmsCandidateVisitCancellation([before], [{ ...cancelled, ...patch }], id), false);
 });
