@@ -67,7 +67,6 @@ export function isSelectableVisitDateTime(
   return isValidVisitCalendarDate(date) && availableSlots.includes(time);
 }
 
-
 /** Japan has no DST. Keep venue-calendar days independent of device timezone. */
 export function japanVisitToday(instantMs: number): string {
   const date = new Date(instantMs + 9 * 60 * 60 * 1000);
