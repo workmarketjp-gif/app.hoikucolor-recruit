@@ -20,7 +20,7 @@ import type { JobseekerJob, JobseekerProfile } from './jobseekerCoreApi';
 import { verifiedCandidateJobDetail } from './candidateJobDetailReadback';
 import { verifiedVisitSettingsReadback, type VerifiedVisitSettings } from './visitSettingsReadback';
 import { confirmsRequestedVisit } from './visitRequestReadback';
-import { candidateMayCancelVisit, confirmsCandidateVisitCancellation } from './visitCancellationReadback';
+import { cancelCandidateVisitWithLease } from './visitCancellationReadback';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -457,19 +457,20 @@ export async function requestVisitDurable(params: {
   return data;
 }
 
-export async function cancelVisit(client: SupabaseClient, reservationId: string) {
+export async function cancelVisit(
+  client: SupabaseClient,
+  reservationId: string,
+  isCurrent: () => boolean,
+) {
   assertUuid(reservationId, '予約ID');
-  // Re-read the canonical candidate-owned booking immediately before sending.
-  // An old UI card or a deleted/closed reservation must never authorize a write.
-  const before = await listCandidateVisits(client);
-  if (!candidateMayCancelVisit(before, reservationId)) {
-    throw new Error('予約の最新状態が変わりました。再読み込みしてから確認してください。');
-  }
-  const { data, error } = await client.rpc('hc_cancel_visit', { p_reservation_id: reservationId });
-  if (error) throw error;
-  if (data !== true) throw new Error('予約キャンセルの処理結果を確認できませんでした。再送信せず予約履歴をご確認ください。');
-  const after = await listCandidateVisits(client);
-  if (!confirmsCandidateVisitCancellation(before, after, reservationId)) {
-    throw new Error('キャンセル結果の予約内容を確認できませんでした。再送信せず予約履歴を再読み込みしてください。');
-  }
+  await cancelCandidateVisitWithLease({
+    reservationId,
+    isCurrent,
+    readVisits: () => listCandidateVisits(client),
+    invokeCancel: async () => {
+      const { data, error } = await client.rpc('hc_cancel_visit', { p_reservation_id: reservationId });
+      if (error) throw error;
+      return data === true;
+    },
+  });
 }
