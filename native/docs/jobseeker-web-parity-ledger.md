@@ -1,6 +1,10 @@
 # Hoiku Color JOBSEEKER Native — source-based parity ledger
 
-Updated: 2026-11-07 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either platform.
+Updated: 2026-11-10 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either platform.
+
+## Latest isolated delta (r129, 2026-11-10)
+See [r129 apply panel candidate/session + App Lock gate](parity-delta-r129-apply-panel-owner-fence.md). Source/real helper tests 14/14 PASS on exact GitHub blobs; TSX wiring 13/13 static assertions. **Do not count these as rendered Android/iOS or full Expo typecheck.** The mobile tab reference remains the five current Web destinations documented below. Branch: `native/color-jobseeker-apply-owner-fence-r129-20261110`, parent `90491b77118b8f601e232bc8f448f0cb6e9b2407`. No signed handoff build.
+
 
 ## Versioned reference
 - Web source: `workmarketjp-gif/app.hoikucolor-recruit` main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, `src/App.tsx`, `src/components/CandidateShell.tsx`.
