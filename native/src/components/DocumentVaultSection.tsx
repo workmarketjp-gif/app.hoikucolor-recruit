@@ -139,6 +139,8 @@ export function DocumentVaultSection({ initialType = 'resume', onDocumentsChange
     } catch (error) {
       if (generation === loadGenerationRef.current && ownerKeyRef.current === requestOwnerKey &&
           privacy.canAccessPrivateData() && (!pinned || pinned.isCurrent())) {
+        // [] is NOT a confirmed empty vault after an error. Keep the parent apply flow blocked.
+        onDocumentsChangedRef.current?.([], 'error');
         Alert.alert('応募書類を読み込めませんでした', String((error as { message?: unknown })?.message ?? error));
       }
     } finally {
