@@ -1,6 +1,12 @@
 # Hoiku Color JOBSEEKER Native — source-based parity ledger
 
-Updated: 2026-11-10 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either platform.
+Updated: 2026-11-11 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either platform.
+
+## Latest isolated delta (r140, 2026-11-11)
+
+See [r140 application visit Web parity](parity-delta-r140-application-visit-web-parity.md), branch `native/color-application-visit-card-web-parity-r140-20261111` based on r139 `f544470ddb3a7e48b21a4350d70391858099ef25`. Web `src/components/ApplicationDetail.tsx` main `fa779e73`: visit card duration and candidate note, visit no-bookings explanation, and exact interview empty-state text were absent in Native detail; source now matches while retaining canonical visit rows and booking navigation. Node exact-source 9/9 PASS, helper tsc PASS, connected GitHub Web/Native static checks 11/11 PASS; source contract committed but full checkout/Expo component test **NOT RUN**. Android/iOS rendered QA, canonical readback and signed installs **NOT VERIFIED**. No PR/main/production or paid build.
+
+
 
 ## Latest isolated delta (r139, 2026-11-10)
 
