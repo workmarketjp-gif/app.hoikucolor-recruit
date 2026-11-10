@@ -10,6 +10,7 @@ import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } fr
 import { applicationStatusLabel } from '../../lib/messageInbox';
 import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
 import { createApplicationDecisionGate } from '../../lib/applicationDecisionGate';
+import { applicationSelectionTimeline } from '../../lib/applicationSelectionTimeline';
 import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
 import { canSubmitCandidateMessage, confirmedUncertainCandidateMessage, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
 import { markVisibleApplicationMessagesRead } from '../../lib/attentionApi';
@@ -553,6 +554,8 @@ function ApplicationDetailContent() {
     return <View style={styles.center}><Text>この応募は確認できません。</Text></View>;
   }
 
+  const selectionTimeline = applicationSelectionTimeline(detail.application.status);
+
   return (
     <ScrollView
       ref={messageScrollRef}
@@ -585,6 +588,44 @@ function ApplicationDetailContent() {
           <Text style={styles.subtle}>{[detail.application.prefecture, detail.application.city, detail.application.employment_type].filter(Boolean).join(' ・ ')}</Text>
         </View>
         <Text style={styles.status}>{applicationStatusLabel(detail.application.status)}</Text>
+      </View>
+
+      <View style={styles.selectionTimeline} testID="application-selection-timeline" accessibilityLabel="選考状況">
+        {selectionTimeline.terminal ? (
+          <View style={styles.selectionTerminal}>
+            <Text style={styles.selectionTerminalTitle}>{applicationStatusLabel(detail.application.status)}</Text>
+            <Text style={styles.selectionTerminalMessage}>{selectionTimeline.terminalMessage}</Text>
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            nestedScrollEnabled
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.selectionRow}
+          >
+            {selectionTimeline.steps.map((step, index) => (
+              <View
+                key={step.key}
+                style={styles.selectionStep}
+                accessible
+                accessibilityRole="text"
+                accessibilityLabel={`${step.label}、${step.complete ? '到達済み' : '未到達'}`}
+              >
+                {index < selectionTimeline.steps.length - 1 ? (
+                  <View style={[styles.selectionConnector, step.complete && styles.selectionConnectorComplete]} />
+                ) : null}
+                <View style={[styles.selectionCircle, step.complete && styles.selectionCircleComplete]}>
+                  <Text style={[styles.selectionNumber, step.complete && styles.selectionNumberComplete]}>
+                    {step.complete ? '✓' : step.number}
+                  </Text>
+                </View>
+                <Text style={[styles.selectionLabel, step.complete && styles.selectionLabelComplete]}>
+                  {step.label}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+        )}
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -765,6 +806,20 @@ const styles = StyleSheet.create({
   title: { fontSize: 23, fontWeight: '900' },
   facility: { fontSize: 16, fontWeight: '800', marginTop: 3 },
   status: { backgroundColor: '#eef0f3', borderRadius: 9, paddingHorizontal: 9, paddingVertical: 6, fontWeight: '800', overflow: 'hidden' },
+  selectionTimeline: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ece6e4', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 10 },
+  selectionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 2 },
+  selectionStep: { width: 60, alignItems: 'center', gap: 6 },
+  selectionCircle: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: '#ece6e4', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  selectionCircleComplete: { borderColor: '#fb2f52', backgroundColor: '#fb2f52' },
+  selectionConnector: { position: 'absolute', top: 15, left: 46, width: 36, height: 2, backgroundColor: '#ece6e4' },
+  selectionConnectorComplete: { backgroundColor: '#fb2f52' },
+  selectionNumber: { fontWeight: '800', fontSize: 14, color: '#5f6977' },
+  selectionNumberComplete: { color: '#fff' },
+  selectionLabel: { minWidth: 60, color: '#5f6977', fontSize: 14, fontWeight: '800', textAlign: 'center' },
+  selectionLabelComplete: { color: '#1e2a3b' },
+  selectionTerminal: { gap: 2, paddingHorizontal: 6, paddingVertical: 4 },
+  selectionTerminalTitle: { fontSize: 17, fontWeight: '800', color: '#1e2a3b' },
+  selectionTerminalMessage: { fontSize: 15, color: '#4a5566' },
   subtle: { color: '#606873', lineHeight: 20 },
   meta: { color: '#7a818b', fontSize: 12 },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 10 },
