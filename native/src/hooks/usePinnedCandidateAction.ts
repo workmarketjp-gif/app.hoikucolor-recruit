@@ -1,6 +1,7 @@
 import { useSession } from '@clerk/expo';
 import { useCallback, useEffect, useRef } from 'react';
 import { createNativeSupabase } from '../lib/supabase';
+import { createPinnedCandidateMountLease } from '../lib/pinnedCandidateMountLease';
 import { usePrivateDataQuarantine } from './usePrivateDataQuarantine';
 
 /**
@@ -16,11 +17,15 @@ import { usePrivateDataQuarantine } from './usePrivateDataQuarantine';
  * Push installation binding) that may continue while App Lock is visible.
  * `pinCandidateAction()` additionally requires the private-data boundary to be
  * open and is the default for candidate business reads/writes/navigation.
+ * Effect epochs survive StrictMode setup/cleanup/setup without letting a
+ * request from the earlier effect lifetime appear current again.
  */
 export function usePinnedCandidateAction() {
   const { session } = useSession();
   const privacy = usePrivateDataQuarantine();
-  const mountedRef = useRef(true);
+  const mountLeaseRef = useRef<ReturnType<typeof createPinnedCandidateMountLease> | null>(null);
+  if (!mountLeaseRef.current) mountLeaseRef.current = createPinnedCandidateMountLease();
+  const mountLease = mountLeaseRef.current;
   const identityRef = useRef({
     userId: session?.user?.id ?? null,
     sessionId: session?.id ?? null,
@@ -31,18 +36,19 @@ export function usePinnedCandidateAction() {
     sessionId: session?.id ?? null,
   };
 
-  useEffect(() => () => {
-    mountedRef.current = false;
-  }, []);
+  useEffect(() => {
+    mountLease.activate();
+    return () => { mountLease.revoke(); };
+  }, [mountLease]);
 
   const isCurrentSession = useCallback((ownerId: string, ownerSessionId: string) => {
     const current = identityRef.current;
     return (
-      mountedRef.current &&
+      mountLease.snapshot() !== null &&
       current.userId === ownerId &&
       current.sessionId === ownerSessionId
     );
-  }, []);
+  }, [mountLease]);
 
   const isCurrentOwner = useCallback((ownerId: string, ownerSessionId: string) => {
     return isCurrentSession(ownerId, ownerSessionId) && privacy.canAccessPrivateData();
@@ -51,28 +57,29 @@ export function usePinnedCandidateAction() {
   const pinCandidateSession = useCallback(async () => {
     const ownerId = session?.user?.id ?? null;
     const ownerSessionId = session?.id ?? null;
-    if (!ownerId || !ownerSessionId || !session) return null;
+    const launchEpoch = mountLease.snapshot();
+    if (!ownerId || !ownerSessionId || !session || launchEpoch === null) return null;
 
     const token = await session.getToken();
-    if (!token || !isCurrentSession(ownerId, ownerSessionId)) return null;
+    if (!token || !mountLease.isCurrent(launchEpoch) || !isCurrentSession(ownerId, ownerSessionId)) return null;
 
     return {
       ownerId,
       ownerSessionId,
       client: createNativeSupabase(async () => token),
-      isCurrent: () => isCurrentSession(ownerId, ownerSessionId),
+      isCurrent: () => mountLease.isCurrent(launchEpoch) && isCurrentSession(ownerId, ownerSessionId),
     };
-  }, [isCurrentSession, session]);
+  }, [isCurrentSession, mountLease, session]);
 
   const pinCandidateAction = useCallback(async () => {
     if (privacy.shieldVisible || !privacy.canAccessPrivateData()) return null;
 
     const pinned = await pinCandidateSession();
-    if (!pinned || !isCurrentOwner(pinned.ownerId, pinned.ownerSessionId)) return null;
+    if (!pinned || !pinned.isCurrent() || !isCurrentOwner(pinned.ownerId, pinned.ownerSessionId)) return null;
 
     return {
       ...pinned,
-      isCurrent: () => isCurrentOwner(pinned.ownerId, pinned.ownerSessionId),
+      isCurrent: () => pinned.isCurrent() && isCurrentOwner(pinned.ownerId, pinned.ownerSessionId),
     };
   }, [isCurrentOwner, pinCandidateSession, privacy.canAccessPrivateData, privacy.shieldVisible]);
 
