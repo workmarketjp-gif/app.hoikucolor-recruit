@@ -824,7 +824,7 @@ function ApplicationDetailContent() {
           <Text style={styles.count}>{messages.length}件</Text>
         </View>
         {messagesFocused ? <Text style={styles.focusLabel}>園とのメッセージを表示しています</Text> : null}
-        {orderedMessages.length === 0 ? <Text style={styles.subtle}>メッセージはまだありません。</Text> : null}
+        {orderedMessages.length === 0 ? <Text style={styles.subtle}>まだメッセージはありません。ここから園へ連絡できます。</Text> : null}
         {orderedMessages.map((message) => (
           <View key={message.id}
             onLayout={message.id === latestFacilityMessageId ? (event) => {
@@ -841,14 +841,16 @@ function ApplicationDetailContent() {
             <Text style={styles.meta}>{formatDateTime(message.created_at)}</Text>
           </View>
         ))}
+        <Text style={styles.formLabel}>メッセージ</Text>
         <TextInput
           value={messageDraft}
           onChangeText={setMessageDraft}
-          placeholder="園へのメッセージ"
+          placeholder="園への質問や日程の相談など"
           multiline
           maxLength={4000}
           style={styles.textArea}
         />
+        <Text style={styles.meta}>{messageDraft.length}/4000</Text>
         {messageSendError ? (
           <View style={styles.messageFeedback} accessibilityLiveRegion="polite">
             <Text style={styles.error}>{messageSendError}</Text>
@@ -865,7 +867,7 @@ function ApplicationDetailContent() {
             needsReview: messageSendNeedsReview,
           })}
           onPress={() => void sendMessage()}>
-          <Text style={styles.primaryText}>{busy ? (messageSendNeedsReview ? '確認中…' : '送信中…') : '送信'}</Text>
+          <Text style={styles.primaryText}>{busy ? (messageSendNeedsReview ? '確認中…' : '送信中…') : '送信する'}</Text>
         </Pressable>
         <ApplicationDocumentsSection
           applicationId={applicationId}
