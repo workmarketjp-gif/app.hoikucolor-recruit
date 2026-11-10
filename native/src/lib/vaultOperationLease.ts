@@ -13,6 +13,10 @@ export function createVaultOperationLease() {
       current = ++epoch;
       return current;
     },
+    /** Is this exact operation still permitted after a privacy/session boundary? */
+    isCurrent(token: number): boolean {
+      return current === token;
+    },
     release(token: number): boolean {
       if (token !== current) return false;
       current = null;
