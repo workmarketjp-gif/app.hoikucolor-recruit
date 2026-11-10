@@ -2,6 +2,10 @@
 
 Updated: 2026-11-11 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either platform.
 
+## Latest isolated delta (r142, 2026-11-11)
+
+See [r142 pinned candidate mount/session lifetime](parity-delta-r142-pinned-candidate-mount-lease.md), branch `native/color-pinned-session-strictmode-r142-20261111`, base r141 `2fd66bebeb4070077818e836c9861e8ca160c990`. **Source bug**: shared candidate hook cleanup permanently set `mountedRef` false on React StrictMode effect replay; candidate RPCs could remain unusable. New epoch lease resets on mount or Clerk identity change but revokes in-flight work from prior effect lifetime, preserving launch-session token and App Lock quarantine. Pure-helper Node 6/6 PASS plus exact-hook wiring Node 4/4 PASS, isolated helper tsc PASS; dedicated npm script added. **NOT** dependency-backed React Native/Expo typecheck or component execution. Android/iOS rendered QA, canonical authenticated readback, signing and installable builds **NOT VERIFIED**. Branch-only, no PR/main/production or paid Actions/EAS.
+
 ## Latest isolated delta (r141, 2026-11-11)
 
 See [r141 application document handoff](parity-delta-r141-application-documents.md), branch `native/color-application-documents-web-parity-r141-20261111` based on r140 `5cf002895989778aa0e92d90eec7190a0881ff18`. Web source `src/components/ApplicationMessages.tsx` main `fa779e73`: native candidate detail now includes canonical document vault list, individual/batch application attachment, application-specific submitted-copy list, signed preview and profile vault navigation, with readback-gated state and App Lock/session fencing. Web message composer labels/counter/copy also aligned. Exact-source pure helper Node **6/6 PASS**, isolated helper tsc PASS, connected GitHub static UI/source wiring **13/13 PASS**. Component integration contract committed but **NOT EXECUTED**. Full Expo typecheck, Android/iOS rendered QA, canonical authenticated persistence, signed installs **NOT VERIFIED**. No PR/main/production or paid build triggered by this branch-only write.
