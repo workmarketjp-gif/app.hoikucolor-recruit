@@ -203,7 +203,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
           accessibilityState={{ checked: selectedId === document.id }}
           disabled={submitting || vaultRefreshing || vaultBusy}
         >
-          <Text numberOfLines={1} style={styles.optionText}>{selectedId === document.id ? '● ' : '○ '}{document.title}</Text>
+          <Text style={styles.optionText}>{selectedId === document.id ? '● ' : '○ '}{document.title}</Text>
           {document.is_default ? <Text style={styles.optionSub}>応募時に使う書類</Text> : null}
         </Pressable>)}
         {row.level !== 'required' && row.candidates.length ? <Pressable
@@ -221,13 +221,13 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
           setAddingType(closing ? null : row.type);
           if (closing && vaultRefreshing) void load();
         }} accessibilityRole="button">
-          <Text style={styles.secondaryText}>{addingType === row.type ? '閉じる' : `${DOCUMENT_TYPE_LABELS[row.type]}を追加`}</Text>
+          <Text style={styles.secondaryText}>{addingType === row.type ? '閉じる' : row.candidates.length ? '別のファイルを追加' : `${DOCUMENT_TYPE_LABELS[row.type]}を追加`}</Text>
         </Pressable>
         {addingType === row.type ? <DocumentVaultSection initialType={row.type} onDocumentsChanged={onVaultChanged} onBusyChanged={setVaultBusy} /> : null}
       </View>;
     }) : <Text style={styles.subtle}>送る書類はありません。書類なしで応募できます。履歴書などは、応募後に応募内容の画面から追加で提出することもできます。</Text>}
 
-    <Text style={styles.note}>選んだ書類は、この応募先の園にだけ提出用のコピーが共有されます。</Text>
+    <Text style={styles.note}>選んだ書類は、この応募先の園にだけ提出用のコピーが共有されます。PDF・JPEG・PNG、1ファイル10MBまで。</Text>
     {vaultRefreshing ? <Text style={styles.hint} accessibilityLiveRegion="polite">書類一覧を再確認しています。確認が終わるまで応募できません。</Text> : null}
     {vaultBusy ? <Text style={styles.hint} accessibilityLiveRegion="polite">書類の選択・保存中は応募できません。</Text> : null}
     {missing.length ? <Text style={triedSubmit ? styles.error : styles.hint} accessibilityLiveRegion="polite">
@@ -257,7 +257,7 @@ const styles = StyleSheet.create({
   badgeRequired: { backgroundColor: '#fff0f3', color: '#e72346' },
   option: { minHeight: 48, borderWidth: 1, borderColor: '#e3e6ea', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, justifyContent: 'center' },
   optionSelected: { borderColor: '#e72346', backgroundColor: '#fff0f3' },
-  optionText: { fontSize: 15 },
+  optionText: { fontSize: 15, lineHeight: 22, flexShrink: 1 },
   optionSub: { fontSize: 13, color: '#606873' },
   empty: { fontWeight: '800' },
   primary: { minHeight: 52, borderRadius: 13, backgroundColor: '#191c20', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
