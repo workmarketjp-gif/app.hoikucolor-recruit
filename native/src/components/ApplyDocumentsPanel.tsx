@@ -19,7 +19,7 @@ import {
 } from '../lib/documentTypes';
 import { getJobDocumentRequirements } from '../lib/jobDocumentRequirementApi';
 import { DocumentVaultSection } from './DocumentVaultSection';
-import { canUseApplyDocumentState, isApplySubmissionUnavailable, reconcileApplyVaultSelection, type ApplyVaultChange } from '../lib/applyVaultSelection';
+import { applyVaultReadbackState, canUseApplyDocumentState, isApplySubmissionUnavailable, reconcileApplyVaultSelection, type ApplyVaultChange, type ApplyVaultReadbackState } from '../lib/applyVaultSelection';
 
 type Props = {
   jobId: string;
@@ -50,7 +50,8 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
   const [loadError, setLoadError] = useState<{ ownerKey: string; jobId: string; message: string } | null>(null);
   const [addingType, setAddingType] = useState<JobseekerDocumentType | null>(null);
   const [triedSubmit, setTriedSubmit] = useState(false);
-  const [vaultRefreshing, setVaultRefreshing] = useState(false);
+  const [vaultReadback, setVaultReadback] = useState<ApplyVaultReadbackState>('loading');
+  const vaultRefreshing = vaultReadback !== 'ready';
   const [vaultBusy, setVaultBusy] = useState(false);
   const knownDocuments = useRef<JobseekerDocument[]>([]);
   const generation = useRef(0);
@@ -66,7 +67,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
     knownDocuments.current = [];
     setSelection({});
     setAddingType(null);
-    setVaultRefreshing(false);
+    setVaultReadback('loading');
     setVaultBusy(false);
     setTriedSubmit(false);
     setLoadError(null);
@@ -84,6 +85,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
           ownerKeyRef.current !== requestedOwnerKey || !privacy.canAccessPrivateData()) return;
       assertCandidateDocumentListOwner(nextDocuments, pinned.ownerId);
       setRequirements(nextRequirements);
+      setVaultReadback('ready');
       knownDocuments.current = nextDocuments;
       setDocuments(nextDocuments);
       setSelection(initialApplySelection(buildApplyDocumentRows(nextRequirements, nextDocuments)));
@@ -107,7 +109,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
       knownDocuments.current = [];
       setSelection({});
       setAddingType(null);
-      setVaultRefreshing(false);
+      setVaultReadback('loading');
       setVaultBusy(false);
       setLoadError(null);
       return;
@@ -129,8 +131,9 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
       loadedOwnerKey, currentOwnerKey: ownerKeyRef.current,
       privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
     })) return;
-    if (change === 'loading') {
-      setVaultRefreshing(true);
+    if (change === 'loading' || change === 'error') {
+      // A failed list read is NOT a successful empty list. The candidate must retry.
+      setVaultReadback(applyVaultReadbackState(change));
       return;
     }
     try {
@@ -142,14 +145,14 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
       setDocuments([]);
       knownDocuments.current = [];
       setSelection({});
-      setVaultRefreshing(true);
+      setVaultReadback('failed');
       setLoadError({ ownerKey: loadedOwnerKey!, jobId, message: '応募書類の確認に失敗しました。もう一度読み込んでください。' });
       return;
     }
     const previous = knownDocuments.current;
     knownDocuments.current = next;
     setDocuments(next);
-    setVaultRefreshing(false);
+    setVaultReadback(applyVaultReadbackState(change));
     setSelection((current) => reconcileApplyVaultSelection(previous, next, current, addingType, change, uploadedDocumentId));
   }, [addingType, jobId, loadedJobId, loadedOwnerKey, privacy.canAccessPrivateData, privacy.shieldVisible, session?.user?.id]);
 
@@ -218,6 +221,8 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
         {!row.candidates.length ? <Text style={styles.empty}>{row.level === 'required' ? 'まだ保存されていません。この応募に必要です。' : 'まだ保存されていません。'}</Text> : null}
         <Pressable style={styles.secondary} disabled={submitting || vaultBusy} onPress={() => {
           const closing = addingType === row.type;
+          // Block Submit synchronously, before the embedded vault starts its first read.
+          if (!closing) setVaultReadback('loading');
           setAddingType(closing ? null : row.type);
           if (closing && vaultRefreshing) void load();
         }} accessibilityRole="button">
@@ -228,7 +233,14 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
     }) : <Text style={styles.subtle}>送る書類はありません。書類なしで応募できます。履歴書などは、応募後に応募内容の画面から追加で提出することもできます。</Text>}
 
     <Text style={styles.note}>選んだ書類は、この応募先の園にだけ提出用のコピーが共有されます。PDF・JPEG・PNG、1ファイル10MBまで。</Text>
-    {vaultRefreshing ? <Text style={styles.hint} accessibilityLiveRegion="polite">書類一覧を再確認しています。確認が終わるまで応募できません。</Text> : null}
+    {vaultReadback === 'failed' ? <View testID="apply-vault-readback-failed" style={{ gap: 8 }}>
+      <Text style={styles.error} accessibilityLiveRegion="polite">応募書類の再確認に失敗しました。古い書類を使って応募することはできません。</Text>
+      <Pressable testID="apply-vault-retry" style={styles.secondary} disabled={submitting || vaultBusy} onPress={() => void load()} accessibilityRole="button">
+        <Text style={styles.secondaryText}>書類と応募条件を再読み込み</Text>
+      </Pressable>
+    </View> : vaultReadback === 'loading'
+      ? <Text style={styles.hint} accessibilityLiveRegion="polite">書類一覧を再確認しています。確認が終わるまで応募できません。</Text>
+      : null}
     {vaultBusy ? <Text style={styles.hint} accessibilityLiveRegion="polite">書類の選択・保存中は応募できません。</Text> : null}
     {missing.length ? <Text style={triedSubmit ? styles.error : styles.hint} accessibilityLiveRegion="polite">
       {joinDocumentLabels(missing)}はこの求人の応募に必要です。保存済みの書類を選ぶか、ここで追加してください。

@@ -1,6 +1,15 @@
 import type { ApplyDocumentSelection, JobseekerDocumentType } from './documentTypes';
 
-export type ApplyVaultChange = 'loading' | 'loaded' | 'uploaded';
+export type ApplyVaultChange = 'loading' | 'loaded' | 'uploaded' | 'error';
+
+/** A failed canonical vault read is never equivalent to a confirmed empty list. */
+export type ApplyVaultReadbackState = 'ready' | 'loading' | 'failed';
+
+export function applyVaultReadbackState(change: ApplyVaultChange): ApplyVaultReadbackState {
+  if (change === 'loading') return 'loading';
+  if (change === 'error') return 'failed';
+  return 'ready';
+}
 
 type CandidateDocumentRef = Readonly<{ id: string; document_type: string }>;
 
@@ -18,7 +27,7 @@ export function reconcileApplyVaultSelection(
   next: readonly CandidateDocumentRef[],
   selection: ApplyDocumentSelection,
   addingType: JobseekerDocumentType | null,
-  change: Exclude<ApplyVaultChange, 'loading'>,
+  change: Extract<ApplyVaultChange, 'loaded' | 'uploaded'>,
   uploadedDocumentId: string | null = null,
 ): ApplyDocumentSelection {
   const updated: ApplyDocumentSelection = { ...selection };

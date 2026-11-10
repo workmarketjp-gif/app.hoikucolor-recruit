@@ -149,6 +149,8 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     } catch (error) {
       if (generation === loadGenerationRef.current && ownerKeyRef.current === requestOwnerKey &&
           privacy.canAccessPrivateData() && (!pinned || pinned.isCurrent())) {
+        // A failed canonical read must not unblock an embedded application form.
+        onDocumentsChangedRef.current?.([], 'error');
         Alert.alert('応募書類を読み込めませんでした', String((error as { message?: unknown })?.message ?? error));
       }
     } finally {
