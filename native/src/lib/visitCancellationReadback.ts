@@ -19,6 +19,13 @@ type CanonicalVisit = {
 
 const active = (status: string) => status === 'requested' || status === 'confirmed';
 
+/** SQL timestamptz values must carry their actual offset, not device-local time. */
+function instantMs(value: string): number | null {
+  if (typeof value !== 'string' || !/(?:Z|[+-]\d{2}:\d{2})$/i.test(value)) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
 /** Require one candidate-owned active record before issuing a cancel RPC. */
 export function candidateMayCancelVisit(
   rows: readonly CanonicalVisit[],
@@ -44,9 +51,11 @@ export function confirmsCandidateVisitCancellation(
   if (matches.length !== 1) return false;
   const after = matches[0];
   if (after.status !== 'cancelled' || after.cancelled_at === null) return false;
-  const cancelledAt = Date.parse(after.cancelled_at);
-  if (!Number.isFinite(cancelledAt) || cancelledAt < Date.parse(before.created_at) ||
-      Date.parse(after.updated_at) < cancelledAt) return false;
+  const cancelledAt = instantMs(after.cancelled_at);
+  const createdAt = instantMs(before.created_at);
+  const updatedAt = instantMs(after.updated_at);
+  if (cancelledAt === null || createdAt === null || updatedAt === null ||
+      cancelledAt < createdAt || updatedAt < cancelledAt) return false;
   return after.job_id === before.job_id &&
     after.application_id === before.application_id &&
     after.experience_type === before.experience_type &&
