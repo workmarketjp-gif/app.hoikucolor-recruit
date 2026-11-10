@@ -226,7 +226,7 @@ export default function VisitsScreen() {
     try {
       pinned = await pinCandidateAction();
       if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
-      await cancelVisit(pinned.client, reservationId);
+      await cancelVisit(pinned.client, reservationId, pinned.isCurrent);
       if (!pinned.isCurrent()) return;
       await load({ reservationId, mutation: 'cancel' });
     } catch (cancelError) {
