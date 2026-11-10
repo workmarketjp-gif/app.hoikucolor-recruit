@@ -11,6 +11,7 @@ import {
   prepareDurableMutation,
 } from './durableMutation';
 import { isMissingRpcError, submissionDocumentError } from './jobDocumentRequirementApi';
+import { ExplicitDocumentSubmissionUnavailableError } from './explicitDocumentSubmissionSafety';
 import { verifiedCandidateMessageRows } from './candidateMessageReadback';
 import { verifiedCandidateApplicationRows, type VerifiedCandidateApplication } from './candidateApplicationReadback.ts';
 import { assertCandidateApplicationDetailReadback } from './candidateApplicationDetailReadback.ts';
@@ -200,8 +201,9 @@ export async function submitApplication(
     ? await client.rpc('hc_jobseeker_submit_application_v2', { ...params, p_document_ids: selectedIds })
     : await client.rpc('hc_jobseeker_submit_application', params);
   if (error && selectedIds && isMissingRpcError(error)) {
-    // Migration not applied yet: no job can have requirements, so v1 is equivalent.
-    ({ data, error } = await client.rpc('hc_jobseeker_submit_application', params));
+    // v1 may attach default documents that were NOT explicitly selected.
+    // Fail closed instead of silently changing the candidate's consent.
+    throw new ExplicitDocumentSubmissionUnavailableError(error);
   }
   if (error) throw submissionDocumentError(error) ?? error;
   if (typeof data !== 'string' || !UUID_PATTERN.test(data)) {

@@ -7,6 +7,7 @@ import { getJobseekerProfile, listSavedJobIds, saveJob, unsaveJob, type Jobseeke
 import { updateSavedJobAndConfirm } from '../../lib/savedJobsReadback';
 import { recoverAmbiguousApplication } from '../../lib/ambiguousApplicationRecovery';
 import { getCandidateJob, listApplications, submitApplication } from '../../lib/applicationJourneyApi';
+import { isDefinitiveExplicitDocumentRpcUnavailable } from '../../lib/explicitDocumentSubmissionSafety';
 import { ApplyDocumentsPanel } from '../../components/ApplyDocumentsPanel';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
@@ -327,6 +328,20 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
       routeToApplication(result.applicationId, result.documentHandoffFailures > 0);
     } catch (applyError) {
       if (!canContinue()) return;
+      if (submitDispatched && isDefinitiveExplicitDocumentRpcUnavailable(applyError)) {
+        try {
+          // PGRST202 / SQL 42883 prove v2 did not execute. Clear only our
+          // pre-submit receipt; never do this for ambiguous transport errors.
+          await clearPendingHomeApplication(ownerId, jobId);
+          if (!canContinue()) return;
+          uncertainRef.current = false;
+          setApplicationUncertain(false);
+          setError('選択した書類の応募受付機能が利用できないため、応募は送信されませんでした。時間をおいて再度お試しください。');
+          return;
+        } catch {
+          // Receipt cleanup uncertain: keep the existing no-resubmit quarantine.
+        }
+      }
       if (submitDispatched) {
         const outcome = await reconcileAmbiguousApplication(requestGeneration).catch(() => 'read_failed' as const);
         if (outcome === 'confirmed') {
