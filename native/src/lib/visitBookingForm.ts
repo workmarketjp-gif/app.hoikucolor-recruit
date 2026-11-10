@@ -71,7 +71,7 @@ export function isSelectableVisitDateTime(
 /** Japan has no DST. Keep venue-calendar days independent of device timezone. */
 export function japanVisitToday(instantMs: number): string {
   const date = new Date(instantMs + 9 * 60 * 60 * 1000);
-  return \`${String(date.getUTCFullYear()).padStart(4, '0')}}-${String(date.getUTCMonth() + 1).padStart(2, '0')}}-${String(date.getUTCDate()).padStart(2, '0')}}\`;
+  return `${String(date.getUTCFullYear()).padStart(4, '0')}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
 function utcVisitDay(dateString: string): Date {
@@ -85,7 +85,7 @@ function utcVisitDay(dateString: string): Date {
 export function shiftVisitDay(dateString: string, days: number): string {
   const date = utcVisitDay(dateString);
   date.setUTCDate(date.getUTCDate() + Math.trunc(days));
-  return \`${String(date.getUTCFullYear()).padStart(4, '0')}}-${String(date.getUTCMonth() + 1).padStart(2, '0')}}-${String(date.getUTCDate()).padStart(2, '0')}}\`;
+  return `${String(date.getUTCFullYear()).padStart(4, '0')}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
 export function shiftVisitCalendarMonth(month: string, shift: -1 | 1): string | null {
@@ -97,7 +97,7 @@ export function shiftVisitCalendarMonth(month: string, shift: -1 | 1): string | 
   const next = year * 12 + (monthNumber - 1) + shift;
   const nextYear = Math.floor(next / 12);
   if (nextYear < 1 || nextYear > 9999) return null;
-  return \`${String(nextYear).padStart(4, '0')}}-${String(next % 12 + 1).padStart(2, '0')}}\`;
+  return `${String(nextYear).padStart(4, '0')}-${String(next % 12 + 1).padStart(2, '0')}`;
 }
 
 /** Monday-first month grid. Null cells are padding, never selectable dates. */
@@ -107,14 +107,14 @@ export function visitCalendarCells(month: string): Array<string | null> {
   const year = Number(match[1]);
   const monthNumber = Number(match[2]);
   if (year < 1 || year > 9999 || monthNumber < 1 || monthNumber > 12) return [];
-  const firstDay = utcVisitDay(\`${match[1]}-${match[2]}-01\`);
+  const firstDay = utcVisitDay(`${match[1]}-${match[2]}-01`);
   const mondayPadding = (firstDay.getUTCDay() + 6) % 7;
-  const lastDay = utcVisitDay(\`${match[1]}-${match[2]}-01\`);
+  const lastDay = utcVisitDay(`${match[1]}-${match[2]}-01`);
   lastDay.setUTCMonth(lastDay.getUTCMonth() + 1);
   lastDay.setUTCDate(0);
   const cells: Array<string | null> = Array(mondayPadding).fill(null);
   for (let day = 1; day <= lastDay.getUTCDate(); day++) {
-    cells.push(\`${match[1]}-${match[2]}-${String(day).padStart(2, '0')}\`);
+    cells.push(`${match[1]}-${match[2]}-${String(day).padStart(2, '0')}`);
   }
   while (cells.length % 7) cells.push(null);
   return cells;
