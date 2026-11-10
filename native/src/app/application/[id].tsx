@@ -33,6 +33,7 @@ import {
   type JobseekerMessage,
 } from '../../lib/applicationJourneyApi';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
+import { ApplicationDocumentsSection } from '../../components/ApplicationDocumentsSection';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -866,6 +867,10 @@ function ApplicationDetailContent() {
           onPress={() => void sendMessage()}>
           <Text style={styles.primaryText}>{busy ? (messageSendNeedsReview ? '確認中…' : '送信中…') : '送信'}</Text>
         </Pressable>
+        <ApplicationDocumentsSection
+          applicationId={applicationId}
+          onHandoffReadback={(confirmed) => setDocumentState(confirmed)}
+        />
       </View>
 
 
