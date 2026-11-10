@@ -1,7 +1,8 @@
 /**
  * Fail-closed candidate visit cancellation proof. Both snapshots must originate
- * from the existing candidate-scoped canonical history RPC; this helper does
- * not grant authorization and never sends a mutation.
+ * from the existing candidate-scoped canonical history RPC. These functions
+ * do not grant authorization; the cancellation runner delegates the mutation
+ * to the existing authorized RPC client.
  */
 type CanonicalVisit = {
   reservation_id: string;
