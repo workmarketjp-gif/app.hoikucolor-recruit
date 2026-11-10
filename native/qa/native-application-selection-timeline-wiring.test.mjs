@@ -24,3 +24,15 @@ test('Native timeline is usable at small widths without reducing stage label siz
   assert.match(styles, /selectionLabel: \{[^}]*fontSize: 14/);
   assert.match(styles, /selectionTerminalTitle: \{ fontSize: 17/);
 });
+
+test('Web next scheduled interview callout uses canonical interview data', () => {
+  assert.match(source, /import \\{ applicationSelectionTimeline, webNextScheduledInterview \\}/);
+  assert.match(view, /webNextScheduledInterview\\(detail\\.interviews\\)/);
+  assert.match(view, /\\{nextInterview \\? \\(/);
+  assert.match(view, /testID="application-next-interview"/);
+  assert.match(view, /formatApplicationEventDateTimeJapan\\(nextInterview\\.scheduled_at\\)/);
+  assert.match(view, /nextInterview\\.location/);
+  assert.match(view, /!nextInterview\\.candidate_response_status/);
+  assert.match(view, /日時を確認して回答してください/);
+  assert.match(styles, /nextInterviewAlert: \\{[^}]*fontSize: 14/);
+});
