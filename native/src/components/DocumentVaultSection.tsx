@@ -184,20 +184,30 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     selectedType: JobseekerDocumentType,
     asset: CandidateDocumentAsset,
     pickerCacheGeneration: number,
+    lease: number,
     replacement: JobseekerDocument | null = null,
   ) {
+    const operationValid = () => operationLeaseRef.current.isCurrent(lease);
+    if (!operationValid()) {
+      try { discardUnregisteredDocumentPickerCache(asset.uri); } catch {}
+      return;
+    }
     try {
       await registerPendingDocumentPickerCache(pickerOwnerId, asset.uri, pickerCacheGeneration);
+      if (!operationValid()) {
+        try { await consumePendingDocumentPickerCache(pickerOwnerId, asset.uri); } catch {}
+        return;
+      }
     } catch (error) {
       try { discardUnregisteredDocumentPickerCache(asset.uri); } catch {}
-      if (mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
+      if (operationValid() && mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
         Alert.alert('書類を準備できませんでした', String((error as { message?: unknown })?.message ?? error));
       }
       return;
     }
 
     const pickerSessionStillValid =
-      mountedRef.current &&
+      operationValid() && mountedRef.current &&
       userIdRef.current === pickerOwnerId &&
       privacy.canAccessPrivateData();
 
@@ -209,7 +219,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     setBusyId(replacement ? `replace-${replacement.id}` : 'upload');
     const pinned = await pinCandidateAction();
     const pinnedOwnerKey = pinned ? candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) : null;
-    if (!pinned?.isCurrent() || pinned.ownerId !== pickerOwnerId ||
+    if (!operationValid() || !pinned?.isCurrent() || pinned.ownerId !== pickerOwnerId ||
         !pinnedOwnerKey || ownerKeyRef.current !== pinnedOwnerKey || !privacy.canAccessPrivateData()) {
       try { await consumePendingDocumentPickerCache(pickerOwnerId, asset.uri); } catch {}
       return;
@@ -222,19 +232,19 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
       // from removing or silently replacing the last known-good default.
       makeDefault: !replacement && !sameTypeExists,
       canStartUpload: () =>
-        pinned.isCurrent() &&
+        operationValid() && pinned.isCurrent() &&
         mountedRef.current &&
         userIdRef.current === pickerOwnerId &&
         privacy.canAccessPrivateData(),
     });
 
-    if (!pinned.isCurrent() || !mountedRef.current || userIdRef.current !== pickerOwnerId || !privacy.canAccessPrivateData()) return;
+    if (!operationValid() || !pinned.isCurrent() || !mountedRef.current || userIdRef.current !== pickerOwnerId || !privacy.canAccessPrivateData()) return;
 
     if (replacement) {
       // Never delete or mutate the old document until the newly uploaded source
       // is visible through the canonical candidate-scoped read path.
       let canonical = await listJobseekerDocuments(pinned.client);
-      if (!pinned.isCurrent()) return;
+      if (!operationValid() || !pinned.isCurrent()) return;
       let canonicalSaved = canonical.find((item) => item.id === saved.id) ?? null;
       let canonicalOld = canonical.find((item) => item.id === replacement.id) ?? null;
       if (!canonicalSaved || canonicalSaved.jobseeker_clerk_user_id !== pickerOwnerId || canonicalSaved.document_type !== replacement.document_type) {
@@ -254,7 +264,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
         }
       }
 
-      if (!pinned.isCurrent() || !mountedRef.current || userIdRef.current !== pickerOwnerId || !privacy.canAccessPrivateData()) return;
+      if (!operationValid() || !pinned.isCurrent() || !mountedRef.current || userIdRef.current !== pickerOwnerId || !privacy.canAccessPrivateData()) return;
 
       if (canonicalOld) {
         try {
@@ -267,10 +277,10 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
       }
 
       canonical = await listJobseekerDocuments(pinned.client);
-      if (!pinned.isCurrent()) return;
+      if (!operationValid() || !pinned.isCurrent()) return;
       canonicalSaved = canonical.find((item) => item.id === saved.id) ?? null;
       canonicalOld = canonical.find((item) => item.id === replacement.id) ?? null;
-      if (!privacy.canAccessPrivateData() || ownerKeyRef.current !== pinnedOwnerKey) return;
+      if (!operationValid() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== pinnedOwnerKey) return;
       assertCandidateDocumentListOwner(canonical, pickerOwnerId);
       setDocuments(canonical, pinnedOwnerKey);
 
@@ -294,7 +304,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     // Confirm the uploaded file through candidate-scoped canonical records.
     // A successful write response alone is not sufficient for a success alert.
     const canonical = await listJobseekerDocuments(pinned.client);
-    if (!pinned.isCurrent() || !mountedRef.current || ownerKeyRef.current !== pinnedOwnerKey ||
+    if (!operationValid() || !pinned.isCurrent() || !mountedRef.current || ownerKeyRef.current !== pinnedOwnerKey ||
         !privacy.canAccessPrivateData()) return;
     confirmCandidateDocumentMutation(canonical, pickerOwnerId, saved.id, 'uploaded');
     setDocuments(canonical, pinnedOwnerKey, 'uploaded', saved.id);
@@ -323,9 +333,9 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
         name: picked.name,
         size: picked.size ?? null,
         mimeType: picked.mimeType ?? null,
-      }, pickerCacheGeneration, replacement);
+      }, pickerCacheGeneration, lease, replacement);
     } catch (error) {
-      if (mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
+      if (operationLeaseRef.current.isCurrent(lease) && mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
         Alert.alert(replacement ? '書類を差し替えできませんでした' : '書類を保存できませんでした', String((error as { message?: unknown })?.message ?? error));
         // A network error may follow a committed upload. Reconcile before permitting apply.
         await load();
@@ -345,7 +355,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
 
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!mountedRef.current || userIdRef.current !== pickerOwnerId || !privacy.canAccessPrivateData()) return;
+      if (!operationLeaseRef.current.isCurrent(lease) || !mountedRef.current || userIdRef.current !== pickerOwnerId || !privacy.canAccessPrivateData()) return;
       if (!permission.granted) {
         if (permission.canAskAgain === false) {
           Alert.alert('カメラを許可してください', '設定からHoiku Colorのカメラ利用を許可すると、資格証や書類を撮影できます。', [
@@ -373,9 +383,9 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
         name: captured.fileName || `${selectedType}-${Date.now()}.jpg`,
         size: captured.fileSize ?? null,
         mimeType: captured.mimeType || 'image/jpeg',
-      }, pickerCacheGeneration, replacement);
+      }, pickerCacheGeneration, lease, replacement);
     } catch (error) {
-      if (mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
+      if (operationLeaseRef.current.isCurrent(lease) && mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
         Alert.alert(replacement ? '撮影した書類を差し替えできませんでした' : '撮影した書類を保存できませんでした', String((error as { message?: unknown })?.message ?? error));
         await load();
       }
@@ -395,13 +405,13 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
       // Never let an async signed-URL request that started under Candidate A
       // complete into Candidate B's UI after Clerk session replacement.
       pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      if (!operationLeaseRef.current.isCurrent(lease) || !pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
       const url = await createJobseekerDocumentSignedUrl(pinned.client, document);
-      if (!pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey ||
+      if (!operationLeaseRef.current.isCurrent(lease) || !pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey ||
           !canActOnCandidateDocument(document, verifiedDocuments, user?.id ?? null, ownerKey, freshlyVerifiedOwner.current, true)) return;
       await Linking.openURL(url);
     } catch (error) {
-      if (!pinned || pinned.isCurrent()) {
+      if (operationLeaseRef.current.isCurrent(lease) && (!pinned || pinned.isCurrent())) {
         Alert.alert('書類を開けませんでした', String((error as { message?: unknown })?.message ?? error));
       }
     } finally {
@@ -417,15 +427,15 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> = null;
     try {
       pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !privacy.canAccessPrivateData()) return;
+      if (!operationLeaseRef.current.isCurrent(lease) || !pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !privacy.canAccessPrivateData()) return;
       await setDefaultJobseekerDocument(pinned.client, document.id);
-      if (!pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
+      if (!operationLeaseRef.current.isCurrent(lease) || !pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
       const canonical = await listJobseekerDocuments(pinned.client);
-      if (!pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
+      if (!operationLeaseRef.current.isCurrent(lease) || !pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
       confirmCandidateDocumentMutation(canonical, pinned.ownerId, document.id, 'made-default');
       setDocuments(canonical, ownerKey!);
     } catch (error) {
-      if (!pinned || pinned.isCurrent()) {
+      if (operationLeaseRef.current.isCurrent(lease) && (!pinned || pinned.isCurrent())) {
         Alert.alert('既定書類を変更できませんでした', String((error as { message?: unknown })?.message ?? error));
       }
     } finally { if (operationLeaseRef.current.release(lease) && mountedRef.current) setBusyId(null); }
@@ -451,16 +461,16 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> = null;
     try {
       pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !privacy.canAccessPrivateData()) return;
+      if (!operationLeaseRef.current.isCurrent(lease) || !pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !privacy.canAccessPrivateData()) return;
       await deleteJobseekerDocument(pinned.client, document);
-      if (!pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
+      if (!operationLeaseRef.current.isCurrent(lease) || !pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
       const canonical = await listJobseekerDocuments(pinned.client);
-      if (!pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
+      if (!operationLeaseRef.current.isCurrent(lease) || !pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
       confirmCandidateDocumentMutation(canonical, pinned.ownerId, document.id, 'deleted');
       setDocuments(canonical, ownerKey!);
       Alert.alert('削除しました', '書類庫から削除しました。提出済みの応募書類は保持されます。');
     } catch (error) {
-      if (!pinned || pinned.isCurrent()) {
+      if (operationLeaseRef.current.isCurrent(lease) && (!pinned || pinned.isCurrent())) {
         Alert.alert('書類を削除できませんでした', String((error as { message?: unknown })?.message ?? error));
       }
     } finally { if (operationLeaseRef.current.release(lease) && mountedRef.current) setBusyId(null); }
