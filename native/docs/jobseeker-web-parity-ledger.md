@@ -2,6 +2,11 @@
 
 Updated: 2026-11-11 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either platform.
 
+## Latest isolated delta (r149, 2026-11-11)
+
+See [r149 visit cancellation session fence](parity-delta-r149-visit-cancellation-session-fence.md): a candidate session revoked during the asynchronous pre-cancellation read must not invoke `hc_cancel_visit`; current owner is rechecked before write, after RPC, and after history readback. Branch `native/color-visit-cancel-session-fence-r149-20261111`, parent `d6b7983f10289865cd948780f6466216c6d15055`. Exact GitHub helper/test sources: Node behavioral tests **13/13 PASS** and isolated helper tsc PASS. Full Expo and Android/iOS runtime, real API persistence, visual QA, signing and distribution **NOT VERIFIED**. Branch-only; no PR/main or paid build.
+
+
 ## Latest isolated delta (r146, 2026-11-11)
 
 See [r146 visit settings readback integrity](parity-delta-r146-visit-settings-readback.md): authenticated jobseeker visit-settings RPC adapter now rejects invalid or ambiguous success responses instead of showing misleading empty UI or using malformed booking settings. Valid/null payloads retain canonical meaning; focused real-source helper 6/6 PASS and standalone helper tsc PASS. `native/color-visit-settings-readback-r146-20261111`, base `ebc94b029bed7bc4add246725c7c191934804b2b`; full Expo typecheck, connected adapter contract, Android/iOS rendering and actual save/re-read NOT VERIFIED. No PR/main/production or paid build.
