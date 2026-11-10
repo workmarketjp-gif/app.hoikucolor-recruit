@@ -2,6 +2,10 @@
 
 Updated: 2026-11-11 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either platform.
 
+## Latest isolated delta (r141, 2026-11-11)
+
+See [r141 application document handoff](parity-delta-r141-application-documents.md), branch `native/color-application-documents-web-parity-r141-20261111` based on r140 `5cf002895989778aa0e92d90eec7190a0881ff18`. Web source `src/components/ApplicationMessages.tsx` main `fa779e73`: native candidate detail now includes canonical document vault list, individual/batch application attachment, application-specific submitted-copy list, signed preview and profile vault navigation, with readback-gated state and App Lock/session fencing. Web message composer labels/counter/copy also aligned. Exact-source pure helper Node **6/6 PASS**, isolated helper tsc PASS, connected GitHub static UI/source wiring **13/13 PASS**. Component integration contract committed but **NOT EXECUTED**. Full Expo typecheck, Android/iOS rendered QA, canonical authenticated persistence, signed installs **NOT VERIFIED**. No PR/main/production or paid build triggered by this branch-only write.
+
 ## Latest isolated delta (r140, 2026-11-11)
 
 See [r140 application visit Web parity](parity-delta-r140-application-visit-web-parity.md), branch `native/color-application-visit-card-web-parity-r140-20261111` based on r139 `f544470ddb3a7e48b21a4350d70391858099ef25`. Web `src/components/ApplicationDetail.tsx` main `fa779e73`: visit card duration and candidate note, visit no-bookings explanation, and exact interview empty-state text were absent in Native detail; source now matches while retaining canonical visit rows and booking navigation. Node exact-source 9/9 PASS, helper tsc PASS, connected GitHub Web/Native static checks 11/11 PASS; source contract committed but full checkout/Expo component test **NOT RUN**. Android/iOS rendered QA, canonical readback and signed installs **NOT VERIFIED**. No PR/main/production or paid build.
