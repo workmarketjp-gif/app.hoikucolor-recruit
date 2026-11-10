@@ -10,7 +10,7 @@ import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } fr
 import { applicationStatusLabel } from '../../lib/messageInbox';
 import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
 import { createApplicationDecisionGate } from '../../lib/applicationDecisionGate';
-import { applicationSelectionTimeline } from '../../lib/applicationSelectionTimeline';
+import { applicationSelectionTimeline, webNextScheduledInterview } from '../../lib/applicationSelectionTimeline';
 import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
 import { canSubmitCandidateMessage, confirmedUncertainCandidateMessage, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
 import { markVisibleApplicationMessagesRead } from '../../lib/attentionApi';
@@ -555,6 +555,7 @@ function ApplicationDetailContent() {
   }
 
   const selectionTimeline = applicationSelectionTimeline(detail.application.status);
+  const nextInterview = webNextScheduledInterview(detail.interviews);
 
   return (
     <ScrollView
@@ -589,6 +590,17 @@ function ApplicationDetailContent() {
         </View>
         <Text style={styles.status}>{applicationStatusLabel(detail.application.status)}</Text>
       </View>
+
+      {nextInterview ? (
+        <View style={styles.nextInterviewCard} testID="application-next-interview">
+          <Text style={styles.nextInterviewTitle}>次回の面接</Text>
+          <Text style={styles.nextInterviewDate}>{formatApplicationEventDateTimeJapan(nextInterview.scheduled_at)}</Text>
+          {nextInterview.location ? <Text style={styles.subtle}>{nextInterview.location}</Text> : null}
+          {!nextInterview.candidate_response_status ? (
+            <Text style={styles.nextInterviewAlert}>日時を確認して回答してください</Text>
+          ) : null}
+        </View>
+      ) : null}
 
       <View style={styles.selectionTimeline} testID="application-selection-timeline" accessibilityLabel="選考状況">
         {selectionTimeline.terminal ? (
@@ -806,6 +818,10 @@ const styles = StyleSheet.create({
   title: { fontSize: 23, fontWeight: '900' },
   facility: { fontSize: 16, fontWeight: '800', marginTop: 3 },
   status: { backgroundColor: '#eef0f3', borderRadius: 9, paddingHorizontal: 9, paddingVertical: 6, fontWeight: '800', overflow: 'hidden' },
+  nextInterviewCard: { backgroundColor: '#fff0f3', borderWidth: 1, borderColor: '#f3c9d1', borderRadius: 14, padding: 14, gap: 4 },
+  nextInterviewTitle: { color: '#1e2a3b', fontSize: 16, fontWeight: '900' },
+  nextInterviewDate: { color: '#1e2a3b', fontSize: 16, fontWeight: '800' },
+  nextInterviewAlert: { color: '#c8173a', fontSize: 14, fontWeight: '800' },
   selectionTimeline: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ece6e4', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 10 },
   selectionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 2 },
   selectionStep: { width: 60, alignItems: 'center', gap: 6 },
