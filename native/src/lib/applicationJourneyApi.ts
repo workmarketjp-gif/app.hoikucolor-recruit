@@ -20,6 +20,7 @@ import type { JobseekerJob, JobseekerProfile } from './jobseekerCoreApi';
 import { verifiedCandidateJobDetail } from './candidateJobDetailReadback';
 import { verifiedVisitSettingsReadback, type VerifiedVisitSettings } from './visitSettingsReadback';
 import { confirmsRequestedVisit } from './visitRequestReadback';
+import { requestCandidateVisitWithLease } from './visitRequestSessionLease';
 import { cancelCandidateVisitWithLease } from './visitCancellationReadback';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -407,6 +408,7 @@ export async function requestVisitDurable(params: {
   client: SupabaseClient;
   ownerId: string;
   ownerSessionId: string;
+  isCurrent: () => boolean;
   jobId: string;
   applicationId?: string | null;
   experienceType: VisitExperienceType;
@@ -421,40 +423,44 @@ export async function requestVisitDurable(params: {
   const message = cleanOptionalText(params.candidateMessage);
   const scopeId = `${params.jobId}:${params.applicationId ?? 'none'}`;
   const lease = captureDurableMutationSessionLease(params.ownerId, params.ownerSessionId);
-  const { envelope } = await prepareDurableMutation({
-    userId: params.ownerId,
-    kind: 'visit',
-    scopeId,
-    payloadParts: [params.jobId, params.applicationId ?? null, params.experienceType, params.localDate, params.localTime, message],
-    lease,
+  return requestCandidateVisitWithLease({
+    isCurrent: params.isCurrent,
+    prepare: async () => {
+      const { envelope } = await prepareDurableMutation({
+        userId: params.ownerId,
+        kind: 'visit',
+        scopeId,
+        payloadParts: [params.jobId, params.applicationId ?? null, params.experienceType, params.localDate, params.localTime, message],
+        lease,
+      });
+      return envelope.requestId;
+    },
+    invoke: async (requestId) => {
+      const { data, error } = await params.client.rpc('hc_request_visit_v2', {
+        p_job_id: params.jobId,
+        p_experience_type: params.experienceType,
+        p_local_date: params.localDate,
+        p_local_time: params.localTime,
+        p_application_id: params.applicationId ?? null,
+        p_candidate_message: message,
+        p_client_request_id: requestId,
+      });
+      if (error) throw error;
+      if (typeof data !== 'string' || !UUID_PATTERN.test(data)) throw new Error('見学・体験予約結果を確認できませんでした。');
+      return data;
+    },
+    readVisits: () => listCandidateVisits(params.client),
+    confirms: (visits, reservationId) => confirmsRequestedVisit(visits, {
+      reservationId,
+      jobId: params.jobId,
+      applicationId: params.applicationId ?? null,
+      experienceType: params.experienceType,
+      localDate: params.localDate,
+      localTime: params.localTime.slice(0, 5),
+      candidateMessage: message,
+    }),
+    clear: () => clearDurableMutation({ userId: params.ownerId, kind: 'visit', scopeId }),
   });
-
-  const { data, error } = await params.client.rpc('hc_request_visit_v2', {
-    p_job_id: params.jobId,
-    p_experience_type: params.experienceType,
-    p_local_date: params.localDate,
-    p_local_time: params.localTime,
-    p_application_id: params.applicationId ?? null,
-    p_candidate_message: message,
-    p_client_request_id: envelope.requestId,
-  });
-  if (error) throw error;
-  if (typeof data !== 'string' || !UUID_PATTERN.test(data)) throw new Error('見学・体験予約結果を確認できませんでした。');
-
-  const visits = await listCandidateVisits(params.client);
-  if (!confirmsRequestedVisit(visits, {
-    reservationId: data,
-    jobId: params.jobId,
-    applicationId: params.applicationId ?? null,
-    experienceType: params.experienceType,
-    localDate: params.localDate,
-    localTime: params.localTime.slice(0, 5),
-    candidateMessage: message,
-  })) {
-    throw new Error('予約結果の求人・日時・申込内容を確認できませんでした。再送信せず予約履歴を再読み込みしてください。');
-  }
-  await clearDurableMutation({ userId: params.ownerId, kind: 'visit', scopeId });
-  return data;
 }
 
 export async function cancelVisit(

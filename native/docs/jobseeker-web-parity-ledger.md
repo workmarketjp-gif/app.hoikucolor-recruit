@@ -2,6 +2,10 @@
 
 Updated: 2026-11-11 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either platform.
 
+## Latest isolated delta (r150, 2026-11-11)
+
+See [r150 request session-fence](parity-delta-r150-visit-request-session-fence.md). Native candidate visit requests now check pinned Clerk session at the SecureStore preparation → RPC boundary, after RPC, after canonical readback, and before clearing durable receipts. Node real-source helper 10/10 PASS and isolated tsc PASS; full Expo, actual RPC and Android/iOS runtime/signing NOT VERIFIED. r149 parent `a49c0940dc8c2b2f56600d4bfa1e171399e9cd99`; branch `native/color-visit-request-session-fence-r150-20261111`. No PR/main/production or paid build.
+
 ## Latest isolated delta (r149, 2026-11-11)
 
 See [r149 visit cancellation session fence](parity-delta-r149-visit-cancellation-session-fence.md): a candidate session revoked during the asynchronous pre-cancellation read must not invoke `hc_cancel_visit`; current owner is rechecked before write, after RPC, and after history readback. Branch `native/color-visit-cancel-session-fence-r149-20261111`, parent `d6b7983f10289865cd948780f6466216c6d15055`. Exact GitHub helper/test sources: Node behavioral tests **13/13 PASS** and isolated helper tsc PASS. Full Expo and Android/iOS runtime, real API persistence, visual QA, signing and distribution **NOT VERIFIED**. Branch-only; no PR/main or paid build.

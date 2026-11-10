@@ -192,6 +192,7 @@ export default function VisitsScreen() {
         client: pinned.client,
         ownerId: pinned.ownerId,
         ownerSessionId: pinned.ownerSessionId,
+        isCurrent: pinned.isCurrent,
         jobId,
         applicationId,
         experienceType,
