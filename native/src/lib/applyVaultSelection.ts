@@ -58,3 +58,20 @@ export type ApplySubmissionAvailability = Readonly<{
 export function isApplySubmissionUnavailable(state: ApplySubmissionAvailability): boolean {
   return !state.requirementsReady || state.submitting || state.vaultRefreshing || state.vaultBusy;
 }
+
+/**
+ * The apply step can retain state across an account/session replacement or App
+ * Lock cycle. Its document choices must be both loaded for the current owner
+ * and freshly available under the foreground privacy boundary.
+ * This is a UI guard, not a replacement for authenticated RPC/RLS checks.
+ */
+export type ApplyDocumentOwnerState = Readonly<{
+  loadedOwnerKey: string | null;
+  currentOwnerKey: string | null;
+  privateAllowed: boolean;
+}>;
+
+export function canUseApplyDocumentState(state: ApplyDocumentOwnerState): boolean {
+  return Boolean(state.privateAllowed && state.currentOwnerKey &&
+    state.loadedOwnerKey === state.currentOwnerKey);
+}
