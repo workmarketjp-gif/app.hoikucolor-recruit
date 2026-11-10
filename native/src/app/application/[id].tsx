@@ -10,6 +10,7 @@ import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } fr
 import { applicationStatusLabel } from '../../lib/messageInbox';
 import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
 import { createApplicationDecisionGate } from '../../lib/applicationDecisionGate';
+import { applicationDecisionDisclosure, canConfirmApplicationWithdrawal } from '../../lib/applicationDecisionDisclosure';
 import { applicationSelectionTimeline, webNextScheduledInterview } from '../../lib/applicationSelectionTimeline';
 import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
 import { canSubmitCandidateMessage, confirmedUncertainCandidateMessage, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
@@ -240,6 +241,7 @@ function ApplicationDetailContent() {
   const [messageSendNeedsReview, setMessageSendNeedsReview] = useState(false);
   const [offerMessage, setOfferMessage] = useState('');
   const [withdrawReason, setWithdrawReason] = useState('');
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -329,6 +331,8 @@ function ApplicationDetailContent() {
       setDetail(null);
       setMessages([]);
       setDocumentState(null);
+      setWithdrawOpen(false);
+      setWithdrawReason('');
       setError(null);
       setLoading(true);
     };
@@ -455,14 +459,21 @@ function ApplicationDetailContent() {
   };
 
   const withdrawCurrentApplication = async () => {
+    // Opening the disclosure is not consent to an irreversible withdrawal.
+    // Recheck the exact canonical status even if an old confirm handler fires.
+    const status = detail?.application.status;
+    const offerResponse = detail?.application.candidate_offer_response;
+    if (!canConfirmApplicationWithdrawal(status, offerResponse, withdrawOpen)) return;
     await runDecision(async (stillCurrent) => {
       setError(null);
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
       if (!pinned.isCurrent() || !stillCurrent()) return;
+      if (!canConfirmApplicationWithdrawal(status, offerResponse, withdrawOpen)) return;
       const next = await withdrawApplication(pinned.client, applicationId, withdrawReason);
       if (!pinned.isCurrent() || !stillCurrent()) return;
       setDetail(next);
+      setWithdrawOpen(false);
       setWithdrawReason('');
       await load(true);
     }, setError);
@@ -556,6 +567,7 @@ function ApplicationDetailContent() {
 
   const selectionTimeline = applicationSelectionTimeline(detail.application.status);
   const nextInterview = webNextScheduledInterview(detail.interviews);
+  const decisionDisclosure = applicationDecisionDisclosure(detail.application.status, detail.application.candidate_offer_response);
 
   return (
     <ScrollView
@@ -664,23 +676,56 @@ function ApplicationDetailContent() {
         </View>
       ) : null}
 
-      {detail.application.status === 'offered' ? (
-        <View style={styles.offerCard}>
-          <Text style={styles.sectionTitle}>内定</Text>
-          {detail.application.candidate_offer_response === 'accepted' ? (
-            <>
-              <Text style={styles.offerAccepted}>内定を承諾済みです。</Text>
+      {decisionDisclosure ? (
+        <View style={[styles.card, decisionDisclosure.offered && styles.offerCard]} testID="application-decision-card">
+          <Text style={styles.sectionTitle}>{decisionDisclosure.heading}</Text>
+          {decisionDisclosure.accepted ? (
+            <View style={styles.acceptedOfferSummary}>
+              <Text style={styles.offerAccepted}>✓ この内定を承諾しました</Text>
               {detail.application.candidate_offer_message ? <Text>{detail.application.candidate_offer_message}</Text> : null}
               {detail.application.candidate_offer_responded_at ? <Text style={styles.meta}>{formatDateTime(detail.application.candidate_offer_responded_at)} 回答</Text> : null}
-            </>
-          ) : (
+            </View>
+          ) : null}
+          <Text style={styles.subtle}>{decisionDisclosure.explanation}</Text>
+          {decisionDisclosure.canAccept && !withdrawOpen ? (
             <>
-              <Text style={styles.subtle}>内容を確認して、アプリから承諾できます。</Text>
-              <TextInput value={offerMessage} onChangeText={setOfferMessage} placeholder="園への連絡事項（任意）" multiline maxLength={1000} style={styles.textArea} />
-              <Pressable style={styles.primaryButton} disabled={busy} onPress={() => void acceptCurrentOffer()}>
-                <Text style={styles.primaryText}>{busy ? '確認中…' : '内定を承諾する'}</Text>
-              </Pressable>
+              <Text style={styles.formLabel}>園への連絡事項（任意）</Text>
+              <TextInput value={offerMessage} onChangeText={setOfferMessage} placeholder="例：内定ありがとうございます。入職日についてご相談させてください。" multiline maxLength={1000} style={styles.textArea} />
+              <Text style={styles.meta}>{offerMessage.length}/1000</Text>
             </>
+          ) : null}
+          {!withdrawOpen ? (
+            <View style={styles.decisionActions}>
+              <Pressable
+                testID="application-withdraw-open"
+                style={styles.secondaryButton}
+                disabled={busy || decisionGate.isBusy()}
+                onPress={() => { setWithdrawOpen(true); setError(null); }}
+                accessibilityRole="button"
+              >
+                <Text style={styles.secondaryText}>{decisionDisclosure.withdrawLabel}</Text>
+              </Pressable>
+              {decisionDisclosure.canAccept ? (
+                <Pressable style={styles.primaryButton} disabled={busy || decisionGate.isBusy()} onPress={() => void acceptCurrentOffer()} accessibilityRole="button">
+                  <Text style={styles.primaryText}>{busy ? '送信中…' : '内定を承諾する'}</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : (
+            <View style={styles.withdrawConfirmation} testID="application-withdraw-confirmation">
+              <Text style={styles.confirmationWarning}>{decisionDisclosure.confirmationWarning}</Text>
+              <Text style={styles.formLabel}>辞退理由・園への連絡（任意）</Text>
+              <TextInput value={withdrawReason} onChangeText={setWithdrawReason} placeholder="例：一身上の都合により辞退いたします。" multiline maxLength={1000} style={styles.textArea} />
+              <Text style={styles.meta}>{withdrawReason.length}/1000</Text>
+              <View style={styles.decisionActions}>
+                <Pressable style={styles.secondaryButton} disabled={busy || decisionGate.isBusy()} onPress={() => { setWithdrawOpen(false); setWithdrawReason(''); setError(null); }} accessibilityRole="button" testID="application-withdraw-cancel">
+                  <Text style={styles.secondaryText}>やめる</Text>
+                </Pressable>
+                <Pressable style={styles.dangerButton} disabled={busy || decisionGate.isBusy()} onPress={() => void withdrawCurrentApplication()} accessibilityRole="button" testID="application-withdraw-confirm">
+                  <Text style={styles.dangerText}>{busy ? '送信中…' : '辞退を確定する'}</Text>
+                </Pressable>
+              </View>
+            </View>
           )}
         </View>
       ) : null}
@@ -793,16 +838,6 @@ function ApplicationDetailContent() {
         </Pressable>
       </View>
 
-      {['new', 'reviewing', 'interview', 'offered'].includes(detail.application.status) ? (
-        <View style={styles.withdrawCard}>
-          <Text style={styles.sectionTitle}>{detail.application.status === 'offered' ? '内定を辞退' : '応募を辞退'}</Text>
-          <Text style={styles.subtle}>辞退すると、予定中の面接とこの応募に紐づく見学・体験もキャンセルされます。</Text>
-          <TextInput value={withdrawReason} onChangeText={setWithdrawReason} placeholder="辞退理由（任意）" multiline maxLength={1000} style={styles.textArea} />
-          <Pressable style={styles.dangerButton} disabled={busy} onPress={() => void withdrawCurrentApplication()}>
-            <Text style={styles.dangerText}>{busy ? '確認中…' : detail.application.status === 'offered' ? '内定を辞退する' : '応募を辞退する'}</Text>
-          </Pressable>
-        </View>
-      ) : null}
 
       <Pressable style={styles.secondaryButton} onPress={() => router.push('/(tabs)/applications')}>
         <Text style={styles.secondaryText}>応募一覧へ戻る</Text>
@@ -841,8 +876,12 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 10 },
   warningCard: { backgroundColor: '#fff8e6', borderRadius: 16, padding: 16, gap: 10 },
   offerCard: { backgroundColor: '#eefbf3', borderRadius: 16, padding: 16, gap: 10 },
-  withdrawCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 10 },
   offerAccepted: { color: '#067647', fontWeight: '900' },
+  acceptedOfferSummary: { borderRadius: 10, padding: 10, gap: 5, backgroundColor: '#e5f7ec' },
+  formLabel: { fontSize: 15, fontWeight: '800', color: '#263444' },
+  decisionActions: { gap: 10 },
+  withdrawConfirmation: { backgroundColor: '#fff9fa', borderWidth: 1, borderColor: '#f2c6cc', borderRadius: 12, padding: 12, gap: 10 },
+  confirmationWarning: { color: '#a61c2d', fontSize: 15, fontWeight: '800' },
   focusedCard: { borderWidth: 2, borderColor: '#246bfd' },
   messageFeedback: { gap: 10, padding: 12, borderRadius: 10, backgroundColor: '#FFF1F0' },
   sectionTitle: { fontSize: 18, fontWeight: '900' },
