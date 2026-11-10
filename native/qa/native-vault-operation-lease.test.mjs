@@ -44,6 +44,29 @@ test('cancel/rejected picker can release its lease and safely retry', () => {
   }
 });
 
+test('revocation prevents a stale picker result from committing after privacy lock/unlock', () => {
+  const gate = createVaultOperationLease();
+  const pickerToken = gate.tryAcquire();
+  assert.ok(pickerToken !== null);
+  assert.equal(gate.isCurrent(pickerToken), true);
+  gate.reset();
+  assert.equal(gate.isCurrent(pickerToken), false);
+  const nextToken = gate.tryAcquire();
+  assert.equal(gate.isCurrent(pickerToken), false);
+  assert.equal(gate.isCurrent(nextToken), true);
+  assert.equal(gate.release(nextToken), true);
+  assert.equal(gate.isCurrent(nextToken), false);
+});
+
+test('invalid and completed leases never authorize stale follow-on actions', () => {
+  const gate = createVaultOperationLease();
+  assert.equal(gate.isCurrent(-1), false);
+  const token = gate.tryAcquire();
+  assert.equal(gate.isCurrent(token + 1), false);
+  assert.equal(gate.release(token), true);
+  assert.equal(gate.isCurrent(token), false);
+});
+
 test('real Native vault serializes picker, camera, open, default, and delete paths', () => {
   const source = readFileSync(new URL('../src/components/DocumentVaultSection.tsx', import.meta.url), 'utf8');
   assert.match(source, /const operationLeaseRef = useRef\(createVaultOperationLease\(\)\)/);
