@@ -9,6 +9,7 @@ import { candidateApplicationDetailKey } from '../../lib/applicationDetailVisibi
 import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } from '../../lib/applicationDocumentHandoffStatus';
 import { applicationStatusLabel } from '../../lib/messageInbox';
 import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
+import { createApplicationDecisionGate } from '../../lib/applicationDecisionGate';
 import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
 import { canSubmitCandidateMessage, confirmedUncertainCandidateMessage, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
 import { markVisibleApplicationMessagesRead } from '../../lib/attentionApi';
@@ -221,6 +222,7 @@ function ApplicationDetailContent() {
   const [handoffError, setHandoffError] = useState<string | null>(null);
   const generation = useRef(0);
   const messageSendPending = useRef(false);
+  const decisionGate = useRef(createApplicationDecisionGate()).current;
   const uncertainMessageRef = useRef<{
     submittedDraft: string;
     knownMessageIds: string[];
@@ -294,6 +296,7 @@ function ApplicationDetailContent() {
     void latestLoad.current();
     return () => {
       generation.current += 1; // Never apply an in-flight read after blur.
+      decisionGate.revoke(); // In-flight decision stays locked; old presentation is revoked.
       messageAnchorConsumedRef.current = false;
       messageAnchorYRef.current = null;
       messageViewportHeightRef.current = 0;
@@ -310,7 +313,7 @@ function ApplicationDetailContent() {
     // The durable RPC can finish server-side even if its response is lost.
     // Require a deliberate canonical re-read before a possible duplicate tap.
     if (!canSubmitCandidateMessage({
-      draft: messageDraft, busy, pending: messageSendPending.current,
+      draft: messageDraft, busy: busy || decisionGate.isBusy(), pending: messageSendPending.current,
       needsReview: messageSendNeedsReview,
     })) return;
     const submittedDraft = messageDraft;
@@ -324,7 +327,9 @@ function ApplicationDetailContent() {
     setMessageSendError(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned || !pinned.isCurrent() || messageRequestGeneration !== generation.current) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
       attemptedOwner = { ownerId: pinned.ownerId, ownerSessionId: pinned.ownerSessionId };
       durableRequestStarted = true;
       // The durable adapter already performs a canonical list readback and
@@ -338,7 +343,7 @@ function ApplicationDetailContent() {
         applicationId,
         body: submittedDraft,
       });
-      if (!pinned.isCurrent()) return;
+      if (!pinned.isCurrent() || messageRequestGeneration !== generation.current) return;
       uncertainMessageRef.current = null;
       setMessages((current) => mergeConfirmedCandidateMessage(current, confirmedMessage, submittedDraft));
       // Do not erase edits typed while the previous message was in flight.
@@ -363,92 +368,94 @@ function ApplicationDetailContent() {
     }
   };
 
-  const reviewMessageSend = async () => {
+  /** A synchronous lease, not React busy alone, blocks same-frame duplicate decisions. */
+  const runDecision = async (
+    action: (stillCurrent: () => boolean) => Promise<void>,
+    onError: (message: string) => void,
+  ) => {
     if (busy || messageSendPending.current) return;
-    // Message review must not depend on an unrelated document-handoff RPC.
-    // Only a current authorized read of this application thread clears the
-    // uncertain-delivery gate. Never resend the submitted message here.
-    const requestGeneration = generation.current;
+    const token = decisionGate.begin();
+    if (token === null) return;
+    const actionGeneration = generation.current;
+    const stillCurrent = () =>
+      actionGeneration === generation.current && decisionGate.isCurrent(token);
     setBusy(true);
     try {
+      await action(stillCurrent);
+    } catch (actionError) {
+      if (stillCurrent()) onError(String((actionError as { message?: unknown })?.message ?? actionError));
+    } finally {
+      // Blur keeps the network operation locked until it settles, but suppresses
+      // stale detail/message/error updates. Unlocking busy is not private data.
+      decisionGate.finish(token);
+      setBusy(false);
+    }
+  };
+
+  const reviewMessageSend = async () => {
+    // Review is a canonical read only. It must never automatically send again.
+    await runDecision(async (stillCurrent) => {
       const pinned = await pinCandidateAction();
-      if (!pinned || !pinned.isCurrent()) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned.isCurrent() || !stillCurrent()) return;
       const review = uncertainMessageRef.current;
       if (review && (review.ownerId !== pinned.ownerId ||
           review.ownerSessionId !== pinned.ownerSessionId || review.applicationId !== applicationId)) {
         throw new Error('前のログイン状態のメッセージは確認できません。');
       }
       const nextMessages = await listApplicationMessages(pinned.client, applicationId);
-      if (!pinned.isCurrent() || requestGeneration !== generation.current) return;
+      if (!pinned.isCurrent() || !stillCurrent()) return;
       setMessages(nextMessages);
-      // A fresh thread read may prove the ambiguous reply already arrived.
-      // Remove only that exact draft; newer edits must remain intact.
       if (review && confirmedUncertainCandidateMessage(review.submittedDraft, review.knownMessageIds, nextMessages)) {
         setMessageDraft((current) => draftAfterConfirmedMessageSend(current, review.submittedDraft));
       }
       uncertainMessageRef.current = null;
       setMessageSendNeedsReview(false);
       setMessageSendError(null);
-    } catch {
-      if (requestGeneration === generation.current) {
-        setMessageSendError('最新のメッセージを確認できませんでした。通信状態を確認してから、もう一度お試しください。');
-      }
-    } finally {
-      if (requestGeneration === generation.current) setBusy(false);
-    }
+    }, () => {
+      setMessageSendError('最新のメッセージを確認できませんでした。通信状態を確認してから、もう一度お試しください。');
+    });
   };
 
   const acceptCurrentOffer = async () => {
-    setBusy(true);
-    setError(null);
-    try {
+    await runDecision(async (stillCurrent) => {
+      setError(null);
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned.isCurrent() || !stillCurrent()) return;
       const next = await acceptOffer(pinned.client, applicationId, offerMessage);
-      if (!pinned.isCurrent()) return;
+      if (!pinned.isCurrent() || !stillCurrent()) return;
       setDetail(next);
-    } catch (offerError) {
-      setError(String((offerError as { message?: unknown })?.message ?? offerError));
-    } finally {
-      setBusy(false);
-    }
+    }, setError);
   };
 
   const withdrawCurrentApplication = async () => {
-    setBusy(true);
-    setError(null);
-    try {
+    await runDecision(async (stillCurrent) => {
+      setError(null);
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned.isCurrent() || !stillCurrent()) return;
       const next = await withdrawApplication(pinned.client, applicationId, withdrawReason);
-      if (!pinned.isCurrent()) return;
+      if (!pinned.isCurrent() || !stillCurrent()) return;
       setDetail(next);
       setWithdrawReason('');
       await load(true);
-    } catch (withdrawError) {
-      setError(String((withdrawError as { message?: unknown })?.message ?? withdrawError));
-    } finally {
-      setBusy(false);
-    }
+    }, setError);
   };
 
   const repairDocuments = async () => {
-    setBusy(true);
-    setHandoffError(null);
-    try {
+    await runDecision(async (stillCurrent) => {
+      setHandoffError(null);
       const pinned = await pinCandidateAction();
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned.isCurrent() || !stillCurrent()) return;
       const result = await repairApplicationDocumentHandoff(pinned.client, applicationId);
-      if (!pinned.isCurrent()) return;
+      if (!pinned.isCurrent() || !stillCurrent()) return;
       setDocumentState(result.state);
       if (result.failed || result.state.missingSourceDocumentIds.length) {
         setHandoffError('一部の提出書類を復旧できませんでした。書類一覧を確認して再度お試しください。');
       }
-    } catch (repairError) {
-      setHandoffError(String((repairError as { message?: unknown })?.message ?? repairError));
-    } finally {
-      setBusy(false);
-    }
+    }, setHandoffError);
   };
 
   const messagesFocused = focus === 'messages';
@@ -699,7 +706,7 @@ function ApplicationDetailContent() {
         ) : null}
         <Pressable style={styles.primaryButton}
           disabled={!canSubmitCandidateMessage({
-            draft: messageDraft, busy, pending: messageSendPending.current,
+            draft: messageDraft, busy: busy || decisionGate.isBusy(), pending: messageSendPending.current,
             needsReview: messageSendNeedsReview,
           })}
           onPress={() => void sendMessage()}>
