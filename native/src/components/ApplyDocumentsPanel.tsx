@@ -1,6 +1,10 @@
+import { useSession } from '@clerk/expo';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
+import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
+import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
+import { assertCandidateDocumentListOwner } from '../lib/documentVaultPrivacy';
 import { listJobseekerDocuments, type JobseekerDocument, type JobseekerDocumentType } from '../lib/documentVaultApi';
 import {
   DOCUMENT_TYPE_LABELS,
@@ -15,7 +19,7 @@ import {
 } from '../lib/documentTypes';
 import { getJobDocumentRequirements } from '../lib/jobDocumentRequirementApi';
 import { DocumentVaultSection } from './DocumentVaultSection';
-import { isApplySubmissionUnavailable, reconcileApplyVaultSelection, type ApplyVaultChange } from '../lib/applyVaultSelection';
+import { canUseApplyDocumentState, isApplySubmissionUnavailable, reconcileApplyVaultSelection, type ApplyVaultChange } from '../lib/applyVaultSelection';
 
 type Props = {
   jobId: string;
@@ -32,10 +36,18 @@ type Props = {
  */
 export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: Props) {
   const { pinCandidateAction } = usePinnedCandidateAction();
+  const { session } = useSession();
+  const privacy = usePrivateDataQuarantine();
+  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
+  const ownerKeyRef = useRef(ownerKey);
+  ownerKeyRef.current = ownerKey;
+  const privateAllowed = Boolean(ownerKey) && !privacy.shieldVisible && privacy.canAccessPrivateData();
+  const [loadedOwnerKey, setLoadedOwnerKey] = useState<string | null>(null);
+  const [loadedJobId, setLoadedJobId] = useState<string | null>(null);
   const [requirements, setRequirements] = useState<JobDocumentRequirements | null>(null);
   const [documents, setDocuments] = useState<JobseekerDocument[]>([]);
   const [selection, setSelection] = useState<ApplyDocumentSelection>({});
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<{ ownerKey: string; jobId: string; message: string } | null>(null);
   const [addingType, setAddingType] = useState<JobseekerDocumentType | null>(null);
   const [triedSubmit, setTriedSubmit] = useState(false);
   const [vaultRefreshing, setVaultRefreshing] = useState(false);
@@ -45,6 +57,9 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
 
   const load = useCallback(async () => {
     const current = ++generation.current;
+    const requestedOwnerKey = ownerKey;
+    setLoadedOwnerKey(null);
+    setLoadedJobId(null);
     // Fail closed during a requirements retry: never submit from stale rows.
     setRequirements(null);
     setDocuments([]);
@@ -55,37 +70,80 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
     setVaultBusy(false);
     setTriedSubmit(false);
     setLoadError(null);
+    if (!requestedOwnerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) return;
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
       const [nextRequirements, nextDocuments] = await Promise.all([
         getJobDocumentRequirements(pinned.client, jobId),
         listJobseekerDocuments(pinned.client),
       ]);
-      if (!pinned.isCurrent() || current !== generation.current) return;
+      if (!pinned.isCurrent() || current !== generation.current ||
+          ownerKeyRef.current !== requestedOwnerKey || !privacy.canAccessPrivateData()) return;
+      assertCandidateDocumentListOwner(nextDocuments, pinned.ownerId);
       setRequirements(nextRequirements);
       knownDocuments.current = nextDocuments;
       setDocuments(nextDocuments);
       setSelection(initialApplySelection(buildApplyDocumentRows(nextRequirements, nextDocuments)));
+      setLoadedJobId(jobId);
+      setLoadedOwnerKey(requestedOwnerKey);
     } catch {
-      if (current === generation.current) setLoadError('応募に使う書類を読み込めませんでした。もう一度お試しください。');
+      if (current === generation.current && ownerKeyRef.current === requestedOwnerKey &&
+          privacy.canAccessPrivateData()) {
+        setLoadError({ ownerKey: requestedOwnerKey, jobId, message: '応募に使う書類を読み込めませんでした。もう一度お試しください。' });
+      }
     }
-  }, [jobId, pinCandidateAction]);
+  }, [jobId, ownerKey, pinCandidateAction, privacy.canAccessPrivateData, privacy.shieldVisible]);
 
   useEffect(() => {
+    if (!ownerKey || privacy.shieldVisible) {
+      generation.current += 1;
+      setLoadedOwnerKey(null);
+      setLoadedJobId(null);
+      setRequirements(null);
+      setDocuments([]);
+      knownDocuments.current = [];
+      setSelection({});
+      setAddingType(null);
+      setVaultRefreshing(false);
+      setVaultBusy(false);
+      setLoadError(null);
+      return;
+    }
     void load();
     return () => { generation.current += 1; };
-  }, [load]);
+  }, [ownerKey, privacy.shieldVisible, load]);
 
-  const rows = useMemo(() => (requirements ? buildApplyDocumentRows(requirements, documents) : []), [requirements, documents]);
+  const ownerReady = canUseApplyDocumentState({ loadedOwnerKey, currentOwnerKey: ownerKey, privateAllowed });
+  const stateReady = ownerReady && loadedJobId === jobId;
+  const rows = useMemo(() => (stateReady && requirements ? buildApplyDocumentRows(requirements, documents) : []), [stateReady, requirements, documents]);
   const missing = useMemo(() => missingRequiredDocuments(rows, selection), [rows, selection]);
-  const submissionUnavailable = isApplySubmissionUnavailable({ requirementsReady: requirements !== null, submitting, vaultRefreshing, vaultBusy });
+  const submissionUnavailable = isApplySubmissionUnavailable({ requirementsReady: stateReady && requirements !== null, submitting, vaultRefreshing, vaultBusy });
 
   // The vault sends [] during loading. It is not a verified empty list.
   // A new file is selected only after an explicit canonical upload.
   const onVaultChanged = useCallback((next: JobseekerDocument[], change: ApplyVaultChange = 'loaded', uploadedDocumentId: string | null = null) => {
+    if (loadedJobId !== jobId || !canUseApplyDocumentState({
+      loadedOwnerKey, currentOwnerKey: ownerKeyRef.current,
+      privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+    })) return;
     if (change === 'loading') {
       setVaultRefreshing(true);
+      return;
+    }
+    try {
+      assertCandidateDocumentListOwner(next, session?.user?.id ?? '');
+    } catch {
+      setLoadedOwnerKey(null);
+      setLoadedJobId(null);
+      setRequirements(null);
+      setDocuments([]);
+      knownDocuments.current = [];
+      setSelection({});
+      setVaultRefreshing(true);
+      setLoadError({ ownerKey: loadedOwnerKey!, jobId, message: '応募書類の確認に失敗しました。もう一度読み込んでください。' });
       return;
     }
     const previous = knownDocuments.current;
@@ -93,22 +151,29 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
     setDocuments(next);
     setVaultRefreshing(false);
     setSelection((current) => reconcileApplyVaultSelection(previous, next, current, addingType, change, uploadedDocumentId));
-  }, [addingType]);
+  }, [addingType, jobId, loadedJobId, loadedOwnerKey, privacy.canAccessPrivateData, privacy.shieldVisible, session?.user?.id]);
 
   const submit = () => {
     setTriedSubmit(true);
-    if (missing.length || submissionUnavailable) return;
+    if (!stateReady || !privacy.canAccessPrivateData() || missing.length || submissionUnavailable) return;
     onSubmit(selectedDocumentIds(rows, selection));
   };
 
-  if (loadError) {
+  if (!ownerKey || !privateAllowed) {
+    return <View style={styles.card} testID="apply-documents-private-shield">
+      <ActivityIndicator />
+      <Text>応募書類の安全なログイン状態を確認しています…</Text>
+    </View>;
+  }
+  const visibleError = loadError && loadError.ownerKey === ownerKey && loadError.jobId === jobId ? loadError.message : null;
+  if (visibleError) {
     return <View style={styles.card}>
-      <Text style={styles.error}>{loadError}</Text>
+      <Text style={styles.error}>{visibleError}</Text>
       <Pressable style={styles.secondary} onPress={() => void load()} accessibilityRole="button"><Text style={styles.secondaryText}>もう一度読み込む</Text></Pressable>
       <Pressable style={styles.secondary} onPress={onCancel} accessibilityRole="button"><Text style={styles.secondaryText}>戻る</Text></Pressable>
     </View>;
   }
-  if (!requirements) {
+  if (!stateReady || !requirements) {
     return <View style={styles.card}><ActivityIndicator /><Text>この求人で必要な書類を確認しています…</Text></View>;
   }
 
