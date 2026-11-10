@@ -223,7 +223,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
         }} accessibilityRole="button">
           <Text style={styles.secondaryText}>{addingType === row.type ? '閉じる' : row.candidates.length ? '別のファイルを追加' : `${DOCUMENT_TYPE_LABELS[row.type]}を追加`}</Text>
         </Pressable>
-        {addingType === row.type ? <DocumentVaultSection initialType={row.type} onDocumentsChanged={onVaultChanged} onBusyChanged={setVaultBusy} /> : null}
+        {addingType === row.type ? <DocumentVaultSection initialType={row.type} lockedType={row.type} onDocumentsChanged={onVaultChanged} onBusyChanged={setVaultBusy} /> : null}
       </View>;
     }) : <Text style={styles.subtle}>送る書類はありません。書類なしで応募できます。履歴書などは、応募後に応募内容の画面から追加で提出することもできます。</Text>}
 
