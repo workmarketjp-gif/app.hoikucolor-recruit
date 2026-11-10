@@ -2,6 +2,10 @@
 
 Updated: 2026-11-11 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either platform.
 
+## Latest isolated delta (r145, 2026-11-11)
+
+See [r145 venue-calendar selection](parity-delta-r145-visit-calendar.md): Web `/jobs` `<input type="date">` versus Native visits free-form date input now implemented as a dependency-free, venue-JST calendar with weekday/max-window controls. Color-only branch `native/color-visit-calendar-web-parity-r145-20261111`, base r144 `701ded19af6f235f09412f38b606b2e199d84d90`. Exact helper Node tests **6/6 PASS**, helper tsc PASS, remote screen/component static checks **12/12 PASS**. Full Expo/component contract, Android/iOS real runtime, canonical booking readback, visual accessibility and signed artifacts **NOT VERIFIED**. Do not present this in-app picker as OS-native. No PR/main/production or paid build.
+
 ## Latest isolated delta (r142, 2026-11-11)
 
 See [r142 pinned candidate mount/session lifetime](parity-delta-r142-pinned-candidate-mount-lease.md), branch `native/color-pinned-session-strictmode-r142-20261111`, base r141 `2fd66bebeb4070077818e836c9861e8ca160c990`. **Source bug**: shared candidate hook cleanup permanently set `mountedRef` false on React StrictMode effect replay; candidate RPCs could remain unusable. New epoch lease resets on mount or Clerk identity change but revokes in-flight work from prior effect lifetime, preserving launch-session token and App Lock quarantine. Pure-helper Node 6/6 PASS plus exact-hook wiring Node 4/4 PASS, isolated helper tsc PASS; dedicated npm script added. **NOT** dependency-backed React Native/Expo typecheck or component execution. Android/iOS rendered QA, canonical authenticated readback, signing and installable builds **NOT VERIFIED**. Branch-only, no PR/main/production or paid Actions/EAS.
