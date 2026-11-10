@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applicationSelectionTimeline } from '../src/lib/applicationSelectionTimeline.ts';
+import { applicationSelectionTimeline, webNextScheduledInterview } from '../src/lib/applicationSelectionTimeline.ts';
 
 const expectedLabels = ['応募', '書類確認', '面接', '内定', '採用'];
 
@@ -36,4 +36,17 @@ test('unexpected status is not represented as an invented later milestone', () =
   const timeline = applicationSelectionTimeline('unknown_future_status');
   assert.equal(timeline.terminal, false);
   assert.deepEqual(timeline.steps.map((step) => step.complete), [true, false, false, false, false]);
+});
+
+test('no scheduled interview never produces a next-action callout', () => {
+  assert.equal(webNextScheduledInterview([]), null);
+  assert.equal(webNextScheduledInterview([{ id: 'done', status: 'completed' }]), null);
+});
+
+test('next-action callout follows Web first-scheduled canonical ordering', () => {
+  const first = { id: 'first', status: 'scheduled', candidate_response_status: null };
+  const second = { id: 'second', status: 'scheduled', candidate_response_status: 'accepted' };
+  const interviews = [{ id: 'old', status: 'cancelled' }, first, second];
+  assert.equal(webNextScheduledInterview(interviews), first);
+  assert.equal(webNextScheduledInterview([{ id: 'done', status: 'completed' }, second]), second);
 });
