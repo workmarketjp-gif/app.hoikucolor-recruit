@@ -6,7 +6,7 @@ import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import { canCancelVisibleVisit, canRequestVisibleVisit, formatVisitDateTimeJapan, partitionVisitHistory, visitReadbackConfirmsMutation, visitStatusLabel } from '../lib/visitPresentation';
-import { currentJobVisitReservation, isSelectableVisitDateTime, isValidVisitCalendarDate, visitStartTimeSlots } from '../lib/visitBookingForm';
+import { currentJobVisitReservation, isSelectableVisitCalendarDay, isSelectableVisitDateTime, visitStartTimeSlots } from '../lib/visitBookingForm';
 import { focusedVisitScrollY, type FocusedVisitMeasurements } from '../lib/focusedVisitScroll';
 import {
   cancelVisit,
@@ -18,6 +18,7 @@ import {
   type VisitExperienceType,
 } from '../lib/applicationJourneyApi';
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
+import { VisitDateCalendar } from '../components/VisitDateCalendar';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -171,7 +172,8 @@ export default function VisitsScreen() {
     setLocalTime((current) => timeSlots.includes(current) ? current : timeSlots[0] ?? '');
   }, [timeSlots]);
 
-  const canRequest = privateAllowed && !loading && !busy && !error && !activeJobReservation &&
+  const canRequest = privateAllowed && !loading && !busy && !error && !activeJobReservation && !!settings &&
+    isSelectableVisitCalendarDay(localDate, Date.now(), settings.max_days_ahead, settings.available_weekdays ?? []) &&
     isSelectableVisitDateTime(localDate, localTime, timeSlots) &&
     canRequestVisibleVisit(
       ownerKey, freshlyVerifiedOwner.current, jobId,
@@ -366,17 +368,16 @@ export default function VisitsScreen() {
               {availableTypes.length > 0 ? (
                 <>
                   <Text style={styles.fieldLabel}>希望日（園の現地時間）</Text>
-                  <TextInput
-                    accessibilityLabel="希望日（年4桁-月2桁-日2桁）"
+                  <VisitDateCalendar
+                    key={`${ownerKey ?? 'signedout'}:${jobId}`}
                     value={localDate}
-                    onChangeText={setLocalDate}
-                    placeholder="YYYY-MM-DD"
-                    autoCapitalize="none"
-                    maxLength={10}
-                    style={styles.input}
+                    onChange={setLocalDate}
+                    maxDaysAhead={settings.max_days_ahead}
+                    availableWeekdays={settings.available_weekdays ?? []}
+                    disabled={busy}
                   />
-                  {localDate.length > 0 && !isValidVisitCalendarDate(localDate) ?
-                    <Text style={styles.error}>日付をYYYY-MM-DD形式で入力してください。</Text> : null}
+                  {localDate.length > 0 && !isSelectableVisitCalendarDay(localDate, Date.now(), settings.max_days_ahead, settings.available_weekdays ?? []) ?
+                    <Text style={styles.error}>受付期間または受付曜日が変わりました。希望日を選び直してください。</Text> : null}
                   <Text style={styles.fieldLabel}>開始時間</Text>
                   {timeSlots.length ? (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timeSlots}>
