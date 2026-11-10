@@ -22,6 +22,7 @@ import { verifiedVisitSettingsReadback, type VerifiedVisitSettings } from './vis
 import { confirmsRequestedVisit } from './visitRequestReadback';
 import { requestCandidateVisitWithLease } from './visitRequestSessionLease';
 import { cancelCandidateVisitWithLease } from './visitCancellationReadback';
+import { sendCandidateMessageWithSessionLease } from './messageSendSessionLease';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -261,36 +262,47 @@ export async function sendApplicationMessageDurable(params: {
   ownerSessionId: string;
   applicationId: string;
   body: string;
+  /** Screen focus, Clerk owner/session and App Lock must all remain current. */
+  isCurrent: () => boolean;
 }): Promise<JobseekerMessage> {
   assertUuid(params.applicationId, '応募ID');
   const body = params.body.trim();
   if (!body) throw new Error('メッセージを入力してください。');
   if (body.length > 4000) throw new Error('メッセージは4000文字以内で入力してください。');
-  const lease = captureDurableMutationSessionLease(params.ownerId, params.ownerSessionId);
-  const { envelope } = await prepareDurableMutation({
-    userId: params.ownerId,
-    kind: 'message',
-    scopeId: params.applicationId,
-    payloadParts: [params.applicationId, body],
-    lease,
+  return sendCandidateMessageWithSessionLease({
+    isCurrent: params.isCurrent,
+    prepare: async () => {
+      const lease = captureDurableMutationSessionLease(params.ownerId, params.ownerSessionId);
+      const { envelope } = await prepareDurableMutation({
+        userId: params.ownerId,
+        kind: 'message',
+        scopeId: params.applicationId,
+        payloadParts: [params.applicationId, body],
+        lease,
+      });
+      return envelope;
+    },
+    invoke: async (envelope) => {
+      // No RPC begins until the lease is rechecked AFTER SecureStore preparation.
+      const { data, error } = await params.client.rpc('hc_send_message_v2', {
+        p_application_id: params.applicationId,
+        p_body: body,
+        p_client_request_id: envelope.requestId,
+      });
+      if (error) throw error;
+      if (!data || typeof data !== 'object' || Array.isArray(data) || typeof (data as { id?: unknown }).id !== 'string') {
+        throw new Error('メッセージ送信結果を確認できませんでした。');
+      }
+      return (data as { id: string }).id;
+    },
+    read: () => listApplicationMessages(params.client, params.applicationId),
+    confirm: (messages, receiptId) =>
+      messages.find((message) => message.id === receiptId &&
+        message.sender_role === 'jobseeker' && message.body === body) ?? null,
+    clear: () => clearDurableMutation({
+      userId: params.ownerId, kind: 'message', scopeId: params.applicationId,
+    }),
   });
-
-  const { data, error } = await params.client.rpc('hc_send_message_v2', {
-    p_application_id: params.applicationId,
-    p_body: body,
-    p_client_request_id: envelope.requestId,
-  });
-  if (error) throw error;
-  if (!data || typeof data !== 'object' || Array.isArray(data) || typeof (data as { id?: unknown }).id !== 'string') {
-    throw new Error('メッセージ送信結果を確認できませんでした。');
-  }
-  const messages = await listApplicationMessages(params.client, params.applicationId);
-  const confirmed = messages.find((message) => message.id === (data as { id: string }).id);
-  if (!confirmed || confirmed.sender_role !== 'jobseeker' || confirmed.body !== body) {
-    throw new Error('メッセージ送信結果を確認できませんでした。再読み込みして確認してください。');
-  }
-  await clearDurableMutation({ userId: params.ownerId, kind: 'message', scopeId: params.applicationId });
-  return confirmed;
 }
 
 export async function respondToInterviewDurable(params: {
