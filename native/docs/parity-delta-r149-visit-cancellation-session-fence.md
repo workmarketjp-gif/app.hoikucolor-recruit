@@ -16,7 +16,7 @@ The visits screen pinned a candidate session before calling `cancelVisit`, but t
 ## Verified locally with exact GitHub helper/test blob SHAs
 Node v22.16.0: `cd native && node --experimental-strip-types --test qa/native-visit-cancellation-readback.test.mjs qa/native-visit-cancellation-session-lease.test.mjs`: **13/13 PASS**.
 `tsc --noEmit --strict --target ES2022 --module ESNext --moduleResolution bundler src/lib/visitCancellationReadback.ts`: **PASS**, isolated helper only.
-GitHub helper blob `ee394569b1436fc608c5db3540a93f6d69a60d7b`, new test blob `bb7d7caf40e00a98ee02cf508e59dd9bca599b94`; hashes match the executed files.
+GitHub helper blob `2174cc718bb4daadfd9ac0094cae5304329be8f0`, new test blob `bb7d7caf40e00a98ee02cf508e59dd9bca599b94`; hashes match the executed files.
 Full adapter, screen and dependency-backed Expo typecheck were **not executed**; static source wiring verified separately and is not counted as Native runtime.
 No live appointments, applications, messages or candidate data used.
 
