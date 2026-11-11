@@ -3,6 +3,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
+import { CandidateTabIcon } from '../../components/CandidateTabIcon';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateOwnedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
 import {
@@ -20,6 +21,7 @@ import { updateSavedJobAndConfirm } from '../../lib/savedJobsReadback';
 import { shouldRefreshJobsOnReturn, type JobSearchFocusState } from '../../lib/jobSearchFocus';
 import { jobSearchFailureChannel } from '../../lib/jobSearchFailureChannel';
 import { organicJobRankLabels, type OrganicJobRankLabel } from '../../lib/jobRankingDisclosure';
+import { jobSearchCardPresentation } from '../../lib/jobSearchCardPresentation';
 
 function salary(job: JobseekerJob) {
   const prefix = job.salary_type === 'hourly' ? '時給' : job.salary_type === 'annual' ? '年収' : '月給';
@@ -50,23 +52,33 @@ function JobCard({
   onToggleSaved: () => void;
   onOpen: () => void;
 }) {
+  const summary = jobSearchCardPresentation(job);
   return (
     <View style={styles.jobCard}>
       <Text style={styles.rankLabel} accessibilityLabel={rank.ariaLabel}>{rank.text}</Text>
-      <Text style={styles.jobTitle}>{job.title}</Text>
-      <Text style={styles.facility}>{job.facility_name}</Text>
-      <Text style={styles.meta}>{[job.prefecture, job.city, job.employment_type].filter(Boolean).join(' ・ ')}</Text>
+      <View style={styles.jobHead}>
+        <View style={styles.jobIdentity}>
+          <Text style={styles.facility}>{job.facility_name}</Text>
+          <Text style={styles.jobTitle}>{job.title}</Text>
+        </View>
+        <Pressable testID="job-search-save-heart" accessibilityRole="button"
+          accessibilityLabel={saved ? '気になるから外す' : '気になるに保存'}
+          accessibilityState={{ selected: saved, disabled: busy }}
+          disabled={busy} onPress={onToggleSaved}
+          style={[styles.saveHeart, saved && styles.saveHeartActive]}>
+          <CandidateTabIcon name="heart" color={saved ? '#E9265A' : '#74616B'} />
+        </Pressable>
+      </View>
       <Text style={styles.salary}>{salary(job)}</Text>
+      <Text style={styles.meta}>{summary.location}</Text>
       <View style={styles.badges}>
-        {Number(job.verified_workplace?.verified_metric_count || 0) > 0 ? <Text style={styles.badge}>勤務実績データあり</Text> : null}
-        {Number(job.verified_finance?.verified_metric_count || 0) > 0 ? <Text style={styles.badge}>会計実績データあり</Text> : null}
+        {summary.isClosed ? <Text style={styles.badgeClosed}>募集終了</Text> : null}
+        {summary.hasVerifiedWorkplace ? <Text style={styles.badgeVerified}>✓ 勤務実績あり</Text> : null}
+        {summary.hasVerifiedFinance ? <Text style={styles.badgeFinance}>✓ 会計実績あり</Text> : null}
         {job.is_external && job.source_name ? <Text style={styles.badge}>{job.source_name}</Text> : null}
       </View>
-      <Pressable style={styles.primaryButton} onPress={onOpen}>
+      <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={onOpen}>
         <Text style={styles.primaryButtonText}>{job.is_external ? '求人の詳細を見る' : '詳細・応募を見る'}</Text>
-      </Pressable>
-      <Pressable disabled={busy} style={styles.secondaryButtonWide} onPress={onToggleSaved}>
-        <Text style={styles.secondaryButtonText}>{saved ? '気になるから外す' : '♡ 気になる'}</Text>
       </Pressable>
     </View>
   );
@@ -491,7 +503,11 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: '#d7dce2', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16 },
   primaryButton: { minHeight: 46, borderRadius: 12, backgroundColor: '#E9265A', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   primaryButtonText: { color: '#fff', fontWeight: '800' },
-  jobCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 7 },
+  jobCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 9, borderWidth: 1, borderColor: '#F5DCE4' },
+  jobHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  jobIdentity: { flex: 1, gap: 5 },
+  saveHeart: { minWidth: 48, minHeight: 48, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#F0D8E0', borderRadius: 12 },
+  saveHeartActive: { backgroundColor: '#FFF0F4', borderColor: '#E9265A' },
   rankLabel: { alignSelf: 'flex-start', color: '#A9204B', backgroundColor: '#FFF0F4', fontSize: 12, fontWeight: '800', borderRadius: 7, paddingHorizontal: 9, paddingVertical: 4 },
   rankingBox: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#F5DCE4', padding: 12, gap: 10 },
   rankingToggle: { minHeight: 44, justifyContent: 'center', gap: 3 },
@@ -499,12 +515,15 @@ const styles = StyleSheet.create({
   rankingSummary: { fontSize: 13, fontWeight: '700', color: '#7D596A', lineHeight: 19 },
   rankingTextGroup: { gap: 10 },
   rankingDetail: { fontSize: 14, color: '#645963', lineHeight: 21 },
-  jobTitle: { fontSize: 18, fontWeight: '800' },
-  facility: { fontWeight: '700' },
-  meta: { color: '#5f6670' },
-  salary: { fontWeight: '800', marginTop: 3 },
+  jobTitle: { fontSize: 18, lineHeight: 26, fontWeight: '800', color: '#34222B' },
+  facility: { fontWeight: '800', fontSize: 14, color: '#645963' },
+  meta: { color: '#5f6670', fontSize: 14, lineHeight: 21 },
+  salary: { fontWeight: '800', fontSize: 17, color: '#30212B' },
   badges: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   badge: { backgroundColor: '#edf4ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, fontSize: 12, fontWeight: '700' },
+  badgeClosed: { backgroundColor: '#FCEBEC', color: '#A9232B', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, fontSize: 12, fontWeight: '800' },
+  badgeVerified: { backgroundColor: '#EAF7F0', color: '#216745', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, fontSize: 12, fontWeight: '800' },
+  badgeFinance: { backgroundColor: '#EEF2FF', color: '#3B4D91', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, fontSize: 12, fontWeight: '800' },
   actions: { flexDirection: 'row', gap: 8, marginTop: 2 },
   secondaryButton: { flex: 1, minHeight: 42, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   secondaryButtonWide: { minHeight: 48, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
