@@ -1,0 +1,18 @@
+# r162 | 検索語の即時反映・候補者セッション分離
+
+**Source baseline:** authenticated JOBSEEKER Web main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, job search screen `src/App.tsx` / job filters; Native parent `ddfba34c7710ef7180e47d8513b92abdd5684dd8` (r161). Capture date 2026-11-11 NZ. Candidate A/B are synthetic; no Web/Native rendered capture in this run.
+
+**Observed source gap:** In the Native `jobs.tsx`, `onChangeText` schedules a React state update, while keyboard submit, search press and rapid filter selection read the possibly stale `query` variable from the last render. This can submit a one-keystroke-old query when an action races a render. It is not evidence that live users encountered the bug.
+
+**Implementation:** Candidate-keyed `keywordDraftRef` synchronously updates on `onChangeText`; keyboard submit, search press and filter use `keywordForCurrentCandidate` to select that draft instead of stale render state. Clear and privacy/account-switch resets discard the draft. Existing debounced search, generation invalidation, canonical search RPC, filters, ranking, auth, favorite endpoints and backend contracts remain unchanged.
+
+**Committed source:** `native/src/app/(tabs)/jobs.tsx`, `native/src/lib/jobSearchKeywordDraft.ts`, `native/qa/native-job-search-keyword-draft.test.mjs`, `native/qa/native-job-search-keyword-draft-contract.mjs`. Color-only single-writer branch `native/color-job-search-keyword-draft-r162-20261111` from parent `ddfba34c7710ef7180e47d8513b92abdd5684dd8`. No open repo PRs at start. No main writes/PR/push-triggered paid Actions expected (CI on main/PR only for these paths).
+
+**Behavioral evidence:** Node v22.16.0, `node --experimental-strip-types --test native/qa/native-job-search-keyword-draft.test.mjs` — **5/5 PASS** (latest Japanese draft, filter, candidate/session separation, clear, whitespace). `tsc --noEmit --strict --target ES2022 --module ESNext --moduleResolution bundler native/src/lib/jobSearchKeywordDraft.ts` — **PASS (helper only)**. Local Git blob hashes for helper, behavioral test and wiring contract match fetched GitHub SHA; V8 source wiring checks **5/5 PASS**. Full-checkout `node qa/native-job-search-keyword-draft-contract.mjs`, Expo TypeScript/React Native compilation, actual keyboard/filter render, and authentic server search/save-readback **NOT RUN**. The contract is auto-discovered by the existing available-contract runner; it was syntax-checked locally but not run against a complete checkout. No invented framework PASS.
+
+| Native Web-parity item | Web baseline | Android | iOS | Remaining evidence |
+| --- | --- | --- | --- | --- |
+| Search keyword Enter/button/filters under rapid typing and candidate changes | 2026-11-11, main SHA above, authorized synthetic candidate, source-only | Common source amended; device behavior/render **NOT VERIFIED** | Common source amended; simulator/device behavior/render **NOT VERIFIED** | Full dependency-backed test, real platform keyboard/accessibility/safe-area, same-state Web visual capture, canonical search/reload |
+| Search → detail → save → Saved list → remove → compare | Existing Web source, same main SHA | **NOT E2E VERIFIED** | **NOT E2E VERIFIED** | Actual authenticated synthetic backend, source result/readback on both OSes |
+
+**State:** IMPLEMENTING. Android SDK/emulator unavailable; iOS macOS/Xcode unavailable; signed Android and authorized iOS installable distribution not established. No real candidate actions, production DB/worker changes, paid EAS/CI or Store changes. Billing quota unknown. Next: full-checkout focused contract/Expo typecheck, canonical save-readback journey, Android/iOS rendered QA and signed acceptance routes. No READY_FOR_MASA_ACCEPTANCE claim.
