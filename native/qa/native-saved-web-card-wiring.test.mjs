@@ -9,12 +9,14 @@ test('Web saved action is a full expandable job card with real conditions', () =
     assert.ok(card.includes(label), label);
   }
   assert.match(webCard, /className="hc-job-detail"/);
+  assert.match(webCard, /!isExternal && !isClosed && <VisitTrialPanel/);
+  assert.match(card, /info\.canVisit \? <Pressable/);
   assert.match(saved, /<SavedJobPreviewCard/);
 });
 test('saved record remains owner-pinned; visit and detail routes are Native', () => {
   assert.match(saved, /pinCandidateAction\(\)/);
   assert.match(saved, /canPresent\(ownerKey, requestGeneration\)/);
-  assert.match(saved, /presentSavedJobCard\(chosen, Date\.now\(\)\)\.directApply/);
+  assert.match(saved, /presentSavedJobCard\(chosen, Date\.now\(\)\)\.canVisit/);
   assert.match(saved, /\/visits\?jobId=/);
   assert.match(saved, /\/job\//);
   assert.doesNotMatch(card, /Linking\.openURL|https:\/\//);
