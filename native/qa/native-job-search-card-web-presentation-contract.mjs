@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 const card = readFileSync(new URL('../src/app/(tabs)/jobs.tsx', import.meta.url), 'utf8');
 const web = readFileSync(new URL('../../src/components/JobCard.tsx', import.meta.url), 'utf8');
 assert.match(web, /className="hc-job-head"/);
-assert.match(web, /className="heart-button"/);
+assert.ok(web.includes('className={`heart-button'), 'Web heart toggle required');
 assert.match(web, /className="hc-job-tags"/);
 assert.match(card, /import \{ jobSearchCardPresentation \} from '\.\.\/\.\.\/lib\/jobSearchCardPresentation';/);
 assert.match(card, /const summary = jobSearchCardPresentation\(job\)/);
