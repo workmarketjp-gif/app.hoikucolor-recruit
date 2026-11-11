@@ -1,5 +1,10 @@
 # Hoiku Color JOBSEEKER Native — source-based parity ledger
 
+## Latest isolated delta (r163, 2026-11-11)
+
+See [r163 candidate profile Web validation](parity-delta-r163-profile-web-validation.md). Web profile main fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6 requires a name and uses a date-only field. Native profile Save now rejects missing name and Gregorian-invalid YYYY-MM-DD dates before the canonical upsert RPC; session pin, save/readback, editable draft and privacy protections remain intact. Exact helper behavioral Node tests **5/5 PASS**, isolated tsc **PASS**, remote blobs match locally tested bytes. Full source contract/Expo, Web-vs-Android/iOS rendered keyboard/calendar QA, authorized synthetic server readback, and both signed builds **NOT VERIFIED**; Native still uses editable date text rather than a native date picker. Single-writer branch native/color-profile-web-validation-r163-20261111, parent 1b64d4ffe56ffbc405335ee9a87fabae918b80b2, no main/PR/production or paid CI. State **IMPLEMENTING**.
+
+
 ## Latest isolated delta (r162, 2026-11-11)
 
 See [r162 keyword draft session parity](parity-delta-r162-job-search-keyword-draft.md). Web job search source baseline main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`; Native parent `ddfba34c7710ef7180e47d8513b92abdd5684dd8`. Native keyboard search, explicit search, and quick filter now use synchronously captured **current-session** Japanese keyword (not potentially stale React render); search draft is cleared on privacy/account switch, using unchanged pinned canonical RPC. Node real helper **5/5 PASS**, standalone strict tsc **PASS**, GitHub blob source verification and UI wiring assertions **5/5 PASS**. Full-checkout contract/Expo/actual Native keyboard, authenticated canonical persistence and visual compare **NOT VERIFIED** on Android or iOS; no signed builds. Color single-writer branch `native/color-job-search-keyword-draft-r162-20261111`, no PR/main/production/paid build. State **IMPLEMENTING**.
