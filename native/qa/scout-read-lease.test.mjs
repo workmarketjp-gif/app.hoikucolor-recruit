@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mayShowScoutError, shouldPublishScoutRead } from '../src/lib/scoutReadLease.ts';
+import { mayShowScoutError, shouldPublishScoutRead, shouldPublishScoutInboxRefresh } from '../src/lib/scoutReadLease.ts';
 
 const good = Object.freeze({
   expectedOwnerKey: 'candidate-A:session-1',
@@ -27,4 +27,24 @@ test('error remains private to exact candidate/session and unlocked view', () =>
   assert.equal(mayShowScoutError('candidate-B:session-2', 'candidate-A:session-1', true), false);
   assert.equal(mayShowScoutError('candidate-A:session-1', 'candidate-A:session-1', false), false);
   assert.equal(mayShowScoutError(null, null, true), false);
+});
+
+const refresh = Object.freeze({ ...good, requestSerial: 2, activeSerial: 2 });
+test('scout refresh accepts only current same-account canonical results', () => {
+  assert.equal(shouldPublishScoutInboxRefresh(refresh), true);
+});
+test('a slower previous refresh cannot replace the newer inbox', () => {
+  assert.equal(shouldPublishScoutInboxRefresh({ ...refresh, activeSerial: 3 }), false);
+});
+test('a full page reload invalidates older refreshed results', () => {
+  assert.equal(shouldPublishScoutInboxRefresh({ ...refresh, activeGeneration: 5 }), false);
+});
+test('refresh during signout, account switch or App Lock is not publishable', () => {
+  assert.equal(shouldPublishScoutInboxRefresh({ ...refresh, resolvedOwnerKey: 'candidate-B:session-2' }), false);
+  assert.equal(shouldPublishScoutInboxRefresh({ ...refresh, sessionCurrent: false }), false);
+  assert.equal(shouldPublishScoutInboxRefresh({ ...refresh, privateAccess: false }), false);
+});
+test('invalid or forged sequence cannot authorize an inbox refresh', () => {
+  assert.equal(shouldPublishScoutInboxRefresh({ ...refresh, requestSerial: NaN, activeSerial: NaN }), false);
+  assert.equal(shouldPublishScoutInboxRefresh({ ...refresh, requestSerial: 1.5, activeSerial: 1.5 }), false);
 });
