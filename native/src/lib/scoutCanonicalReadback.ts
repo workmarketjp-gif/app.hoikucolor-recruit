@@ -57,3 +57,27 @@ export function verifiedScoutPrivacy<T>(data: unknown): T {
   }
   return data as T;
 }
+
+/**
+ * Search results are a candidate-private, RPC-authorized organization row set.
+ * A failed/malformed response must not be presented as "no organizations found";
+ * in particular, never render a fabricated selectable organization ID.
+ * The existing RPC is always called with p_limit=10.
+ */
+export function verifiedScoutBlockableOrganizations<T>(data: unknown): T[] {
+  if (!Array.isArray(data) || data.length > 10) {
+    throw new Error('法人の検索結果を確認できませんでした。もう一度検索してください。');
+  }
+  const seen = new Set<string>();
+  for (const row of data) {
+    if (!objectRow(row) || !uuid(row.organization_id) || !text(row.organization_name)) {
+      throw new Error('法人の検索結果を確認できませんでした。もう一度検索してください。');
+    }
+    const key = row.organization_id.toLowerCase();
+    if (seen.has(key)) {
+      throw new Error('法人の検索結果を確認できませんでした。もう一度検索してください。');
+    }
+    seen.add(key);
+  }
+  return data as T[];
+}
