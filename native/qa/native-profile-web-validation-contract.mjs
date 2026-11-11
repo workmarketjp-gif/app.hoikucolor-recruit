@@ -19,9 +19,21 @@ for (const required of [
   'const invalid = profileWebValidationError(next.name, next.desired_start_date);',
   'if (invalid) throw new Error(invalid);',
   '<Field label="お名前（必須）"',
-  '<Field label="勤務開始希望日"',
+  '<ProfileStartDatePicker value={profile.desired_start_date} disabled={!canEditDraft()}',
+  'onChange={(value) => editProfile((current) => ({ ...current, desired_start_date: value }))}',
   'accessibilityLabel={label}',
 ]) assert.ok(screen.includes(required), 'Native profile missing Web input parity: ' + required);
+
+const picker = readFileSync(path.join(nativeRoot, 'src/components/ProfileStartDatePicker.tsx'), 'utf8');
+for (const required of [
+  "visible={open && !disabled}",
+  "onRequestClose={() => setOpen(false)}",
+  "onPress={() => { onChange(day); setOpen(false); }}",
+  "onPress={() => { onChange(null); setOpen(false); }}",
+  "shiftProfileCalendarMonth(month, offset)",
+  "profileCalendarCells(month)",
+]) assert.ok(picker.includes(required), 'Native calendar missing Web date-only parity: ' + required);
+assert.ok(!screen.includes('<Field label="勤務開始希望日"'), 'free-text date input must not return');
 
 const saveBody = screen.slice(screen.indexOf('  const save = async () => {'));
 const validationAt = saveBody.indexOf('const invalid = profileWebValidationError(');
@@ -31,11 +43,11 @@ assert.ok(validationAt >= 0 && validationAt < pinAt && pinAt < writeAt,
   'invalid profile data must be rejected before any pinned network submission');
 
 const run = spawnSync(process.execPath, [
-  '--experimental-strip-types', '--test', 'qa/native-profile-web-validation.test.mjs',
+  '--experimental-strip-types', '--test', 'qa/native-profile-web-validation.test.mjs', 'qa/native-profile-date-calendar.test.mjs',
 ], { cwd: nativeRoot, encoding: 'utf8' });
 if (run.status !== 0) {
   process.stdout.write(run.stdout || '');
   process.stderr.write(run.stderr || '');
   throw new Error('profile Web validation failed: ' + String(run.status ?? run.error));
 }
-console.log('PASS Web-required candidate profile validation, Native pre-RPC wiring and 5 focused behavioral tests');
+console.log('PASS Web-required candidate profile validation, Native pre-RPC wiring and 10 focused behavioral tests');

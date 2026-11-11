@@ -19,6 +19,7 @@ import { canPresentProfileResult, canonicalProfileMatchesSubmission } from '../.
 import { canAttemptProfileSave, profileWriteFailureNeedsReload, profileReloadNeedsDiscardConfirmation } from '../../lib/profileWriteRecovery';
 import { profileWebValidationError } from '../../lib/profileWebValidation';
 import { profilePrefectureChoices } from '../../lib/profilePrefectureOptions';
+import { ProfileStartDatePicker } from '../../components/ProfileStartDatePicker';
 
 const positionOptions = ['保育士', '保育教諭', '幼稚園教諭', '保育補助', '看護師', '栄養士', '調理師', '児童指導員', '子育て支援員'];
 const employmentOptions = ['正社員', '契約社員', 'パート・アルバイト', '派遣'];
@@ -418,7 +419,8 @@ export default function ProfileScreen() {
         <ChipGroup label="希望雇用形態" options={employmentOptions} values={profile.desired_employment_types} onChange={(values) => editProfile((current) => ({ ...current, desired_employment_types: values }))} />
         <ChipGroup label="資格" options={qualificationOptions} values={profile.qualifications} onChange={(values) => editProfile((current) => ({ ...current, qualifications: values }))} />
         <Field label="保育経験年数" value={experienceText} onChangeText={editExperience} keyboardType="numeric" placeholder="例：5" />
-        <Field label="勤務開始希望日" value={profile.desired_start_date ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, desired_start_date: value }))} placeholder="YYYY-MM-DD" />
+        <ProfileStartDatePicker value={profile.desired_start_date} disabled={!canEditDraft()}
+          onChange={(value) => editProfile((current) => ({ ...current, desired_start_date: value }))} />
         <Field label="自己紹介" value={profile.self_intro ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, self_intro: value }))} multiline placeholder="経験や大切にしている保育観など" />
         {message ? <Text style={styles.success}>{message}</Text> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}

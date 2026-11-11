@@ -1,5 +1,9 @@
 # Hoiku Color JOBSEEKER Native — source-based parity ledger
 
+## Latest isolated delta (r165, 2026-11-11)
+
+See [r165 candidate date calendar](parity-delta-r165-profile-date-picker.md). Existing Web `<input type="date">` in ProfileForm at main fa779e73 is optional/unrestricted. Native r164 had editable free text; r165 supplies an in-app no-dependency calendar (not the OS picker) to select/clear Gregorian date-only values while maintaining the existing session-pinned profile Save/readback and guard. Exact helper Node **5/5 PASS**, standalone tsc **PASS**, TSX syntax parser **0 diagnostics** before commit. Full Expo/React Native runtime, both OS render, synthetic canonical save/readback, and signed acceptance builds **NOT VERIFIED**. Branch `native/color-profile-date-picker-r165-20261111`, parent `13e9697491072a2d266051a457b1126aa5f84e4b`, no PR/main/production/paid CI. State **IMPLEMENTING**.
+
 ## Latest isolated delta (r164, 2026-11-11)
 
 See [r164 candidate profile prefecture selector](parity-delta-r164-profile-prefecture-picker.md). Web candidate ProfileForm (main fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6) is an editable dropdown of 47 prefectures plus any legacy saved value, whereas Native had unrestricted text. r164 uses the already-materialized Native modal-picker pattern with the exact Web options, preserves existing unknown values and the canonical profile Save/readback, and closes on privacy disable. Exact helper **3/3 Node PASS**, standalone tsc PASS; full source contract registered. Complete repo, Expo/JSX typecheck, Android/iOS rendered/e2e/server readback, signing and installation **NOT VERIFIED**. Branch native/color-profile-prefecture-select-r164-20261111, parent r163 2eb6f85fe2d3ea96dee9888d16d5c2645b432df2, no PR/main/production/paid CI. State **IMPLEMENTING**.
