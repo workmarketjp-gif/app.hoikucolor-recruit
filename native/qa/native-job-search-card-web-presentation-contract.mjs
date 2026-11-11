@@ -17,6 +17,8 @@ assert.match(card, /accessibilityState=\{\{ selected: saved, disabled: busy \}\}
 assert.match(card, /disabled=\{busy\} onPress=\{onToggleSaved\}/);
 assert.match(card, /summary\.location/);
 assert.match(card, /summary\.isClosed/);
+assert.match(card, /summary\.isClosed \? '募集終了・詳細を見る'/);
+assert.match(card, /onPress=\{onOpen\}/);
 assert.match(card, /summary\.hasVerifiedWorkplace/);
 assert.match(card, /summary\.hasVerifiedFinance/);
 assert.match(card, /✓ 勤務実績あり/);
