@@ -86,3 +86,21 @@ export function jobIsClosed(closingAt: string | null | undefined, now: number): 
   const end = Date.parse(closingAt);
   return Number.isFinite(end) && end < now;
 }
+
+/**
+ * Matching may use a numerical working-condition metric only after the same
+ * verified-source gate used for the job detail/card. Do not infer a positive
+ * match from an unverified or malformed metric. Preserve the unrounded value
+ * at decision thresholds; display rounding is never matching evidence.
+ */
+export function verifiedWorkplaceNumericMetric(
+  profile: VerifiedProfile | null | undefined,
+  key: string,
+): number | null {
+  if (!verifiedEvidence(profile, 'workplace')?.metrics.some((metric) => metric.key === key)) return null;
+  const raw = profile?.verified_metrics?.[key]?.value;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  if (typeof raw !== 'string' || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw.trim())) return null;
+  const value = Number(raw.trim());
+  return Number.isFinite(value) ? value : null;
+}

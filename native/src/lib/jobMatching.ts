@@ -1,4 +1,5 @@
 import type { JobseekerJob, JobseekerProfile } from './jobseekerCoreApi';
+import { verifiedWorkplaceNumericMetric } from './jobVerifiedEvidence';
 import type { JobseekerMatchingPreferences } from './candidateParityApi';
 
 export type JobMatchResult = {
@@ -81,36 +82,26 @@ function jobText(job: JobseekerJob) {
   ].filter(Boolean).join(' '));
 }
 
-function metricNumber(job: JobseekerJob, key: string) {
-  const value = job.verified_workplace?.verified_metrics?.[key]?.value;
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
 function workPreferenceMatched(job: JobseekerJob, text: string, preference: string) {
   if (includesAny(text, workPreferencePatterns[preference] || [preference])) return true;
   if (preference === '残業少なめ') {
-    const value = metricNumber(job, 'average_monthly_overtime_hours');
+    const value = verifiedWorkplaceNumericMetric(job.verified_workplace, 'average_monthly_overtime_hours');
     return value !== null && value <= 5;
   }
   if (preference === '有休を取りやすい') {
-    const value = metricNumber(job, 'paid_leave_usage_rate_pct');
+    const value = verifiedWorkplaceNumericMetric(job.verified_workplace, 'paid_leave_usage_rate_pct');
     return value !== null && value >= 70;
   }
   if (preference === '土曜勤務少なめ') {
-    const value = metricNumber(job, 'average_monthly_saturday_shift_count');
+    const value = verifiedWorkplaceNumericMetric(job.verified_workplace, 'average_monthly_saturday_shift_count');
     return value !== null && value <= 1;
   }
   if (preference === '早番少なめ') {
-    const value = metricNumber(job, 'average_monthly_early_shift_count');
+    const value = verifiedWorkplaceNumericMetric(job.verified_workplace, 'average_monthly_early_shift_count');
     return value !== null && value <= 2;
   }
   if (preference === '遅番少なめ') {
-    const value = metricNumber(job, 'average_monthly_late_shift_count');
+    const value = verifiedWorkplaceNumericMetric(job.verified_workplace, 'average_monthly_late_shift_count');
     return value !== null && value <= 2;
   }
   return false;
