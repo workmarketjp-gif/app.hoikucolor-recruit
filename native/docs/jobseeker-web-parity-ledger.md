@@ -1,3 +1,7 @@
+## Latest isolated delta (r172, 2026-11-12 NZ)
+
+**Scout route compilation gap (source-level):** Native `scouts.tsx` on `22e9029e` imported four missing, previously implemented Scout helpers. Restored exact known historical blobs from r30 under `native/src/lib/scout{MutationReadback,PreferencesReadback,ReadLease,WebParity}.ts`. Local Node 22 real-source smoke 4/4 PASS, isolated strict tsc PASS for three independent modules; original broader Scout QA, full Expo typecheck, both OS runtimes and signed builds remain unverified. See [r172 evidence](parity-delta-r172-scout-missing-source-restored.md). **IMPLEMENTING**. No Web/back-end/PR/main/production/paid job changes.
+
 # Hoiku Color JOBSEEKER Native — source-based parity ledger
 
 ## Latest isolated delta (r167, 2026-11-12 NZ)
