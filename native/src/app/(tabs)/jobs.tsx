@@ -422,10 +422,28 @@ export default function JobsScreen() {
         </View> : null}
       </View>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <View testID="job-search-error-state" style={styles.filterFailure}>
+          <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
+          <Pressable testID="job-search-retry" accessibilityRole="button"
+            accessibilityLabel="求人検索を再試行" style={styles.secondaryButtonWide}
+            disabled={loading} onPress={() => { cancelKeywordTimer(); void load(true, query, filters); }}>
+            <Text style={styles.secondaryButtonText}>再試行</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {loading && jobs.length === 0 ? <ActivityIndicator /> : null}
       {!loading && !error && visibleJobs !== null && jobs.length === 0 ? (
-        <View style={styles.noResults}><Text style={styles.noResultsTitle}>条件に合う求人はありません</Text><Text style={styles.subtle}>条件を変えて、もう一度探してみてください。</Text></View>
+        <View testID="job-search-empty-state" style={styles.noResults}>
+          <Text style={styles.noResultsTitle}>条件に合う求人はありません</Text>
+          <Text style={styles.subtle}>条件を変えて、もう一度探してみてください。</Text>
+          {hasActiveJobFilters(query, filters) ? (
+            <Pressable testID="job-search-empty-clear" accessibilityRole="button"
+              accessibilityLabel="条件をクリア" style={styles.secondaryButtonWide} onPress={clearFilters}>
+              <Text style={styles.secondaryButtonText}>条件をクリア</Text>
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
 
       {jobs.map((job, index) => (
