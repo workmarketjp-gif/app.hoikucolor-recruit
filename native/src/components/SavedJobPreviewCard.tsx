@@ -11,6 +11,7 @@ type Props = {
   disabled: boolean;
   removing: boolean;
   onOpen: () => void;
+  onApply: () => void;
   onVisit: () => void;
   onRemove: () => void;
 };
@@ -33,7 +34,7 @@ function Evidence({ title, evidence, kind }: { title: string; evidence: Verified
 }
 
 /** Web SavedView JobCard parity with actual candidate-owned server rows. */
-export function SavedJobPreviewCard({ job, disabled, removing, onOpen, onVisit, onRemove }: Props) {
+export function SavedJobPreviewCard({ job, disabled, removing, onOpen, onApply, onVisit, onRemove }: Props) {
   const [expanded, setExpanded] = useState(false);
   const info = presentSavedJobCard(job, Date.now());
   const source = presentSavedJobSource(job);
@@ -86,7 +87,10 @@ export function SavedJobPreviewCard({ job, disabled, removing, onOpen, onVisit, 
     </View> : null}
     <View style={styles.actions}>
       <Pressable accessibilityRole="button" accessibilityState={{ expanded, disabled }} disabled={disabled} style={styles.outline} onPress={() => setExpanded((value) => !value)}><Text style={styles.outlineText}>{expanded ? '閉じる' : '詳しく見る'}</Text></Pressable>
-      <Pressable accessibilityRole="button" disabled={disabled} style={styles.primary} onPress={onOpen}><Text style={styles.primaryText}>{info.directApply ? '詳細・応募を見る' : '求人の詳細を見る'}</Text></Pressable>
+      <Pressable testID={'saved-job-apply-or-detail-' + job.id} accessibilityRole="button" disabled={disabled}
+        style={styles.primary} onPress={info.directApply ? onApply : onOpen}>
+        <Text style={styles.primaryText}>{info.directApply ? '応募する' : '求人の詳細を見る'}</Text>
+      </Pressable>
     </View>
   </View>;
 }

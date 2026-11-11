@@ -1,5 +1,5 @@
 import { SavedJobPreviewCard } from '../../components/SavedJobPreviewCard';
-import { presentSavedJobCard } from '../../lib/savedJobCardPresentation';
+import { savedJobNavigationPath, type SavedJobDestination } from '../../lib/savedJobNavigation';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { useSession } from '@clerk/expo';
 import { useCallback, useRef, useState } from 'react';
@@ -147,17 +147,19 @@ export default function SavedJobsScreen() {
     }
   };
 
-  const open = async (jobId: string, destination: 'detail' | 'visit' = 'detail') => {
+  const open = async (jobId: string, destination: SavedJobDestination = 'detail') => {
     const chosen = jobs?.find((job) => job.id === jobId);
     if (!privateVisibleRef.current || !ownerKey || !chosen) return;
-    if (destination === 'visit' && !presentSavedJobCard(chosen, Date.now()).canVisit) return;
+    const route = savedJobNavigationPath(jobId, chosen, destination, Date.now());
+    if (!route) return;
     const requestGeneration = generation.current;
     const pinned = await pinCandidateAction();
     if (pinned?.isCurrent() &&
         candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey &&
         canPresent(ownerKey, requestGeneration)) {
-      if (destination === 'visit') router.push(('/visits?jobId=' + encodeURIComponent(jobId)) as never);
-      else router.push(('/job/' + jobId) as never);
+      // A ?apply=1 route is only a request to OPEN the existing document step.
+      // Job Detail validates the live job/profile/applications again before use.
+      router.push(route as never);
     }
   };
 
@@ -200,6 +202,7 @@ export default function SavedJobsScreen() {
         <SavedJobPreviewCard key={ownerKey + ':' + job.id} job={job}
           disabled={loading || busyId !== null} removing={busyId === job.id}
           onOpen={() => void open(job.id)}
+          onApply={() => void open(job.id, 'apply')}
           onVisit={() => void open(job.id, 'visit')}
           onRemove={() => void remove(job.id)} />
       ))}
