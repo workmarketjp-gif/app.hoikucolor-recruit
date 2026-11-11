@@ -2,6 +2,10 @@
 
 Updated: 2026-11-11 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either platform.
 
+## Latest isolated delta (r155, 2026-11-11)
+
+See [r155 Saved empty CTA + icon](parity-delta-r155-saved-empty-cta-heart.md). Web empty SavedView's **求人を探す** action now exists in Native; Saved favorite uses shared outlined icon instead of Unicode. Candidate-pinned canonical unsave unchanged. GitHub source 15/15 checks PASS; dedicated Node contract, Expo typecheck, both-OS render/API readback and signed builds remain NOT VERIFIED. Branch `native/color-saved-empty-heart-parity-r155-20261111`, base `039a50ad744ec5a93e71f69a827ef35d8f180da3`. No PR/main/production or new paid CI.
+
 ## Latest isolated delta (r150, 2026-11-11)
 
 See [r150 request session-fence](parity-delta-r150-visit-request-session-fence.md). Native candidate visit requests now check pinned Clerk session at the SecureStore preparation → RPC boundary, after RPC, after canonical readback, and before clearing durable receipts. Node real-source helper 10/10 PASS and isolated tsc PASS; full Expo, actual RPC and Android/iOS runtime/signing NOT VERIFIED. r149 parent `a49c0940dc8c2b2f56600d4bfa1e171399e9cd99`; branch `native/color-visit-request-session-fence-r150-20261111`. No PR/main/production or paid build.
