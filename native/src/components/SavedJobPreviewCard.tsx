@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { CandidateTabIcon } from './CandidateTabIcon';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { SavedJobseekerJob } from '../lib/jobseekerCoreApi';
 import { presentSavedJobCard } from '../lib/savedJobCardPresentation';
@@ -49,7 +50,7 @@ export function SavedJobPreviewCard({ job, disabled, removing, onOpen, onVisit, 
         disabled={disabled}
         onPress={onRemove}
         style={styles.heartButton}>
-        {removing ? <ActivityIndicator color="#E9265A" /> : <Text style={styles.heart}>♥</Text>}
+        {removing ? <ActivityIndicator color="#E9265A" /> : <CandidateTabIcon name="heart" color="#E9265A" />}
       </Pressable>
     </View>
     <Text style={styles.salary}>{info.salary}</Text>
@@ -96,7 +97,6 @@ const styles = StyleSheet.create({
   facility: { color: '#7C475E', fontSize: 14, fontWeight: '700' },
   title: { fontSize: 19, fontWeight: '900', lineHeight: 27, color: '#30212B' },
   heartButton: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 12, borderWidth: 1, borderColor: '#F5DCE4' },
-  heart: { fontSize: 23, color: '#E9265A' },
   salary: { fontWeight: '900', fontSize: 18, color: '#30212B' },
   meta: { color: '#615B66', fontSize: 14, lineHeight: 21 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
