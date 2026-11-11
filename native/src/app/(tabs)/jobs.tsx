@@ -78,7 +78,7 @@ function JobCard({
         {job.is_external && job.source_name ? <Text style={styles.badge}>{job.source_name}</Text> : null}
       </View>
       <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={onOpen}>
-        <Text style={styles.primaryButtonText}>{job.is_external ? '求人の詳細を見る' : '詳細・応募を見る'}</Text>
+        <Text style={styles.primaryButtonText}>{summary.isClosed ? '募集終了・詳細を見る' : job.is_external ? '求人の詳細を見る' : '詳細・応募を見る'}</Text>
       </Pressable>
     </View>
   );
