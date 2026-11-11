@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
@@ -34,7 +35,7 @@ import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
-import { mayShowScoutError, shouldPublishScoutRead } from '../lib/scoutReadLease';
+import { mayShowScoutError, shouldPublishScoutRead, shouldPublishScoutInboxRefresh } from '../lib/scoutReadLease';
 import { confirmScoutBlock, confirmScoutDecision, confirmScoutOptIn } from '../lib/scoutMutationReadback';
 import { confirmScoutPreferences } from '../lib/scoutPreferencesReadback';
 import { formatScoutDateTime, scoutJobLine, scoutResponseNote, scoutStatusLabel, validateScoutNumericInput } from '../lib/scoutWebParity';
@@ -97,6 +98,8 @@ export default function ScoutsScreen() {
   const writePendingRef = useRef(false);
   const searchSerialRef = useRef(0);
   const searchPendingRef = useRef(false);
+  const scoutRefreshSerialRef = useRef(0);
+  const scoutRefreshPendingRef = useRef(false);
   const draftRevisionRef = useRef(0);
   // Invalidate a previous candidate's in-flight write completion on account switch.
   if (currentOwnerRef.current !== ownerKey) {
@@ -105,6 +108,8 @@ export default function ScoutsScreen() {
     writePendingRef.current = false;
     searchSerialRef.current += 1;
     searchPendingRef.current = false;
+    scoutRefreshSerialRef.current += 1;
+    scoutRefreshPendingRef.current = false;
   }
   if (!privateAllowed) {
     verifiedOwnerRef.current = null;
@@ -121,6 +126,8 @@ export default function ScoutsScreen() {
   const [blockQuery, setBlockQuery] = useState('');
   const [blockResults, setBlockResults] = useState<ScoutBlockableOrganization[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshingScouts, setRefreshingScouts] = useState(false);
+  const [scoutRefreshError, setScoutRefreshError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +151,11 @@ export default function ScoutsScreen() {
 
   const load = useCallback(async () => {
     const current = ++generation.current;
+    // Full candidate hydration invalidates any pending inbox-only refresh.
+    scoutRefreshSerialRef.current += 1;
+    scoutRefreshPendingRef.current = false;
+    setRefreshingScouts(false);
+    setScoutRefreshError(null);
     verifiedOwnerRef.current = null;
     errorOwnerRef.current = null;
     setLoading(true);
@@ -196,6 +208,8 @@ export default function ScoutsScreen() {
       writePendingRef.current = false;
       searchSerialRef.current += 1;
       searchPendingRef.current = false;
+      scoutRefreshSerialRef.current += 1;
+      scoutRefreshPendingRef.current = false;
       verifiedOwnerRef.current = null;
       errorOwnerRef.current = null;
       return;
@@ -207,16 +221,69 @@ export default function ScoutsScreen() {
       writePendingRef.current = false;
       searchSerialRef.current += 1;
       searchPendingRef.current = false;
+      scoutRefreshSerialRef.current += 1;
+      scoutRefreshPendingRef.current = false;
       verifiedOwnerRef.current = null;
       errorOwnerRef.current = null;
     };
   }, [load, focusedScoutId, privateAllowed]));
 
+  // The Web inbox polls while visible. Mobile offers an explicit, lower-cost
+  // refresh that never resets unsaved preference forms or privacy controls.
+  const refreshScouts = async () => {
+    if (!privateAllowed || verifiedOwnerRef.current !== ownerKey ||
+        loading || busy !== null || writePendingRef.current ||
+        searchPendingRef.current || scoutRefreshPendingRef.current) return;
+    const requestSerial = ++scoutRefreshSerialRef.current;
+    const requestGeneration = generation.current;
+    const requestOwner = ownerKey;
+    scoutRefreshPendingRef.current = true;
+    setRefreshingScouts(true);
+    setScoutRefreshError(null);
+    const mayPublish = (resolvedOwnerKey: string | null, sessionCurrent: boolean) =>
+      shouldPublishScoutInboxRefresh({
+        expectedOwnerKey: requestOwner,
+        resolvedOwnerKey,
+        requestGeneration,
+        activeGeneration: generation.current,
+        requestSerial,
+        activeSerial: scoutRefreshSerialRef.current,
+        sessionCurrent,
+        privateAccess: privateAllowed && privateQuarantine.canAccessPrivateData(),
+      });
+    try {
+      const pinned = await pinCandidateAction();
+      if (!pinned || !mayPublish(candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId), pinned.isCurrent())) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
+      const freshScouts = await listJobseekerScouts(pinned.client);
+      if (!mayPublish(candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId), pinned.isCurrent())) return;
+      setScouts(freshScouts);
+    } catch {
+      if (requestSerial === scoutRefreshSerialRef.current &&
+          requestGeneration === generation.current &&
+          requestOwner === currentOwnerRef.current &&
+          privateQuarantine.canAccessPrivateData()) {
+        // An RPC failure is not an empty inbox and never destroys the last
+        // verified view, nor does it claim the visible list is current.
+        setScoutRefreshError('新しいスカウトを確認できませんでした。前回の表示を保持しています。更新して再確認してください。');
+      }
+    } finally {
+      if (requestSerial === scoutRefreshSerialRef.current) {
+        scoutRefreshPendingRef.current = false;
+        if (requestGeneration === generation.current && requestOwner === currentOwnerRef.current) {
+          setRefreshingScouts(false);
+        }
+      }
+    }
+  };
+
   const pendingCount = scouts.filter((item) => item.scout_status === 'pending').length;
 
   const beginScoutWrite = (key: string): number | null => {
     if (!privateAllowed || verifiedOwnerRef.current !== ownerKey ||
-        writePendingRef.current || searchPendingRef.current || busy !== null) return null;
+        writePendingRef.current || searchPendingRef.current ||
+        scoutRefreshPendingRef.current || busy !== null) return null;
     writePendingRef.current = true;
     const serial = ++writeSerialRef.current;
     setBusy(key);
@@ -343,7 +410,8 @@ export default function ScoutsScreen() {
 
   const searchBlocks = async () => {
     if (!privateAllowed || verifiedOwnerRef.current !== ownerKey ||
-        writePendingRef.current || searchPendingRef.current || busy !== null) return;
+        writePendingRef.current || searchPendingRef.current ||
+        scoutRefreshPendingRef.current || busy !== null) return;
     const requestedQuery = blockQuery.trim();
     if (requestedQuery.length < 2) {
       setBlockResults([]);
@@ -519,13 +587,27 @@ export default function ScoutsScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled"
+      refreshControl={<RefreshControl refreshing={refreshingScouts} onRefresh={() => void refreshScouts()} tintColor="#E9265A" colors={['#E9265A']} />}>
       <View>
-        <Text style={styles.title}>スカウト</Text>
+        <View style={styles.rowBetween}>
+          <Text style={styles.title}>スカウト</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="届いたスカウトを更新"
+            accessibilityState={{ disabled: refreshingScouts || Boolean(busy) || loading }}
+            disabled={refreshingScouts || Boolean(busy) || loading}
+            onPress={() => void refreshScouts()}
+            style={styles.refreshButton}
+          >
+            <Text style={styles.refreshText}>{refreshingScouts ? '更新中…' : '更新'}</Text>
+          </Pressable>
+        </View>
         <Text style={styles.bodyMuted}>園へ個人情報を出す前に、匿名でお誘いを受け取れます。</Text>
       </View>
 
       {safeError ? <Text style={styles.error}>{safeError}</Text> : null}
+      {scoutRefreshError ? <Text style={styles.error} accessibilityLiveRegion="polite">{scoutRefreshError}</Text> : null}
       {notice ? <Text style={styles.success}>{notice}</Text> : null}
       {focusedScoutId && !loading && !focusedScout ? (
         <Text style={styles.error}>指定されたスカウトは現在のアカウントで確認できません。</Text>
@@ -685,6 +767,8 @@ const styles = StyleSheet.create({
   page: { padding: 16, gap: 14, backgroundColor: '#f7f8fa', flexGrow: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
   title: { fontSize: 26, fontWeight: '900' },
+  refreshButton: { minHeight: 48, minWidth: 72, borderWidth: 1, borderColor: '#e8445a', borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+  refreshText: { color: '#b4233e', fontSize: 15, fontWeight: '800' },
   sectionTitle: { fontSize: 20, fontWeight: '900' },
   itemTitle: { fontSize: 16, fontWeight: '800' },
   body: { fontSize: 16, lineHeight: 23, color: '#252a31' },
