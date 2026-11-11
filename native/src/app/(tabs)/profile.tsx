@@ -20,6 +20,7 @@ import { canAttemptProfileSave, profileWriteFailureNeedsReload, profileReloadNee
 import { profileWebValidationError } from '../../lib/profileWebValidation';
 import { profilePrefectureChoices } from '../../lib/profilePrefectureOptions';
 import { ProfileStartDatePicker } from '../../components/ProfileStartDatePicker';
+import { canConfirmCandidateSignOut } from '../../lib/candidateSignOutConfirmation';
 
 const positionOptions = ['保育士', '保育教諭', '幼稚園教諭', '保育補助', '看護師', '栄養士', '調理師', '児童指導員', '子育て支援員'];
 const employmentOptions = ['正社員', '契約社員', 'パート・アルバイト', '派遣'];
@@ -154,6 +155,17 @@ export default function ProfileScreen() {
   const appLock = useAppLock();
   const notifications = useNotifications();
   const deletion = useAccountDeletion();
+  // The confirmation can outlive a render; revoke it on App Lock or session switch.
+  const logoutSafetyRef = useRef({
+    ownerKey,
+    privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+    deletionBusy: deletion.busy,
+  });
+  logoutSafetyRef.current = {
+    ownerKey,
+    privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+    deletionBusy: deletion.busy,
+  };
   const [profile, setProfile] = useState<JobseekerProfileInput>(emptyProfile);
   const [loadedOwnerKey, setLoadedOwnerKey] = useState<string | null>(null);
   const [experienceText, setExperienceText] = useState('');
@@ -366,6 +378,22 @@ export default function ProfileScreen() {
       ]);
   };
 
+
+  const confirmSignOut = () => {
+    const requestedOwnerKey = ownerKeyRef.current;
+    const current = logoutSafetyRef.current;
+    if (!canConfirmCandidateSignOut(requestedOwnerKey, current.ownerKey, current.privateAllowed, current.deletionBusy)) return;
+    // Same confirmation as the current Web CandidateShell and ProfileView.
+    Alert.alert('Hoiku Colorからログアウトしますか？', undefined, [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: 'ログアウト', style: 'destructive', onPress: () => {
+        const latest = logoutSafetyRef.current;
+        if (!canConfirmCandidateSignOut(requestedOwnerKey, latest.ownerKey, latest.privateAllowed, latest.deletionBusy)) return;
+        void deletion.signOutSafely();
+      } },
+    ]);
+  };
+
   const confirmDeletion = () => {
     Alert.alert(
       'Hoiku Colorを退会しますか？',
@@ -466,7 +494,7 @@ export default function ProfileScreen() {
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>アカウント</Text>
-        <Pressable style={styles.secondaryButton} disabled={deletion.busy} onPress={() => void deletion.signOutSafely()}>
+        <Pressable style={styles.secondaryButton} accessibilityRole="button" disabled={deletion.busy} onPress={confirmSignOut}>
           <Text style={styles.secondaryButtonText}>ログアウト</Text>
         </Pressable>
         <Pressable style={styles.dangerButton} disabled={deletion.busy} onPress={confirmDeletion}>

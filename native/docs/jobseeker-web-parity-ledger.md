@@ -2,6 +2,8 @@
 
 ## Latest isolated delta (r166, 2026-11-12 NZ)
 
+**r166 follow-up (same branch):** Web `CandidateShell.confirmSignOut` / `ProfileView` requests confirmation before logout. Native profile previously signed out immediately. Native now displays a cancelable system confirmation and rechecks candidate owner/session, privacy shield and deletion activity before sign-out. Node 22 pure helper **3/3 PASS**, standalone strict tsc **PASS** pre-commit; actual Alert/dialog on Android/iOS and session end-to-end NOT VERIFIED. No real sign-out invoked.
+
 **Web baseline:** `src/App.tsx`, `src/components/CandidateShell.tsx` main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, authenticated synthetic jobseeker. Web My Page tab badge = unread messages + unanswered interviews (99+ display). Native r165 had no badge. r166 adds source-matched indicator to current 5-tab shell using existing candidate/session/App-Lock-fenced `NotificationContext.attentionSummary`; no extra polling/RPC and unknown attention never becomes guessed zero. Node 22 real helper **4/4 PASS**, standalone strict tsc **PASS** (pre-commit). Full Expo runtime/typecheck, Android/iOS rendered and screen-reader parity, authenticated API readback and installable signed builds **NOT VERIFIED**. Isolated branch `native/color-profile-attention-badge-r166-20261112`, base `484dda5b8314fc540f52bf66e1b59587b7bb245b`; no PR/main/production/paid CI. Status IMPLEMENTING.
 
 ## Latest isolated delta (r165, 2026-11-11)
