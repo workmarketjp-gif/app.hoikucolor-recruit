@@ -16,12 +16,29 @@ test('missing location uses Web fallback and does not invent an address', () => 
     '勤務地は詳細をご確認ください');
 });
 
-test('only actual, positive verified metric counts display evidence badges', () => {
-  const verified = present({ ...job, verified_workplace: { verified_metric_count: 1 },
-    verified_finance: { verified_metric_count: 0 } });
-  assert.equal(verified.hasVerifiedWorkplace, true);
-  assert.equal(verified.hasVerifiedFinance, false);
+test('evidence badges require source-consistent visible metrics rather than counts', () => {
+  const workplace = {
+    verified_metric_count: 1,
+    verified_metrics: { average_tenure_years: { label: '平均勤続年数', value: 4.1, source: 'ho_verified' } },
+  };
+  const finance = {
+    verified_metric_count: 1,
+    verified_metrics: { finance_closed_months_12m: { label: '月次締め実績', value: 8, source: 'hf_verified' } },
+  };
+  assert.equal(present({ ...job, verified_workplace: workplace }).hasVerifiedWorkplace, true);
+  assert.equal(present({ ...job, verified_finance: finance }).hasVerifiedFinance, true);
+  assert.equal(present({ ...job, verified_workplace: { verified_metric_count: 1 } }).hasVerifiedWorkplace, false);
+  assert.equal(present({ ...job, verified_finance: { verified_metric_count: 1 } }).hasVerifiedFinance, false);
+  assert.equal(present({ ...job, verified_workplace: { verified_metric_count: 0, verified_metrics: workplace.verified_metrics } }).hasVerifiedWorkplace, false);
   assert.equal(present(job).hasVerifiedWorkplace, false);
+});
+
+test('wrong source, unsupported keys and missing metric values are not verified evidence', () => {
+  for (const profile of [
+    { verified_metric_count: 1, verified_metrics: { average_tenure_years: { label: '平均勤続年数', value: 4.1, source: 'hf_verified' } } },
+    { verified_metric_count: 1, verified_metrics: { unknown: { label: '不明', value: 10, source: 'ho_verified' } } },
+    { verified_metric_count: 1, verified_metrics: { average_tenure_years: { label: '平均勤続年数', value: null, source: 'ho_verified' } } },
+  ]) assert.equal(present({ ...job, verified_workplace: profile }).hasVerifiedWorkplace, false);
 });
 
 test('explicitly closed job is marked closed even without closing date', () => {

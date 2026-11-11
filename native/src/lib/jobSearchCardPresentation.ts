@@ -1,7 +1,9 @@
+import { verifiedEvidence } from './jobVerifiedEvidence.ts';
+import type { VerifiedProfile } from './jobseekerCoreApi';
+
 /**
- * Native job-search summary mirrors the current Web JobCard's visible identity,
- * location and evidence labels. These are presentation facts only: the server
- * remains authoritative for availability, saved state and application rights.
+ * Job-search summary uses the same authoritative evidence preview as Saved.
+ * A positive count alone is insufficient to advertise verified records.
  */
 export type JobSearchCardFacts = Readonly<{
   prefecture: string | null;
@@ -9,8 +11,8 @@ export type JobSearchCardFacts = Readonly<{
   employment_type: string | null;
   closing_at: string | null;
   is_open?: boolean;
-  verified_workplace: { verified_metric_count?: number } | null;
-  verified_finance: { verified_metric_count?: number } | null;
+  verified_workplace: VerifiedProfile | null;
+  verified_finance: VerifiedProfile | null;
 }>;
 
 export function jobSearchCardPresentation(job: JobSearchCardFacts, now = Date.now()) {
@@ -21,7 +23,7 @@ export function jobSearchCardPresentation(job: JobSearchCardFacts, now = Date.no
   return {
     location: `${location}${job.employment_type ? ` ・ ${job.employment_type}` : ''}`,
     isClosed,
-    hasVerifiedWorkplace: Number(job.verified_workplace?.verified_metric_count ?? 0) > 0,
-    hasVerifiedFinance: Number(job.verified_finance?.verified_metric_count ?? 0) > 0,
+    hasVerifiedWorkplace: verifiedEvidence(job.verified_workplace, 'workplace') !== null,
+    hasVerifiedFinance: verifiedEvidence(job.verified_finance, 'finance') !== null,
   };
 }
