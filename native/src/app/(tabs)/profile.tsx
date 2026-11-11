@@ -1,7 +1,7 @@
 import { useSession, useUser } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { DocumentVaultSection } from '../../components/DocumentVaultSection';
 import { useAccountDeletion } from '../../contexts/AccountDeletionContext';
 import { useAppLock } from '../../contexts/AppLockContext';
@@ -18,6 +18,7 @@ import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
 import { canPresentProfileResult, canonicalProfileMatchesSubmission } from '../../lib/profileSaveGuard';
 import { canAttemptProfileSave, profileWriteFailureNeedsReload, profileReloadNeedsDiscardConfirmation } from '../../lib/profileWriteRecovery';
 import { profileWebValidationError } from '../../lib/profileWebValidation';
+import { profilePrefectureChoices } from '../../lib/profilePrefectureOptions';
 
 const positionOptions = ['保育士', '保育教諭', '幼稚園教諭', '保育補助', '看護師', '栄養士', '調理師', '児童指導員', '子育て支援員'];
 const employmentOptions = ['正社員', '契約社員', 'パート・アルバイト', '派遣'];
@@ -47,6 +48,59 @@ function Field({ label, value, onChangeText, ...props }: { label: string; value:
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput value={value} onChangeText={onChangeText} accessibilityLabel={label} style={styles.input} {...props} />
+    </View>
+  );
+}
+
+
+function PrefectureSelectField({ value, disabled, onChange }: {
+  value: string | null;
+  disabled: boolean;
+  onChange: (value: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  // A lock or a different candidate must not reopen a former private picker.
+  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>お住まいの都道府県</Text>
+      <Pressable testID="profile-prefecture-select" accessibilityRole="button"
+        accessibilityLabel="お住まいの都道府県"
+        accessibilityHint="47都道府県から選択できます"
+        accessibilityState={{ disabled, expanded: open && !disabled }}
+        disabled={disabled} style={styles.prefectureTrigger} onPress={() => setOpen(true)}>
+        <Text style={[styles.prefectureValue, !value && styles.prefecturePlaceholder]}>
+          {value || '選択してください'}
+        </Text>
+        <Text style={styles.prefectureChevron}>▼</Text>
+      </Pressable>
+      <Modal transparent animationType="slide" visible={open && !disabled}
+        onRequestClose={() => setOpen(false)}>
+        <View style={styles.prefectureModalLayer}>
+          <Pressable style={styles.prefectureBackdrop} accessibilityLabel="選択を閉じる"
+            accessibilityRole="button" onPress={() => setOpen(false)} />
+          <View style={styles.prefectureModalPanel}>
+            <Text style={styles.prefectureModalTitle}>お住まいの都道府県</Text>
+            <ScrollView style={styles.prefectureOptions} keyboardShouldPersistTaps="handled">
+              {['', ...profilePrefectureChoices(value)].map((option) => (
+                <Pressable key={option || 'unspecified'} accessibilityRole="button"
+                  accessibilityLabel={option || '選択しない'}
+                  accessibilityState={{ selected: option === (value ?? '') }}
+                  style={styles.prefectureOption} onPress={() => {
+                    onChange(option || null);
+                    setOpen(false);
+                  }}>
+                  <Text style={styles.prefectureOptionText}>{option || '選択しない'}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable accessibilityRole="button" style={styles.prefectureClose}
+              onPress={() => setOpen(false)}>
+              <Text style={styles.prefectureCloseText}>閉じる</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -358,7 +412,8 @@ export default function ProfileScreen() {
         <Field label="ふりがな" value={profile.name_kana ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, name_kana: value }))} placeholder="例：ほいく はなこ" />
         <Field label="メール" value={profile.email ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, email: value }))} keyboardType="email-address" autoCapitalize="none" />
         <Field label="電話番号" value={profile.phone ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, phone: value }))} keyboardType="phone-pad" />
-        <Field label="希望都道府県" value={profile.prefecture ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, prefecture: value }))} placeholder="例：東京都" />
+        <PrefectureSelectField value={profile.prefecture} disabled={!canEditDraft()}
+          onChange={(value) => editProfile((current) => ({ ...current, prefecture: value }))} />
         <ChipGroup label="希望職種" options={positionOptions} values={profile.desired_positions} onChange={(values) => editProfile((current) => ({ ...current, desired_positions: values }))} />
         <ChipGroup label="希望雇用形態" options={employmentOptions} values={profile.desired_employment_types} onChange={(values) => editProfile((current) => ({ ...current, desired_employment_types: values }))} />
         <ChipGroup label="資格" options={qualificationOptions} values={profile.qualifications} onChange={(values) => editProfile((current) => ({ ...current, qualifications: values }))} />
@@ -449,4 +504,17 @@ const styles = StyleSheet.create({
   settingTitle: { fontWeight: '800' },
   success: { color: '#067647', backgroundColor: '#ecfdf3', padding: 10, borderRadius: 9 },
   error: { color: '#b42318', backgroundColor: '#fff1f0', padding: 10, borderRadius: 9 },
+  prefectureTrigger: { minHeight: 48, borderWidth: 1, borderColor: '#d7dce2', backgroundColor: '#fff', borderRadius: 11, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  prefectureValue: { flex: 1, fontSize: 16, color: '#30212B', fontWeight: '600' },
+  prefecturePlaceholder: { color: '#77717B' },
+  prefectureChevron: { color: '#A9204B', fontSize: 13, marginLeft: 12 },
+  prefectureModalLayer: { flex: 1, justifyContent: 'flex-end' },
+  prefectureBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: '#0008' },
+  prefectureModalPanel: { maxHeight: '75%', padding: 20, paddingBottom: 32, backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, gap: 12 },
+  prefectureModalTitle: { fontSize: 19, fontWeight: '900', color: '#30212B' },
+  prefectureOptions: { flexGrow: 0 },
+  prefectureOption: { minHeight: 48, justifyContent: 'center', paddingVertical: 12, borderBottomWidth: 1, borderColor: '#F5EBEF' },
+  prefectureOptionText: { fontSize: 16, fontWeight: '700', color: '#30212B' },
+  prefectureClose: { minHeight: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E9265A', borderRadius: 12 },
+  prefectureCloseText: { color: '#fff', fontWeight: '800', fontSize: 16 },
 });
