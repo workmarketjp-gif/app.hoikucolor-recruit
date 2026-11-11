@@ -1,4 +1,5 @@
 import { verifiedEvidence } from './jobVerifiedEvidence.ts';
+import { canOpenCandidateVisit } from './candidateVisitEntry.ts';
 import type { VerifiedProfile } from './jobseekerCoreApi';
 
 /**
@@ -27,6 +28,7 @@ export type SavedJobCardPresentation = {
   employmentType: string | null;
   closed: boolean;
   directApply: boolean;
+  canVisit: boolean;
   hasWorkplaceEvidence: boolean;
   hasFinanceEvidence: boolean;
 };
@@ -59,6 +61,7 @@ export function presentSavedJobCard(job: SavedJobCardSource, now: number): Saved
     employmentType: job.employment_type?.trim() || null,
     closed,
     directApply: !closed && job.is_external !== true && job.can_apply_direct !== false,
+    canVisit: canOpenCandidateVisit(job, now),
     hasWorkplaceEvidence: verifiedEvidence(job.verified_workplace, 'workplace') !== null,
     hasFinanceEvidence: verifiedEvidence(job.verified_finance, 'finance') !== null,
   };
