@@ -10,6 +10,7 @@ import { comparisonSalaryLabel } from '../lib/comparisonSalaryPresentation';
 import { getJobseekerProfile, listRankedJobs, type JobseekerJob, type JobseekerProfile } from '../lib/jobseekerCoreApi';
 import { getJobseekerMatchingPreferences, type JobseekerMatchingPreferences } from '../lib/candidateParityApi';
 import { matchJob, type JobMatchResult } from '../lib/jobMatching';
+import { comparisonVerifiedMetric } from '../lib/comparisonVerifiedEvidence';
 
 type ComparedJob = { job: JobseekerJob; match: JobMatchResult };
 type ComparisonSource = 'facility' | 'workplace' | 'finance' | 'match';
@@ -42,10 +43,8 @@ function explicitTextSignal(job: JobseekerJob, phrases: string[], positiveLabel:
 
 function metricLabel(compared: ComparedJob[], kind: 'workplace' | 'finance', key: string) {
   for (const { job } of compared) {
-    const metric = kind === 'workplace'
-      ? job.verified_workplace?.verified_metrics?.[key]
-      : job.verified_finance?.verified_metrics?.[key];
-    if (metric?.label) return metric.label;
+    const metric = comparisonVerifiedMetric(job, kind, key);
+    if (metric) return metric.label;
   }
   const fallback: Record<string, string> = {
     average_monthly_overtime_hours: '平均時間外労働',
@@ -68,17 +67,7 @@ function metricLabel(compared: ComparedJob[], kind: 'workplace' | 'finance', key
 }
 
 function metricValue(job: JobseekerJob, kind: 'workplace' | 'finance', key: string) {
-  const metric = kind === 'workplace'
-    ? job.verified_workplace?.verified_metrics?.[key]
-    : job.verified_finance?.verified_metrics?.[key];
-  if (!metric || metric.value === null || metric.value === undefined) return '実績未公開';
-  const value = typeof metric.value === 'number' ? Number(metric.value.toFixed(1)) : metric.value;
-  // Match the Web's evidence disclosure; never fabricate a sample count.
-  const sample = typeof metric.sample_size === 'number' &&
-    Number.isInteger(metric.sample_size) && metric.sample_size >= 0
-    ? '\n' + metric.sample_size + '件の記録から集計'
-    : '';
-  return `${value}${metric.unit || ''}${sample}`;
+  return comparisonVerifiedMetric(job, kind, key)?.displayValue ?? '実績未公開';
 }
 
 function sourceLabel(source: ComparisonSource) {
