@@ -383,6 +383,15 @@ export default function JobsScreen() {
     return <View testID="jobs-private-shield" style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF8FA' }}><ActivityIndicator color="#FF2F5F" /></View>;
   }
 
+  // Disable only an active request for THIS keyword generation. An older
+  // in-flight request must never block an immediately submitted IME edit.
+  // React renders on keyword, loading and privacy changes; the handlers still
+  // check the live refs before starting a request.
+  const manualSearchDisabled = !canStartManualJobSearch(
+    generation.current, inFlightSearchGeneration.current, ownerKey,
+    latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible,
+  );
+
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <View style={styles.searchCard}>
@@ -417,7 +426,7 @@ export default function JobsScreen() {
         {facetError ? <View style={styles.filterFailure}><Text style={styles.error}>{facetError}</Text><Pressable accessibilityRole="button" onPress={() => void loadFacets()}><Text style={styles.link}>再読み込み</Text></Pressable></View> : null}
         <Pressable testID="job-search-submit" style={styles.primaryButton} onPress={() => { if (!canStartManualJobSearch(generation.current, inFlightSearchGeneration.current, ownerKey,
           latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible)) return;
-          cancelKeywordTimer(); void load(true, keywordForCurrentCandidate(ownerKey, keywordDraftRef.current, query)); }} disabled={loading}>
+          cancelKeywordTimer(); void load(true, keywordForCurrentCandidate(ownerKey, keywordDraftRef.current, query)); }} disabled={manualSearchDisabled}>
           <Text style={styles.primaryButtonText}>検索</Text>
         </Pressable>
         <Text style={styles.subtle}>{error ? '求人を検索できませんでした' : visibleJobs === null ? '検索中…' : `${totalCount}件の求人`}</Text>

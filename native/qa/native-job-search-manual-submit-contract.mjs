@@ -9,4 +9,8 @@ assert.match(screen, /onSubmitEditing=\{\(\) => \{\s*if \(!canStartManualJobSear
 assert.match(screen, /testID="job-search-submit"[^\n]*onPress=\{\(\) => \{ if \(!canStartManualJobSearch\(generation\.current, inFlightSearchGeneration\.current, ownerKey,/);
 assert.match(screen, /generation\.current \+= 1;\s*setOwnedJobs\(null\);/);
 assert.doesNotMatch(screen, /onSubmitEditing=\{\(\) => \{ if \(loading\) return;/);
+assert.match(screen, /const manualSearchDisabled = !canStartManualJobSearch\(\s*generation\.current, inFlightSearchGeneration\.current, ownerKey,/);
+const searchCTA = screen.match(/<Pressable testID="job-search-submit"[\s\S]*?<\/Pressable>/)?.[0] ?? '';
+assert.match(searchCTA, /disabled=\{manualSearchDisabled\}/);
+assert.doesNotMatch(searchCTA, /disabled=\{loading\}/);
 console.log('PASS Native keyboard/button generation-aware wiring');
