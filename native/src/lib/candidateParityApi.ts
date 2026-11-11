@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { readCanonicalSpotJobs, readCanonicalSpotAssignments } from './spotReadIntegrity';
-import { verifiedScoutInbox, verifiedScoutPrivacy } from './scoutCanonicalReadback';
+import { verifiedScoutBlockableOrganizations, verifiedScoutInbox, verifiedScoutPrivacy } from './scoutCanonicalReadback';
 
 export type JobseekerScout = {
   scout_id: string;
@@ -172,7 +172,7 @@ export async function searchScoutBlockableOrganizations(client: SupabaseClient, 
   if (normalized.length < 2) return [];
   const { data, error } = await client.rpc('hc_jobseeker_search_blockable_organizations', { p_query: normalized, p_limit: 10 });
   if (error) throw error;
-  return (Array.isArray(data) ? data : []) as ScoutBlockableOrganization[];
+  return verifiedScoutBlockableOrganizations<ScoutBlockableOrganization>(data);
 }
 
 export async function addScoutBlockedOrganization(client: SupabaseClient, organizationId: string): Promise<void> {
