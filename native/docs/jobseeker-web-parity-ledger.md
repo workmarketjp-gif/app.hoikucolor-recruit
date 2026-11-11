@@ -1,5 +1,9 @@
 # Hoiku Color JOBSEEKER Native — source-based parity ledger
 
+## Latest isolated delta (r161, 2026-11-11)
+
+See [r161 visit entry separate from application eligibility](parity-delta-r161-visit-entry-independent-apply.md). Confirmed Web JobCard exposes the internal-job visit panel independently of `can_apply_direct`. Saved and job-detail Native visit navigation now has its own canonical-source/close-status/expiry gate without changing the application eligibility or reservation RPC. Exact-source Node focus **15/15 PASS**, isolated visit helper tsc PASS; Expo/full JSX contract, Android/iOS rendered runs, authenticated visit readback and signed installs **NOT VERIFIED**. Branch `native/color-visit-entry-independent-apply-r161-20261111`, parent r160 `5eed316a6153a9be8bbf8caf900cc3fd7ceef5a6`. No main/PR/production/paid CI.
+
 Updated: 2026-11-11 (NZ). State: IMPLEMENTING, NOT DEVELOPER_VERIFIED on either platform.
 
 ## Latest isolated delta (r155, 2026-11-11)
