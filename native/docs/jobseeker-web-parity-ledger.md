@@ -1,5 +1,10 @@
 # Hoiku Color JOBSEEKER Native — source-based parity ledger
 
+## Latest isolated delta (r164, 2026-11-11)
+
+See [r164 candidate profile prefecture selector](parity-delta-r164-profile-prefecture-picker.md). Web candidate ProfileForm (main fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6) is an editable dropdown of 47 prefectures plus any legacy saved value, whereas Native had unrestricted text. r164 uses the already-materialized Native modal-picker pattern with the exact Web options, preserves existing unknown values and the canonical profile Save/readback, and closes on privacy disable. Exact helper **3/3 Node PASS**, standalone tsc PASS; full source contract registered. Complete repo, Expo/JSX typecheck, Android/iOS rendered/e2e/server readback, signing and installation **NOT VERIFIED**. Branch native/color-profile-prefecture-select-r164-20261111, parent r163 2eb6f85fe2d3ea96dee9888d16d5c2645b432df2, no PR/main/production/paid CI. State **IMPLEMENTING**.
+
+
 ## Latest isolated delta (r163, 2026-11-11)
 
 See [r163 candidate profile Web validation](parity-delta-r163-profile-web-validation.md). Web profile main fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6 requires a name and uses a date-only field. Native profile Save now rejects missing name and Gregorian-invalid YYYY-MM-DD dates before the canonical upsert RPC; session pin, save/readback, editable draft and privacy protections remain intact. Exact helper behavioral Node tests **5/5 PASS**, isolated tsc **PASS**, remote blobs match locally tested bytes. Full source contract/Expo, Web-vs-Android/iOS rendered keyboard/calendar QA, authorized synthetic server readback, and both signed builds **NOT VERIFIED**; Native still uses editable date text rather than a native date picker. Single-writer branch native/color-profile-web-validation-r163-20261111, parent 1b64d4ffe56ffbc405335ee9a87fabae918b80b2, no main/PR/production or paid CI. State **IMPLEMENTING**.
