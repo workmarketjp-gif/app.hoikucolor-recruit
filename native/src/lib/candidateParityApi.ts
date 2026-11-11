@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { readCanonicalSpotJobs, readCanonicalSpotAssignments } from './spotReadIntegrity';
+import { verifiedScoutInbox, verifiedScoutPrivacy } from './scoutCanonicalReadback';
 
 export type JobseekerScout = {
   scout_id: string;
@@ -140,7 +141,7 @@ function normalizePreferences(value: unknown): JobseekerMatchingPreferences {
 export async function listJobseekerScouts(client: SupabaseClient): Promise<JobseekerScout[]> {
   const { data, error } = await client.rpc('hc_jobseeker_list_scouts');
   if (error) throw error;
-  return (Array.isArray(data) ? data : []) as JobseekerScout[];
+  return verifiedScoutInbox<JobseekerScout>(data);
 }
 
 export async function respondToJobseekerScout(
@@ -157,13 +158,7 @@ export async function respondToJobseekerScout(
 export async function getScoutPrivacySettings(client: SupabaseClient): Promise<ScoutPrivacySettings> {
   const { data, error } = await client.rpc('hc_jobseeker_get_scout_privacy');
   if (error) throw error;
-  const row = (data ?? {}) as Partial<ScoutPrivacySettings>;
-  return {
-    scout_opt_in: row.scout_opt_in === true,
-    manual_blocks: Array.isArray(row.manual_blocks) ? row.manual_blocks : [],
-    automatic_blocks: Array.isArray(row.automatic_blocks) ? row.automatic_blocks : [],
-    identity_fields_shared_before_consent: row.identity_fields_shared_before_consent === true,
-  };
+  return verifiedScoutPrivacy<ScoutPrivacySettings>(data);
 }
 
 export async function setScoutOptIn(client: SupabaseClient, enabled: boolean): Promise<boolean> {
