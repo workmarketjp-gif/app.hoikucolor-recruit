@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const screen = readFileSync(new URL('../src/app/(tabs)/jobs.tsx', import.meta.url), 'utf8');
+assert.match(screen, /import \{ canStartManualJobSearch \} from '..\/..\/lib\/jobSearchManualSubmit';/);
+assert.match(screen, /const inFlightSearchGeneration = useRef<number \| null>\(null\);/);
+assert.match(screen, /const currentGeneration = \+\+generation\.current;\s*inFlightSearchGeneration\.current = currentGeneration;/);
+assert.match(screen, /if \(inFlightSearchGeneration\.current === currentGeneration\) inFlightSearchGeneration\.current = null;/);
+assert.match(screen, /onSubmitEditing=\{\(\) => \{\s*if \(!canStartManualJobSearch\(generation\.current, inFlightSearchGeneration\.current, ownerKey,/);
+assert.match(screen, /testID="job-search-submit"[^\n]*onPress=\{\(\) => \{ if \(!canStartManualJobSearch\(generation\.current, inFlightSearchGeneration\.current, ownerKey,/);
+assert.match(screen, /generation\.current \+= 1;\s*setOwnedJobs\(null\);/);
+assert.doesNotMatch(screen, /onSubmitEditing=\{\(\) => \{ if \(loading\) return;/);
+console.log('PASS Native keyboard/button generation-aware wiring');

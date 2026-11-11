@@ -23,6 +23,7 @@ import { jobSearchFailureChannel } from '../../lib/jobSearchFailureChannel';
 import { organicJobRankLabels, type OrganicJobRankLabel } from '../../lib/jobRankingDisclosure';
 import { jobSearchCardPresentation } from '../../lib/jobSearchCardPresentation';
 import { keywordForCurrentCandidate, type CandidateKeywordDraft } from '../../lib/jobSearchKeywordDraft';
+import { canStartManualJobSearch } from '../../lib/jobSearchManualSubmit';
 
 function salary(job: JobseekerJob) {
   const prefix = job.salary_type === 'hourly' ? '時給' : job.salary_type === 'annual' ? '年収' : '月給';
@@ -151,6 +152,7 @@ export default function JobsScreen() {
   const [ownedPageError, setOwnedPageError] = useState<CandidateOwnedView<string> | null>(null);
   const pageError = readCandidateOwnedView(ownedPageError, ownerKey, privateAllowed);
   const generation = useRef(0);
+  const inFlightSearchGeneration = useRef<number | null>(null);
   const keywordTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mutationBusyRef = useRef(false);
   const mutationSequence = useRef(0);
@@ -185,6 +187,7 @@ export default function JobsScreen() {
 
   const load = useCallback(async (reset: boolean, requestedQuery = query, requestedFilters = filters) => {
     const currentGeneration = ++generation.current;
+    inFlightSearchGeneration.current = currentGeneration;
     setLoading(true);
     setOwnedError(null);
     setOwnedPageError(null);
@@ -233,6 +236,7 @@ export default function JobsScreen() {
         setOwnedError({ ownerKey, value: '求人を検索できませんでした。もう一度お試しください。' });
       }
     } finally {
+      if (inFlightSearchGeneration.current === currentGeneration) inFlightSearchGeneration.current = null;
       if (currentGeneration === generation.current) setLoading(false);
     }
   }, [cursor, ownerKey, pinCandidateAction, query, filters, savedIds, visibleJobs]);
@@ -388,7 +392,12 @@ export default function JobsScreen() {
           onChangeText={editQuery}
           placeholder="園名・職種・地域で検索"
           returnKeyType="search"
-          onSubmitEditing={() => { if (loading) return; cancelKeywordTimer(); void load(true, keywordForCurrentCandidate(ownerKey, keywordDraftRef.current, query)); }}
+          onSubmitEditing={() => {
+            if (!canStartManualJobSearch(generation.current, inFlightSearchGeneration.current, ownerKey,
+              latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible)) return;
+            cancelKeywordTimer();
+            void load(true, keywordForCurrentCandidate(ownerKey, keywordDraftRef.current, query));
+          }}
           style={styles.input}
         />
         <View style={styles.filterRow}>
@@ -406,7 +415,9 @@ export default function JobsScreen() {
           </Pressable>
         </View>
         {facetError ? <View style={styles.filterFailure}><Text style={styles.error}>{facetError}</Text><Pressable accessibilityRole="button" onPress={() => void loadFacets()}><Text style={styles.link}>再読み込み</Text></Pressable></View> : null}
-        <Pressable testID="job-search-submit" style={styles.primaryButton} onPress={() => { cancelKeywordTimer(); void load(true, keywordForCurrentCandidate(ownerKey, keywordDraftRef.current, query)); }} disabled={loading}>
+        <Pressable testID="job-search-submit" style={styles.primaryButton} onPress={() => { if (!canStartManualJobSearch(generation.current, inFlightSearchGeneration.current, ownerKey,
+          latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible)) return;
+          cancelKeywordTimer(); void load(true, keywordForCurrentCandidate(ownerKey, keywordDraftRef.current, query)); }} disabled={loading}>
           <Text style={styles.primaryButtonText}>検索</Text>
         </Pressable>
         <Text style={styles.subtle}>{error ? '求人を検索できませんでした' : visibleJobs === null ? '検索中…' : `${totalCount}件の求人`}</Text>
