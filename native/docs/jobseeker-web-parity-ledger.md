@@ -1,5 +1,9 @@
 # Hoiku Color JOBSEEKER Native — source-based parity ledger
 
+## Latest isolated delta (r166, 2026-11-12 NZ)
+
+**Web baseline:** `src/App.tsx`, `src/components/CandidateShell.tsx` main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, authenticated synthetic jobseeker. Web My Page tab badge = unread messages + unanswered interviews (99+ display). Native r165 had no badge. r166 adds source-matched indicator to current 5-tab shell using existing candidate/session/App-Lock-fenced `NotificationContext.attentionSummary`; no extra polling/RPC and unknown attention never becomes guessed zero. Node 22 real helper **4/4 PASS**, standalone strict tsc **PASS** (pre-commit). Full Expo runtime/typecheck, Android/iOS rendered and screen-reader parity, authenticated API readback and installable signed builds **NOT VERIFIED**. Isolated branch `native/color-profile-attention-badge-r166-20261112`, base `484dda5b8314fc540f52bf66e1b59587b7bb245b`; no PR/main/production/paid CI. Status IMPLEMENTING.
+
 ## Latest isolated delta (r165, 2026-11-11)
 
 See [r165 candidate date calendar](parity-delta-r165-profile-date-picker.md). Existing Web `<input type="date">` in ProfileForm at main fa779e73 is optional/unrestricted. Native r164 had editable free text; r165 supplies an in-app no-dependency calendar (not the OS picker) to select/clear Gregorian date-only values while maintaining the existing session-pinned profile Save/readback and guard. Exact helper Node **5/5 PASS**, standalone tsc **PASS**, TSX syntax parser **0 diagnostics** before commit. Full Expo/React Native runtime, both OS render, synthetic canonical save/readback, and signed acceptance builds **NOT VERIFIED**. Branch `native/color-profile-date-picker-r165-20261111`, parent `13e9697491072a2d266051a457b1126aa5f84e4b`, no PR/main/production/paid CI. State **IMPLEMENTING**.

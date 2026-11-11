@@ -3,6 +3,8 @@ import { Redirect, Tabs } from 'expo-router';
 import { ActivityIndicator, View } from 'react-native';
 import { CandidateTabIcon } from '../../components/CandidateTabIcon';
 import type { TabGlyph } from '../../lib/candidateTabGlyphs';
+import { useNotifications } from '../../contexts/NotificationContext';
+import { candidateProfileTabBadge } from '../../lib/candidateProfileTabBadge';
 
 const pink = '#E9265A';
 const icon = (name: TabGlyph) => ({ color }: { color: string; focused: boolean }) =>
@@ -11,6 +13,9 @@ const icon = (name: TabGlyph) => ({ color }: { color: string; focused: boolean }
 /** Matches src/components/CandidateShell.tsx mobile destinations, Web main fa779e73. */
 export default function CandidateTabsLayout() {
   const { isLoaded, isSignedIn } = useAuth();
+  // Only current-session, unlocked, canonical attention is exposed by the provider.
+  const { attentionSummary } = useNotifications();
+  const profileBadge = candidateProfileTabBadge(attentionSummary);
   if (!isLoaded) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF8FA' }}>
@@ -35,7 +40,12 @@ export default function CandidateTabsLayout() {
       <Tabs.Screen name="jobs" options={{ title: '求人を探す', headerTitle: '求人を探す', tabBarIcon: icon('search') }} />
       <Tabs.Screen name="career" options={{ title: 'お給料', headerTitle: 'お給料・働き方', tabBarIcon: icon('yen') }} />
       <Tabs.Screen name="saved" options={{ title: '気になる', headerTitle: '気になる', tabBarIcon: icon('heart') }} />
-      <Tabs.Screen name="profile" options={{ title: 'マイページ', headerTitle: 'マイページ', tabBarIcon: icon('user') }} />
+      <Tabs.Screen name="profile" options={{
+        title: 'マイページ', headerTitle: 'マイページ', tabBarIcon: icon('user'),
+        tabBarBadge: profileBadge.badge,
+        tabBarAccessibilityLabel: profileBadge.accessibilityLabel,
+        tabBarBadgeStyle: { backgroundColor: pink, color: '#fff', fontWeight: '800' },
+      }} />
       <Tabs.Screen name="applications" options={{ href: null, title: '応募管理', headerTitle: '応募管理' }} />
       <Tabs.Screen name="notifications" options={{ href: null, title: '通知', headerTitle: '通知' }} />
     </Tabs>
