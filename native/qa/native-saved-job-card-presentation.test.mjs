@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { presentSavedJobCard } from '../src/lib/savedJobCardPresentation.ts';
+import { presentSavedJobCard, savedEvidenceRecordLabel } from '../src/lib/savedJobCardPresentation.ts';
 const base = {
   is_open: true, closing_at: null, is_external: false, can_apply_direct: true,
   salary_type: 'monthly', salary_min: 240000, salary_max: 290000, salary_note: null,
@@ -39,10 +39,33 @@ test('missing region/contract never synthesizes labels', () => {
 });
 test('verified tags require actual metric records and proper source, not just claimed count', () => {
   assert.equal(display({ verified_workplace: { verified_metric_count: 9, verified_metrics: {} } }).hasWorkplaceEvidence, false);
-  const metric = { verified_metric_count: 1, verified_metrics: { tenure: { value: 4.1, label: '平均勤続', source: 'ho_verified' } } };
+  const metric = { verified_metric_count: 1, verified_metrics: { average_tenure_years: { value: 4.1, label: '平均勤続', source: 'ho_verified', sample_size: 12 } } };
   assert.equal(display({ verified_workplace: metric }).hasWorkplaceEvidence, true);
   assert.equal(display({ verified_finance: metric }).hasFinanceEvidence, false);
-  const finance = { verified_metric_count: 1, verified_metrics: { finance_closed: { value: 8, label: '月次締め実績', source: 'hf_verified' } } };
+  const finance = { verified_metric_count: 1, verified_metrics: { finance_closed_months_12m: { value: 8, label: '月次締め実績', source: 'hf_verified', sample_size: 8 } } };
   assert.equal(display({ verified_finance: finance }).hasFinanceEvidence, true);
-  assert.equal(display({ verified_finance: { verified_metric_count: 1, verified_metrics: { finance_closed: { value: null, label: '月次締め実績' } } } }).hasFinanceEvidence, false);
+  assert.equal(display({ verified_finance: { verified_metric_count: 1, verified_metrics: { finance_closed_months_12m: { value: null, label: '月次締め実績' } } } }).hasFinanceEvidence, false);
+});
+
+test('saved-card badges never advertise a metric that the detail panel cannot actually display', () => {
+  const arbitrary = { verified_metric_count: 1, verified_metrics: {
+    fabricated_metric: { value: 100, label: '架空の実績', source: 'ho_verified' },
+  } };
+  assert.equal(display({ verified_workplace: arbitrary }).hasWorkplaceEvidence, false);
+  const incorrectlySourced = { verified_metric_count: 1, verified_metrics: {
+    finance_closed_months_12m: { value: 8, label: '月次確定', source: 'ho_verified' },
+  } };
+  assert.equal(display({ verified_finance: incorrectlySourced }).hasFinanceEvidence, false);
+  const malformed = { verified_metric_count: 0.5, verified_metrics: {
+    average_tenure_years: { value: 3.4, label: '平均勤続', source: 'ho_verified' },
+  } };
+  assert.equal(display({ verified_workplace: malformed }).hasWorkplaceEvidence, false);
+});
+
+test('workplace evidence counts and finance monthly records use distinct, validated units', () => {
+  assert.equal(savedEvidenceRecordLabel('workplace', 12), '12件の記録');
+  assert.equal(savedEvidenceRecordLabel('finance', 8), '8か月分の記録');
+  assert.equal(savedEvidenceRecordLabel('finance', 0), '0か月分の記録');
+  assert.equal(savedEvidenceRecordLabel('finance', Number.NaN), null);
+  assert.equal(savedEvidenceRecordLabel('workplace', -1), null);
 });

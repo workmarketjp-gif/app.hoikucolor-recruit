@@ -1,6 +1,10 @@
+import { verifiedEvidence } from './jobVerifiedEvidence.ts';
+import type { VerifiedProfile } from './jobseekerCoreApi';
+
 /**
  * Presentation of a canonical saved-job RPC row, not authorization or a job
  * status cache. Reference: Web src/App.tsx SavedView / JobCard.tsx.
+ * All saved/search/detail/compare evidence badges share one eligibility rule.
  */
 export type SavedJobCardSource = {
   is_open: boolean;
@@ -14,16 +18,8 @@ export type SavedJobCardSource = {
   prefecture: string | null;
   city: string | null;
   employment_type: string | null;
-  verified_workplace?: SavedEvidence | null;
-  verified_finance?: SavedEvidence | null;
-};
-type SavedEvidence = {
-  verified_metric_count?: number;
-  verified_metrics?: Record<string, {
-    value?: string | number | null;
-    label?: string;
-    source?: string;
-  }>;
+  verified_workplace?: VerifiedProfile | null;
+  verified_finance?: VerifiedProfile | null;
 };
 export type SavedJobCardPresentation = {
   salary: string;
@@ -34,6 +30,11 @@ export type SavedJobCardPresentation = {
   hasWorkplaceEvidence: boolean;
   hasFinanceEvidence: boolean;
 };
+/** Preserve record units from the canonical evidence source, as in Compare. */
+export function savedEvidenceRecordLabel(kind: 'workplace' | 'finance', count: number): string | null {
+  if (!Number.isSafeInteger(count) || count < 0) return null;
+  return `${count}${kind === 'finance' ? 'か月分' : '件'}の記録`;
+}
 const positive = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0;
 function salary(job: SavedJobCardSource): string {
   const min = positive(job.salary_min) ? job.salary_min : null;
@@ -49,15 +50,6 @@ function salary(job: SavedJobCardSource): string {
   if (job.is_external && range) return range;
   return job.salary_note?.trim() || range || '給与は詳細をご確認ください';
 }
-function hasEvidence(data: SavedEvidence | null | undefined, source: 'ho_verified' | 'hf_verified'): boolean {
-  if (!data || !Number.isSafeInteger(data.verified_metric_count) ||
-      (data.verified_metric_count ?? 0) <= 0 || !data.verified_metrics) return false;
-  return Object.values(data.verified_metrics).some((item) =>
-    item && typeof item.label === 'string' && item.label.trim().length > 0 &&
-    (typeof item.value === 'number' && Number.isFinite(item.value) ||
-     typeof item.value === 'string' && item.value.trim().length > 0) &&
-    (item.source == null || item.source === source));
-}
 export function presentSavedJobCard(job: SavedJobCardSource, now: number): SavedJobCardPresentation {
   const expiry = typeof job.closing_at === 'string' ? Date.parse(job.closing_at) : NaN;
   const closed = job.is_open === false || Number.isFinite(expiry) && expiry < now;
@@ -67,7 +59,7 @@ export function presentSavedJobCard(job: SavedJobCardSource, now: number): Saved
     employmentType: job.employment_type?.trim() || null,
     closed,
     directApply: !closed && job.is_external !== true && job.can_apply_direct !== false,
-    hasWorkplaceEvidence: hasEvidence(job.verified_workplace, 'ho_verified'),
-    hasFinanceEvidence: hasEvidence(job.verified_finance, 'hf_verified'),
+    hasWorkplaceEvidence: verifiedEvidence(job.verified_workplace, 'workplace') !== null,
+    hasFinanceEvidence: verifiedEvidence(job.verified_finance, 'finance') !== null,
   };
 }

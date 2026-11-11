@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { CandidateTabIcon } from './CandidateTabIcon';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { SavedJobseekerJob } from '../lib/jobseekerCoreApi';
-import { presentSavedJobCard } from '../lib/savedJobCardPresentation';
+import { presentSavedJobCard, savedEvidenceRecordLabel } from '../lib/savedJobCardPresentation';
 import { presentSavedJobSource } from '../lib/savedJobSourcePresentation';
 import { verifiedEvidence, type VerifiedEvidenceDisplay } from '../lib/jobVerifiedEvidence';
 
@@ -19,14 +19,14 @@ function Field({ label, value }: { label: string; value: string | null | undefin
   if (!value?.trim()) return null;
   return <View style={styles.field}><Text style={styles.fieldLabel}>{label}</Text><Text style={styles.body}>{value}</Text></View>;
 }
-function Evidence({ title, evidence }: { title: string; evidence: VerifiedEvidenceDisplay }) {
+function Evidence({ title, evidence, kind }: { title: string; evidence: VerifiedEvidenceDisplay; kind: 'workplace' | 'finance' }) {
   return <View style={styles.evidence}>
     <Text style={styles.section}>✓ {title}</Text>
     {evidence.transparencyPercent !== null ? <Text style={styles.muted}>情報公開率 {evidence.transparencyPercent}%</Text> : null}
     {evidence.metrics.map((item) => <View key={item.key} style={styles.field}>
       <Text style={styles.fieldLabel}>{item.label}</Text>
       <Text style={styles.value}>{item.value}</Text>
-      {item.recordCount !== null ? <Text style={styles.muted}>{item.recordCount}件の記録</Text> : null}
+      {item.recordCount !== null ? <Text style={styles.muted}>{savedEvidenceRecordLabel(kind, item.recordCount)}</Text> : null}
     </View>)}
     {evidence.period ? <Text style={styles.muted}>集計期間 {evidence.period}</Text> : null}
   </View>;
@@ -73,8 +73,8 @@ export function SavedJobPreviewCard({ job, disabled, removing, onOpen, onVisit, 
       <Field label="待遇" value={job.benefits} />
       <Field label="募集人数" value={Number.isSafeInteger(job.number_of_positions) && job.number_of_positions >= 0 ? job.number_of_positions + '名' : '未掲載'} />
       {workplace || finance ? <Text style={styles.section}>実際の働き方</Text> : null}
-      {workplace ? <Evidence title="勤務実績" evidence={workplace} /> : null}
-      {finance ? <Evidence title="会計実績" evidence={finance} /> : null}
+      {workplace ? <Evidence title="勤務実績" evidence={workplace} kind="workplace" /> : null}
+      {finance ? <Evidence title="会計実績" evidence={finance} kind="finance" /> : null}
       <Text style={styles.section}>仕事内容・保育観</Text>
       <Text style={styles.body}>{job.description || '未掲載'}</Text>
       {info.closed ? <Text style={styles.notice}>募集は終了しています。保存履歴として求人内容を確認できます。</Text> : null}
