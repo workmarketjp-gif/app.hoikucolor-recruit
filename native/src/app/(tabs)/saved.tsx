@@ -173,7 +173,17 @@ export default function SavedJobsScreen() {
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {(loading || (jobs === null && !error)) ? <ActivityIndicator /> : null}
-      {!loading && !error && jobs?.length === 0 ? <Text style={styles.empty}>気になる求人はまだありません。求人の♡を押すと、ここに保存されます。</Text> : null}
+      {!loading && !error && jobs?.length === 0 ? (
+        <View testID="saved-empty-state" style={styles.empty}>
+          <Text style={styles.emptyTitle}>気になる求人はまだありません</Text>
+          <Text style={styles.emptyBody}>求人の♡を押すと、ここに保存されます。</Text>
+          <Pressable testID="saved-empty-find-jobs" accessibilityRole="button"
+            accessibilityLabel="求人を探す" style={styles.emptyAction}
+            onPress={() => router.push('/(tabs)/jobs' as never)}>
+            <Text style={styles.emptyActionText}>求人を探す</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {jobs !== null && jobs.length >= 2 ? (
         <Pressable style={styles.compareButton} onPress={() => {
           // Match Web Saved → Compare: pass the first three canonical saved IDs.
@@ -214,6 +224,10 @@ const styles = StyleSheet.create({
   closed: { fontSize: 14, color: '#8a4b00', backgroundColor: '#fff8e6', padding: 9, borderRadius: 8 },
   button: { minHeight: 48, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginTop: 5 },
   buttonText: { fontWeight: '800' },
-  empty: { backgroundColor: '#fff', borderRadius: 14, padding: 20, color: '#606873' },
+  empty: { backgroundColor: '#fff', borderRadius: 14, padding: 20, gap: 12 },
+  emptyTitle: { color: '#30212B', fontSize: 17, fontWeight: '800' },
+  emptyBody: { color: '#615B66', fontSize: 14, lineHeight: 22 },
+  emptyAction: { minHeight: 48, alignSelf: 'flex-start', paddingHorizontal: 22, borderRadius: 12, backgroundColor: '#E9265A', justifyContent: 'center', alignItems: 'center' },
+  emptyActionText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   error: { color: '#b42318', backgroundColor: '#fff1f0', padding: 12, borderRadius: 10 },
 });
