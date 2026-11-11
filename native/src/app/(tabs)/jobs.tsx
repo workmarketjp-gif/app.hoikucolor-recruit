@@ -22,6 +22,7 @@ import { shouldRefreshJobsOnReturn, type JobSearchFocusState } from '../../lib/j
 import { jobSearchFailureChannel } from '../../lib/jobSearchFailureChannel';
 import { organicJobRankLabels, type OrganicJobRankLabel } from '../../lib/jobRankingDisclosure';
 import { jobSearchCardPresentation } from '../../lib/jobSearchCardPresentation';
+import { keywordForCurrentCandidate, type CandidateKeywordDraft } from '../../lib/jobSearchKeywordDraft';
 
 function salary(job: JobseekerJob) {
   const prefix = job.salary_type === 'hourly' ? '時給' : job.salary_type === 'annual' ? '年収' : '月給';
@@ -93,11 +94,18 @@ export default function JobsScreen() {
   const { pinCandidateAction } = usePinnedCandidateAction();
   const [ownedQuery, setOwnedQuery] = useState<CandidateOwnedView<string> | null>(null);
   const query = readCandidateOwnedView(ownedQuery, ownerKey, privateAllowed) ?? '';
+  // Keep the latest TextInput event synchronously, before a React state render.
+  // Never reuse another session's draft on account switch.
+  const keywordDraftRef = useRef<CandidateKeywordDraft>({ ownerKey, value: query });
+  if (keywordDraftRef.current.ownerKey !== ownerKey) {
+    keywordDraftRef.current = { ownerKey, value: query };
+  }
   // Web searches as the user types (250 ms debounce). Invalidate the old
   // result generation immediately so a late response cannot paint a different
   // keyword's jobs while the user is still typing.
   const editQuery = (value: string) => {
     if (!ownerKey || !privateAllowed || privacy.shieldVisible) return;
+    keywordDraftRef.current = { ownerKey, value };
     setOwnedQuery({ ownerKey, value });
     if (keywordTimer.current) clearTimeout(keywordTimer.current);
     generation.current += 1;
@@ -273,6 +281,7 @@ export default function JobsScreen() {
     mutationSequence.current += 1;
     mutationBusyRef.current = false;
     setBusyJobId(null);
+    keywordDraftRef.current = { ownerKey, value: '' };
     setOwnedQuery(null);
     setOwnedFilters(null);
     setOwnedFacets(null);
@@ -305,11 +314,12 @@ export default function JobsScreen() {
     const next = { ...filters, ...patch };
     setOwnedFilters({ ownerKey, value: next });
     setPicker(null);
-    void load(true, query, next);
+    void load(true, keywordForCurrentCandidate(ownerKey, keywordDraftRef.current, query), next);
   };
   const clearFilters = () => {
     if (!ownerKey || !privateAllowed || privacy.shieldVisible) return;
     cancelKeywordTimer();
+    keywordDraftRef.current = { ownerKey, value: '' };
     setOwnedQuery(null);
     setOwnedFilters(null);
     setPicker(null);
@@ -376,7 +386,7 @@ export default function JobsScreen() {
           onChangeText={editQuery}
           placeholder="園名・職種・地域で検索"
           returnKeyType="search"
-          onSubmitEditing={() => { cancelKeywordTimer(); void load(true, query); }}
+          onSubmitEditing={() => { cancelKeywordTimer(); void load(true, keywordForCurrentCandidate(ownerKey, keywordDraftRef.current, query)); }}
           style={styles.input}
         />
         <View style={styles.filterRow}>
@@ -394,7 +404,7 @@ export default function JobsScreen() {
           </Pressable>
         </View>
         {facetError ? <View style={styles.filterFailure}><Text style={styles.error}>{facetError}</Text><Pressable accessibilityRole="button" onPress={() => void loadFacets()}><Text style={styles.link}>再読み込み</Text></Pressable></View> : null}
-        <Pressable testID="job-search-submit" style={styles.primaryButton} onPress={() => { cancelKeywordTimer(); void load(true, query); }} disabled={loading}>
+        <Pressable testID="job-search-submit" style={styles.primaryButton} onPress={() => { cancelKeywordTimer(); void load(true, keywordForCurrentCandidate(ownerKey, keywordDraftRef.current, query)); }} disabled={loading}>
           <Text style={styles.primaryButtonText}>検索</Text>
         </Pressable>
         <Text style={styles.subtle}>{error ? '求人を検索できませんでした' : visibleJobs === null ? '検索中…' : `${totalCount}件の求人`}</Text>
