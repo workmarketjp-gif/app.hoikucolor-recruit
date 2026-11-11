@@ -116,7 +116,9 @@ export default function JobsScreen() {
     setCursor(null);
     setHasMore(false);
     setTotalCount(0);
-    setLoading(true);
+    // During the 250ms typing debounce, leave explicit Search enabled.
+    // The prior request generation is already invalidated above.
+    setLoading(false);
     keywordTimer.current = setTimeout(() => {
       keywordTimer.current = null;
       void load(true, value, filters);
@@ -386,7 +388,7 @@ export default function JobsScreen() {
           onChangeText={editQuery}
           placeholder="園名・職種・地域で検索"
           returnKeyType="search"
-          onSubmitEditing={() => { cancelKeywordTimer(); void load(true, keywordForCurrentCandidate(ownerKey, keywordDraftRef.current, query)); }}
+          onSubmitEditing={() => { if (loading) return; cancelKeywordTimer(); void load(true, keywordForCurrentCandidate(ownerKey, keywordDraftRef.current, query)); }}
           style={styles.input}
         />
         <View style={styles.filterRow}>
@@ -442,7 +444,7 @@ export default function JobsScreen() {
           </Pressable>
         </View>
       ) : null}
-      {loading && jobs.length === 0 ? <ActivityIndicator /> : null}
+      {(loading || (visibleJobs === null && !error)) && jobs.length === 0 ? <ActivityIndicator /> : null}
       {!loading && !error && visibleJobs !== null && jobs.length === 0 ? (
         <View testID="job-search-empty-state" style={styles.noResults}>
           <Text style={styles.noResultsTitle}>条件に合う求人はありません</Text>
