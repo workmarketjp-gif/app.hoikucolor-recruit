@@ -29,6 +29,7 @@ import {
   type ScoutBlockableOrganization,
   type ScoutPrivacySettings,
 } from '../lib/candidateParityApi';
+import { ScoutTimePicker } from '../components/ScoutTimePicker';
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
@@ -653,11 +654,11 @@ export default function ScoutsScreen() {
         <View style={styles.actionRow}>
           <View style={styles.timeField}>
             <Text style={styles.inputLabel}>開始</Text>
-            <TextInput accessibilityLabel="勤務可能時間の開始" value={preferences.available_time_from ?? ''} onChangeText={(value) => update('available_time_from', value || null)} placeholder="例：08:00" maxLength={5} style={styles.input} />
+            <ScoutTimePicker label="勤務可能時間の開始" value={preferences.available_time_from} onChange={(value) => update('available_time_from', value)} enabled={privateAllowed && verifiedVisible} defaultHour={8} />
           </View>
           <View style={styles.timeField}>
             <Text style={styles.inputLabel}>終了</Text>
-            <TextInput accessibilityLabel="勤務可能時間の終了" value={preferences.available_time_to ?? ''} onChangeText={(value) => update('available_time_to', value || null)} placeholder="例：18:00" maxLength={5} style={styles.input} />
+            <ScoutTimePicker label="勤務可能時間の終了" value={preferences.available_time_to} onChange={(value) => update('available_time_to', value)} enabled={privateAllowed && verifiedVisible} defaultHour={18} />
           </View>
         </View>
 
