@@ -12,7 +12,7 @@ const display = (override = {}) => presentSavedJobCard({ ...base, ...override },
 test('canonical salary, region and job type are shown without invented figures', () => {
   assert.deepEqual(display(), {
     salary: '月給 240,000〜290,000円', location: '東京都 品川区', employmentType: '正社員',
-    closed: false, directApply: true, hasWorkplaceEvidence: false, hasFinanceEvidence: false,
+    closed: false, directApply: true, canVisit: true, hasWorkplaceEvidence: false, hasFinanceEvidence: false,
   });
 });
 test('declared salary note preserves original wording for direct jobs', () => {
@@ -22,6 +22,7 @@ test('imported hourly job uses structural wage and disables direct apply and vis
   const row = display({ is_external: true, salary_type: 'hourly', salary_min: 1250, salary_max: 1250, salary_note: '1,250円〜1,250円' });
   assert.equal(row.salary, '時給 1,250円');
   assert.equal(row.directApply, false);
+  assert.equal(row.canVisit, false);
 });
 test('annual pay and unknown pay are not misrepresented as monthly', () => {
   assert.equal(display({ salary_type: 'annual', salary_min: 3500000, salary_max: null }).salary, '年収 3,500,000円〜');
@@ -30,8 +31,10 @@ test('annual pay and unknown pay are not misrepresented as monthly', () => {
 test('closed, expired and direct-apply-disabled jobs keep history without active CTA', () => {
   assert.equal(display({ is_open: false }).closed, true);
   assert.equal(display({ is_open: false }).directApply, false);
+  assert.equal(display({ is_open: false }).canVisit, false);
   assert.equal(display({ closing_at: '2026-11-07T23:59:59Z' }).directApply, false);
   assert.equal(display({ can_apply_direct: false }).directApply, false);
+  assert.equal(display({ can_apply_direct: false }).canVisit, true);
 });
 test('missing region/contract never synthesizes labels', () => {
   assert.equal(display({ prefecture: null, city: null }).location, '勤務地は詳細をご確認ください');
