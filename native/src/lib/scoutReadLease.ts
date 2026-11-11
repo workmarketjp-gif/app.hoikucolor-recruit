@@ -18,6 +18,16 @@ export function shouldPublishScoutRead(lease: ScoutReadLease): boolean {
     && lease.privateAccess;
 }
 
+/** An explicitly refreshed inbox has its own sequence and must not overwrite
+ * a later refresh, a full hydration, a different candidate or a locked view. */
+export function shouldPublishScoutInboxRefresh(
+  lease: ScoutReadLease & { requestSerial: number; activeSerial: number },
+): boolean {
+  return shouldPublishScoutRead(lease)
+    && Number.isSafeInteger(lease.requestSerial)
+    && lease.requestSerial === lease.activeSerial;
+}
+
 /** Never display an error from a prior candidate while the next user is loading. */
 export function mayShowScoutError(
   ownerKey: string | null,
