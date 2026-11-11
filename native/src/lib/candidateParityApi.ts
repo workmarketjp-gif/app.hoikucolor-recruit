@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { readCanonicalSpotJobs, readCanonicalSpotAssignments } from './spotReadIntegrity';
 import { verifiedScoutBlockableOrganizations, verifiedScoutInbox, verifiedScoutPrivacy } from './scoutCanonicalReadback';
+import { verifiedScoutMatchingPreferences } from './scoutMatchingPreferencesCanonical';
 
 export type JobseekerScout = {
   scout_id: string;
@@ -113,31 +114,6 @@ export type SpotAssignment = {
   confirmed_at: string;
 };
 
-function normalizeTime(value: unknown) {
-  if (typeof value !== 'string' || !value) return null;
-  return value.slice(0, 5);
-}
-
-function normalizePreferences(value: unknown): JobseekerMatchingPreferences {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return { ...emptyJobseekerMatchingPreferences };
-  const row = value as Partial<JobseekerMatchingPreferences>;
-  return {
-    desired_prefectures: Array.isArray(row.desired_prefectures) ? row.desired_prefectures : [],
-    desired_cities: Array.isArray(row.desired_cities) ? row.desired_cities : [],
-    desired_monthly_salary_min: typeof row.desired_monthly_salary_min === 'number' ? row.desired_monthly_salary_min : null,
-    desired_hourly_wage_min: typeof row.desired_hourly_wage_min === 'number' ? row.desired_hourly_wage_min : null,
-    available_weekdays: Array.isArray(row.available_weekdays) ? row.available_weekdays : [],
-    available_time_from: normalizeTime(row.available_time_from),
-    available_time_to: normalizeTime(row.available_time_to),
-    max_commute_minutes: typeof row.max_commute_minutes === 'number' ? row.max_commute_minutes : null,
-    classroom_experience: Array.isArray(row.classroom_experience) ? row.classroom_experience : [],
-    leadership_roles: Array.isArray(row.leadership_roles) ? row.leadership_roles : [],
-    preferred_child_ages: Array.isArray(row.preferred_child_ages) ? row.preferred_child_ages : [],
-    childcare_values: Array.isArray(row.childcare_values) ? row.childcare_values : [],
-    work_preferences: Array.isArray(row.work_preferences) ? row.work_preferences : [],
-  };
-}
-
 export async function listJobseekerScouts(client: SupabaseClient): Promise<JobseekerScout[]> {
   const { data, error } = await client.rpc('hc_jobseeker_list_scouts');
   if (error) throw error;
@@ -188,14 +164,14 @@ export async function removeScoutBlockedOrganization(client: SupabaseClient, org
 export async function getJobseekerMatchingPreferences(client: SupabaseClient): Promise<JobseekerMatchingPreferences> {
   const { data, error } = await client.rpc('hc_jobseeker_get_matching_preferences');
   if (error) throw error;
-  return normalizePreferences(data);
+  return verifiedScoutMatchingPreferences<JobseekerMatchingPreferences>(data);
 }
 
 export async function saveJobseekerMatchingPreferences(
   client: SupabaseClient,
   preferences: JobseekerMatchingPreferences,
-): Promise<JobseekerMatchingPreferences> {
-  const { data, error } = await client.rpc('hc_jobseeker_upsert_matching_preferences', {
+): Promise<void> {
+  const { error } = await client.rpc('hc_jobseeker_upsert_matching_preferences', {
     p_desired_prefectures: preferences.desired_prefectures,
     p_desired_cities: preferences.desired_cities,
     p_desired_monthly_salary_min: preferences.desired_monthly_salary_min,
@@ -211,7 +187,6 @@ export async function saveJobseekerMatchingPreferences(
     p_work_preferences: preferences.work_preferences,
   });
   if (error) throw error;
-  return normalizePreferences(data);
 }
 
 export async function listSpotJobs(client: SupabaseClient): Promise<SpotJobListing[]> {
