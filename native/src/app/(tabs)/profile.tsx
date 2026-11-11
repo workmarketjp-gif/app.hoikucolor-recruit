@@ -17,6 +17,7 @@ import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
 import { canPresentProfileResult, canonicalProfileMatchesSubmission } from '../../lib/profileSaveGuard';
 import { canAttemptProfileSave, profileWriteFailureNeedsReload, profileReloadNeedsDiscardConfirmation } from '../../lib/profileWriteRecovery';
+import { profileWebValidationError } from '../../lib/profileWebValidation';
 
 const positionOptions = ['保育士', '保育教諭', '幼稚園教諭', '保育補助', '看護師', '栄養士', '調理師', '児童指導員', '子育て支援員'];
 const employmentOptions = ['正社員', '契約社員', 'パート・アルバイト', '派遣'];
@@ -45,7 +46,7 @@ function Field({ label, value, onChangeText, ...props }: { label: string; value:
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput value={value} onChangeText={onChangeText} style={styles.input} {...props} />
+      <TextInput value={value} onChangeText={onChangeText} accessibilityLabel={label} style={styles.input} {...props} />
     </View>
   );
 }
@@ -239,6 +240,8 @@ export default function ProfileScreen() {
         desired_start_date: nullable(profile.desired_start_date ?? ''),
         self_intro: nullable(profile.self_intro ?? ''),
       };
+      const invalid = profileWebValidationError(next.name, next.desired_start_date);
+      if (invalid) throw new Error(invalid);
       const pinned = await pinCandidateAction();
       if (!pinned?.isCurrent() ||
           candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestOwner ||
@@ -351,7 +354,7 @@ export default function ProfileScreen() {
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>基本プロフィール</Text>
-        <Field label="氏名" value={profile.name ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, name: value }))} placeholder="例：保育 花子" />
+        <Field label="お名前（必須）" value={profile.name ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, name: value }))} placeholder="例：保育 花子" />
         <Field label="ふりがな" value={profile.name_kana ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, name_kana: value }))} placeholder="例：ほいく はなこ" />
         <Field label="メール" value={profile.email ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, email: value }))} keyboardType="email-address" autoCapitalize="none" />
         <Field label="電話番号" value={profile.phone ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, phone: value }))} keyboardType="phone-pad" />
@@ -360,7 +363,7 @@ export default function ProfileScreen() {
         <ChipGroup label="希望雇用形態" options={employmentOptions} values={profile.desired_employment_types} onChange={(values) => editProfile((current) => ({ ...current, desired_employment_types: values }))} />
         <ChipGroup label="資格" options={qualificationOptions} values={profile.qualifications} onChange={(values) => editProfile((current) => ({ ...current, qualifications: values }))} />
         <Field label="保育経験年数" value={experienceText} onChangeText={editExperience} keyboardType="numeric" placeholder="例：5" />
-        <Field label="希望入職日" value={profile.desired_start_date ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, desired_start_date: value }))} placeholder="YYYY-MM-DD" />
+        <Field label="勤務開始希望日" value={profile.desired_start_date ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, desired_start_date: value }))} placeholder="YYYY-MM-DD" />
         <Field label="自己紹介" value={profile.self_intro ?? ''} onChangeText={(value) => editProfile((current) => ({ ...current, self_intro: value }))} multiline placeholder="経験や大切にしている保育観など" />
         {message ? <Text style={styles.success}>{message}</Text> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
