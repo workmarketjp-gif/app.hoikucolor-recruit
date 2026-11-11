@@ -41,7 +41,16 @@ export function SavedJobPreviewCard({ job, disabled, removing, onOpen, onVisit, 
   return <View style={styles.card} testID={'saved-job-' + job.id}>
     <View style={styles.heading}>
       <View style={styles.headingText}><Text style={styles.facility}>{job.facility_name}</Text><Text style={styles.title}>{job.title}</Text></View>
-      <Text accessibilityLabel="気になるに保存済み" style={styles.heart}>♥</Text>
+      <Pressable
+        testID={'saved-job-heart-' + job.id}
+        accessibilityRole="button"
+        accessibilityLabel={job.facility_name + 'を気になるから外す'}
+        accessibilityState={{ selected: true, disabled }}
+        disabled={disabled}
+        onPress={onRemove}
+        style={styles.heartButton}>
+        {removing ? <ActivityIndicator color="#E9265A" /> : <Text style={styles.heart}>♥</Text>}
+      </Pressable>
     </View>
     <Text style={styles.salary}>{info.salary}</Text>
     <Text style={styles.meta}>{info.location}{info.employmentType ? ' ・ ' + info.employmentType : ''}</Text>
@@ -78,9 +87,6 @@ export function SavedJobPreviewCard({ job, disabled, removing, onOpen, onVisit, 
       <Pressable accessibilityRole="button" accessibilityState={{ expanded, disabled }} disabled={disabled} style={styles.outline} onPress={() => setExpanded((value) => !value)}><Text style={styles.outlineText}>{expanded ? '閉じる' : '詳しく見る'}</Text></Pressable>
       <Pressable accessibilityRole="button" disabled={disabled} style={styles.primary} onPress={onOpen}><Text style={styles.primaryText}>{info.directApply ? '詳細・応募を見る' : '求人の詳細を見る'}</Text></Pressable>
     </View>
-    <Pressable accessibilityRole="button" accessibilityLabel={job.facility_name + 'を気になるから外す'} disabled={disabled} style={styles.remove} onPress={onRemove}>
-      {removing ? <ActivityIndicator color="#AC2853" /> : <Text style={styles.removeText}>気になるから外す</Text>}
-    </Pressable>
   </View>;
 }
 const styles = StyleSheet.create({
@@ -89,6 +95,7 @@ const styles = StyleSheet.create({
   headingText: { flex: 1, gap: 5 },
   facility: { color: '#7C475E', fontSize: 14, fontWeight: '700' },
   title: { fontSize: 19, fontWeight: '900', lineHeight: 27, color: '#30212B' },
+  heartButton: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 12, borderWidth: 1, borderColor: '#F5DCE4' },
   heart: { fontSize: 23, color: '#E9265A' },
   salary: { fontWeight: '900', fontSize: 18, color: '#30212B' },
   meta: { color: '#615B66', fontSize: 14, lineHeight: 21 },
@@ -110,8 +117,6 @@ const styles = StyleSheet.create({
   outlineText: { fontSize: 14, fontWeight: '800', color: '#49333F' },
   primary: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E9265A', borderRadius: 12, paddingHorizontal: 8 },
   primaryText: { color: '#fff', fontSize: 14, fontWeight: '800', textAlign: 'center' },
-  remove: { minHeight: 46, borderWidth: 1, borderColor: '#EBC6D2', alignItems: 'center', justifyContent: 'center', borderRadius: 11 },
-  removeText: { color: '#A32650', fontWeight: '800', fontSize: 14 },
   visit: { minHeight: 48, borderWidth: 1, borderRadius: 12, borderColor: '#E9265A', alignItems: 'center', justifyContent: 'center' },
   visitText: { color: '#B72552', fontSize: 15, fontWeight: '800' },
 });
