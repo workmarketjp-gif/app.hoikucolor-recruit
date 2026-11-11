@@ -34,6 +34,8 @@ test('closed, expired and direct-apply-disabled jobs keep history without active
   assert.equal(display({ is_open: false }).canVisit, false);
   assert.equal(display({ closing_at: '2026-11-07T23:59:59Z' }).directApply, false);
   assert.equal(display({ can_apply_direct: false }).directApply, false);
+  assert.equal(display({ can_apply_direct: undefined }).directApply, false);
+  assert.equal(display({ is_external: undefined }).directApply, false);
   assert.equal(display({ can_apply_direct: false }).canVisit, true);
 });
 test('missing region/contract never synthesizes labels', () => {

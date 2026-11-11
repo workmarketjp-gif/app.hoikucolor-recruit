@@ -23,6 +23,8 @@ test('never advertises a direct application for closed, expired, external or dis
   assert.equal(path({ closing_at: '2026-11-11T23:59:59Z' }), null);
   assert.equal(path({ is_external: true }), null);
   assert.equal(path({ can_apply_direct: false }), null);
+  assert.equal(path({ is_external: undefined }), null);
+  assert.equal(path({ can_apply_direct: undefined }), null);
 });
 test('visit is independent of direct application and requires an internal active posting', () => {
   assert.equal(path({ can_apply_direct: false }, 'visit'), `/visits?jobId=${id}`);

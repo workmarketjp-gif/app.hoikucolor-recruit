@@ -60,7 +60,7 @@ export function presentSavedJobCard(job: SavedJobCardSource, now: number): Saved
     location: [job.prefecture?.trim(), job.city?.trim()].filter(Boolean).join(' ') || '勤務地は詳細をご確認ください',
     employmentType: job.employment_type?.trim() || null,
     closed,
-    directApply: !closed && job.is_external !== true && job.can_apply_direct !== false,
+    directApply: !closed && job.is_external === false && job.can_apply_direct === true,
     canVisit: canOpenCandidateVisit(job, now),
     hasWorkplaceEvidence: verifiedEvidence(job.verified_workplace, 'workplace') !== null,
     hasFinanceEvidence: verifiedEvidence(job.verified_finance, 'finance') !== null,
