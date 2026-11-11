@@ -82,7 +82,7 @@ export function SavedJobPreviewCard({ job, disabled, removing, onOpen, onVisit, 
         <Text style={styles.muted}>{source.provenance}</Text>
         {source.lastVerified ? <Text style={styles.muted}>最終確認 {source.lastVerified}</Text> : null}
       </View> : null}
-      {info.directApply ? <Pressable accessibilityRole="button" disabled={disabled} onPress={onVisit} style={styles.visit}><Text style={styles.visitText}>見学・体験を予約</Text></Pressable> : null}
+      {info.canVisit ? <Pressable accessibilityRole="button" disabled={disabled} onPress={onVisit} style={styles.visit}><Text style={styles.visitText}>見学・体験を予約</Text></Pressable> : null}
     </View> : null}
     <View style={styles.actions}>
       <Pressable accessibilityRole="button" accessibilityState={{ expanded, disabled }} disabled={disabled} style={styles.outline} onPress={() => setExpanded((value) => !value)}><Text style={styles.outlineText}>{expanded ? '閉じる' : '詳しく見る'}</Text></Pressable>
