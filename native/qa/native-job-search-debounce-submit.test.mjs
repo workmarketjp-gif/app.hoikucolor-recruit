@@ -34,10 +34,13 @@ test('typing invalidates prior responses but keeps manual search enabled during 
 
 test('explicit keyboard search blocks duplicate in-flight submissions, CTA stays guarded', () => {
   const screen = nativeScreen();
-  assert.match(screen, /onSubmitEditing=\\{\\(\\) => \\{\\s*if \\(!canStartManualJobSearch\\(generation\\.current, inFlightSearchGeneration\\.current, ownerKey,/);
-  assert.match(screen, /inFlightSearchGeneration\\.current = currentGeneration;/);
-  assert.match(screen, /if \\(inFlightSearchGeneration\\.current === currentGeneration\\) inFlightSearchGeneration\\.current = null;/);
-  assert.match(screen, /testID="job-search-submit"[^\n]*disabled=\{loading\}/);
+  assert.match(screen, /onSubmitEditing=\{\(\) => \{\s*if \(!canStartManualJobSearch\(generation\.current, inFlightSearchGeneration\.current, ownerKey,/);
+  assert.match(screen, /inFlightSearchGeneration\.current = currentGeneration;/);
+  assert.match(screen, /if \(inFlightSearchGeneration\.current === currentGeneration\) inFlightSearchGeneration\.current = null;/);
+  assert.match(screen, /const manualSearchDisabled = !canStartManualJobSearch\(\s*generation\.current, inFlightSearchGeneration\.current, ownerKey,/);
+  const cta = screen.match(/<Pressable testID="job-search-submit"[\s\S]*?<\/Pressable>/)?.[0] ?? '';
+  assert.match(cta, /disabled=\{manualSearchDisabled\}/);
+  assert.doesNotMatch(cta, /disabled=\{loading\}/);
   assert.match(screen, /\(loading \|\| \(visibleJobs === null && !error\)\) && jobs\.length === 0/);
   assert.match(screen, /!loading && !error && visibleJobs !== null && jobs\.length === 0/);
 });
