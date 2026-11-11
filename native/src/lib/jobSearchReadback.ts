@@ -16,6 +16,13 @@ const count = (value: unknown): number | null => {
   const number = Number(value);
   return Number.isSafeInteger(number) && number >= 0 ? number : null;
 };
+// An undefined or malformed publication timestamp corrupts the next-page
+// cursor. The canonical RPC may legitimately return null for an unpublished
+// date, so preserve that case rather than making up a timestamp.
+const publicationTime = (value: unknown): value is string | null =>
+  value === null || (typeof value === 'string' &&
+    /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(value) &&
+    Number.isFinite(Date.parse(value)));
 const badSearch = () => new Error('求人検索の結果を確認できませんでした。もう一度検索してください。');
 const badFacets = () => new Error('求人の絞り込み条件を確認できませんでした。再読み込みしてください。');
 
@@ -30,12 +37,14 @@ export function verifiedJobSearchRows<T>(data: unknown): T[] {
         !text(item.facility_id) || !UUID.test(item.facility_id) ||
         !text(item.facility_name) || !text(item.title) ||
         !numeric(item.rank_quality) || !numeric(item.rank_transparency) ||
+        !('published_at' in item) || !publicationTime(item.published_at) ||
         count(item.total_count) === null || typeof item.has_more !== 'boolean') throw badSearch();
     const id = item.id.toLowerCase();
     if (seen.has(id)) throw badSearch();
     seen.add(id);
     const total = count(item.total_count)!;
-    if (total < data.length || (expectedTotal !== null && total !== expectedTotal) ||
+    if (total < data.length || (item.has_more && total <= data.length) ||
+        (expectedTotal !== null && total !== expectedTotal) ||
         (expectedHasMore !== null && item.has_more !== expectedHasMore)) throw badSearch();
     expectedTotal = total;
     expectedHasMore = item.has_more;

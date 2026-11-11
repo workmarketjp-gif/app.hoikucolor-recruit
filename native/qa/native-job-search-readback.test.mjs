@@ -50,3 +50,19 @@ test('missing, corrupted or partial facet results are errors instead of blank dr
     assert.throws(() => verifiedJobSearchFacets(data), /絞り込み条件/);
   }
 });
+
+test('canonical publication timestamp may be null but must be present and valid', () => {
+  const withNull = [job({ published_at: null })];
+  assert.equal(verifiedJobSearchRows(withNull), withNull);
+  const { published_at: unused, ...missing } = job();
+  for (const item of [missing, job({ published_at: undefined }), job({ published_at: '' }),
+    job({ published_at: 'not-a-time' }), job({ published_at: 1730422800 }),
+    job({ published_at: '2026-99-99T00:00:00Z' }), job({ published_at: {} })]) {
+    assert.throws(() => verifiedJobSearchRows([item]), /検索の結果/);
+  }
+});
+
+test('next page cannot be promised once the complete result count is exhausted', () => {
+  assert.throws(() => verifiedJobSearchRows([job({ total_count: 1, has_more: true })]), /検索の結果/);
+  assert.equal(verifiedJobSearchRows([job({ total_count: 1, has_more: false })]).length, 1);
+});
