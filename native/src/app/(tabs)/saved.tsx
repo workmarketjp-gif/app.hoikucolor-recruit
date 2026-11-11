@@ -150,7 +150,7 @@ export default function SavedJobsScreen() {
   const open = async (jobId: string, destination: 'detail' | 'visit' = 'detail') => {
     const chosen = jobs?.find((job) => job.id === jobId);
     if (!privateVisibleRef.current || !ownerKey || !chosen) return;
-    if (destination === 'visit' && !presentSavedJobCard(chosen, Date.now()).directApply) return;
+    if (destination === 'visit' && !presentSavedJobCard(chosen, Date.now()).canVisit) return;
     const requestGeneration = generation.current;
     const pinned = await pinCandidateAction();
     if (pinned?.isCurrent() &&
