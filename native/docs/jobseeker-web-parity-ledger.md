@@ -1,5 +1,10 @@
 # Hoiku Color JOBSEEKER Native — source-based parity ledger
 
+## Latest isolated delta (r162, 2026-11-11)
+
+See [r162 keyword draft session parity](parity-delta-r162-job-search-keyword-draft.md). Web job search source baseline main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`; Native parent `ddfba34c7710ef7180e47d8513b92abdd5684dd8`. Native keyboard search, explicit search, and quick filter now use synchronously captured **current-session** Japanese keyword (not potentially stale React render); search draft is cleared on privacy/account switch, using unchanged pinned canonical RPC. Node real helper **5/5 PASS**, standalone strict tsc **PASS**, GitHub blob source verification and UI wiring assertions **5/5 PASS**. Full-checkout contract/Expo/actual Native keyboard, authenticated canonical persistence and visual compare **NOT VERIFIED** on Android or iOS; no signed builds. Color single-writer branch `native/color-job-search-keyword-draft-r162-20261111`, no PR/main/production/paid build. State **IMPLEMENTING**.
+
+
 ## Latest isolated delta (r161, 2026-11-11)
 
 See [r161 visit entry separate from application eligibility](parity-delta-r161-visit-entry-independent-apply.md). Confirmed Web JobCard exposes the internal-job visit panel independently of `can_apply_direct`. Saved and job-detail Native visit navigation now has its own canonical-source/close-status/expiry gate without changing the application eligibility or reservation RPC. Exact-source Node focus **15/15 PASS**, isolated visit helper tsc PASS; Expo/full JSX contract, Android/iOS rendered runs, authenticated visit readback and signed installs **NOT VERIFIED**. Branch `native/color-visit-entry-independent-apply-r161-20261111`, parent r160 `5eed316a6153a9be8bbf8caf900cc3fd7ceef5a6`. No main/PR/production/paid CI.
