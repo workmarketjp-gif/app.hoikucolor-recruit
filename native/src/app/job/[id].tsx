@@ -13,6 +13,7 @@ import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
 import { verifiedEvidence, type VerifiedEvidenceDisplay } from '../../lib/jobVerifiedEvidence';
+import { canOpenCandidateVisit } from '../../lib/candidateVisitEntry';
 import { homeInlineApplyDecision, isExplicitlyDirectJob } from '../../lib/homeApplyDecision';
 import { canPreopenHomeDocuments } from '../../lib/homeDirectApplyEntry';
 import { homeJobAvailability } from '../../lib/homeFeaturedDetails';
@@ -381,6 +382,7 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
   const closed = availability === 'closed';
   const unknown = availability === 'unknown';
   const directApply = isExplicitlyDirectJob(job);
+  const canVisit = canOpenCandidateVisit(job, Date.now());
   const workplaceEvidence = verifiedEvidence(job.verified_workplace, 'workplace');
   const financeEvidence = verifiedEvidence(job.verified_finance, 'finance');
   const sourcePresentation = presentSavedJobSource(job);
@@ -502,7 +504,7 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
         </Pressable>
       ) : null}
 
-      {directApply && !closed && !unknown ? (
+      {canVisit ? (
         <Pressable style={styles.secondary} onPress={() => router.push(`/visits?jobId=${encodeURIComponent(job.id)}` as never)}>
           <Text style={styles.secondaryText}>見学・体験を予約</Text>
         </Pressable>
