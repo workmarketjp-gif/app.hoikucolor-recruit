@@ -129,7 +129,7 @@ BEGIN
 END
 $assert_legacy$;
 ` + inner + String.raw`
-// Security and interface contracts: browser roles cannot execute.
+-- Security and interface contracts: browser roles cannot execute.
 DO $assert_acl$
 BEGIN
  IF has_function_privilege('anon','public.hc_hellowork_pick_reverify_batch_v1(integer)','EXECUTE')
