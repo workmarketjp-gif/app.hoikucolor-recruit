@@ -1,7 +1,10 @@
+import { useSession } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
+import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
+import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import {
   attachJobseekerDocumentToApplication,
   createAttachedApplicationDocumentSignedUrl,
@@ -34,8 +37,12 @@ export function ApplicationDocumentsSection({
 }) {
   const { pinCandidateAction } = usePinnedCandidateAction();
   const router = useRouter();
+  const { session } = useSession();
+  const privacy = usePrivateDataQuarantine();
+  const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
+  const canReadPrivate = !privacy.shieldVisible && privacy.canAccessPrivateData();
   const [open, setOpen] = useState(false);
-  const [snapshot, setSnapshot] = useState<DocumentSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<CandidateOwnedView<DocumentSnapshot> | null>(null);
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +50,13 @@ export function ApplicationDocumentsSection({
   const alive = useRef(true);
   const requestVersion = useRef(0);
   const mutationPending = useRef(false);
+  const freshlyVerifiedOwner = useRef<string | null>(null);
+  const contextLease = useRef({ ownerKey, shieldVisible: privacy.shieldVisible });
+  if (!canReadPrivate) freshlyVerifiedOwner.current = null;
+  const contextCurrent = contextLease.current.ownerKey === ownerKey &&
+    contextLease.current.shieldVisible === privacy.shieldVisible;
+  const visibleSnapshot = readCandidateFreshlyVerifiedView(
+    snapshot, ownerKey, canReadPrivate && contextCurrent, freshlyVerifiedOwner.current);
 
   useEffect(() => {
     // React StrictMode can replay mount effects; reset the private-view lease.
@@ -53,27 +67,50 @@ export function ApplicationDocumentsSection({
     };
   }, []);
 
+  useEffect(() => {
+    // The document panel is private even while its parent screen remains mounted.
+    // A Clerk account/session switch or App Lock revokes its presentation lease.
+    if (contextLease.current.ownerKey === ownerKey &&
+        contextLease.current.shieldVisible === privacy.shieldVisible) return;
+    contextLease.current = { ownerKey, shieldVisible: privacy.shieldVisible };
+    requestVersion.current += 1;
+    freshlyVerifiedOwner.current = null;
+    setSnapshot(null);
+    setOpen(false);
+    setLoading(false);
+    setError(null);
+    setNotice(null);
+  }, [ownerKey, privacy.shieldVisible]);
+
   const refresh = async () => {
-    if (mutationPending.current) return;
+    if (mutationPending.current || !ownerKey || !canReadPrivate || !contextCurrent) return;
+    const requestedOwnerKey = ownerKey;
     const version = ++requestVersion.current;
+    freshlyVerifiedOwner.current = null;
     setSnapshot(null); // Do not show stale private rows while a read is unverified.
     setLoading(true);
     setError(null);
     setNotice(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned || !pinned.isCurrent()) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned || !pinned.isCurrent() ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
       const { saved, submitted, expectations } = await readApplicationDocumentSnapshot({
         ownerId: pinned.ownerId,
         applicationId,
         loadSaved: () => listJobseekerDocuments(pinned.client),
         loadSubmitted: () => listSubmittedApplicationDocuments(pinned.client, applicationId),
         loadExpectations: () => listApplicationDocumentExpectations(pinned.client, applicationId),
-        isCurrent: () => alive.current && pinned.isCurrent() && version === requestVersion.current,
+        isCurrent: () => alive.current && pinned.isCurrent() && version === requestVersion.current &&
+          privacy.canAccessPrivateData(),
       });
       projectApplicationDocuments(applicationId, saved, submitted, expectations);
-      if (!alive.current || !pinned.isCurrent() || version !== requestVersion.current) return;
-      setSnapshot({ saved, submitted, expectations });
+      if (!alive.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
+          version !== requestVersion.current) return;
+      freshlyVerifiedOwner.current = requestedOwnerKey;
+      setSnapshot({ ownerKey: requestedOwnerKey, value: { saved, submitted, expectations } });
     } catch (caught) {
       if (alive.current && version === requestVersion.current) {
         setError(String((caught as { message?: unknown })?.message ?? '応募書類を読み込めませんでした。'));
@@ -84,11 +121,12 @@ export function ApplicationDocumentsSection({
   };
 
   const toggle = () => {
-    if (mutationPending.current) return;
+    if (mutationPending.current || !canReadPrivate || !ownerKey || !contextCurrent) return;
     if (open) {
       ++requestVersion.current;
       setOpen(false);
       setSnapshot(null);
+      freshlyVerifiedOwner.current = null;
       setError(null);
       setNotice(null);
       setLoading(false);
@@ -99,11 +137,12 @@ export function ApplicationDocumentsSection({
   };
 
   const submitDocuments = async (targets: readonly JobseekerDocument[]) => {
-    if (!open || !snapshot || !targets.length || mutationPending.current || loading) return;
-    const model = projectApplicationDocuments(applicationId, snapshot.saved, snapshot.submitted, snapshot.expectations);
-    if (targets.some((document) => !snapshot.saved.some((row) => row.id === document.id)
+    if (!open || !visibleSnapshot || !ownerKey || !canReadPrivate || !targets.length || mutationPending.current || loading) return;
+    const model = projectApplicationDocuments(applicationId, visibleSnapshot.saved, visibleSnapshot.submitted, visibleSnapshot.expectations);
+    if (targets.some((document) => !visibleSnapshot.saved.some((row) => row.id === document.id)
       || model.attachedIds.has(document.id))) return;
     const uniqueTargets = [...new Map(targets.map((document) => [document.id, document])).values()];
+    const requestedOwnerKey = ownerKey;
     mutationPending.current = true;
     const version = ++requestVersion.current;
     setPending(uniqueTargets.length > 1 ? 'batch' : uniqueTargets[0].id);
@@ -111,10 +150,14 @@ export function ApplicationDocumentsSection({
     setNotice(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned || !pinned.isCurrent()) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (!pinned || !pinned.isCurrent() ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
       // One source at a time: session revocation must prevent the next new write.
       for (const document of uniqueTargets) {
-        if (!alive.current || !pinned.isCurrent() || version !== requestVersion.current) return;
+        if (!alive.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
+            version !== requestVersion.current) return;
         try {
           await attachJobseekerDocumentToApplication(pinned.client, document, applicationId);
         } catch {
@@ -127,11 +170,14 @@ export function ApplicationDocumentsSection({
         loadSaved: () => listJobseekerDocuments(pinned.client),
         loadSubmitted: () => listSubmittedApplicationDocuments(pinned.client, applicationId),
         loadExpectations: () => listApplicationDocumentExpectations(pinned.client, applicationId),
-        isCurrent: () => alive.current && pinned.isCurrent() && version === requestVersion.current,
+        isCurrent: () => alive.current && pinned.isCurrent() && version === requestVersion.current &&
+          privacy.canAccessPrivateData(),
       });
       projectApplicationDocuments(applicationId, saved, submitted, expectations);
-      if (!alive.current || !pinned.isCurrent() || version !== requestVersion.current) return;
-      setSnapshot({ saved, submitted, expectations });
+      if (!alive.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
+          version !== requestVersion.current) return;
+      freshlyVerifiedOwner.current = requestedOwnerKey;
+      setSnapshot({ ownerKey: requestedOwnerKey, value: { saved, submitted, expectations } });
       const confirmed = uniqueTargets.filter((document) =>
         hasCanonicalApplicationAttachment(applicationId, document.id, submitted));
       if (confirmed.length === uniqueTargets.length) {
@@ -148,9 +194,11 @@ export function ApplicationDocumentsSection({
           }
           return getApplicationDocumentHandoffState(pinned.client, applicationId);
         });
-        if (alive.current && pinned.isCurrent() && version === requestVersion.current) onHandoffReadback(handoff);
+        if (alive.current && pinned.isCurrent() && privacy.canAccessPrivateData() &&
+            version === requestVersion.current) onHandoffReadback(handoff);
       } catch {
-        if (alive.current && pinned.isCurrent() && version === requestVersion.current) onHandoffReadback(null);
+        if (alive.current && pinned.isCurrent() && privacy.canAccessPrivateData() &&
+            version === requestVersion.current) onHandoffReadback(null);
       }
     } catch {
       if (alive.current && version === requestVersion.current) {
@@ -164,17 +212,24 @@ export function ApplicationDocumentsSection({
   };
 
   const openSubmitted = async (document: AttachedApplicationDocument) => {
-    if (!snapshot || !open || mutationPending.current || loading ||
-      !snapshot.submitted.some((row) => row.id === document.id && row.application_id === applicationId)) return;
+    if (!visibleSnapshot || !canReadPrivate || !ownerKey || !open || mutationPending.current || loading ||
+      !visibleSnapshot.submitted.some((row) => row.id === document.id && row.application_id === applicationId)) return;
     mutationPending.current = true;
     const version = ++requestVersion.current;
+    const requestedOwnerKey = ownerKey;
     setPending('open-' + document.id);
     setError(null);
     try {
       const pinned = await pinCandidateAction();
       if (!pinned || !pinned.isCurrent()) throw new Error('安全なログイン状態を確認できませんでした。');
+      if (candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey ||
+          !alive.current || !privacy.canAccessPrivateData() ||
+          version !== requestVersion.current) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
       const url = await createAttachedApplicationDocumentSignedUrl(pinned.client, document);
-      if (!alive.current || !pinned.isCurrent() || version !== requestVersion.current) return;
+      if (!alive.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
+          version !== requestVersion.current) return;
       await Linking.openURL(url); // Existing vault uses the OS handler; URL is HTTPS-only.
     } catch (caught) {
       if (alive.current && version === requestVersion.current) {
@@ -186,8 +241,11 @@ export function ApplicationDocumentsSection({
     }
   };
 
-  const model = snapshot ? projectApplicationDocuments(applicationId, snapshot.saved, snapshot.submitted, snapshot.expectations) : null;
-  const blocked = loading || pending !== null || mutationPending.current;
+  const model = visibleSnapshot ? projectApplicationDocuments(applicationId, visibleSnapshot.saved, visibleSnapshot.submitted, visibleSnapshot.expectations) : null;
+  const blocked = loading || pending !== null || mutationPending.current || !canReadPrivate || !contextCurrent;
+  if (!canReadPrivate || !ownerKey || !contextCurrent) {
+    return <View testID="application-documents-private-shield" />;
+  }
 
   return (
     <View style={styles.container} testID="application-documents-section">
@@ -208,7 +266,7 @@ export function ApplicationDocumentsSection({
           {loading ? <Text style={styles.note}>応募書類を読み込んでいます…</Text> : null}
           {error ? <Text style={styles.error} accessibilityLiveRegion="polite">{error}</Text> : null}
           {notice ? <Text style={styles.success} accessibilityLiveRegion="polite">{notice}</Text> : null}
-          {snapshot && model ? (
+          {visibleSnapshot && model ? (
             <>
               {model.missing.length ? (
                 <View style={styles.warning}>
@@ -221,7 +279,7 @@ export function ApplicationDocumentsSection({
                   {model.unavailableMissingCount ? <Text style={styles.note}>{model.unavailableMissingCount}件は現在の書類庫にありません。現在の書類から提出してください。</Text> : null}
                 </View>
               ) : null}
-              {snapshot.saved.length ? snapshot.saved.map((document) => {
+              {visibleSnapshot.saved.length ? visibleSnapshot.saved.map((document) => {
                 const attached = model.attachedIds.has(document.id);
                 return (
                   <View key={document.id} style={styles.row}>
@@ -235,10 +293,10 @@ export function ApplicationDocumentsSection({
                   </View>
                 );
               }) : <Text style={styles.note}>保存済みの書類はありません。マイページの「応募書類」から書類を保存すると、この応募にも提出できます。</Text>}
-              {snapshot.submitted.length ? (
+              {visibleSnapshot.submitted.length ? (
                 <View style={styles.submitted}>
                   <Text style={styles.title}>この応募へ提出済み</Text>
-                  {snapshot.submitted.map((document) => (
+                  {visibleSnapshot.submitted.map((document) => (
                     <View key={document.id} style={styles.row}>
                       <View style={styles.documentName}>
                         <Text style={styles.label}>{documentTypeLabel(document.document_type)}</Text>
