@@ -55,8 +55,14 @@ const newMigration = readdirSync(migrationDir).filter((name) =>
 assert.equal(newMigration.length, 1,
   'Generate exactly one new migration with the official Supabase CLI before --run');
 const generated = readFileSync(resolve(migrationDir, newMigration[0]), 'utf8');
-assert.ok(generated.includes(candidate.trim()),
-  'The CLI-generated migration must include the exact reviewed SQL proposal');
+// Exact equality rejects additional SQL before or after the approved function.
+// The generator adds precisely these two informational comments.
+const expectedMigration =
+  '-- CLI-generated migration: review SQL and test against disposable PG17 before ANY production apply.\n' +
+  '-- DO NOT reapply 20261023001450_hc_hellowork_fair_reverify_v1.sql.\n' +
+  candidate.trim() + '\n';
+assert.equal(generated, expectedMigration,
+  'The CLI-generated migration must match the reviewed SQL exactly, without other statements');
 
 const sql = String.raw`
 \set ON_ERROR_STOP on
