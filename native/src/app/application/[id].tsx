@@ -8,6 +8,8 @@ import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
 import { candidateApplicationDetailKey } from '../../lib/applicationDetailVisibility';
 import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } from '../../lib/applicationDocumentHandoffStatus';
 import { applicationStatusLabel } from '../../lib/messageInbox';
+import { loadApplicationCoreIndependentHandoff } from '../../lib/applicationCoreIndependentHandoff';
+import { pinCandidateForRead } from '../../lib/pinnedCandidateRead';
 import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
 import { createApplicationDecisionGate } from '../../lib/applicationDecisionGate';
 import { applicationDecisionDisclosure, canConfirmApplicationWithdrawal, isFreshApplicationWithdrawal } from '../../lib/applicationDecisionDisclosure';
@@ -236,7 +238,10 @@ function ApplicationDetailContent() {
   const warnedDocumentHandoff = firstParam(params.documentWarning) === '1';
   const [detail, setDetail] = useState<JobseekerApplicationDetail | null>(null);
   const [messages, setMessages] = useState<JobseekerMessage[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(true);
+  const [messagesReadError, setMessagesReadError] = useState(false);
   const [documentState, setDocumentState] = useState<ApplicationDocumentHandoffState | null>(null);
+  const [documentLoading, setDocumentLoading] = useState(true);
   const [messageDraft, setMessageDraft] = useState('');
   const [messageSendError, setMessageSendError] = useState<string | null>(null);
   const [messageSendNeedsReview, setMessageSendNeedsReview] = useState(false);
@@ -248,6 +253,7 @@ function ApplicationDetailContent() {
   const [error, setError] = useState<string | null>(null);
   const [handoffError, setHandoffError] = useState<string | null>(null);
   const generation = useRef(0);
+  const documentReadRevision = useRef(0);
   const messageSendPending = useRef(false);
   const decisionGate = useRef(createApplicationDecisionGate()).current;
   const [, setInterviewLeaseRevision] = useState(0);
@@ -278,6 +284,7 @@ function ApplicationDetailContent() {
 
   const load = useCallback(async (_quiet = false) => {
     const current = ++generation.current;
+    const handoffRevision = ++documentReadRevision.current;
     messageAnchorConsumedRef.current = false;
     messageAnchorYRef.current = null;
     messageViewportHeightRef.current = 0;
@@ -286,32 +293,49 @@ function ApplicationDetailContent() {
       facilityMessageId: null, measuredMessageId: null, sectionTop: null,
       messageTop: null, messageHeight: null, scrollY: 0, viewportHeight: 0,
     };
-    // A deliberate canonical refresh permits one retry of a failed read-ack RPC.
     failedFacilityMessageRef.current = null;
-    // Fail closed on refresh or lost permission: do not keep displaying the old
-    // application, messages or submitted documents while authorization is retried.
     setLoading(true);
     setDetail(null);
     setMessages([]);
+    setMessagesLoading(true);
+    setMessagesReadError(false);
     setDocumentState(null);
+    setDocumentLoading(true);
     setHandoffError(null);
     setWithdrawOpen(false);
     setWithdrawReason('');
     setError(null);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
-      const [nextDetail, nextMessages, nextDocumentState] = await Promise.all([
-        getApplicationDetail(pinned.client, applicationId),
-        listApplicationMessages(pinned.client, applicationId),
-        readApplicationDocumentHandoff(() => getApplicationDocumentHandoffState(pinned.client, applicationId)),
-      ]);
-      if (!pinned.isCurrent() || current !== generation.current) return;
-      setDetail(nextDetail);
-      setMessages(nextMessages);
-      setDocumentState(nextDocumentState);
+      const pinned = await pinCandidateForRead(pinCandidateAction, () => current === generation.current);
+      await loadApplicationCoreIndependentHandoff({
+        loadDetail: () => getApplicationDetail(pinned.client, applicationId),
+        loadMessages: () => listApplicationMessages(pinned.client, applicationId),
+        loadHandoff: () => readApplicationDocumentHandoff(
+          () => getApplicationDocumentHandoffState(pinned.client, applicationId)),
+        isCurrent: () => pinned.isCurrent() && current === generation.current,
+        onDetail: (nextDetail) => {
+          setDetail(nextDetail);
+        },
+        onMessages: (result) => {
+          if (result.status === 'fulfilled') {
+            setMessages(result.value);
+          } else {
+            setMessagesReadError(true);
+          }
+          setMessagesLoading(false);
+        },
+        onHandoff: (nextDocumentState) => {
+          if (handoffRevision !== documentReadRevision.current) return;
+          setDocumentState(nextDocumentState);
+          setDocumentLoading(false);
+        },
+      });
     } catch (loadError) {
-      if (current === generation.current) setError(String((loadError as { message?: unknown })?.message ?? loadError));
+      if (current === generation.current) {
+        setDocumentLoading(false);
+        setMessagesLoading(false);
+        setError(String((loadError as { message?: unknown })?.message ?? loadError));
+      }
     } finally {
       if (current === generation.current) setLoading(false);
     }
@@ -333,7 +357,10 @@ function ApplicationDetailContent() {
       messageContentHeightRef.current = 0;
       setDetail(null);
       setMessages([]);
+      setMessagesLoading(true);
+      setMessagesReadError(false);
       setDocumentState(null);
+      setDocumentLoading(true);
       setWithdrawOpen(false);
       setWithdrawReason('');
       setError(null);
@@ -344,7 +371,7 @@ function ApplicationDetailContent() {
   const sendMessage = async () => {
     // The durable RPC can finish server-side even if its response is lost.
     // Require a deliberate canonical re-read before a possible duplicate tap.
-    if (!canSubmitCandidateMessage({
+    if (messagesLoading || messagesReadError || !canSubmitCandidateMessage({
       draft: messageDraft, busy: busy || decisionGate.isBusy(), pending: messageSendPending.current,
       needsReview: messageSendNeedsReview,
     })) return;
@@ -441,6 +468,8 @@ function ApplicationDetailContent() {
       const nextMessages = await listApplicationMessages(pinned.client, applicationId);
       if (!pinned.isCurrent() || !stillCurrent()) return;
       setMessages(nextMessages);
+      setMessagesLoading(false);
+      setMessagesReadError(false);
       if (review && confirmedUncertainCandidateMessage(review.submittedDraft, review.knownMessageIds, nextMessages)) {
         setMessageDraft((current) => draftAfterConfirmedMessageSend(current, review.submittedDraft));
       }
@@ -503,7 +532,9 @@ function ApplicationDetailContent() {
       if (!pinned.isCurrent() || !stillCurrent()) return;
       const result = await repairApplicationDocumentHandoff(pinned.client, applicationId);
       if (!pinned.isCurrent() || !stillCurrent()) return;
+      documentReadRevision.current += 1;
       setDocumentState(result.state);
+      setDocumentLoading(false);
       if (result.failed || result.state.missingSourceDocumentIds.length) {
         setHandoffError('一部の提出書類を復旧できませんでした。書類一覧を確認して再度お試しください。');
       }
@@ -680,7 +711,12 @@ function ApplicationDetailContent() {
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      {(warnedDocumentHandoff || documentReadState !== 'confirmed') ? (
+      {documentLoading ? (
+        <View style={styles.card} accessibilityLiveRegion="polite">
+          <Text style={styles.subtle}>提出書類の状態を確認しています…</Text>
+        </View>
+      ) : null}
+      {!documentLoading && (warnedDocumentHandoff || documentReadState !== 'confirmed') ? (
         <View style={styles.warningCard}>
           <Text style={styles.sectionTitle}>提出書類を確認してください</Text>
           <Text style={styles.subtle}>
@@ -824,10 +860,19 @@ function ApplicationDetailContent() {
         }}>
         <View style={styles.cardHeadingRow}>
           <Text style={styles.sectionTitle}>園とのメッセージ</Text>
-          <Text style={styles.count}>{messages.length}件</Text>
+          <Text style={styles.count}>{messagesLoading ? '確認中' : messagesReadError ? '未確認' : `${messages.length}件`}</Text>
         </View>
         {messagesFocused ? <Text style={styles.focusLabel}>園とのメッセージを表示しています</Text> : null}
-        {orderedMessages.length === 0 ? <Text style={styles.subtle}>まだメッセージはありません。ここから園へ連絡できます。</Text> : null}
+        {messagesLoading ? <Text style={styles.subtle}>メッセージを確認しています…</Text> : null}
+        {messagesReadError ? (
+          <View style={styles.messageFeedback} accessibilityLiveRegion="polite">
+            <Text style={styles.error}>メッセージを取得できませんでした。最新の内容を確認するまで送信できません。</Text>
+            <Pressable style={styles.secondaryButton} accessibilityRole="button" onPress={() => void load()}>
+              <Text style={styles.secondaryText}>再読み込み</Text>
+            </Pressable>
+          </View>
+        ) : null}
+        {!messagesLoading && !messagesReadError && orderedMessages.length === 0 ? <Text style={styles.subtle}>まだメッセージはありません。ここから園へ連絡できます。</Text> : null}
         {orderedMessages.map((message) => (
           <View key={message.id}
             onLayout={message.id === latestFacilityMessageId ? (event) => {
@@ -865,7 +910,7 @@ function ApplicationDetailContent() {
           </View>
         ) : null}
         <Pressable style={styles.primaryButton}
-          disabled={!canSubmitCandidateMessage({
+          disabled={messagesLoading || messagesReadError || !canSubmitCandidateMessage({
             draft: messageDraft, busy: busy || decisionGate.isBusy(), pending: messageSendPending.current,
             needsReview: messageSendNeedsReview,
           })}
@@ -874,7 +919,11 @@ function ApplicationDetailContent() {
         </Pressable>
         <ApplicationDocumentsSection
           applicationId={applicationId}
-          onHandoffReadback={(confirmed) => setDocumentState(confirmed)}
+          onHandoffReadback={(confirmed) => {
+            documentReadRevision.current += 1;
+            setDocumentState(confirmed);
+            setDocumentLoading(false);
+          }}
         />
       </View>
 
