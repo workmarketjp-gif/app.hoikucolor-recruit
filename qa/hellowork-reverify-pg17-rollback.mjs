@@ -22,6 +22,16 @@ const candidate = blocks[0][1];
 assert.match(candidate, /^\s*begin;\s*/i);
 assert.match(candidate, /\scommit;\s*$/i);
 const inner = candidate.replace(/^\s*begin;\s*/i, '').replace(/\scommit;\s*$/i, '').trim();
+// The v2 proposal explicitly requires the already-deployed v1 RPC. Recreate
+// the exact applied v1 migration inside this disposable transaction first;
+// otherwise the v2 prerequisite guard fails before any behavioral assertions.
+const legacySql = readFileSync(resolve(root, 'supabase/migrations/20261023001450_hc_hellowork_fair_reverify_v1.sql'), 'utf8');
+assert.match(legacySql, /Production already has this migration/);
+const legacyBlock = legacySql.match(/(?:^|\n)begin;\s*\n([\s\S]*?)\ncommit;\s*$/i);
+assert.ok(legacyBlock, 'Applied v1 fixture must have one outer BEGIN/COMMIT');
+const legacyInner = legacyBlock[1].trim();
+assert.match(legacyInner, /create or replace function public\.hc_hellowork_pick_reverify_batch_v1\(/i);
+assert.match(legacyInner, /revoke all on function[\s\S]*?from public, anon, authenticated;/i);
 assert.match(inner, /create or replace function public\.hc_hellowork_pick_reverify_batch_v1\(/);
 assert.match(inner, /security definer\s+set search_path = ''/i);
 assert.match(inner, /interval '60 hours'/i);
@@ -110,8 +120,16 @@ VALUES
  ('00000000-0000-4000-8000-000000000007','hellowork','https://example.test/cooldown','F',now()-interval '92 hours',now()-interval '1 hour','active',true,null),
  ('00000000-0000-4000-8000-000000000008','hellowork','https://example.test/closed','G',now()-interval '90 hours',null,'active',true,now()-interval '1 hour'),
  ('00000000-0000-4000-8000-000000000009','hellowork','https://example.test/too-fresh','H',now()-interval '10 hours',null,'active',true,null);
+` + legacyInner + String.raw`
+// Confirm this is a genuine upgrade scenario, not a clean-install test.
+DO $assert_legacy$
+BEGIN
+ IF to_regprocedure('public.hc_hellowork_pick_reverify_batch_v1(integer)') IS NULL
+ THEN RAISE EXCEPTION 'Legacy v1 RPC fixture must exist before v2 replacement'; END IF;
+END
+$assert_legacy$;
 ` + inner + String.raw`
--- Security and interface contracts: browser roles cannot execute.
+// Security and interface contracts: browser roles cannot execute.
 DO $assert_acl$
 BEGIN
  IF has_function_privilege('anon','public.hc_hellowork_pick_reverify_batch_v1(integer)','EXECUTE')
