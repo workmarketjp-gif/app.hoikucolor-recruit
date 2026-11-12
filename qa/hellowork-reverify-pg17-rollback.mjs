@@ -8,7 +8,7 @@
  * node qa/hellowork-reverify-pg17-rollback.mjs
  * node qa/hellowork-reverify-pg17-rollback.mjs --run
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -46,6 +46,16 @@ assert.ok(host === '' || host === 'localhost' || host === '127.0.0.1' || host ==
   'Refuse any remote PostgreSQL host');
 assert.ok(!process.env.PGDATABASE || process.env.PGDATABASE === 'hc_reverify_qa',
   'PGDATABASE must be hc_reverify_qa');
+// Execute only the exact SQL in the NEW, CLI-generated migration; testing the
+ // proposal alone could accidentally certify a different migration payload.
+ const migrationDir = resolve(root, 'supabase/migrations');
+ const newMigration = readdirSync(migrationDir).filter((name) =>
+   /^\d{14}_hc_hellowork_reverify_urgent_priority_v2\.sql$/.test(name));
+ assert.equal(newMigration.length, 1,
+   'Generate exactly one new migration with the official Supabase CLI before --run');
+ const generated = readFileSync(resolve(migrationDir, newMigration[0]), 'utf8');
+ assert.ok(generated.includes(candidate.trim()),
+   'The CLI-generated migration must include the exact reviewed SQL proposal');
 
 const sql = String.raw`
 \set ON_ERROR_STOP on
