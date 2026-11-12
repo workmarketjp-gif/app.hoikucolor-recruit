@@ -14,6 +14,8 @@ import {
 } from '../lib/documentVaultApi';
 import { getApplicationDocumentHandoffState, type ApplicationDocumentHandoffState } from '../lib/applicationJourneyApi';
 import { documentTypeLabel } from '../lib/documentTypes';
+import { boundedPrivateRead } from '../lib/privateReadDeadline';
+import { readApplicationDocumentSnapshot } from '../lib/applicationDocumentSnapshotRead';
 import { hasCanonicalApplicationAttachment, projectApplicationDocuments } from '../lib/applicationDocumentsPresentation';
 
 type DocumentSnapshot = {
@@ -61,11 +63,12 @@ export function ApplicationDocumentsSection({
     try {
       const pinned = await pinCandidateAction();
       if (!pinned || !pinned.isCurrent()) throw new Error('安全なログイン状態を確認できませんでした。');
-      const [saved, submitted, expectations] = await Promise.all([
-        listJobseekerDocuments(pinned.client),
-        listSubmittedApplicationDocuments(pinned.client, applicationId),
-        listApplicationDocumentExpectations(pinned.client, applicationId),
-      ]);
+      const { saved, submitted, expectations } = await readApplicationDocumentSnapshot({
+        loadSaved: () => listJobseekerDocuments(pinned.client),
+        loadSubmitted: () => listSubmittedApplicationDocuments(pinned.client, applicationId),
+        loadExpectations: () => listApplicationDocumentExpectations(pinned.client, applicationId),
+        isCurrent: () => alive.current && pinned.isCurrent() && version === requestVersion.current,
+      });
       projectApplicationDocuments(applicationId, saved, submitted, expectations);
       if (!alive.current || !pinned.isCurrent() || version !== requestVersion.current) return;
       setSnapshot({ saved, submitted, expectations });
@@ -116,11 +119,12 @@ export function ApplicationDocumentsSection({
           // Ambiguous transport reply: rely on canonical readback, never retry blindly.
         }
       }
-      const [saved, submitted, expectations] = await Promise.all([
-        listJobseekerDocuments(pinned.client),
-        listSubmittedApplicationDocuments(pinned.client, applicationId),
-        listApplicationDocumentExpectations(pinned.client, applicationId),
-      ]);
+      const { saved, submitted, expectations } = await readApplicationDocumentSnapshot({
+        loadSaved: () => listJobseekerDocuments(pinned.client),
+        loadSubmitted: () => listSubmittedApplicationDocuments(pinned.client, applicationId),
+        loadExpectations: () => listApplicationDocumentExpectations(pinned.client, applicationId),
+        isCurrent: () => alive.current && pinned.isCurrent() && version === requestVersion.current,
+      });
       projectApplicationDocuments(applicationId, saved, submitted, expectations);
       if (!alive.current || !pinned.isCurrent() || version !== requestVersion.current) return;
       setSnapshot({ saved, submitted, expectations });
@@ -134,7 +138,12 @@ export function ApplicationDocumentsSection({
         setError('応募書類' + uniqueTargets.length + '件のうち' + (uniqueTargets.length - confirmed.length) + '件の提出を確認できませんでした。最新の提出状況を確認してください。');
       }
       try {
-        const handoff = await getApplicationDocumentHandoffState(pinned.client, applicationId);
+        const handoff = await boundedPrivateRead(() => {
+          if (!alive.current || !pinned.isCurrent() || version !== requestVersion.current) {
+            throw new Error('閲覧状態が変わったため確認を中止しました。');
+          }
+          return getApplicationDocumentHandoffState(pinned.client, applicationId);
+        });
         if (alive.current && pinned.isCurrent() && version === requestVersion.current) onHandoffReadback(handoff);
       } catch {
         if (alive.current && pinned.isCurrent() && version === requestVersion.current) onHandoffReadback(null);
