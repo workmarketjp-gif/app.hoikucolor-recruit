@@ -121,7 +121,7 @@ VALUES
  ('00000000-0000-4000-8000-000000000008','hellowork','https://example.test/closed','G',now()-interval '90 hours',null,'active',true,now()-interval '1 hour'),
  ('00000000-0000-4000-8000-000000000009','hellowork','https://example.test/too-fresh','H',now()-interval '10 hours',null,'active',true,null);
 ` + legacyInner + String.raw`
-// Confirm this is a genuine upgrade scenario, not a clean-install test.
+-- Confirm this is a genuine upgrade scenario, not a clean-install test.
 DO $assert_legacy$
 BEGIN
  IF to_regprocedure('public.hc_hellowork_pick_reverify_batch_v1(integer)') IS NULL
