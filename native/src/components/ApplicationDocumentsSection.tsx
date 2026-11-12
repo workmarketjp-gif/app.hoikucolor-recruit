@@ -64,6 +64,8 @@ export function ApplicationDocumentsSection({
       const pinned = await pinCandidateAction();
       if (!pinned || !pinned.isCurrent()) throw new Error('安全なログイン状態を確認できませんでした。');
       const { saved, submitted, expectations } = await readApplicationDocumentSnapshot({
+        ownerId: pinned.ownerId,
+        applicationId,
         loadSaved: () => listJobseekerDocuments(pinned.client),
         loadSubmitted: () => listSubmittedApplicationDocuments(pinned.client, applicationId),
         loadExpectations: () => listApplicationDocumentExpectations(pinned.client, applicationId),
@@ -120,6 +122,8 @@ export function ApplicationDocumentsSection({
         }
       }
       const { saved, submitted, expectations } = await readApplicationDocumentSnapshot({
+        ownerId: pinned.ownerId,
+        applicationId,
         loadSaved: () => listJobseekerDocuments(pinned.client),
         loadSubmitted: () => listSubmittedApplicationDocuments(pinned.client, applicationId),
         loadExpectations: () => listApplicationDocumentExpectations(pinned.client, applicationId),

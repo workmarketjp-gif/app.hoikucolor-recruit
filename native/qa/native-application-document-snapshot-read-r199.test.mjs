@@ -8,9 +8,11 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 const valid = (override = {}) => ({
-  loadSaved: async () => [{ id: 'synthetic-owned-document' }],
-  loadSubmitted: async () => [{ id: 'synthetic-submitted-document' }],
-  loadExpectations: async () => [{ id: 'synthetic-expected-document' }],
+  ownerId: 'synthetic-candidate-A',
+  applicationId: 'synthetic-application-A',
+  loadSaved: async () => [{ id: 'synthetic-owned-document', jobseeker_clerk_user_id: 'synthetic-candidate-A' }],
+  loadSubmitted: async () => [{ id: 'synthetic-submitted-document', application_id: 'synthetic-application-A' }],
+  loadExpectations: async () => [{ id: 'synthetic-expected-document', application_id: 'synthetic-application-A' }],
   isCurrent: () => true,
   ...override,
 });
