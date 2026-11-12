@@ -129,6 +129,10 @@ BEGIN
 END
 $assert_legacy$;
 ` + inner + String.raw`
+-- Preserve the exact official verification timestamp of every synthetic job.
+-- Attempting a recheck must not masquerade as successful source verification.
+CREATE TEMP TABLE hc_verified_before AS
+  SELECT id, last_verified_at FROM public.hc_external_job_sources;
 -- Security and interface contracts: browser roles cannot execute.
 DO $assert_acl$
 BEGIN
@@ -184,6 +188,17 @@ BEGIN
  THEN RAISE EXCEPTION 'Disabled publication must yield no picker results'; END IF;
 END
 $assert_disabled$;
+-- Validate all original verification timestamps after both picker invocations.
+DO $assert_verified_unchanged$
+BEGIN
+ IF EXISTS (
+   SELECT 1 FROM public.hc_external_job_sources s
+   FULL JOIN hc_verified_before b USING (id)
+   WHERE s.id IS NULL OR b.id IS NULL
+      OR s.last_verified_at IS DISTINCT FROM b.last_verified_at
+ ) THEN RAISE EXCEPTION 'Picker changed last_verified_at or synthetic source row identity'; END IF;
+END
+$assert_verified_unchanged$;
 SELECT 'PG17_ROLLBACK_TEST_PASS' AS result;
 ROLLBACK;
 `;
