@@ -70,3 +70,29 @@ export async function loadApplicationCoreIndependentHandoff<TDetail, TMessages, 
     if (options.isCurrent()) options.onHandoff(handoff);
   });
 }
+
+/**
+ * Retry the optional document-handoff read without discarding already
+ * authorized application details, interview timeline, or verified messages.
+ * A revoked screen/session must not start or publish a candidate-private RPC.
+ * Null and transport failure both remain unverified, never "delivered".
+ */
+export async function retryApplicationDocumentStatus<T>(options: {
+  read: () => Promise<T | null>;
+  isCurrent: () => boolean;
+  onResult: (result: ApplicationChildRead<T | null>) => void;
+  timeoutMs?: number;
+}): Promise<void> {
+  const revoked = Symbol('application-document-status-revoked');
+  try {
+    const value = await boundedPrivateRead<T | null | typeof revoked>(
+      () => options.isCurrent() ? options.read() : Promise.resolve(revoked),
+      options.timeoutMs,
+    );
+    if (value !== revoked && options.isCurrent()) {
+      options.onResult({ status: 'fulfilled', value });
+    }
+  } catch {
+    if (options.isCurrent()) options.onResult({ status: 'rejected' });
+  }
+}

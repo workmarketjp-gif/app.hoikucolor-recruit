@@ -8,7 +8,7 @@ import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
 import { candidateApplicationDetailKey } from '../../lib/applicationDetailVisibility';
 import { classifyApplicationDocumentHandoff, readApplicationDocumentHandoff } from '../../lib/applicationDocumentHandoffStatus';
 import { applicationStatusLabel } from '../../lib/messageInbox';
-import { loadApplicationCoreIndependentHandoff } from '../../lib/applicationCoreIndependentHandoff';
+import { loadApplicationCoreIndependentHandoff, retryApplicationDocumentStatus } from '../../lib/applicationCoreIndependentHandoff';
 import { pinCandidateForRead } from '../../lib/pinnedCandidateRead';
 import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
 import { createApplicationDecisionGate } from '../../lib/applicationDecisionGate';
@@ -254,6 +254,7 @@ function ApplicationDetailContent() {
   const [handoffError, setHandoffError] = useState<string | null>(null);
   const generation = useRef(0);
   const documentReadRevision = useRef(0);
+  const documentStatusRetryPending = useRef(false);
   const messageSendPending = useRef(false);
   const decisionGate = useRef(createApplicationDecisionGate()).current;
   const [, setInterviewLeaseRevision] = useState(0);
@@ -340,6 +341,42 @@ function ApplicationDetailContent() {
       if (current === generation.current) setLoading(false);
     }
   }, [applicationId, pinCandidateAction]);
+
+  // A document-status retry must not discard an already verified interview,
+  // message conversation, or draft. The canonical handoff read is optional;
+  // failure is unknown, never fabricated as confirmed submission.
+  const retryDocumentStatus = async () => {
+    if (!detail || loading || documentLoading || documentStatusRetryPending.current) return;
+    documentStatusRetryPending.current = true; // synchronous double-tap guard
+    const current = generation.current;
+    const revision = ++documentReadRevision.current;
+    setDocumentLoading(true);
+    setHandoffError(null);
+    try {
+      const pinned = await pinCandidateForRead(pinCandidateAction, () =>
+        current === generation.current && revision === documentReadRevision.current);
+      await retryApplicationDocumentStatus<ApplicationDocumentHandoffState>({
+        read: () => readApplicationDocumentHandoff(
+          () => getApplicationDocumentHandoffState(pinned.client, applicationId)),
+        isCurrent: () => pinned.isCurrent() && current === generation.current &&
+          revision === documentReadRevision.current,
+        onResult: (result) => {
+          setDocumentState(result.status === 'fulfilled' ? result.value : null);
+          setHandoffError(result.status === 'rejected'
+            ? '提出書類の確認に失敗しました。再度お試しください。' : null);
+          setDocumentLoading(false);
+        },
+      });
+    } catch {
+      if (current === generation.current && revision === documentReadRevision.current) {
+        setDocumentState(null);
+        setHandoffError('提出書類の状態を確認できませんでした。再度お試しください。');
+        setDocumentLoading(false);
+      }
+    } finally {
+      documentStatusRetryPending.current = false;
+    }
+  };
 
   // When returning from a visit, interview or message thread, refresh the
   // canonical application + messages + document handoff as a single read.
@@ -728,8 +765,8 @@ function ApplicationDetailContent() {
           </Text>
           <Pressable
             style={styles.secondaryButton}
-            disabled={busy}
-            onPress={() => void (documentReadState === 'missing' ? repairDocuments() : load())}
+            disabled={busy || documentStatusRetryPending.current}
+            onPress={() => void (documentReadState === 'missing' ? repairDocuments() : retryDocumentStatus())}
           >
             <Text style={styles.secondaryText}>
               {documentReadState === 'missing' ? '提出書類を再確認・復旧' : '提出状況を再読み込み'}
