@@ -83,7 +83,9 @@ test('real ApplicationDetail TSX wires pre-write pin to all six mutation entry p
   assert.match(screen, /import \{ pinForApplicationMutation \} from '\.\.\/\.\.\/lib\/applicationMutationPin'/);
   const matches = screen.match(/await pinForApplicationMutation\(pinCandidateAction,/g) ?? [];
   assert.equal(matches.length, 6);
-  assert.equal((screen.match(/await pinCandidateAction\(\)/g) ?? []).length, 1); // read-only review
+  assert.equal((screen.match(/await pinCandidateAction\(\)/g) ?? []).length, 0); // r219 moved read-only review to bounded helper
+  assert.match(screen, /readApplicationMessageReview\(\{/);
+  assert.match(screen, /read: listApplicationMessages,/);
   assert.match(screen, /pinForApplicationMutation\(pinCandidateAction, \(\) => messageRequestGeneration === generation\.current\)/);
   assert.match(screen, /pinForApplicationMutation\(pinCandidateAction, \(\) => readGeneration === generation\.current\)/);
   for (const verb of ['respondToInterviewDurable', 'sendApplicationMessageDurable',
