@@ -18,6 +18,7 @@ import {
   type AccountDeletionRequest,
 } from '../lib/accountDeletionApi';
 import { getAccountDeletionUiPolicy } from '../lib/accountDeletionPolicy';
+import { canBeginCandidateDeletion } from '../lib/candidateDeletionConfirmation';
 import { purgeCandidatePrivateLocalState } from '../lib/candidateLocalPrivacyPurge';
 import {
   blockCandidateLocalStateSession,
@@ -41,7 +42,7 @@ type AccountDeletionContextValue = {
   lastError: string | null;
   localPurgeError: string | null;
   refresh: () => Promise<AccountDeletionRequest | null>;
-  requestDeletion: () => Promise<AccountDeletionRequest>;
+  requestDeletion: (expectedOwnerKey: string) => Promise<AccountDeletionRequest>;
   cancelDeletion: () => Promise<AccountDeletionRequest>;
   signOutSafely: () => Promise<void>;
 };
@@ -133,12 +134,14 @@ export function AccountDeletionProvider({ children }: PropsWithChildren) {
     }
   }, [applyCanonicalRequest, pinCandidateSession]);
 
-  const requestDeletion = useCallback(async () => {
+  const requestDeletion = useCallback(async (expectedOwnerKey: string) => {
     setBusy(true);
     setLastError(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('ACCOUNT_DELETION_SESSION_UNAVAILABLE');
+      if (!pinned || !canBeginCandidateDeletion(expectedOwnerKey, pinned)) {
+        throw new Error('CANDIDATE_SESSION_CHANGED');
+      }
       const next = await requestAccountDeletion(pinned.client);
       if (!pinned.isCurrent()) throw new Error('CANDIDATE_SESSION_CHANGED');
       setRequest(next);

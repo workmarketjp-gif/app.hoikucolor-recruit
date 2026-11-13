@@ -21,6 +21,7 @@ import { profileWebValidationError } from '../../lib/profileWebValidation';
 import { profilePrefectureChoices } from '../../lib/profilePrefectureOptions';
 import { ProfileStartDatePicker } from '../../components/ProfileStartDatePicker';
 import { canConfirmCandidateSignOut } from '../../lib/candidateSignOutConfirmation';
+import { canConfirmCandidateDeletion } from '../../lib/candidateDeletionConfirmation';
 import { pinCandidateProfilePrewrite, readCandidateProfileBounded, readCandidateProfileAfterWrite } from '../../lib/profileCanonicalRead';
 
 const positionOptions = ['保育士', '保育教諭', '幼稚園教諭', '保育補助', '看護師', '栄養士', '調理師', '児童指導員', '子育て支援員'];
@@ -161,11 +162,13 @@ export default function ProfileScreen() {
     ownerKey,
     privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
     deletionBusy: deletion.busy,
+    deletionCanRequest: !deletion.loading && (!deletion.request || deletion.request.status === 'cancelled'),
   });
   logoutSafetyRef.current = {
     ownerKey,
     privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
     deletionBusy: deletion.busy,
+    deletionCanRequest: !deletion.loading && (!deletion.request || deletion.request.status === 'cancelled'),
   };
   const [profile, setProfile] = useState<JobseekerProfileInput>(emptyProfile);
   const [loadedOwnerKey, setLoadedOwnerKey] = useState<string | null>(null);
@@ -407,6 +410,8 @@ export default function ProfileScreen() {
   };
 
   const confirmDeletion = () => {
+    const requestedOwnerKey = ownerKeyRef.current;
+    if (!canConfirmCandidateDeletion(requestedOwnerKey, logoutSafetyRef.current)) return;
     Alert.alert(
       'Hoiku Colorを退会しますか？',
       '応募・メッセージ・保存求人・書類などHoiku Colorの求職者データを削除対象にします。処理開始前は取り消せます。',
@@ -415,7 +420,12 @@ export default function ProfileScreen() {
         {
           text: '退会を申し込む',
           style: 'destructive',
-          onPress: () => void deletion.requestDeletion().catch(() => undefined),
+          onPress: () => {
+            // A delayed native alert must not initiate deletion for a later
+            // Clerk account/session or a locked/uncertain account state.
+            if (!canConfirmCandidateDeletion(requestedOwnerKey, logoutSafetyRef.current)) return;
+            if (requestedOwnerKey) void deletion.requestDeletion(requestedOwnerKey).catch(() => undefined);
+          },
         },
       ],
     );
