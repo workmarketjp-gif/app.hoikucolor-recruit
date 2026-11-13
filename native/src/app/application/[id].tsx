@@ -3,6 +3,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
+import { pinForApplicationMutation } from '../../lib/applicationMutationPin';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
 import { candidateApplicationDetailKey } from '../../lib/applicationDetailVisibility';
@@ -106,7 +107,7 @@ function InterviewCard({
     setBusy(true);
     setError(null);
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await pinForApplicationMutation(pinCandidateAction, stillCurrent);
       // A slow session pin may return after navigation, App Lock, or logout.
       if (!pinned || !pinned.isCurrent() || !stillCurrent()) {
         throw new Error('安全なログイン状態を確認できませんでした。');
@@ -422,7 +423,7 @@ function ApplicationDetailContent() {
     setError(null);
     setMessageSendError(null);
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await pinForApplicationMutation(pinCandidateAction, () => messageRequestGeneration === generation.current);
       if (!pinned || !pinned.isCurrent() || messageRequestGeneration !== generation.current) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
@@ -521,7 +522,7 @@ function ApplicationDetailContent() {
   const acceptCurrentOffer = async () => {
     await runDecision(async (stillCurrent) => {
       setError(null);
-      const pinned = await pinCandidateAction();
+      const pinned = await pinForApplicationMutation(pinCandidateAction, stillCurrent);
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
       if (!pinned.isCurrent() || !stillCurrent()) return;
       const next = await acceptOffer(pinned.client, applicationId, offerMessage);
@@ -539,7 +540,7 @@ function ApplicationDetailContent() {
     if (!canConfirmApplicationWithdrawal(status, offerResponse, withdrawOpen)) return;
     await runDecision(async (stillCurrent) => {
       setError(null);
-      const pinned = await pinCandidateAction();
+      const pinned = await pinForApplicationMutation(pinCandidateAction, stillCurrent);
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
       if (!pinned.isCurrent() || !stillCurrent()) return;
       if (!canConfirmApplicationWithdrawal(status, offerResponse, withdrawOpen)) return;
@@ -564,7 +565,7 @@ function ApplicationDetailContent() {
   const repairDocuments = async () => {
     await runDecision(async (stillCurrent) => {
       setHandoffError(null);
-      const pinned = await pinCandidateAction();
+      const pinned = await pinForApplicationMutation(pinCandidateAction, stillCurrent);
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
       if (!pinned.isCurrent() || !stillCurrent()) return;
       const result = await repairApplicationDocumentHandoff(pinned.client, applicationId);
@@ -611,7 +612,7 @@ function ApplicationDetailContent() {
     acknowledgingFacilityMessageRef.current = target;
     void (async () => {
       try {
-        const pinned = await pinCandidateAction();
+        const pinned = await pinForApplicationMutation(pinCandidateAction, () => readGeneration === generation.current);
         if (!pinned || !pinned.isCurrent() || readGeneration !== generation.current) return;
         // Do not mark read after a slow session pin if the bubble is now hidden.
         if (visibleCandidateFacilityMessageId({
