@@ -9,6 +9,8 @@ import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
 import { applicationStatusLabel } from '../../lib/messageInbox';
 import { messageNavigationLeaseIsCurrent } from '../../lib/messageNavigationLease';
+import { readCandidateApplicationIndex } from '../../lib/candidateApplicationIndexRead';
+import { boundedPrivateRead } from '../../lib/privateReadDeadline';
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -26,6 +28,10 @@ export default function ApplicationsScreen() {
   const [loading, setLoading] = useState(true);
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const generation = useRef(0);
+  const openRequest = useRef(0);
+  const openPending = useRef(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const [ownedOpenError, setOwnedOpenError] = useState<CandidateOwnedView<string> | null>(null);
   const privateAllowed = !privacy.shieldVisible && privacy.canAccessPrivateData();
   // Invalidate synchronously when App Lock/foreground closes. A prior result
   // must not flash on unlock before a new authorized read completes.
@@ -33,21 +39,32 @@ export default function ApplicationsScreen() {
   if (!privateAllowed) freshlyVerifiedOwner.current = null;
   const applications = readCandidateFreshlyVerifiedView(ownedApplications, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
   const error = readCandidateFreshlyVerifiedView(ownedError, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
+  const openError = readCandidateFreshlyVerifiedView(ownedOpenError, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
 
   const load = useCallback(async () => {
     const current = ++generation.current;
     freshlyVerifiedOwner.current = null;
+    openRequest.current += 1;
+    openPending.current = false;
+    setOpeningId(null);
+    setOwnedOpenError(null);
     setLoading(true);
     setOwnedApplications(null);
     setOwnedError(null);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
-      const rows = await listApplications(pinned.client);
-      if (!pinned.isCurrent() || current !== generation.current || !privacy.canAccessPrivateData()) return;
-      const verifiedOwner = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)!;
+      const verified = await readCandidateApplicationIndex({
+        pin: pinCandidateAction,
+        list: listApplications,
+        expectedOwnerKey: ownerKey,
+        resolveOwnerKey: candidateViewOwnerKey,
+        isActive: () => current === generation.current &&
+          !privacy.shieldVisible && privacy.canAccessPrivateData(),
+      });
+      if (current !== generation.current || privacy.shieldVisible ||
+          !privacy.canAccessPrivateData()) return;
+      const verifiedOwner = verified.ownerKey;
       freshlyVerifiedOwner.current = verifiedOwner;
-      setOwnedApplications({ ownerKey: verifiedOwner, value: rows });
+      setOwnedApplications({ ownerKey: verifiedOwner, value: verified.rows });
     } catch (loadError) {
       if (current === generation.current) {
         if (ownerKey && privacy.canAccessPrivateData()) {
@@ -66,6 +83,10 @@ export default function ApplicationsScreen() {
     if (!ownerKey || !privateAllowed) {
       generation.current += 1;
       freshlyVerifiedOwner.current = null;
+      openRequest.current += 1;
+      openPending.current = false;
+      setOpeningId(null);
+      setOwnedOpenError(null);
       setOwnedApplications(null);
       setOwnedError(null);
       setLoading(true);
@@ -75,12 +96,17 @@ export default function ApplicationsScreen() {
     return () => {
       generation.current += 1;
       freshlyVerifiedOwner.current = null;
+      openRequest.current += 1;
+      openPending.current = false;
+      setOpeningId(null);
+      setOwnedOpenError(null);
     };
   }, [ownerKey, privateAllowed, load]));
 
   const openApplication = async (applicationId: string) => {
-    // A session pin can resolve after blur, App Lock or a canonical list refresh.
-    // Only the current authorized row, owner AND focus generation may navigate.
+    // A session pin can outlive a tap, blur, App Lock or account replacement.
+    // Claim the navigation synchronously to prevent duplicate stack pushes.
+    if (openPending.current || loading) return;
     const startedGeneration = generation.current;
     const expectedOwnerKey = ownerKey;
     const authorizedApplicationIds = applications?.map((application) => application.id) ?? [];
@@ -95,10 +121,28 @@ export default function ApplicationsScreen() {
       privateDataAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
     });
     if (!applications || !leaseIsCurrent(expectedOwnerKey)) return;
-    const pinned = await pinCandidateAction();
-    if (!pinned?.isCurrent() ||
-        !leaseIsCurrent(candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId))) return;
-    router.push(`/application/${applicationId}` as never);
+    openPending.current = true;
+    const request = ++openRequest.current;
+    setOpeningId(applicationId);
+    setOwnedOpenError(null);
+    let navigationStarted = false;
+    try {
+      const pinned = await boundedPrivateRead(() => pinCandidateAction());
+      if (request !== openRequest.current || !pinned?.isCurrent() ||
+          !leaseIsCurrent(candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId))) return;
+      router.push(`/application/${applicationId}` as never);
+      navigationStarted = true;
+    } catch {
+      if (request === openRequest.current && leaseIsCurrent(expectedOwnerKey)) {
+        setOwnedOpenError({ ownerKey: expectedOwnerKey!, value: '応募詳細を開けませんでした。通信状態を確認してもう一度お試しください。' });
+      }
+    } finally {
+      // After successful navigation, hold the lock until blur invalidates it.
+      if (!navigationStarted && request === openRequest.current) {
+        openPending.current = false;
+        setOpeningId(null);
+      }
+    }
   };
 
   return (
@@ -108,12 +152,13 @@ export default function ApplicationsScreen() {
           <Text style={styles.title}>応募管理</Text>
           <Text style={styles.subtle}>応募後の連絡、面接、見学・体験、選考状況を確認できます。</Text>
         </View>
-        <Pressable style={styles.refresh} onPress={() => void load()} disabled={loading}>
+        <Pressable style={styles.refresh} onPress={() => void load()} disabled={loading || openingId !== null}>
           <Text style={styles.refreshText}>更新</Text>
         </Pressable>
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {openError ? <Text style={styles.error} accessibilityLiveRegion="polite">{openError}</Text> : null}
       {(loading || (applications === null && !error)) ? <ActivityIndicator /> : null}
       {!loading && !error && applications?.length === 0 ? (
         <View style={styles.empty}>
@@ -130,6 +175,8 @@ export default function ApplicationsScreen() {
           key={application.id}
           style={styles.card}
           onPress={() => void openApplication(application.id)}
+          disabled={loading || openingId !== null}
+          accessibilityState={{ disabled: loading || openingId !== null }}
           accessibilityRole="button"
           accessibilityLabel={`${application.facility_name} ${application.job_title}の応募詳細`}
         >
@@ -142,11 +189,11 @@ export default function ApplicationsScreen() {
             {[application.prefecture, application.city, application.employment_type].filter(Boolean).join(' ・ ')}
           </Text>
           <Text style={styles.meta}>応募日 {formatDate(application.applied_at)}</Text>
-          <Text style={styles.open}>詳細を開く →</Text>
+          <Text style={styles.open}>{openingId === application.id ? '詳細を開いています…' : '詳細を開く →'}</Text>
         </Pressable>
       ))}
 
-      <Pressable style={styles.secondary} onPress={() => router.push('/visits' as never)}>
+      <Pressable style={styles.secondary} disabled={openingId !== null} onPress={() => router.push('/visits' as never)}>
         <Text style={styles.secondaryText}>見学・体験の予約一覧</Text>
       </Pressable>
     </ScrollView>
