@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView } from '../src/lib/candidateViewOwner.ts';
+import { candidateViewOwnerKey, candidateApplicationViewOwnerKey, readCandidateFreshlyVerifiedView } from '../src/lib/candidateViewOwner.ts';
 
 test('private document rows belong to the same candidate and Clerk session', () => {
   const original = candidateViewOwnerKey('qa-candidate-a', 'qa-session-a');
@@ -33,10 +33,24 @@ test('Native document panel gates visible private data, uploads and signed-file 
   assert.match(source, /readCandidateFreshlyVerifiedView\(/);
   assert.match(source, /usePrivateDataQuarantine\(/);
   assert.match(source, /candidateViewOwnerKey\(pinned\.ownerId, pinned\.ownerSessionId\)/);
-  assert.match(source, /setSnapshot\(\{ ownerKey: requestedOwnerKey, value:/);
+  assert.match(source, /candidateApplicationViewOwnerKey\(ownerKey, applicationId\)/);
+  assert.match(source, /setSnapshot\(\{ ownerKey: requestedViewKey, value:/);
+  assert.match(source, /contextLease\.current\.viewKey === requestedViewKey/);
   assert.match(source, /application-documents-private-shield/);
   assert.match(source, /privacy\.canAccessPrivateData\(\)/);
   assert.doesNotMatch(source, /\bsnapshot\.(saved|submitted|expectations)\b/);
   assert.match(source, /attachJobseekerDocumentToApplication\(/);
   assert.match(source, /createAttachedApplicationDocumentSignedUrl\(/);
+});
+
+test('a stale document mutation cannot release a newly scoped pending lock', () => {
+  const source = readFileSync(new URL('../src/components/ApplicationDocumentsSection.tsx', import.meta.url), 'utf8');
+  assert.match(source, /requestVersion\.current \+= 1;[\s\S]*?mutationPending\.current = false;[\s\S]*?setPending\(null\);/);
+  assert.equal((source.match(/if \(version === requestVersion\.current\) \{\s*mutationPending\.current = false;/g) || []).length, 2);
+  assert.doesNotMatch(source, /\} finally \{\s*mutationPending\.current = false;/);
+  const owner = candidateViewOwnerKey('qa-candidate', 'qa-session');
+  const appA = candidateApplicationViewOwnerKey(owner, 'application-A');
+  const appB = candidateApplicationViewOwnerKey(owner, 'application-B');
+  assert.notEqual(appA, appB);
+  assert.equal(readCandidateFreshlyVerifiedView({ ownerKey: appA, value: [1] }, appB, true, appA), null);
 });

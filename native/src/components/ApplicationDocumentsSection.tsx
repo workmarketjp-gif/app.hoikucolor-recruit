@@ -75,7 +75,11 @@ export function ApplicationDocumentsSection({
         contextLease.current.shieldVisible === privacy.shieldVisible) return;
     contextLease.current = { viewKey, shieldVisible: privacy.shieldVisible };
     requestVersion.current += 1;
+    // Revoke the previous route/session's pending UI lock even if its
+    // network operation never settles; the version check fences later writes.
+    mutationPending.current = false;
     freshlyVerifiedOwner.current = null;
+    setPending(null);
     setSnapshot(null);
     setOpen(false);
     setLoading(false);
@@ -209,8 +213,11 @@ export function ApplicationDocumentsSection({
         setError('提出結果を確認できませんでした。重複を防ぐため応募書類を再読み込みしてください。');
       }
     } finally {
-      mutationPending.current = false;
-      if (alive.current && version === requestVersion.current) setPending(null);
+      // Never let a stale operation release the newer route's mutation lock.
+      if (version === requestVersion.current) {
+        mutationPending.current = false;
+        if (alive.current) setPending(null);
+      }
     }
   };
 
@@ -239,8 +246,11 @@ export function ApplicationDocumentsSection({
         setError(String((caught as { message?: unknown })?.message ?? '提出済み書類を開けませんでした。'));
       }
     } finally {
-      mutationPending.current = false;
-      if (alive.current && version === requestVersion.current) setPending(null);
+      // Never let a stale operation release the newer route's mutation lock.
+      if (version === requestVersion.current) {
+        mutationPending.current = false;
+        if (alive.current) setPending(null);
+      }
     }
   };
 
