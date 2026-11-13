@@ -21,6 +21,7 @@ import { profileWebValidationError } from '../../lib/profileWebValidation';
 import { profilePrefectureChoices } from '../../lib/profilePrefectureOptions';
 import { ProfileStartDatePicker } from '../../components/ProfileStartDatePicker';
 import { canConfirmCandidateSignOut } from '../../lib/candidateSignOutConfirmation';
+import { pinCandidateProfilePrewrite, readCandidateProfileBounded } from '../../lib/profileCanonicalRead';
 
 const positionOptions = ['保育士', '保育教諭', '幼稚園教諭', '保育補助', '看護師', '栄養士', '調理師', '児童指導員', '子育て支援員'];
 const employmentOptions = ['正社員', '契約社員', 'パート・アルバイト', '派遣'];
@@ -219,12 +220,13 @@ export default function ProfileScreen() {
     setHasUnsavedChanges(false);
     setLoading(true);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() ||
-          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestOwner) {
-        throw new Error('安全なログイン状態を確認できませんでした。');
-      }
-      const current = await getJobseekerProfile(pinned.client);
+      const { pinned, profile: current } = await readCandidateProfileBounded({
+        pin: pinCandidateAction,
+        load: (verified) => getJobseekerProfile(verified.client),
+        isCurrent: () => isLive(requestOwner, requestGeneration) && !privacy.shieldVisible,
+        ownsPin: (verified) =>
+          candidateViewOwnerKey(verified.ownerId, verified.ownerSessionId) === requestOwner,
+      });
       if (!pinned.isCurrent() || !isLive(requestOwner, requestGeneration)) return;
       if (current && current.clerk_user_id !== pinned.ownerId) {
         throw new Error('プロフィールの閲覧権限を確認できませんでした。');
@@ -309,10 +311,14 @@ export default function ProfileScreen() {
       };
       const invalid = profileWebValidationError(next.name, next.desired_start_date);
       if (invalid) throw new Error(invalid);
-      const pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() ||
-          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestOwner ||
-          !isLive(requestOwner, requestGeneration)) {
+      // Only pre-write token acquisition has a deadline. An upsert itself
+      // may have committed despite a network failure; never time it out.
+      const pinned = await pinCandidateProfilePrewrite(
+        pinCandidateAction,
+        () => isLive(requestOwner, requestGeneration) && !privacy.shieldVisible,
+      );
+      if (candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestOwner ||
+          !pinned.isCurrent() || !isLive(requestOwner, requestGeneration)) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
       // An interrupted upsert or its follow-up read may have committed. Never
