@@ -34,6 +34,7 @@ export default function MessagesScreen() {
   const threadOpenPending = useRef(false);
   // Lock alternate route taps synchronously, before React renders disabled UI.
   const secondaryNavigationPending = useRef(false);
+  const secondaryNavigationRequest = useRef(0);
   const [openingThread, setOpeningThread] = useState(false);
   const [navigatingSecondary, setNavigatingSecondary] = useState(false);
   const [threadOpenError, setThreadOpenError] = useState<string | null>(null);
@@ -52,6 +53,7 @@ export default function MessagesScreen() {
     threadOpenRequest.current += 1;
     threadOpenPending.current = false;
     secondaryNavigationPending.current = false;
+    secondaryNavigationRequest.current += 1;
     setOpeningThread(false);
     setNavigatingSecondary(false);
     setThreadOpenError(null);
@@ -111,6 +113,7 @@ export default function MessagesScreen() {
       threadOpenRequest.current += 1;
       threadOpenPending.current = false;
       secondaryNavigationPending.current = false;
+      secondaryNavigationRequest.current += 1;
       setOpeningThread(false);
       setNavigatingSecondary(false);
       setThreadOpenError(null);
@@ -131,6 +134,7 @@ export default function MessagesScreen() {
       threadOpenRequest.current += 1;
       threadOpenPending.current = false;
       secondaryNavigationPending.current = false;
+      secondaryNavigationRequest.current += 1;
       setOpeningThread(false);
       setNavigatingSecondary(false);
       setThreadOpenError(null);
@@ -258,6 +262,43 @@ export default function MessagesScreen() {
     }
   };
 
+
+  // The Web /messages screen keeps the Scouts destination available even if
+  // its independently loaded application index fails. Do not infer an empty
+  // index, read private scout data here, or navigate on a stale Clerk session.
+  // The destination owns its own canonical scout read and authorization.
+  const openScoutsWithoutInbox = async () => {
+    const expectedOwner = ownerKey;
+    const startedGeneration = generation.current;
+    if (!expectedOwner || !canRead || visibleApplications ||
+        threadOpenPending.current || secondaryNavigationPending.current ||
+        !privacy.canAccessPrivateData()) return;
+    secondaryNavigationPending.current = true;
+    const navigationRequest = ++secondaryNavigationRequest.current;
+    setNavigatingSecondary(true);
+    setThreadOpenError(null);
+    let navigated = false;
+    const isCurrent = () => startedGeneration === generation.current &&
+      navigationRequest === secondaryNavigationRequest.current &&
+      privacy.canAccessPrivateData();
+    try {
+      const pinned = await pinCandidateForRead(pinCandidateAction, isCurrent);
+      if (!isCurrent() || !pinned.isCurrent() ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== expectedOwner) return;
+      router.push('/scouts' as never);
+      navigated = true;
+    } catch {
+      if (isCurrent()) setThreadOpenError('スカウトを開けませんでした。通信状態を確認して、もう一度お試しください。');
+    } finally {
+      // A late completion must not unlock a newer navigation or revive a
+      // control already quarantined by blur, App Lock, or account switching.
+      if (navigationRequest === secondaryNavigationRequest.current && !navigated) {
+        secondaryNavigationPending.current = false;
+        setNavigatingSecondary(false);
+      }
+    }
+  };
+
   if (!canRead || !ownerKey) return <View style={styles.center}><ActivityIndicator color="#FF2F5F" /></View>;
   return (
     <ScrollView contentContainerStyle={styles.page}>
@@ -311,10 +352,10 @@ export default function MessagesScreen() {
           <Text style={styles.chevron}>›</Text>
         </Pressable>
       )) : null}
-      {visibleApplications && !error ? <>
+      <>
         <Text style={styles.section}>園からのスカウト</Text>
         <Pressable accessibilityRole="button" style={styles.thread} disabled={openingThread || navigatingSecondary}
-          onPress={() => navigateInboxDestination('/scouts')}>
+          onPress={() => visibleApplications && !error ? navigateInboxDestination('/scouts') : void openScoutsWithoutInbox()}>
           <View style={styles.threadBody}>
             <Text style={styles.facility}>スカウトを見る</Text>
             <Text style={styles.muted}>{inbox.pendingScouts !== null && inbox.pendingScouts > 0
@@ -323,7 +364,7 @@ export default function MessagesScreen() {
           </View>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
-      </> : null}
+      </>
     </ScrollView>
   );
 }
