@@ -1,3 +1,8 @@
+## Latest COLOR Native delta (r223, 2026-11-14 NZ) — Message inbox privacy-safe read error
+
+- Web JOBSEEKER /messages on main fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6 (synthetic application-index failure). Native /messages previously rendered raw backend/Clerk exception text. Replaced with fixed recoverable user message while preserving canonical error (not empty), retry, pinned owner/session and App Lock restrictions. See `native/docs/parity-delta-r223-message-inbox-safe-failure.md` for exact source, focused Node 6/6 PASS and both-OS NOT VERIFIED matrix.
+- Android and iOS remain IMPLEMENTING, without installed/rendered QA, official synthetic save/readback or signed handoff. Full Expo typecheck and CI/Cloudflare billing condition remain unverified. No main/PR/production/paid actions or real applicant writes.
+
 ## Latest Native delta (r218, 2026-11-14 NZ) — bounded *pre-write token pin* for application actions
 
 - **Baseline / owner:** Web JOBSEEKER /applications + /applications/:id (Web main fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6, candidate synthetic state); Native branch `native/color-jobseeker-integration-r216-20261114`, parent `0a1051984b1ab192ee70a9f93ff9ceaa6a6e8717`. Owner COLOR Native; active other PR #113 is Hello Work documentation, no same paths.

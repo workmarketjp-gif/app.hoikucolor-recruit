@@ -13,6 +13,7 @@ import { loadIndependentMessageInbox, readIndependentMessageAttention } from '..
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { messageNavigationLeaseIsCurrent } from '../lib/messageNavigationLease';
 import { canOpenVerifiedMessageInboxThread, canPreserveMessageInboxDuringManualRefresh } from '../lib/messageInboxRefreshPolicy';
+import { presentMessageInboxReadFailure } from '../lib/messageInboxFailurePresentation';
 
 /** Web /messages: only authorized application threads, with canonical unread metadata. */
 export default function MessagesScreen() {
@@ -105,7 +106,7 @@ export default function MessagesScreen() {
     } catch (error) {
       if (request === generation.current && ownerKey && privacy.canAccessPrivateData()) {
         freshlyVerifiedOwner.current = ownerKey;
-        setLoadError({ ownerKey, value: String((error as { message?: unknown })?.message ?? error) });
+        setLoadError({ ownerKey, value: presentMessageInboxReadFailure(error) });
       }
     } finally {
       // The required application list has finished. Unread counts can update
