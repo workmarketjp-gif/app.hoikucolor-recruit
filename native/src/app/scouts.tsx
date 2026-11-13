@@ -37,6 +37,7 @@ import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { readIndependentScoutSections } from '../lib/scoutIndependentSections';
 import { retryMissingScoutSections } from '../lib/scoutMissingSectionRetry';
+import { scoutRefreshTarget } from '../lib/scoutRefreshIntent';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { pinForScoutMutation } from '../lib/scoutMutationPin';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
@@ -373,6 +374,21 @@ export default function ScoutsScreen() {
     }
   };
 
+  // A successful inbox read does not verify privacy or matching preferences.
+  // Both pull-to-refresh and the explicit control must first recover any
+  // unverified section; verified preference edits must remain untouched.
+  const refreshVisiblePanels = () => {
+    const target = scoutRefreshTarget({
+      scoutsVerified,
+      privacyVerified: privacy !== null,
+      preferencesVerified,
+    });
+    if (target === 'missing-sections') {
+      return verifiedOwnerRef.current === ownerKey ? retryMissingSections() : load();
+    }
+    return refreshScouts();
+  };
+
   const pendingCount = scouts.filter((item) => item.scout_status === 'pending').length;
 
   const beginScoutWrite = (key: string): number | null => {
@@ -692,16 +708,16 @@ export default function ScoutsScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled"
-      refreshControl={<RefreshControl refreshing={refreshingScouts} onRefresh={() => void (scoutsVerified ? refreshScouts() : (verifiedOwnerRef.current === ownerKey ? retryMissingSections() : load()))} tintColor="#E9265A" colors={['#E9265A']} />}>
+      refreshControl={<RefreshControl refreshing={refreshingScouts} onRefresh={() => void refreshVisiblePanels()} tintColor="#E9265A" colors={['#E9265A']} />}>
       <View>
         <View style={styles.rowBetween}>
           <Text style={styles.title}>スカウト</Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="届いたスカウトを更新"
+            accessibilityLabel={scoutRefreshTarget({ scoutsVerified, privacyVerified: privacy !== null, preferencesVerified }) === 'missing-sections' ? '未確認のスカウト項目を再取得' : '届いたスカウトを更新'}
             accessibilityState={{ disabled: refreshingScouts || Boolean(busy) || loading }}
             disabled={refreshingScouts || Boolean(busy) || loading}
-            onPress={() => void (scoutsVerified ? refreshScouts() : (verifiedOwnerRef.current === ownerKey ? retryMissingSections() : load()))}
+            onPress={() => void refreshVisiblePanels()}
             style={styles.refreshButton}
           >
             <Text style={styles.refreshText}>{refreshingScouts ? '更新中…' : '更新'}</Text>
