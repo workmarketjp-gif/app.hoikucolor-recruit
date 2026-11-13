@@ -34,6 +34,8 @@ import { ScoutTimePicker } from '../components/ScoutTimePicker';
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
+import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
+import { readIndependentScoutSections } from '../lib/scoutIndependentSections';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import { mayShowScoutError, shouldPublishScoutRead, shouldPublishScoutInboxRefresh } from '../lib/scoutReadLease';
 import { confirmScoutBlock, confirmScoutDecision, confirmScoutOptIn } from '../lib/scoutMutationReadback';
@@ -116,6 +118,8 @@ export default function ScoutsScreen() {
     errorOwnerRef.current = null;
   }
   const [scouts, setScouts] = useState<JobseekerScout[]>([]);
+  const [scoutsVerified, setScoutsVerified] = useState(false);
+  const [preferencesVerified, setPreferencesVerified] = useState(false);
   const [privacy, setPrivacy] = useState<ScoutPrivacySettings | null>(null);
   const [preferences, setPreferences] = useState<JobseekerMatchingPreferences>(emptyJobseekerMatchingPreferences);
   const [prefecturesText, setPrefecturesText] = useState('');
@@ -151,7 +155,6 @@ export default function ScoutsScreen() {
 
   const load = useCallback(async () => {
     const current = ++generation.current;
-    // Full candidate hydration invalidates any pending inbox-only refresh.
     scoutRefreshSerialRef.current += 1;
     scoutRefreshPendingRef.current = false;
     setRefreshingScouts(false);
@@ -162,6 +165,8 @@ export default function ScoutsScreen() {
     setError(null);
     setNotice(null);
     setScouts([]);
+    setScoutsVerified(false);
+    setPreferencesVerified(false);
     setPrivacy(null);
     setBlockResults([]);
     setBlockQuery('');
@@ -169,30 +174,50 @@ export default function ScoutsScreen() {
     setBusy(null);
     searchSerialRef.current += 1;
     searchPendingRef.current = false;
+    const live = () => current === generation.current &&
+      currentOwnerRef.current === ownerKey && privateQuarantine.canAccessPrivateData();
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
-      const [nextScouts, nextPrivacy, nextPreferences] = await Promise.all([
-        listJobseekerScouts(pinned.client),
-        getScoutPrivacySettings(pinned.client),
-        getJobseekerMatchingPreferences(pinned.client),
-      ]);
+      const pinned = await pinCandidateForRead(pinCandidateAction, live);
       const verifiedOwner = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
-      if (!shouldPublishScoutRead({
+      const mayPublish = () => shouldPublishScoutRead({
         expectedOwnerKey: ownerKey,
         resolvedOwnerKey: verifiedOwner,
         requestGeneration: current,
         activeGeneration: generation.current,
         sessionCurrent: pinned.isCurrent(),
         privateAccess: privateQuarantine.canAccessPrivateData(),
-      })) return;
+      });
+      if (!mayPublish()) return;
+      // Web keeps ScoutInbox, ScoutPrivacyPanel and preferences independent:
+      // one failed section must not hide another confirmed private section.
+      const sections = await readIndependentScoutSections({
+        loadScouts: () => listJobseekerScouts(pinned.client),
+        loadPrivacy: () => getScoutPrivacySettings(pinned.client),
+        loadPreferences: () => getJobseekerMatchingPreferences(pinned.client),
+        isCurrent: mayPublish,
+      });
+      if (!sections || !mayPublish()) return;
+      const anyVerified = Object.values(sections).some((section) => section.status === 'fulfilled');
+      if (!anyVerified) throw new Error('スカウト情報を読み込めませんでした。通信状態を確認して再試行してください。');
       verifiedOwnerRef.current = verifiedOwner;
       errorOwnerRef.current = verifiedOwner;
-      setScouts(nextScouts);
-      setPrivacy(nextPrivacy);
-      hydratePreferences(nextPreferences);
+      if (sections.scouts.status === 'fulfilled') {
+        setScouts(sections.scouts.value);
+        setScoutsVerified(true);
+      }
+      if (sections.privacy.status === 'fulfilled') setPrivacy(sections.privacy.value);
+      if (sections.preferences.status === 'fulfilled') {
+        hydratePreferences(sections.preferences.value);
+        setPreferencesVerified(true);
+      }
+      const unavailable = [
+        sections.scouts.status === 'rejected' ? '届いたスカウト' : null,
+        sections.privacy.status === 'rejected' ? '公開範囲' : null,
+        sections.preferences.status === 'rejected' ? '希望条件' : null,
+      ].filter(Boolean);
+      if (unavailable.length) setError(`${unavailable.join('・')}を確認できませんでした。確認できた項目のみ表示しています。再読み込みしてください。`);
     } catch (loadError) {
-      if (current === generation.current && privateQuarantine.canAccessPrivateData()) {
+      if (live()) {
         errorOwnerRef.current = ownerKey;
         setError(String((loadError as { message?: unknown })?.message ?? loadError));
       }
@@ -232,7 +257,7 @@ export default function ScoutsScreen() {
   // refresh that never resets unsaved preference forms or privacy controls.
   const refreshScouts = async () => {
     if (!privateAllowed || verifiedOwnerRef.current !== ownerKey ||
-        loading || busy !== null || writePendingRef.current ||
+        !scoutsVerified || loading || busy !== null || writePendingRef.current ||
         searchPendingRef.current || scoutRefreshPendingRef.current) return;
     const requestSerial = ++scoutRefreshSerialRef.current;
     const requestGeneration = generation.current;
@@ -339,7 +364,7 @@ export default function ScoutsScreen() {
   };
 
   const respond = (item: JobseekerScout, decision: 'accepted' | 'declined') => {
-    if (!privateAllowed || writePendingRef.current || busy !== null ||
+    if (!privateAllowed || !scoutsVerified || writePendingRef.current || busy !== null ||
         item.scout_status !== 'pending') return;
     const accepting = decision === 'accepted';
     Alert.alert(
@@ -409,7 +434,7 @@ export default function ScoutsScreen() {
   };
 
   const searchBlocks = async () => {
-    if (!privateAllowed || verifiedOwnerRef.current !== ownerKey ||
+    if (!privateAllowed || !privacy || verifiedOwnerRef.current !== ownerKey ||
         writePendingRef.current || searchPendingRef.current ||
         scoutRefreshPendingRef.current || busy !== null) return;
     const requestedQuery = blockQuery.trim();
@@ -504,7 +529,7 @@ export default function ScoutsScreen() {
   };
 
   const savePreferences = async () => {
-    if (!privateAllowed || verifiedOwnerRef.current !== ownerKey) return;
+    if (!privateAllowed || !preferencesVerified || verifiedOwnerRef.current !== ownerKey) return;
     const validated = validateScoutNumericInput({
       monthlySalaryText,
       hourlyWageText,
@@ -588,7 +613,7 @@ export default function ScoutsScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled"
-      refreshControl={<RefreshControl refreshing={refreshingScouts} onRefresh={() => void refreshScouts()} tintColor="#E9265A" colors={['#E9265A']} />}>
+      refreshControl={<RefreshControl refreshing={refreshingScouts} onRefresh={() => void (scoutsVerified ? refreshScouts() : load())} tintColor="#E9265A" colors={['#E9265A']} />}>
       <View>
         <View style={styles.rowBetween}>
           <Text style={styles.title}>スカウト</Text>
@@ -597,7 +622,7 @@ export default function ScoutsScreen() {
             accessibilityLabel="届いたスカウトを更新"
             accessibilityState={{ disabled: refreshingScouts || Boolean(busy) || loading }}
             disabled={refreshingScouts || Boolean(busy) || loading}
-            onPress={() => void refreshScouts()}
+            onPress={() => void (scoutsVerified ? refreshScouts() : load())}
             style={styles.refreshButton}
           >
             <Text style={styles.refreshText}>{refreshingScouts ? '更新中…' : '更新'}</Text>
@@ -606,23 +631,32 @@ export default function ScoutsScreen() {
         <Text style={styles.bodyMuted}>園へ個人情報を出す前に、匿名でお誘いを受け取れます。</Text>
       </View>
 
-      {safeError ? <Text style={styles.error}>{safeError}</Text> : null}
+      {safeError ? <View style={{ gap: 8 }}>
+        <Text style={styles.error}>{safeError}</Text>
+        <Pressable accessibilityRole="button" style={styles.secondaryButtonWide}
+          disabled={Boolean(busy) || refreshingScouts}
+          onPress={() => void load()}>
+          <Text style={styles.secondaryText}>全項目を再読み込み（未保存の入力は消えます）</Text>
+        </Pressable>
+      </View> : null}
       {scoutRefreshError ? <Text style={styles.error} accessibilityLiveRegion="polite">{scoutRefreshError}</Text> : null}
       {notice ? <Text style={styles.success}>{notice}</Text> : null}
-      {focusedScoutId && !loading && !focusedScout ? (
+      {focusedScoutId && scoutsVerified && !loading && !focusedScout ? (
         <Text style={styles.error}>指定されたスカウトは現在のアカウントで確認できません。</Text>
       ) : null}
 
       <View style={styles.card}>
         <View style={styles.rowBetween}>
           <Text style={styles.sectionTitle}>届いた匿名スカウト</Text>
-          <Text style={styles.count}>回答待ち {pendingCount}件</Text>
+          {scoutsVerified ? <Text style={styles.count}>回答待ち {pendingCount}件</Text> : null}
         </View>
         <View style={styles.infoBox}>
           <Text style={styles.infoStrong}>本人情報の共有はあなたが決めます</Text>
           <Text style={styles.bodyMuted}>承諾するまで氏名・メール・電話番号は開示されません。</Text>
         </View>
-        {scouts.length === 0 ? (
+        {!scoutsVerified ? (
+          <Text style={styles.error}>届いたスカウトを確認できませんでした。更新して再確認してください。</Text>
+        ) : scouts.length === 0 ? (
           <Text style={styles.bodyMuted}>スカウトはまだ届いていません。下の設定をONにすると、希望条件や保育観を見た園からお誘いが届くことがあります。</Text>
         ) : orderedScouts.map((item) => (
           <View key={item.scout_id} style={[styles.innerCard, item.scout_id === focusedScoutId && styles.targetCard]}>
@@ -712,7 +746,7 @@ export default function ScoutsScreen() {
         </View>
       ) : null}
 
-      <View style={styles.card}>
+      {preferencesVerified ? <View style={styles.card}>
         <View style={styles.rowBetween}>
           <Text style={styles.sectionTitle}>詳しい希望条件・保育観</Text>
           <Text style={styles.count}>入力度 {completion}%</Text>
@@ -758,7 +792,7 @@ export default function ScoutsScreen() {
         <Pressable style={styles.primaryButtonWide} disabled={Boolean(busy)} onPress={() => void savePreferences()}>
           <Text style={styles.primaryText}>{busy === 'preferences' ? '保存中…' : '詳しい希望条件を保存'}</Text>
         </Pressable>
-      </View>
+      </View> : null}
     </ScrollView>
   );
 }
