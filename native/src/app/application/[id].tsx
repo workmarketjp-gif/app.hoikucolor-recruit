@@ -17,7 +17,7 @@ import { createApplicationDecisionGate } from '../../lib/applicationDecisionGate
 import { applicationDecisionDisclosure, canConfirmApplicationWithdrawal, isFreshApplicationWithdrawal } from '../../lib/applicationDecisionDisclosure';
 import { applicationSelectionTimeline, webNextScheduledInterview } from '../../lib/applicationSelectionTimeline';
 import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
-import { canSubmitCandidateMessage, confirmedUncertainCandidateMessage, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
+import { canSubmitCandidateMessage, classifyUncertainCandidateMessageReview, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
 import { markVisibleApplicationMessagesRead } from '../../lib/attentionApi';
 import { visibleCandidateFacilityMessageId, type CandidateMessageReadViewport } from '../../lib/candidateMessageReadVisibility';
 import { focusedApplicationMessagesOffset } from '../../lib/focusedApplicationMessages';
@@ -512,7 +512,16 @@ function ApplicationDetailContent() {
       setMessages(nextMessages);
       setMessagesLoading(false);
       setMessagesReadError(false);
-      if (review && confirmedUncertainCandidateMessage(review.submittedDraft, review.knownMessageIds, nextMessages)) {
+      const reviewStatus = classifyUncertainCandidateMessageReview(review, nextMessages);
+      if (reviewStatus === 'unverified') {
+        // A successful list read is not proof of failed delivery: never unlock
+        // the composer just because an eventually consistent thread is empty.
+        // Keep the same candidate/session/application review record and draft.
+        setMessageSendNeedsReview(true);
+        setMessageSendError('最新のメッセージを取得しましたが、この送信の完了は確認できませんでした。重複送信を防ぐため、時間をおいてもう一度確認してください。');
+        return;
+      }
+      if (reviewStatus === 'confirmed' && review) {
         setMessageDraft((current) => draftAfterConfirmedMessageSend(current, review.submittedDraft));
       }
       uncertainMessageRef.current = null;
