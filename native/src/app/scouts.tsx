@@ -40,6 +40,7 @@ import { retryMissingScoutSections } from '../lib/scoutMissingSectionRetry';
 import { scoutRefreshTarget } from '../lib/scoutRefreshIntent';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { pinForScoutMutation } from '../lib/scoutMutationPin';
+import { requireCurrentPendingScout } from '../lib/scoutDecisionPrewrite';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import { mayShowScoutError, shouldPublishScoutRead, shouldPublishScoutInboxRefresh } from '../lib/scoutReadLease';
 import { confirmScoutBlock, confirmScoutDecision, confirmScoutOptIn } from '../lib/scoutMutationReadback';
@@ -477,11 +478,29 @@ export default function ScoutsScreen() {
             if (serial === null) return;
             const owner = ownerKey;
             const readGeneration = generation.current;
+            let responseRpcStarted = false;
             try {
               const pinned = await pinForWrite(serial, owner, readGeneration);
               if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
                 throw new Error('安全なログイン状態を確認できませんでした。');
               }
+              // The confirmation alert may be stale. Read the exact offer with
+              // the same pinned account BEFORE any RPC that could disclose PII.
+              const freshOffers = await boundedPrivateRead(() => listJobseekerScouts(pinned.client));
+              if (!mayPublishScoutWrite(pinned, serial, owner, readGeneration)) return;
+              try {
+                requireCurrentPendingScout(freshOffers, item, Date.now());
+              } catch (staleOffer) {
+                // This is verified canonical data; do not send the stale answer.
+                setScouts([...freshOffers]);
+                setScoutsVerified(true);
+                setError(staleOffer instanceof Error
+                  ? staleOffer.message
+                  : 'スカウト内容が変わりました。再確認してください。');
+                return;
+              }
+              if (!mayPublishScoutWrite(pinned, serial, owner, readGeneration)) return;
+              responseRpcStarted = true;
               const status = await respondToJobseekerScout(pinned.client, item.scout_id, decision);
               if (status !== decision) throw new Error('スカウト回答の結果が一致しません。');
               // Re-read with the SAME pinned candidate token. Never manufacture
@@ -494,7 +513,18 @@ export default function ScoutsScreen() {
                 ? `${item.facility_name}からのスカウトを承諾しました。`
                 : `${item.facility_name}からのスカウトを辞退しました。`);
             } catch {
-              failScoutWrite(serial, owner, readGeneration);
+              if (responseRpcStarted) {
+                // The server may have processed this response. Never retry it blindly.
+                failScoutWrite(serial, owner, readGeneration);
+              } else if (serial === writeSerialRef.current &&
+                         owner === currentOwnerRef.current &&
+                         readGeneration === generation.current &&
+                         privateQuarantine.canAccessPrivateData()) {
+                // No response RPC was issued: keep other verified panels intact.
+                // Hide stale Scout buttons until a canonical retry succeeds.
+                setScoutsVerified(false);
+                setError('回答前の最新スカウト情報を確認できませんでした。更新してから回答してください。');
+              }
             } finally {
               finishScoutWrite(serial);
             }
