@@ -9,6 +9,8 @@ import { getJobseekerAttentionSummary, type JobseekerAttentionSummary } from '..
 import { listApplications, type JobseekerApplicationSummary } from '../lib/applicationJourneyApi';
 import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import { buildMessageInbox } from '../lib/messageInbox';
+import { loadIndependentMessageInbox } from '../lib/messageInboxIndependentLoad';
+import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { messageNavigationLeaseIsCurrent } from '../lib/messageNavigationLease';
 
 /** Web /messages: only authorized application threads, with canonical unread metadata. */
@@ -25,13 +27,28 @@ export default function MessagesScreen() {
   const [attentionFailed, setAttentionFailed] = useState<CandidateOwnedView<boolean> | null>(null);
   const [loading, setLoading] = useState(true);
   const generation = useRef(0);
+  const threadOpenRequest = useRef(0);
+  const threadOpenPending = useRef(false);
+  // Lock alternate route taps synchronously, before React renders disabled UI.
+  const secondaryNavigationPending = useRef(false);
+  const [openingThread, setOpeningThread] = useState(false);
+  const [navigatingSecondary, setNavigatingSecondary] = useState(false);
+  const [threadOpenError, setThreadOpenError] = useState<string | null>(null);
   // Cached threads need a fresh canonical read after App Lock, even for the same session.
   const freshlyVerifiedOwner = useRef<string | null>(null);
   const canRead = !privacy.shieldVisible && privacy.canAccessPrivateData();
   if (!canRead) freshlyVerifiedOwner.current = null;
 
   const load = useCallback(async () => {
+    if (secondaryNavigationPending.current) return;
     const request = ++generation.current;
+    // A refresh supersedes a pending thread navigation, including its token pin.
+    threadOpenRequest.current += 1;
+    threadOpenPending.current = false;
+    secondaryNavigationPending.current = false;
+    setOpeningThread(false);
+    setNavigatingSecondary(false);
+    setThreadOpenError(null);
     freshlyVerifiedOwner.current = null;
     setApplications(null);
     setAttention(null);
@@ -39,30 +56,38 @@ export default function MessagesScreen() {
     setAttentionFailed(null);
     setLoading(true);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned || !pinned.isCurrent()) throw new Error('ログイン状態を確認できませんでした。');
+      const pinned = await pinCandidateForRead(pinCandidateAction, () =>
+        request === generation.current && privacy.canAccessPrivateData());
       const requestOwner = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
-      if (!requestOwner) throw new Error('ログイン状態を確認できませんでした。');
-      const [applicationsRead, attentionRead] = await Promise.allSettled([
-        listApplications(pinned.client),
-        getJobseekerAttentionSummary(pinned.client),
-      ]);
-      if (request !== generation.current || !pinned.isCurrent() || !privacy.canAccessPrivateData()) return;
-      if (applicationsRead.status === 'rejected') throw applicationsRead.reason;
-      freshlyVerifiedOwner.current = requestOwner;
-      setApplications({ ownerKey: requestOwner, value: applicationsRead.value });
-      if (attentionRead.status === 'fulfilled') {
-        setAttention({ ownerKey: requestOwner, value: attentionRead.value });
-      } else {
-        // Do not infer 0 unread or 0 scouts from a failed authoritative read.
-        setAttentionFailed({ ownerKey: requestOwner, value: true });
-      }
+      if (!requestOwner || requestOwner !== ownerKey) throw new Error('ログイン状態を確認できませんでした。');
+      // The Web thread index can render before the optional unread summary.
+      // A slow summary must not block authorized application conversations.
+      await loadIndependentMessageInbox({
+        loadApplications: () => listApplications(pinned.client),
+        loadAttention: () => getJobseekerAttentionSummary(pinned.client),
+        isCurrent: () => request === generation.current && pinned.isCurrent() &&
+          requestOwner === ownerKey && privacy.canAccessPrivateData(),
+        onApplications: (verified) => {
+          freshlyVerifiedOwner.current = requestOwner;
+          setApplications({ ownerKey: requestOwner, value: verified });
+        },
+        onAttention: (result) => {
+          if (result.status === 'fulfilled') {
+            setAttention({ ownerKey: requestOwner, value: result.value });
+          } else {
+            // A failed canonical attention read remains unknown, never 0.
+            setAttentionFailed({ ownerKey: requestOwner, value: true });
+          }
+        },
+      });
     } catch (error) {
       if (request === generation.current && ownerKey && privacy.canAccessPrivateData()) {
         freshlyVerifiedOwner.current = ownerKey;
         setLoadError({ ownerKey, value: String((error as { message?: unknown })?.message ?? error) });
       }
     } finally {
+      // The required application list has finished. Unread counts can update
+      // independently after this, without disabling navigation or refresh.
       if (request === generation.current) setLoading(false);
     }
   }, [pinCandidateAction, ownerKey, privacy.canAccessPrivateData]);
@@ -73,6 +98,12 @@ export default function MessagesScreen() {
   useFocusEffect(useCallback(() => {
     if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
       generation.current += 1;
+      threadOpenRequest.current += 1;
+      threadOpenPending.current = false;
+      secondaryNavigationPending.current = false;
+      setOpeningThread(false);
+      setNavigatingSecondary(false);
+      setThreadOpenError(null);
       freshlyVerifiedOwner.current = null;
       setApplications(null);
       setAttention(null);
@@ -84,6 +115,12 @@ export default function MessagesScreen() {
     void load();
     return () => {
       generation.current += 1;
+      threadOpenRequest.current += 1;
+      threadOpenPending.current = false;
+      secondaryNavigationPending.current = false;
+      setOpeningThread(false);
+      setNavigatingSecondary(false);
+      setThreadOpenError(null);
       freshlyVerifiedOwner.current = null;
     };
   }, [ownerKey, privacy.shieldVisible, privacy.canAccessPrivateData, load]));
@@ -110,11 +147,58 @@ export default function MessagesScreen() {
       currentGeneration: generation.current,
       privateDataAllowed: privacy.canAccessPrivateData(),
     });
-    if (!visibleApplications || !leaseIsCurrent(expectedOwnerKey)) return;
-    const pinned = await pinCandidateAction();
-    if (!pinned?.isCurrent() ||
-        !leaseIsCurrent(candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId))) return;
-    router.push(`/application/${applicationId}?focus=messages` as never);
+    if (!visibleApplications || !leaseIsCurrent(expectedOwnerKey) ||
+        threadOpenPending.current || secondaryNavigationPending.current) return;
+    // Ref-backed single flight also guards two taps in the same React frame.
+    threadOpenPending.current = true;
+    const openingRequest = ++threadOpenRequest.current;
+    setOpeningThread(true);
+    setThreadOpenError(null);
+    let navigated = false;
+    try {
+      // The screen/session lease is rechecked at the actual Clerk token launch.
+      // This read-only navigation pin has a deadline; it never sends a message.
+      const pinned = await pinCandidateForRead(pinCandidateAction, () =>
+        leaseIsCurrent(expectedOwnerKey));
+      if (!leaseIsCurrent(candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId))) return;
+      router.push(`/application/${applicationId}?focus=messages` as never);
+      navigated = true;
+    } catch {
+      if (openingRequest === threadOpenRequest.current && leaseIsCurrent(expectedOwnerKey)) {
+        setThreadOpenError('メッセージを開けませんでした。通信状態を確認して、もう一度お試しください。');
+      }
+    } finally {
+      // Keep the gate closed during successful navigation until this screen blurs.
+      if (openingRequest === threadOpenRequest.current && !navigated) {
+        threadOpenPending.current = false;
+        setOpeningThread(false);
+      }
+    }
+  };
+
+  // These alternate inbox destinations must not race an in-flight private
+  // thread pin. In the same React frame openingThread may still be false,
+  // so use the ref-backed lease rather than relying only on disabled styling.
+  const navigateInboxDestination = (destination: '/(tabs)/jobs' | '/scouts') => {
+    // The visible list and ownerKey were captured at render. A blur, refresh,
+    // App Lock or account replacement may have revoked that view before a
+    // queued Pressable callback executes. Require the live verified owner.
+    if (threadOpenPending.current || secondaryNavigationPending.current || !ownerKey || !canRead ||
+        !visibleApplications || freshlyVerifiedOwner.current !== ownerKey ||
+        !privacy.canAccessPrivateData()) return;
+    // Separate from threadOpenPending: this is not a message-token operation.
+    // Retain the gate until blur, so same-frame taps cannot push two routes.
+    secondaryNavigationPending.current = true;
+    setNavigatingSecondary(true);
+    setThreadOpenError(null);
+    try {
+      router.push(destination as never);
+    } catch {
+      // A synchronous router error must not masquerade as successful navigation.
+      secondaryNavigationPending.current = false;
+      setNavigatingSecondary(false);
+      setThreadOpenError('画面を開けませんでした。もう一度お試しください。');
+    }
   };
 
   if (!canRead || !ownerKey) return <View style={styles.center}><ActivityIndicator color="#FF2F5F" /></View>;
@@ -122,7 +206,7 @@ export default function MessagesScreen() {
     <ScrollView contentContainerStyle={styles.page}>
       <View style={styles.header}>
         <Text style={styles.title}>メッセージ</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="メッセージを更新" onPress={() => void load()} disabled={loading}>
+        <Pressable accessibilityRole="button" accessibilityLabel="メッセージを更新" onPress={() => void load()} disabled={loading || navigatingSecondary}>
           <Text style={styles.refresh}>更新</Text>
         </Pressable>
       </View>
@@ -131,9 +215,12 @@ export default function MessagesScreen() {
         <Text style={styles.error}>{error}</Text>
         <Pressable accessibilityRole="button" style={styles.outline} onPress={() => void load()}><Text style={styles.action}>再試行</Text></Pressable>
       </View> : null}
+      {openingThread ? <Text accessibilityLiveRegion="polite" style={styles.muted}>メッセージを開いています…</Text> : null}
+      {navigatingSecondary ? <Text accessibilityLiveRegion="polite" style={styles.muted}>画面を開いています…</Text> : null}
+      {threadOpenError ? <Text accessibilityLiveRegion="polite" style={styles.error}>{threadOpenError}</Text> : null}
       {warning ? <Text style={styles.warning}>新着メッセージの件数を確認できませんでした。更新してご確認ください。</Text> : null}
       {visibleApplications && !error && inbox.unreadCount !== null && inbox.unreadCount > 0 && inbox.newestApplicationId ? (
-        <Pressable accessibilityRole="button" style={styles.highlight} onPress={() => void openThread(inbox.newestApplicationId!)}>
+        <Pressable accessibilityRole="button" style={styles.highlight} disabled={openingThread || navigatingSecondary} onPress={() => void openThread(inbox.newestApplicationId!)}>
           <Text style={styles.highlightText}>新着メッセージを読む</Text>
           <Text style={styles.highlightText}>{inbox.unreadCount}件 ›</Text>
         </Pressable>
@@ -143,14 +230,15 @@ export default function MessagesScreen() {
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>メッセージはまだありません</Text>
           <Text style={styles.muted}>応募すると、園とのやりとりがここに表示されます。</Text>
-          <Pressable accessibilityRole="button" style={styles.outline} onPress={() => router.push('/(tabs)/jobs')}>
+          <Pressable accessibilityRole="button" style={styles.outline} disabled={openingThread || navigatingSecondary}
+            onPress={() => navigateInboxDestination('/(tabs)/jobs')}>
             <Text style={styles.action}>求人を探す</Text>
           </Pressable>
         </View>
       ) : null}
       {visibleApplications && !error ? inbox.rows.map((row) => (
         <Pressable key={row.applicationId} accessibilityRole="button" accessibilityLabel={`${row.facilityName}のメッセージを開く`}
-          style={styles.thread} onPress={() => void openThread(row.applicationId)}>
+          style={styles.thread} disabled={openingThread || navigatingSecondary} onPress={() => void openThread(row.applicationId)}>
           <View style={styles.threadBody}>
             <Text style={styles.facility}>{row.facilityName}</Text>
             <Text style={styles.muted}>{row.jobTitle} ・ {row.statusLabel}</Text>
@@ -161,7 +249,8 @@ export default function MessagesScreen() {
       )) : null}
       {visibleApplications && !error ? <>
         <Text style={styles.section}>園からのスカウト</Text>
-        <Pressable accessibilityRole="button" style={styles.thread} onPress={() => router.push('/scouts' as never)}>
+        <Pressable accessibilityRole="button" style={styles.thread} disabled={openingThread || navigatingSecondary}
+          onPress={() => navigateInboxDestination('/scouts')}>
           <View style={styles.threadBody}>
             <Text style={styles.facility}>スカウトを見る</Text>
             <Text style={styles.muted}>{inbox.pendingScouts !== null && inbox.pendingScouts > 0

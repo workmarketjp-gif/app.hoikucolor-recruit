@@ -41,6 +41,14 @@ export function verifiedScoutPrivacy<T>(data: unknown): T {
       !Array.isArray(data.manual_blocks) || !Array.isArray(data.automatic_blocks)) {
     throw invalidPrivacy();
   }
+  // The candidate-facing screen promises no identity disclosure before
+  // an explicit acceptance. If the canonical RPC says otherwise, block the
+  // entire private settings view instead of displaying a false guarantee.
+  // This is a response-consistency gate, not proof that server disclosure
+  // is actually protected; backend authorization remains authoritative.
+  if (data.identity_fields_shared_before_consent !== false) {
+    throw new Error('承諾前の本人情報の非公開を確認できません。スカウト設定を表示できません。');
+  }
   for (const [field, source] of [
     ['manual_blocks', 'manual'], ['automatic_blocks', 'current_employer'],
   ] as const) {
