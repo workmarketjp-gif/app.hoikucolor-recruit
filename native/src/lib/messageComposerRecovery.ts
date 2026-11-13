@@ -39,3 +39,18 @@ export function confirmedUncertainCandidateMessage(
     typeof message.id === 'string' && message.id.length > 0 &&
     !known.has(message.id) && message.sender_role === 'jobseeker' && message.body === body);
 }
+
+/**
+ * A successful message-list read does not establish that an ambiguous write
+ * failed. An empty list or an old identical-body message must never unlock
+ * Send. Only positive canonical evidence can clear the pending-send warning.
+ */
+export function classifyUncertainCandidateMessageReview(
+  pending: Readonly<{ submittedDraft: string; knownMessageIds: readonly string[] }> | null,
+  freshlyReadMessages: readonly Readonly<{ id: string; sender_role: string; body: string }>[],
+): 'none' | 'confirmed' | 'unverified' {
+  if (!pending) return 'none';
+  return confirmedUncertainCandidateMessage(pending.submittedDraft, pending.knownMessageIds, freshlyReadMessages)
+    ? 'confirmed'
+    : 'unverified';
+}
