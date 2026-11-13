@@ -26,11 +26,24 @@ test('organization search timeout is an error, never a fabricated empty result',
 
 test('hanging candidate pin also times out before read-only lookup launches', async () => {
   let queried = 0;
-  await assert.rejects(
-    boundedPrivateRead(() => new Promise(() => {}), 12),
-    /タイムアウト/,
-  );
+  const lookup = async () => {
+    const pinned = await boundedPrivateRead(() => new Promise(() => {}), 12);
+    return boundedPrivateRead(() => { queried += 1; return Promise.resolve([pinned]); }, 12);
+  };
+  await assert.rejects(lookup(), /タイムアウト/);
   assert.equal(queried, 0);
+});
+
+test('explicit manual retry is possible after a failed read, with no automatic retry', async () => {
+  let calls = 0;
+  const load = () => {
+    calls += 1;
+    return calls === 1 ? new Promise(() => {}) : Promise.resolve([{ scout_id: 'synthetic-fresh' }]);
+  };
+  await assert.rejects(boundedPrivateRead(load, 15), /タイムアウト/);
+  assert.equal(calls, 1);
+  assert.deepEqual(await boundedPrivateRead(load, 100), [{ scout_id: 'synthetic-fresh' }]);
+  assert.equal(calls, 2);
 });
 
 test('an RPC rejection stays an error and never becomes zero matches', async () => {
