@@ -12,7 +12,7 @@ import { buildMessageInbox } from '../lib/messageInbox';
 import { loadIndependentMessageInbox, readIndependentMessageAttention } from '../lib/messageInboxIndependentLoad';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { messageNavigationLeaseIsCurrent } from '../lib/messageNavigationLease';
-import { canOpenVerifiedMessageInboxThread, canPreserveMessageInboxDuringManualRefresh } from '../lib/messageInboxRefreshPolicy';
+import { canOpenVerifiedMessageInboxThread, canPreserveMessageInboxDuringManualRefresh, canStartMessageInboxRefresh } from '../lib/messageInboxRefreshPolicy';
 import { presentMessageInboxReadFailure } from '../lib/messageInboxFailurePresentation';
 
 /** Web /messages: only authorized application threads, with canonical unread metadata. */
@@ -47,7 +47,11 @@ export default function MessagesScreen() {
   if (!canRead) freshlyVerifiedOwner.current = null;
 
   const load = useCallback(async (manual = false) => {
-    if (secondaryNavigationPending.current || threadOpenPending.current) return;
+    if (!canStartMessageInboxRefresh({
+      refreshPending: inboxRefreshPending.current,
+      threadOpenPending: threadOpenPending.current,
+      secondaryNavigationPending: secondaryNavigationPending.current,
+    })) return;
     const keepVerifiedRows = canPreserveMessageInboxDuringManualRefresh({
       manual, expectedOwnerKey: ownerKey,
       lastVerifiedOwnerKey: freshlyVerifiedOwner.current,

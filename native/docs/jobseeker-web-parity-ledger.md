@@ -1,3 +1,8 @@
+## Latest COLOR Native delta (r224, 2026-11-14 NZ) — Message inbox same-frame refresh guard
+
+- Web `/messages` main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, synthetic same-session rapid refresh; Native parent `889b04ed3daea0cc470814bf1271b461f219843a`. Duplicate taps could initiate redundant candidate-private Clerk/index reads before React loading-state render. A synchronous ref-backed entry guard now prevents overlapping refresh/navigation without altering canonical APIs, authorization, or intentional manual retries.
+- **Scoped Node 6/6 PASS** on real helper with r222 regression; helper-only strict TypeScript PASS; screen source hookup checked. Full Expo SDK, Android/iOS installed UI, real API readback and signed builds NOT VERIFIED. Both OS **IMPLEMENTING**. Detailed matrix: `native/docs/parity-delta-r224-message-inbox-refresh-single-flight.md`. No PR/main, paid Actions/EAS or production.
+
 ## Latest COLOR Native delta (r223, 2026-11-14 NZ) — Message inbox privacy-safe read error
 
 - Web JOBSEEKER /messages on main fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6 (synthetic application-index failure). Native /messages previously rendered raw backend/Clerk exception text. Replaced with fixed recoverable user message while preserving canonical error (not empty), retry, pinned owner/session and App Lock restrictions. See `native/docs/parity-delta-r223-message-inbox-safe-failure.md` for exact source, focused Node 6/6 PASS and both-OS NOT VERIFIED matrix.
