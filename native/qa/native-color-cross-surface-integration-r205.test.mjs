@@ -11,7 +11,7 @@ test('the authentic messages screen imports the materialized independent inbox h
   // No fabricated JSX runner: this is an explicit source-link check, not a render claim.
   assert.equal(existsSync(new URL('../src/lib/messageInboxIndependentLoad.ts', import.meta.url)), true);
   const inbox = readFileSync(inboxPath, 'utf8');
-  assert.match(inbox, /import \{ loadIndependentMessageInbox \} from '\.\.\/lib\/messageInboxIndependentLoad';/);
+  assert.match(inbox, /import \{ loadIndependentMessageInbox(?:, readIndependentMessageAttention)? \} from '\.\.\/lib\/messageInboxIndependentLoad';/);
   assert.match(inbox, /await loadIndependentMessageInbox\(/);
 
 });

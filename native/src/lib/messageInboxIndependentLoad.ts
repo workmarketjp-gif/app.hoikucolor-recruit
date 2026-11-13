@@ -14,6 +14,32 @@ export type MessageInboxAttentionResult<T> =
   | Readonly<{ status: 'fulfilled'; value: T }>
   | Readonly<{ status: 'rejected' }>;
 
+/**
+ * Retry just the optional unread/scout attention RPC once the authoritative
+ * application index has already been confirmed. A failed summary stays
+ * unknown, and neither a revocation nor a pending token request can publish
+ * a result for another account. No automatic retry or application re-read.
+ */
+export async function readIndependentMessageAttention<TAttention>(options: {
+  loadAttention: () => Promise<TAttention>;
+  isCurrent: () => boolean;
+  timeoutMs?: number;
+  onAttention: (result: MessageInboxAttentionResult<TAttention>) => void;
+}): Promise<void> {
+  if (!options.isCurrent()) return;
+  let result: MessageInboxAttentionResult<TAttention>;
+  try {
+    const value = await boundedPrivateRead(() => {
+      if (!options.isCurrent()) throw new Error('閲覧状態が変わったため読み込みを中止しました。');
+      return options.loadAttention();
+    }, options.timeoutMs);
+    result = { status: 'fulfilled', value };
+  } catch {
+    result = { status: 'rejected' };
+  }
+  if (options.isCurrent()) options.onAttention(result);
+}
+
 export async function loadIndependentMessageInbox<TApplications, TAttention>(options: {
   loadApplications: () => Promise<TApplications>;
   loadAttention: () => Promise<TAttention>;
@@ -26,10 +52,6 @@ export async function loadIndependentMessageInbox<TApplications, TAttention>(opt
   // Check at *network launch* as well as publication. boundedPrivateRead
   // schedules the callback in a microtask; App Lock/account replacement can
   // revoke the lease after the loader is called but before that callback runs.
-  const requireCurrent = () => {
-    if (!options.isCurrent()) throw new Error('閲覧状態が変わったため読み込みを中止しました。');
-  };
-
   const skippedBeforeLaunch = Symbol('inbox-read-revoked');
 
   // A rejection propagates to the screen's existing error branch. No attention
@@ -45,14 +67,10 @@ export async function loadIndependentMessageInbox<TApplications, TAttention>(opt
   // Explicitly defer the optional RPC. This allows the application list to
   // render immediately; guard at start AND publication for App Lock / signout.
   // Consume request errors, distinguishing unavailable summary from zero.
-  void Promise.resolve().then(async () => {
-    if (!options.isCurrent()) return;
-    let result: MessageInboxAttentionResult<TAttention>;
-    try {
-      result = { status: 'fulfilled', value: await boundedPrivateRead(() => { requireCurrent(); return options.loadAttention(); }, options.timeoutMs) };
-    } catch {
-      result = { status: 'rejected' };
-    }
-    if (options.isCurrent()) options.onAttention(result);
-  });
+  void Promise.resolve().then(() => readIndependentMessageAttention({
+    loadAttention: options.loadAttention,
+    isCurrent: options.isCurrent,
+    timeoutMs: options.timeoutMs,
+    onAttention: options.onAttention,
+  }));
 }

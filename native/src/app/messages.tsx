@@ -9,7 +9,7 @@ import { getJobseekerAttentionSummary, type JobseekerAttentionSummary } from '..
 import { listApplications, type JobseekerApplicationSummary } from '../lib/applicationJourneyApi';
 import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import { buildMessageInbox } from '../lib/messageInbox';
-import { loadIndependentMessageInbox } from '../lib/messageInboxIndependentLoad';
+import { loadIndependentMessageInbox, readIndependentMessageAttention } from '../lib/messageInboxIndependentLoad';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { messageNavigationLeaseIsCurrent } from '../lib/messageNavigationLease';
 
@@ -27,6 +27,9 @@ export default function MessagesScreen() {
   const [attentionFailed, setAttentionFailed] = useState<CandidateOwnedView<boolean> | null>(null);
   const [loading, setLoading] = useState(true);
   const generation = useRef(0);
+  const attentionReadRequest = useRef(0);
+  const attentionRetryPending = useRef(false);
+  const [attentionRetrying, setAttentionRetrying] = useState(false);
   const threadOpenRequest = useRef(0);
   const threadOpenPending = useRef(false);
   // Lock alternate route taps synchronously, before React renders disabled UI.
@@ -42,6 +45,9 @@ export default function MessagesScreen() {
   const load = useCallback(async () => {
     if (secondaryNavigationPending.current) return;
     const request = ++generation.current;
+    const attentionRequest = ++attentionReadRequest.current;
+    attentionRetryPending.current = false;
+    setAttentionRetrying(false);
     // A refresh supersedes a pending thread navigation, including its token pin.
     threadOpenRequest.current += 1;
     threadOpenPending.current = false;
@@ -72,6 +78,7 @@ export default function MessagesScreen() {
           setApplications({ ownerKey: requestOwner, value: verified });
         },
         onAttention: (result) => {
+          if (attentionRequest !== attentionReadRequest.current) return;
           if (result.status === 'fulfilled') {
             setAttention({ ownerKey: requestOwner, value: result.value });
           } else {
@@ -98,6 +105,9 @@ export default function MessagesScreen() {
   useFocusEffect(useCallback(() => {
     if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
       generation.current += 1;
+      attentionReadRequest.current += 1;
+      attentionRetryPending.current = false;
+      setAttentionRetrying(false);
       threadOpenRequest.current += 1;
       threadOpenPending.current = false;
       secondaryNavigationPending.current = false;
@@ -115,6 +125,9 @@ export default function MessagesScreen() {
     void load();
     return () => {
       generation.current += 1;
+      attentionReadRequest.current += 1;
+      attentionRetryPending.current = false;
+      setAttentionRetrying(false);
       threadOpenRequest.current += 1;
       threadOpenPending.current = false;
       secondaryNavigationPending.current = false;
@@ -124,6 +137,50 @@ export default function MessagesScreen() {
       freshlyVerifiedOwner.current = null;
     };
   }, [ownerKey, privacy.shieldVisible, privacy.canAccessPrivateData, load]));
+
+  // Web attention.reload parity: an unread-count error can be retried without
+  // invalidating the authorized conversations or interrupting an editable flow.
+  // Only an explicit tap issues this extra canonical read (no polling).
+  const retryAttention = async () => {
+    const expectedOwner = ownerKey;
+    const request = generation.current;
+    if (!expectedOwner || !canRead || !applications || applications.ownerKey !== expectedOwner ||
+        freshlyVerifiedOwner.current !== expectedOwner || !attentionFailed?.value ||
+        attentionFailed.ownerKey !== expectedOwner || loading ||
+        threadOpenPending.current || secondaryNavigationPending.current ||
+        attentionRetryPending.current || !privacy.canAccessPrivateData()) return;
+    attentionRetryPending.current = true;
+    const attentionRequest = ++attentionReadRequest.current;
+    setAttentionRetrying(true);
+    const isCurrent = () => request === generation.current &&
+      attentionRequest === attentionReadRequest.current &&
+      freshlyVerifiedOwner.current === expectedOwner &&
+      privacy.canAccessPrivateData();
+    try {
+      const pinned = await pinCandidateForRead(pinCandidateAction, isCurrent);
+      if (candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== expectedOwner ||
+          !pinned.isCurrent() || !isCurrent()) return;
+      await readIndependentMessageAttention({
+        loadAttention: () => getJobseekerAttentionSummary(pinned.client),
+        isCurrent: () => isCurrent() && pinned.isCurrent(),
+        onAttention: (result) => {
+          if (result.status === 'fulfilled') {
+            setAttention({ ownerKey: expectedOwner, value: result.value });
+            setAttentionFailed(null);
+          } else {
+            setAttentionFailed({ ownerKey: expectedOwner, value: true });
+          }
+        },
+      });
+    } catch {
+      if (isCurrent()) setAttentionFailed({ ownerKey: expectedOwner, value: true });
+    } finally {
+      if (attentionRequest === attentionReadRequest.current) {
+        attentionRetryPending.current = false;
+        if (request === generation.current) setAttentionRetrying(false);
+      }
+    }
+  };
 
   const visibleApplications = readCandidateFreshlyVerifiedView(applications, ownerKey, canRead, freshlyVerifiedOwner.current);
   const visibleAttention = readCandidateFreshlyVerifiedView(attention, ownerKey, canRead, freshlyVerifiedOwner.current);
@@ -218,7 +275,14 @@ export default function MessagesScreen() {
       {openingThread ? <Text accessibilityLiveRegion="polite" style={styles.muted}>メッセージを開いています…</Text> : null}
       {navigatingSecondary ? <Text accessibilityLiveRegion="polite" style={styles.muted}>画面を開いています…</Text> : null}
       {threadOpenError ? <Text accessibilityLiveRegion="polite" style={styles.error}>{threadOpenError}</Text> : null}
-      {warning ? <Text style={styles.warning}>新着メッセージの件数を確認できませんでした。更新してご確認ください。</Text> : null}
+      {warning ? <View style={styles.attentionError}>
+        <Text style={styles.warning}>新着メッセージの件数を確認できませんでした。応募先とのやりとりは引き続き確認できます。</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="新着件数だけを再確認"
+          style={styles.outline} disabled={attentionRetrying || openingThread || navigatingSecondary}
+          onPress={() => void retryAttention()}>
+          <Text style={styles.action}>{attentionRetrying ? '新着件数を確認中…' : '新着件数を再試行'}</Text>
+        </Pressable>
+      </View> : null}
       {visibleApplications && !error && inbox.unreadCount !== null && inbox.unreadCount > 0 && inbox.newestApplicationId ? (
         <Pressable accessibilityRole="button" style={styles.highlight} disabled={openingThread || navigatingSecondary} onPress={() => void openThread(inbox.newestApplicationId!)}>
           <Text style={styles.highlightText}>新着メッセージを読む</Text>
@@ -281,7 +345,8 @@ const styles = StyleSheet.create({
   highlightText: { fontSize: 15, fontWeight: '800', color: '#AA1F49' },
   alert: { padding: 14, gap: 12, backgroundColor: '#FFF1F0', borderRadius: 14 },
   error: { color: '#B42318', fontSize: 15 },
-  warning: { color: '#8A4B00', backgroundColor: '#FFF8E6', padding: 12, borderRadius: 10 },
+  attentionError: { gap: 10, padding: 12, backgroundColor: '#FFF8E6', borderRadius: 10 },
+  warning: { color: '#8A4B00', fontSize: 14, lineHeight: 20 },
   empty: { gap: 12, padding: 18, backgroundColor: '#fff', borderRadius: 16 },
   emptyTitle: { fontSize: 17, fontWeight: '800' },
   outline: { minHeight: 48, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff', borderColor: '#D7DCE2', borderWidth: 1, borderRadius: 12 },
