@@ -22,6 +22,7 @@ import { profilePrefectureChoices } from '../../lib/profilePrefectureOptions';
 import { ProfileStartDatePicker } from '../../components/ProfileStartDatePicker';
 import { canConfirmCandidateSignOut } from '../../lib/candidateSignOutConfirmation';
 import { canConfirmCandidateDeletion } from '../../lib/candidateDeletionConfirmation';
+import { presentProfilePrewriteFailure } from '../../lib/profileSaveFailurePresentation';
 import { pinCandidateProfilePrewrite, readCandidateProfileBounded, readCandidateProfileAfterWrite } from '../../lib/profileCanonicalRead';
 
 const positionOptions = ['保育士', '保育教諭', '幼稚園教諭', '保育補助', '看護師', '栄養士', '調理師', '児童指導員', '子育て支援員'];
@@ -287,6 +288,7 @@ export default function ProfileScreen() {
     const requestGeneration = generation.current;
     const submittedRevision = draftRevision.current;
     let writeAttempted = false;
+    let localValidationMessage: string | null = null;
     savingRef.current = true;
     savingOwnerRef.current = requestOwner;
     savingGenerationRef.current = requestGeneration;
@@ -296,7 +298,8 @@ export default function ProfileScreen() {
     try {
       const years = experienceText.trim() === '' ? null : Number(experienceText);
       if (years != null && (!Number.isFinite(years) || years < 0 || years > 80)) {
-        throw new Error('経験年数は0〜80の数字で入力してください。');
+        localValidationMessage = '経験年数は0〜80の数字で入力してください。';
+        throw new Error(localValidationMessage);
       }
       const next: JobseekerProfileInput = {
         ...profile,
@@ -313,7 +316,10 @@ export default function ProfileScreen() {
         self_intro: nullable(profile.self_intro ?? ''),
       };
       const invalid = profileWebValidationError(next.name, next.desired_start_date);
-      if (invalid) throw new Error(invalid);
+      if (invalid) {
+        localValidationMessage = invalid;
+        throw new Error(invalid);
+      }
       // Only pre-write token acquisition has a deadline. An upsert itself
       // may have committed despite a network failure; never time it out.
       const pinned = await pinCandidateProfilePrewrite(
@@ -349,13 +355,15 @@ export default function ProfileScreen() {
         setHasUnsavedChanges(false);
         setMessage('プロフィールを保存しました。');
       }
-    } catch (saveError) {
+    } catch {
       if (isLive(requestOwner, requestGeneration)) {
         if (profileWriteFailureNeedsReload(writeAttempted)) {
           setNeedsCanonicalReload(true);
           setError('プロフィールの保存結果が確認できません。再送信せず、最新の内容を読み込んで確認してください。');
         } else {
-          setError(String((saveError as { message?: unknown })?.message ?? saveError));
+          // Never echo an untrusted Clerk or backend error into the private UI.
+          // Preserve only known, locally generated form validation feedback.
+          setError(presentProfilePrewriteFailure(localValidationMessage));
         }
       }
     } finally {
