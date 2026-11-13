@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { pinForApplicationMutation } from '../../lib/applicationMutationPin';
+import { readApplicationMessageReview } from '../../lib/applicationMessageReviewRead';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../../lib/candidateViewOwner';
 import { candidateApplicationDetailKey } from '../../lib/applicationDetailVisibility';
@@ -495,16 +496,19 @@ function ApplicationDetailContent() {
   const reviewMessageSend = async () => {
     // Review is a canonical read only. It must never automatically send again.
     await runDecision(async (stillCurrent) => {
-      const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
-      if (!pinned.isCurrent() || !stillCurrent()) return;
       const review = uncertainMessageRef.current;
-      if (review && (review.ownerId !== pinned.ownerId ||
-          review.ownerSessionId !== pinned.ownerSessionId || review.applicationId !== applicationId)) {
-        throw new Error('前のログイン状態のメッセージは確認できません。');
-      }
-      const nextMessages = await listApplicationMessages(pinned.client, applicationId);
-      if (!pinned.isCurrent() || !stillCurrent()) return;
+      const nextMessages = await readApplicationMessageReview({
+        pin: pinCandidateAction,
+        read: listApplicationMessages,
+        applicationId,
+        pendingOwner: review ? {
+          ownerId: review.ownerId,
+          ownerSessionId: review.ownerSessionId,
+          applicationId: review.applicationId,
+        } : null,
+        isCurrent: stillCurrent,
+      });
+      if (!stillCurrent()) return;
       setMessages(nextMessages);
       setMessagesLoading(false);
       setMessagesReadError(false);
