@@ -37,6 +37,7 @@ import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { readIndependentScoutSections } from '../lib/scoutIndependentSections';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
+import { pinForScoutMutation } from '../lib/scoutMutationPin';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import { mayShowScoutError, shouldPublishScoutRead, shouldPublishScoutInboxRefresh } from '../lib/scoutReadLease';
 import { confirmScoutBlock, confirmScoutDecision, confirmScoutOptIn } from '../lib/scoutMutationReadback';
@@ -318,6 +319,15 @@ export default function ScoutsScreen() {
     return serial;
   };
 
+  // The token/session pin is read-only. A hung getToken must not leave write
+  // buttons disabled indefinitely, and a late pin must never launch a mutation.
+  const pinForWrite = (serial: number, owner: string | null, readGeneration: number) =>
+    pinForScoutMutation(pinCandidateAction, () =>
+      serial === writeSerialRef.current &&
+      currentOwnerRef.current === owner &&
+      readGeneration === generation.current &&
+      privateQuarantine.canAccessPrivateData());
+
   const mayPublishScoutWrite = (
     pinned: NonNullable<Awaited<ReturnType<typeof pinCandidateAction>>>,
     serial: number,
@@ -384,7 +394,7 @@ export default function ScoutsScreen() {
             const owner = ownerKey;
             const readGeneration = generation.current;
             try {
-              const pinned = await pinCandidateAction();
+              const pinned = await pinForWrite(serial, owner, readGeneration);
               if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
                 throw new Error('安全なログイン状態を確認できませんでした。');
               }
@@ -417,7 +427,7 @@ export default function ScoutsScreen() {
     const owner = ownerKey;
     const readGeneration = generation.current;
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await pinForWrite(serial, owner, readGeneration);
       if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
@@ -488,7 +498,7 @@ export default function ScoutsScreen() {
     const owner = ownerKey;
     const readGeneration = generation.current;
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await pinForWrite(serial, owner, readGeneration);
       if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
@@ -512,7 +522,7 @@ export default function ScoutsScreen() {
     const owner = ownerKey;
     const readGeneration = generation.current;
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await pinForWrite(serial, owner, readGeneration);
       if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
@@ -554,7 +564,7 @@ export default function ScoutsScreen() {
     const readGeneration = generation.current;
     const submittedRevision = draftRevisionRef.current;
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await pinForWrite(serial, owner, readGeneration);
       if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
