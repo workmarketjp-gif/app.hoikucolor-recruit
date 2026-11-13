@@ -31,4 +31,5 @@ test('all three missing remains in recovery rather than showing zero scouts', ()
 test('refresh intent is deterministic and does not mutate canonical section flags', () => {
   const input = Object.freeze({ ...verified, privacyVerified: false });
   assert.equal(scoutRefreshTarget(input), 'missing-sections');
+  assert.equal(input.privacyVerified, false);
 });
