@@ -21,7 +21,7 @@ import { profileWebValidationError } from '../../lib/profileWebValidation';
 import { profilePrefectureChoices } from '../../lib/profilePrefectureOptions';
 import { ProfileStartDatePicker } from '../../components/ProfileStartDatePicker';
 import { canConfirmCandidateSignOut } from '../../lib/candidateSignOutConfirmation';
-import { pinCandidateProfilePrewrite, readCandidateProfileBounded } from '../../lib/profileCanonicalRead';
+import { pinCandidateProfilePrewrite, readCandidateProfileBounded, readCandidateProfileAfterWrite } from '../../lib/profileCanonicalRead';
 
 const positionOptions = ['保育士', '保育教諭', '幼稚園教諭', '保育補助', '看護師', '栄養士', '調理師', '児童指導員', '子育て支援員'];
 const employmentOptions = ['正社員', '契約社員', 'パート・アルバイト', '派遣'];
@@ -326,7 +326,13 @@ export default function ProfileScreen() {
       writeAttempted = true;
       await upsertJobseekerProfile(pinned.client, next);
       if (!pinned.isCurrent() || !isLive(requestOwner, requestGeneration)) return;
-      const reread = await getJobseekerProfile(pinned.client);
+      // A confirmed upsert may outlive its canonical readback. Bound only the
+      // read and quarantine any timeout as an unknown write outcome.
+      const reread = await readCandidateProfileAfterWrite({
+        pinned,
+        load: (verified) => getJobseekerProfile(verified.client),
+        isCurrent: () => isLive(requestOwner, requestGeneration) && !privacy.shieldVisible,
+      });
       if (!pinned.isCurrent() || !isLive(requestOwner, requestGeneration)) return;
       if (!reread || reread.clerk_user_id !== pinned.ownerId ||
           !canonicalProfileMatchesSubmission(next, reread)) {

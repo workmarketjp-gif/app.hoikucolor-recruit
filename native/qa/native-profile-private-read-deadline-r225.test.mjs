@@ -150,3 +150,36 @@ test('profile save pin revocation forbids a write', async () => {
   await assert.rejects(op, /ログイン状態/);
   assert.equal(mutations, 0);
 });
+
+import { readCandidateProfileAfterWrite } from '../src/lib/profileCanonicalRead.ts';
+
+test('post-write canonical readback confirms the synthetic profile without another upsert', async () => {
+  let reads = 0;
+  const found = await readCandidateProfileAfterWrite({
+    pinned: pinFor(), isCurrent: () => true, timeoutMs: 25,
+    load: async (pin) => { reads++; return { clerk_user_id: pin.ownerId, name: '合成 太郎' }; },
+  });
+  assert.equal(reads, 1);
+  assert.equal(found.clerk_user_id, 'synthetic-A');
+});
+
+test('post-write hung confirmation is unknown and bounded, never a second mutation', async () => {
+  let reads = 0;
+  await assert.rejects(readCandidateProfileAfterWrite({
+    pinned: pinFor(), isCurrent: () => true, timeoutMs: 25,
+    load: () => { reads++; return new Promise(() => {}); },
+  }), /タイムアウト/);
+  assert.equal(reads, 1);
+});
+
+test('post-write canonical read does not launch after candidate session revocation', async () => {
+  let live = true;
+  let reads = 0;
+  const operation = readCandidateProfileAfterWrite({
+    pinned: pinFor(), isCurrent: () => live, timeoutMs: 25,
+    load: async () => { reads++; return { name: 'must not load' }; },
+  });
+  live = false;
+  await assert.rejects(operation, /ログイン状態/);
+  assert.equal(reads, 0);
+});

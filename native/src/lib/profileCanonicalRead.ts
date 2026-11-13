@@ -30,3 +30,27 @@ export async function readCandidateProfileBounded<TPinned extends { isCurrent: (
 // time-bounded. Never time out or automatically retry the profile mutation.
 // Reuse the existing candidate pre-write pin policy, with its live lease checks.
 export { pinForApplicationMutation as pinCandidateProfilePrewrite } from './applicationMutationPin.ts';
+
+/**
+ * Bound only the canonical confirmation READ after an attempted upsert.
+ * A timeout is an *unknown write result*, never evidence to send the mutation
+ * again. The screen retains its existing needsCanonicalReload quarantine.
+ */
+export async function readCandidateProfileAfterWrite<TPinned extends { isCurrent: () => boolean }, TProfile>(options: {
+  pinned: TPinned;
+  load: (pinned: TPinned) => Promise<TProfile>;
+  isCurrent: () => boolean;
+  timeoutMs?: number;
+}): Promise<TProfile> {
+  const assertCurrent = () => {
+    if (!options.isCurrent() || !options.pinned.isCurrent()) {
+      throw new Error('安全なログイン状態を確認できませんでした。');
+    }
+  };
+  const profile = await boundedPrivateRead(() => {
+    assertCurrent();
+    return options.load(options.pinned);
+  }, options.timeoutMs);
+  assertCurrent();
+  return profile;
+}
