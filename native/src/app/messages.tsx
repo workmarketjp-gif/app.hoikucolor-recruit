@@ -12,6 +12,7 @@ import { buildMessageInbox } from '../lib/messageInbox';
 import { loadIndependentMessageInbox, readIndependentMessageAttention } from '../lib/messageInboxIndependentLoad';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { messageNavigationLeaseIsCurrent } from '../lib/messageNavigationLease';
+import { canOpenVerifiedMessageInboxThread, canPreserveMessageInboxDuringManualRefresh } from '../lib/messageInboxRefreshPolicy';
 
 /** Web /messages: only authorized application threads, with canonical unread metadata. */
 export default function MessagesScreen() {
@@ -26,6 +27,7 @@ export default function MessagesScreen() {
   const [loadError, setLoadError] = useState<CandidateOwnedView<string> | null>(null);
   const [attentionFailed, setAttentionFailed] = useState<CandidateOwnedView<boolean> | null>(null);
   const [loading, setLoading] = useState(true);
+  const inboxRefreshPending = useRef(false); // synchronous stale-row navigation fence
   const generation = useRef(0);
   const attentionReadRequest = useRef(0);
   const attentionRetryPending = useRef(false);
@@ -43,9 +45,16 @@ export default function MessagesScreen() {
   const canRead = !privacy.shieldVisible && privacy.canAccessPrivateData();
   if (!canRead) freshlyVerifiedOwner.current = null;
 
-  const load = useCallback(async () => {
-    if (secondaryNavigationPending.current) return;
+  const load = useCallback(async (manual = false) => {
+    if (secondaryNavigationPending.current || threadOpenPending.current) return;
+    const keepVerifiedRows = canPreserveMessageInboxDuringManualRefresh({
+      manual, expectedOwnerKey: ownerKey,
+      lastVerifiedOwnerKey: freshlyVerifiedOwner.current,
+      privateAccessAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+      navigationPending: secondaryNavigationPending.current || threadOpenPending.current,
+    });
     const request = ++generation.current;
+    inboxRefreshPending.current = true;
     const attentionRequest = ++attentionReadRequest.current;
     attentionRetryPending.current = false;
     setAttentionRetrying(false);
@@ -57,8 +66,12 @@ export default function MessagesScreen() {
     setOpeningThread(false);
     setNavigatingSecondary(false);
     setThreadOpenError(null);
-    freshlyVerifiedOwner.current = null;
-    setApplications(null);
+    // Preserve only verified same-session rows on an explicit manual refresh.
+    if (!keepVerifiedRows) {
+      freshlyVerifiedOwner.current = null;
+      setApplications(null);
+    }
+    // Independent unread/scout figures must be reverified, never shown as fresh.
     setAttention(null);
     setLoadError(null);
     setAttentionFailed(null);
@@ -97,7 +110,10 @@ export default function MessagesScreen() {
     } finally {
       // The required application list has finished. Unread counts can update
       // independently after this, without disabling navigation or refresh.
-      if (request === generation.current) setLoading(false);
+      if (request === generation.current) {
+        inboxRefreshPending.current = false;
+        setLoading(false);
+      }
     }
   }, [pinCandidateAction, ownerKey, privacy.canAccessPrivateData]);
 
@@ -107,6 +123,7 @@ export default function MessagesScreen() {
   useFocusEffect(useCallback(() => {
     if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
       generation.current += 1;
+      inboxRefreshPending.current = false;
       attentionReadRequest.current += 1;
       attentionRetryPending.current = false;
       setAttentionRetrying(false);
@@ -128,6 +145,7 @@ export default function MessagesScreen() {
     void load();
     return () => {
       generation.current += 1;
+      inboxRefreshPending.current = false;
       attentionReadRequest.current += 1;
       attentionRetryPending.current = false;
       setAttentionRetrying(false);
@@ -191,6 +209,12 @@ export default function MessagesScreen() {
   const error = readCandidateFreshlyVerifiedView(loadError, ownerKey, canRead, freshlyVerifiedOwner.current);
   const warning = readCandidateFreshlyVerifiedView(attentionFailed, ownerKey, canRead, freshlyVerifiedOwner.current);
   const inbox = buildMessageInbox(visibleApplications ?? [], visibleAttention);
+  const threadsMayOpen = canOpenVerifiedMessageInboxThread({
+    listPresent: !!visibleApplications,
+    currentOwnerVerified: !!ownerKey && freshlyVerifiedOwner.current === ownerKey && canRead,
+    refreshInFlight: loading || inboxRefreshPending.current,
+    refreshFailed: !!error,
+  });
   const openThread = async (applicationId: string) => {
     // A slow session pin can resolve after App Lock, navigation away, or a
     // different candidate signs in. The captured inbox row is not a valid
@@ -208,7 +232,7 @@ export default function MessagesScreen() {
       currentGeneration: generation.current,
       privateDataAllowed: privacy.canAccessPrivateData(),
     });
-    if (!visibleApplications || !leaseIsCurrent(expectedOwnerKey) ||
+    if (!threadsMayOpen || inboxRefreshPending.current || !visibleApplications || !leaseIsCurrent(expectedOwnerKey) ||
         threadOpenPending.current || secondaryNavigationPending.current) return;
     // Ref-backed single flight also guards two taps in the same React frame.
     threadOpenPending.current = true;
@@ -244,7 +268,7 @@ export default function MessagesScreen() {
     // The visible list and ownerKey were captured at render. A blur, refresh,
     // App Lock or account replacement may have revoked that view before a
     // queued Pressable callback executes. Require the live verified owner.
-    if (threadOpenPending.current || secondaryNavigationPending.current || !ownerKey || !canRead ||
+    if (!threadsMayOpen || inboxRefreshPending.current || threadOpenPending.current || secondaryNavigationPending.current || !ownerKey || !canRead ||
         !visibleApplications || freshlyVerifiedOwner.current !== ownerKey ||
         !privacy.canAccessPrivateData()) return;
     // Separate from threadOpenPending: this is not a message-token operation.
@@ -270,7 +294,7 @@ export default function MessagesScreen() {
   const openScoutsWithoutInbox = async () => {
     const expectedOwner = ownerKey;
     const startedGeneration = generation.current;
-    if (!expectedOwner || !canRead || visibleApplications ||
+    if (!expectedOwner || !canRead || (visibleApplications && !error) || inboxRefreshPending.current ||
         threadOpenPending.current || secondaryNavigationPending.current ||
         !privacy.canAccessPrivateData()) return;
     secondaryNavigationPending.current = true;
@@ -304,14 +328,14 @@ export default function MessagesScreen() {
     <ScrollView contentContainerStyle={styles.page}>
       <View style={styles.header}>
         <Text style={styles.title}>メッセージ</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="メッセージを更新" onPress={() => void load()} disabled={loading || navigatingSecondary}>
+        <Pressable accessibilityRole="button" accessibilityLabel="メッセージを更新" onPress={() => void load(true)} disabled={loading || navigatingSecondary || openingThread}>
           <Text style={styles.refresh}>更新</Text>
         </Pressable>
       </View>
       {loading && !visibleApplications ? <ActivityIndicator color="#FF2F5F" /> : null}
       {error ? <View style={styles.alert}>
         <Text style={styles.error}>{error}</Text>
-        <Pressable accessibilityRole="button" style={styles.outline} onPress={() => void load()}><Text style={styles.action}>再試行</Text></Pressable>
+        <Pressable accessibilityRole="button" style={styles.outline} onPress={() => void load(true)}><Text style={styles.action}>再試行</Text></Pressable>
       </View> : null}
       {openingThread ? <Text accessibilityLiveRegion="polite" style={styles.muted}>メッセージを開いています…</Text> : null}
       {navigatingSecondary ? <Text accessibilityLiveRegion="polite" style={styles.muted}>画面を開いています…</Text> : null}
@@ -324,14 +348,19 @@ export default function MessagesScreen() {
           <Text style={styles.action}>{attentionRetrying ? '新着件数を確認中…' : '新着件数を再試行'}</Text>
         </Pressable>
       </View> : null}
-      {visibleApplications && !error && inbox.unreadCount !== null && inbox.unreadCount > 0 && inbox.newestApplicationId ? (
+      {threadsMayOpen && inbox.unreadCount !== null && inbox.unreadCount > 0 && inbox.newestApplicationId ? (
         <Pressable accessibilityRole="button" style={styles.highlight} disabled={openingThread || navigatingSecondary} onPress={() => void openThread(inbox.newestApplicationId!)}>
           <Text style={styles.highlightText}>新着メッセージを読む</Text>
           <Text style={styles.highlightText}>{inbox.unreadCount}件 ›</Text>
         </Pressable>
       ) : null}
       <Text style={styles.section}>応募先とのやりとり</Text>
-      {visibleApplications && !error && inbox.rows.length === 0 ? (
+      {visibleApplications && (loading || error) ? (
+        <Text accessibilityLiveRegion="polite" style={styles.warning}>
+          {loading ? '前回確認した応募先を表示しています。更新中は開けません。' : '前回確認した応募先です。最新情報を確認してから開いてください。'}
+        </Text>
+      ) : null}
+      {threadsMayOpen && inbox.rows.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>メッセージはまだありません</Text>
           <Text style={styles.muted}>応募すると、園とのやりとりがここに表示されます。</Text>
@@ -341,9 +370,9 @@ export default function MessagesScreen() {
           </Pressable>
         </View>
       ) : null}
-      {visibleApplications && !error ? inbox.rows.map((row) => (
+      {visibleApplications ? inbox.rows.map((row) => (
         <Pressable key={row.applicationId} accessibilityRole="button" accessibilityLabel={`${row.facilityName}のメッセージを開く`}
-          style={styles.thread} disabled={openingThread || navigatingSecondary} onPress={() => void openThread(row.applicationId)}>
+          style={styles.thread} disabled={!threadsMayOpen || openingThread || navigatingSecondary} onPress={() => void openThread(row.applicationId)}>
           <View style={styles.threadBody}>
             <Text style={styles.facility}>{row.facilityName}</Text>
             <Text style={styles.muted}>{row.jobTitle} ・ {row.statusLabel}</Text>
@@ -354,8 +383,8 @@ export default function MessagesScreen() {
       )) : null}
       <>
         <Text style={styles.section}>園からのスカウト</Text>
-        <Pressable accessibilityRole="button" style={styles.thread} disabled={openingThread || navigatingSecondary}
-          onPress={() => visibleApplications && !error ? navigateInboxDestination('/scouts') : void openScoutsWithoutInbox()}>
+        <Pressable accessibilityRole="button" style={styles.thread} disabled={openingThread || navigatingSecondary || loading}
+          onPress={() => threadsMayOpen ? navigateInboxDestination('/scouts') : void openScoutsWithoutInbox()}>
           <View style={styles.threadBody}>
             <Text style={styles.facility}>スカウトを見る</Text>
             <Text style={styles.muted}>{inbox.pendingScouts !== null && inbox.pendingScouts > 0
