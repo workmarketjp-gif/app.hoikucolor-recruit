@@ -36,6 +36,7 @@ import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { readIndependentScoutSections } from '../lib/scoutIndependentSections';
+import { retryMissingScoutSections } from '../lib/scoutMissingSectionRetry';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { pinForScoutMutation } from '../lib/scoutMutationPin';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
@@ -295,6 +296,73 @@ export default function ScoutsScreen() {
         // verified view, nor does it claim the visible list is current.
         setScoutRefreshError('新しいスカウトを確認できませんでした。前回の表示を保持しています。更新して再確認してください。');
       }
+    } finally {
+      if (requestSerial === scoutRefreshSerialRef.current) {
+        scoutRefreshPendingRef.current = false;
+        if (requestGeneration === generation.current && requestOwner === currentOwnerRef.current) {
+          setRefreshingScouts(false);
+        }
+      }
+    }
+  };
+
+
+  // On a partial first-load failure, retry ONLY the unverified panels.
+  // A full load would erase edits in already verified matching preferences.
+  const retryMissingSections = async () => {
+    if (!privateAllowed || verifiedOwnerRef.current !== ownerKey ||
+        loading || busy !== null || writePendingRef.current ||
+        searchPendingRef.current || scoutRefreshPendingRef.current) return;
+    const missing = {
+      scouts: !scoutsVerified,
+      privacy: privacy === null,
+      preferences: !preferencesVerified,
+    };
+    if (!Object.values(missing).some(Boolean)) return;
+    const requestSerial = ++scoutRefreshSerialRef.current;
+    const requestGeneration = generation.current;
+    const requestOwner = ownerKey;
+    scoutRefreshPendingRef.current = true;
+    setRefreshingScouts(true);
+    setScoutRefreshError(null);
+    const live = () =>
+      requestSerial === scoutRefreshSerialRef.current &&
+      requestGeneration === generation.current &&
+      requestOwner === currentOwnerRef.current &&
+      privateQuarantine.canAccessPrivateData();
+
+    try {
+      const pinned = await pinCandidateForRead(pinCandidateAction, live);
+      const current = () => live() && pinned.isCurrent() &&
+        candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === requestOwner;
+      if (!current()) return;
+      const sections = await retryMissingScoutSections({
+        missing,
+        loadScouts: () => listJobseekerScouts(pinned.client),
+        loadPrivacy: () => getScoutPrivacySettings(pinned.client),
+        loadPreferences: () => getJobseekerMatchingPreferences(pinned.client),
+        isCurrent: current,
+      });
+      if (!sections || !current()) return;
+      if (sections.scouts.status === 'fulfilled') {
+        setScouts(sections.scouts.value);
+        setScoutsVerified(true);
+      }
+      if (sections.privacy.status === 'fulfilled') setPrivacy(sections.privacy.value);
+      if (sections.preferences.status === 'fulfilled') {
+        hydratePreferences(sections.preferences.value);
+        setPreferencesVerified(true);
+      }
+      const unavailable = [
+        sections.scouts.status === 'rejected' ? '届いたスカウト' : null,
+        sections.privacy.status === 'rejected' ? '公開範囲' : null,
+        sections.preferences.status === 'rejected' ? '希望条件' : null,
+      ].filter(Boolean);
+      setError(unavailable.length
+        ? `${unavailable.join('・')}を確認できませんでした。確認済みの入力内容は保持しています。`
+        : null);
+    } catch {
+      if (live()) setError('未確認の項目を再取得できませんでした。入力内容を保持しています。');
     } finally {
       if (requestSerial === scoutRefreshSerialRef.current) {
         scoutRefreshPendingRef.current = false;
@@ -624,7 +692,7 @@ export default function ScoutsScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled"
-      refreshControl={<RefreshControl refreshing={refreshingScouts} onRefresh={() => void (scoutsVerified ? refreshScouts() : load())} tintColor="#E9265A" colors={['#E9265A']} />}>
+      refreshControl={<RefreshControl refreshing={refreshingScouts} onRefresh={() => void (scoutsVerified ? refreshScouts() : (verifiedOwnerRef.current === ownerKey ? retryMissingSections() : load()))} tintColor="#E9265A" colors={['#E9265A']} />}>
       <View>
         <View style={styles.rowBetween}>
           <Text style={styles.title}>スカウト</Text>
@@ -633,7 +701,7 @@ export default function ScoutsScreen() {
             accessibilityLabel="届いたスカウトを更新"
             accessibilityState={{ disabled: refreshingScouts || Boolean(busy) || loading }}
             disabled={refreshingScouts || Boolean(busy) || loading}
-            onPress={() => void (scoutsVerified ? refreshScouts() : load())}
+            onPress={() => void (scoutsVerified ? refreshScouts() : (verifiedOwnerRef.current === ownerKey ? retryMissingSections() : load()))}
             style={styles.refreshButton}
           >
             <Text style={styles.refreshText}>{refreshingScouts ? '更新中…' : '更新'}</Text>
@@ -644,6 +712,13 @@ export default function ScoutsScreen() {
 
       {safeError ? <View style={{ gap: 8 }}>
         <Text style={styles.error}>{safeError}</Text>
+        {(!scoutsVerified || !privacy || !preferencesVerified) ? (
+          <Pressable accessibilityRole="button" style={styles.secondaryButtonWide}
+            disabled={Boolean(busy) || refreshingScouts}
+            onPress={() => void retryMissingSections()}>
+            <Text style={styles.secondaryText}>未確認項目だけ再読み込み（入力保持）</Text>
+          </Pressable>
+        ) : null}
         <Pressable accessibilityRole="button" style={styles.secondaryButtonWide}
           disabled={Boolean(busy) || refreshingScouts}
           onPress={() => void load()}>
