@@ -11,6 +11,8 @@ export async function sendCandidateMessageWithSessionLease<Prepared, Receipt, Ro
   isCurrent: () => boolean;
   prepare: () => Promise<Prepared>;
   invoke: (prepared: Prepared) => Promise<Receipt>;
+  /** Signals that the final session fence passed and RPC invocation is about to start. */
+  onInvokeStarted?: () => void;
   read: () => Promise<Rows>;
   confirm: (rows: Rows, receipt: Receipt) => Confirmed | null;
   clear: () => Promise<void>;
@@ -25,6 +27,9 @@ export async function sendCandidateMessageWithSessionLease<Prepared, Receipt, Ro
   const prepared = await params.prepare();
   // Crucial: SecureStore may complete after sign-out, App Lock or navigation.
   assertCurrent();
+  // A failed SecureStore preparation is NOT an uncertain server write. The
+  // caller only quarantines the composer once this boundary is crossed.
+  params.onInvokeStarted?.();
   const receipt = await params.invoke(prepared);
   assertCurrent();
   const rows = await params.read();

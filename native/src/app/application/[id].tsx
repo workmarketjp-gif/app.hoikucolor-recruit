@@ -429,7 +429,6 @@ function ApplicationDetailContent() {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
       attemptedOwner = { ownerId: pinned.ownerId, ownerSessionId: pinned.ownerSessionId };
-      durableRequestStarted = true;
       // The durable adapter already performs a canonical list readback and
       // verifies the returned message ID, role and body. A second full-detail
       // reload could fail because of an unrelated document-handoff read,
@@ -440,6 +439,8 @@ function ApplicationDetailContent() {
         ownerSessionId: pinned.ownerSessionId,
         applicationId,
         body: submittedDraft,
+        // Only a post-SecureStore, session-fenced RPC attempt is ambiguous.
+        onInvokeStarted: () => { durableRequestStarted = true; },
         // A pinned token by itself is insufficient: navigation/focus changes
         // must also fence the write after asynchronous SecureStore preparation.
         isCurrent: () => pinned.isCurrent() && messageRequestGeneration === generation.current,
@@ -462,7 +463,7 @@ function ApplicationDetailContent() {
       setMessageSendNeedsReview(needsReview);
       setMessageSendError(needsReview
         ? '送信が完了した可能性があります。重複を防ぐため、最新のメッセージを読み込んでからご確認ください。'
-        : '安全なログイン状態を確認できず、送信を開始できませんでした。再度お試しください。');
+        : '今回の送信を開始できませんでした。ログイン状態や端末の保存状態を確認してから再度お試しください。');
     } finally {
       messageSendPending.current = false;
       setBusy(false);

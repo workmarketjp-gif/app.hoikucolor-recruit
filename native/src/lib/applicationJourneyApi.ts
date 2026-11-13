@@ -264,6 +264,8 @@ export async function sendApplicationMessageDurable(params: {
   body: string;
   /** Screen focus, Clerk owner/session and App Lock must all remain current. */
   isCurrent: () => boolean;
+  /** Called after durable preparation and session fencing, just before RPC. */
+  onInvokeStarted?: () => void;
 }): Promise<JobseekerMessage> {
   assertUuid(params.applicationId, '応募ID');
   const body = params.body.trim();
@@ -271,6 +273,7 @@ export async function sendApplicationMessageDurable(params: {
   if (body.length > 4000) throw new Error('メッセージは4000文字以内で入力してください。');
   return sendCandidateMessageWithSessionLease({
     isCurrent: params.isCurrent,
+    onInvokeStarted: params.onInvokeStarted,
     prepare: async () => {
       const lease = captureDurableMutationSessionLease(params.ownerId, params.ownerSessionId);
       const { envelope } = await prepareDurableMutation({
