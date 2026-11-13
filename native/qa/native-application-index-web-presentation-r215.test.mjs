@@ -43,8 +43,8 @@ test('failed private data read exposes no raw transport error text', () => {
   required('再読み込み');
 });
 test('error retry and refresh use existing read-only load, not a mutation', () => {
-  required('style={styles.retry} accessibilityRole="button" onPress={() => void load()}');
-  required('style={styles.refresh} onPress={() => void load()}');
+  required('style={styles.retry} accessibilityRole="button" onPress={() => void load(true)}');
+  required('style={styles.refresh} onPress={() => void load(true)}');
 });
 test('empty state and visit link align with actual Web copy', () => {
   required('気になる園を見つけたら、求人から応募できます。');

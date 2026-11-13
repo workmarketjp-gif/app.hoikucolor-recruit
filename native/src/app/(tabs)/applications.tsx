@@ -11,6 +11,7 @@ import { applicationStatusLabel } from '../../lib/messageInbox';
 import { messageNavigationLeaseIsCurrent } from '../../lib/messageNavigationLease';
 import { readCandidateApplicationIndex } from '../../lib/candidateApplicationIndexRead';
 import { boundedPrivateRead } from '../../lib/privateReadDeadline';
+import { retainApplicationListForRefresh } from '../../lib/applicationListRefreshPolicy';
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -41,15 +42,23 @@ export default function ApplicationsScreen() {
   const error = readCandidateFreshlyVerifiedView(ownedError, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
   const openError = readCandidateFreshlyVerifiedView(ownedOpenError, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (explicitRefresh = false) => {
     const current = ++generation.current;
-    freshlyVerifiedOwner.current = null;
+    // Web retains confirmed rows during a same-session manual refresh. Never
+    // retain across focus, App Lock, or a candidate/session replacement.
+    const retainRows = retainApplicationListForRefresh({
+      explicitRefresh,
+      ownerKey,
+      freshlyVerifiedOwnerKey: freshlyVerifiedOwner.current,
+      privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+    });
+    if (!retainRows) freshlyVerifiedOwner.current = null;
     openRequest.current += 1;
     openPending.current = false;
     setOpeningId(null);
     setOwnedOpenError(null);
     setLoading(true);
-    setOwnedApplications(null);
+    if (!retainRows) setOwnedApplications(null);
     setOwnedError(null);
     try {
       const verified = await readCandidateApplicationIndex({
@@ -75,7 +84,7 @@ export default function ApplicationsScreen() {
     } finally {
       if (current === generation.current) setLoading(false);
     }
-  }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData]);
+  }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData, privacy.shieldVisible]);
 
   // A return from details/interview/application submission must read the
   // canonical status anew. Blur revokes the lease and invalidates in-flight RPCs.
@@ -148,7 +157,7 @@ export default function ApplicationsScreen() {
   return (
     <ScrollView contentContainerStyle={styles.page}>
       <View style={styles.heading}>
-        <Pressable style={styles.refresh} onPress={() => void load()} disabled={loading || openingId !== null}
+        <Pressable style={styles.refresh} onPress={() => void load(true)} disabled={loading || openingId !== null}
           accessibilityRole="button" accessibilityLabel="応募管理の一覧を更新"
           accessibilityState={{ disabled: loading || openingId !== null }}>
           <Text style={styles.refreshText}>更新</Text>
@@ -158,10 +167,15 @@ export default function ApplicationsScreen() {
       {error ? (
         <View style={styles.errorCard}>
           <Text style={styles.error} accessibilityLiveRegion="polite">{error}</Text>
-          <Pressable style={styles.retry} accessibilityRole="button" onPress={() => void load()} disabled={loading}>
+          <Pressable style={styles.retry} accessibilityRole="button" onPress={() => void load(true)} disabled={loading}>
             <Text style={styles.retryText}>再読み込み</Text>
           </Pressable>
         </View>
+      ) : null}
+      {error && applications?.length ? (
+        <Text style={styles.staleNotice} accessibilityLiveRegion="polite">
+          前回確認できた応募一覧を表示しています。選考状況は更新されていない場合があります。
+        </Text>
       ) : null}
       {openError ? <Text style={styles.error} accessibilityLiveRegion="polite">{openError}</Text> : null}
       {(loading || (applications === null && !error)) ? <ActivityIndicator /> : null}
@@ -213,8 +227,9 @@ const styles = StyleSheet.create({
   refresh: { minHeight: 48, borderWidth: 1, borderColor: '#ECE6E4', borderRadius: 12, paddingHorizontal: 16, justifyContent: 'center', backgroundColor: '#fff' },
   refreshText: { color: '#1E2A3B', fontSize: 15, fontWeight: '800' },
   subtle: { color: '#4A5566', fontSize: 15, lineHeight: 24 },
-  errorCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: '#F3C9D1', padding: 12, borderRadius: 14, backgroundColor: '#fff' },
-  error: { flex: 1, color: '#9D3449', fontSize: 15, lineHeight: 23 },
+  errorCard: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: '#F3C9D1', padding: 12, borderRadius: 14, backgroundColor: '#fff' },
+  error: { flexGrow: 1, flexShrink: 1, minWidth: 160, color: '#9D3449', fontSize: 15, lineHeight: 23 },
+  staleNotice: { color: '#6A4D53', fontSize: 14, lineHeight: 22 },
   retry: { minHeight: 48, minWidth: 104, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E72346', borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   retryText: { color: '#C8173A', fontSize: 15, fontWeight: '800' },
   empty: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ECE6E4', borderRadius: 18, padding: 24, gap: 14 },
