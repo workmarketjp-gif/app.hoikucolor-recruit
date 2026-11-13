@@ -36,6 +36,7 @@ import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { readIndependentScoutSections } from '../lib/scoutIndependentSections';
+import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import { mayShowScoutError, shouldPublishScoutRead, shouldPublishScoutInboxRefresh } from '../lib/scoutReadLease';
 import { confirmScoutBlock, confirmScoutDecision, confirmScoutOptIn } from '../lib/scoutMutationReadback';
@@ -277,11 +278,11 @@ export default function ScoutsScreen() {
         privateAccess: privateAllowed && privateQuarantine.canAccessPrivateData(),
       });
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await boundedPrivateRead(() => pinCandidateAction());
       if (!pinned || !mayPublish(candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId), pinned.isCurrent())) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
-      const freshScouts = await listJobseekerScouts(pinned.client);
+      const freshScouts = await boundedPrivateRead(() => listJobseekerScouts(pinned.client));
       if (!mayPublish(candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId), pinned.isCurrent())) return;
       setScouts(freshScouts);
     } catch {
@@ -452,9 +453,9 @@ export default function ScoutsScreen() {
     setBlockResults([]);
     setError(null);
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await boundedPrivateRead(() => pinCandidateAction());
       if (!pinned || !mayPublishScoutWrite(pinned, writeSerial, requestOwner, readGeneration)) return;
-      const rows = await searchScoutBlockableOrganizations(pinned.client, requestedQuery);
+      const rows = await boundedPrivateRead(() => searchScoutBlockableOrganizations(pinned.client, requestedQuery));
       if (serial !== searchSerialRef.current ||
           !mayPublishScoutWrite(pinned, writeSerial, requestOwner, readGeneration)) return;
       setBlockResults(rows);
