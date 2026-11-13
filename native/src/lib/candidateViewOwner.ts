@@ -16,6 +16,21 @@ export function candidateViewOwnerKey(
   return JSON.stringify([userId, sessionId]);
 }
 
+/**
+ * A mounted application document panel can outlive a route param change.
+ * Its private snapshot is valid only for the exact candidate session AND
+ * application being viewed, not merely for the same logged-in candidate.
+ * This key is a display fence; canonical backend ownership/RLS remains required.
+ */
+export function candidateApplicationViewOwnerKey(
+  ownerKey: string | null | undefined,
+  applicationId: string | null | undefined,
+): string | null {
+  if (typeof ownerKey !== 'string' || !ownerKey ||
+      typeof applicationId !== 'string' || !applicationId.trim()) return null;
+  return JSON.stringify([ownerKey, applicationId]);
+}
+
 export function readCandidateOwnedView<T>(
   snapshot: CandidateOwnedView<T> | null,
   currentOwnerKey: string | null,

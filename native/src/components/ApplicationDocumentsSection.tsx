@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
-import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
+import { candidateViewOwnerKey, candidateApplicationViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import {
   attachJobseekerDocumentToApplication,
   createAttachedApplicationDocumentSignedUrl,
@@ -40,6 +40,7 @@ export function ApplicationDocumentsSection({
   const { session } = useSession();
   const privacy = usePrivateDataQuarantine();
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
+  const viewKey = candidateApplicationViewOwnerKey(ownerKey, applicationId);
   const canReadPrivate = !privacy.shieldVisible && privacy.canAccessPrivateData();
   const [open, setOpen] = useState(false);
   const [snapshot, setSnapshot] = useState<CandidateOwnedView<DocumentSnapshot> | null>(null);
@@ -51,12 +52,12 @@ export function ApplicationDocumentsSection({
   const requestVersion = useRef(0);
   const mutationPending = useRef(false);
   const freshlyVerifiedOwner = useRef<string | null>(null);
-  const contextLease = useRef({ ownerKey, shieldVisible: privacy.shieldVisible });
+  const contextLease = useRef({ viewKey, shieldVisible: privacy.shieldVisible });
   if (!canReadPrivate) freshlyVerifiedOwner.current = null;
-  const contextCurrent = contextLease.current.ownerKey === ownerKey &&
+  const contextCurrent = contextLease.current.viewKey === viewKey &&
     contextLease.current.shieldVisible === privacy.shieldVisible;
   const visibleSnapshot = readCandidateFreshlyVerifiedView(
-    snapshot, ownerKey, canReadPrivate && contextCurrent, freshlyVerifiedOwner.current);
+    snapshot, viewKey, canReadPrivate && contextCurrent, freshlyVerifiedOwner.current);
 
   useEffect(() => {
     // React StrictMode can replay mount effects; reset the private-view lease.
@@ -70,9 +71,9 @@ export function ApplicationDocumentsSection({
   useEffect(() => {
     // The document panel is private even while its parent screen remains mounted.
     // A Clerk account/session switch or App Lock revokes its presentation lease.
-    if (contextLease.current.ownerKey === ownerKey &&
+    if (contextLease.current.viewKey === viewKey &&
         contextLease.current.shieldVisible === privacy.shieldVisible) return;
-    contextLease.current = { ownerKey, shieldVisible: privacy.shieldVisible };
+    contextLease.current = { viewKey, shieldVisible: privacy.shieldVisible };
     requestVersion.current += 1;
     freshlyVerifiedOwner.current = null;
     setSnapshot(null);
@@ -80,11 +81,12 @@ export function ApplicationDocumentsSection({
     setLoading(false);
     setError(null);
     setNotice(null);
-  }, [ownerKey, privacy.shieldVisible]);
+  }, [viewKey, privacy.shieldVisible]);
 
   const refresh = async () => {
-    if (mutationPending.current || !ownerKey || !canReadPrivate || !contextCurrent) return;
+    if (mutationPending.current || !ownerKey || !viewKey || !canReadPrivate || !contextCurrent) return;
     const requestedOwnerKey = ownerKey;
+    const requestedViewKey = viewKey;
     const version = ++requestVersion.current;
     freshlyVerifiedOwner.current = null;
     setSnapshot(null); // Do not show stale private rows while a read is unverified.
@@ -104,13 +106,13 @@ export function ApplicationDocumentsSection({
         loadSubmitted: () => listSubmittedApplicationDocuments(pinned.client, applicationId),
         loadExpectations: () => listApplicationDocumentExpectations(pinned.client, applicationId),
         isCurrent: () => alive.current && pinned.isCurrent() && version === requestVersion.current &&
-          privacy.canAccessPrivateData(),
+          privacy.canAccessPrivateData() && contextLease.current.viewKey === requestedViewKey,
       });
       projectApplicationDocuments(applicationId, saved, submitted, expectations);
       if (!alive.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
           version !== requestVersion.current) return;
-      freshlyVerifiedOwner.current = requestedOwnerKey;
-      setSnapshot({ ownerKey: requestedOwnerKey, value: { saved, submitted, expectations } });
+      freshlyVerifiedOwner.current = requestedViewKey;
+      setSnapshot({ ownerKey: requestedViewKey, value: { saved, submitted, expectations } });
     } catch (caught) {
       if (alive.current && version === requestVersion.current) {
         setError(String((caught as { message?: unknown })?.message ?? '応募書類を読み込めませんでした。'));
@@ -121,7 +123,7 @@ export function ApplicationDocumentsSection({
   };
 
   const toggle = () => {
-    if (mutationPending.current || !canReadPrivate || !ownerKey || !contextCurrent) return;
+    if (mutationPending.current || !canReadPrivate || !ownerKey || !viewKey || !contextCurrent) return;
     if (open) {
       ++requestVersion.current;
       setOpen(false);
@@ -137,12 +139,13 @@ export function ApplicationDocumentsSection({
   };
 
   const submitDocuments = async (targets: readonly JobseekerDocument[]) => {
-    if (!open || !visibleSnapshot || !ownerKey || !canReadPrivate || !targets.length || mutationPending.current || loading) return;
+    if (!open || !visibleSnapshot || !ownerKey || !viewKey || !canReadPrivate || !targets.length || mutationPending.current || loading) return;
     const model = projectApplicationDocuments(applicationId, visibleSnapshot.saved, visibleSnapshot.submitted, visibleSnapshot.expectations);
     if (targets.some((document) => !visibleSnapshot.saved.some((row) => row.id === document.id)
       || model.attachedIds.has(document.id))) return;
     const uniqueTargets = [...new Map(targets.map((document) => [document.id, document])).values()];
     const requestedOwnerKey = ownerKey;
+    const requestedViewKey = viewKey;
     mutationPending.current = true;
     const version = ++requestVersion.current;
     setPending(uniqueTargets.length > 1 ? 'batch' : uniqueTargets[0].id);
@@ -171,13 +174,13 @@ export function ApplicationDocumentsSection({
         loadSubmitted: () => listSubmittedApplicationDocuments(pinned.client, applicationId),
         loadExpectations: () => listApplicationDocumentExpectations(pinned.client, applicationId),
         isCurrent: () => alive.current && pinned.isCurrent() && version === requestVersion.current &&
-          privacy.canAccessPrivateData(),
+          privacy.canAccessPrivateData() && contextLease.current.viewKey === requestedViewKey,
       });
       projectApplicationDocuments(applicationId, saved, submitted, expectations);
       if (!alive.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
           version !== requestVersion.current) return;
-      freshlyVerifiedOwner.current = requestedOwnerKey;
-      setSnapshot({ ownerKey: requestedOwnerKey, value: { saved, submitted, expectations } });
+      freshlyVerifiedOwner.current = requestedViewKey;
+      setSnapshot({ ownerKey: requestedViewKey, value: { saved, submitted, expectations } });
       const confirmed = uniqueTargets.filter((document) =>
         hasCanonicalApplicationAttachment(applicationId, document.id, submitted));
       if (confirmed.length === uniqueTargets.length) {
@@ -212,7 +215,7 @@ export function ApplicationDocumentsSection({
   };
 
   const openSubmitted = async (document: AttachedApplicationDocument) => {
-    if (!visibleSnapshot || !canReadPrivate || !ownerKey || !open || mutationPending.current || loading ||
+    if (!visibleSnapshot || !canReadPrivate || !ownerKey || !viewKey || !open || mutationPending.current || loading ||
       !visibleSnapshot.submitted.some((row) => row.id === document.id && row.application_id === applicationId)) return;
     mutationPending.current = true;
     const version = ++requestVersion.current;
@@ -243,7 +246,7 @@ export function ApplicationDocumentsSection({
 
   const model = visibleSnapshot ? projectApplicationDocuments(applicationId, visibleSnapshot.saved, visibleSnapshot.submitted, visibleSnapshot.expectations) : null;
   const blocked = loading || pending !== null || mutationPending.current || !canReadPrivate || !contextCurrent;
-  if (!canReadPrivate || !ownerKey || !contextCurrent) {
+  if (!canReadPrivate || !ownerKey || !viewKey || !contextCurrent) {
     return <View testID="application-documents-private-shield" />;
   }
 
