@@ -1,0 +1,12 @@
+# r220 — 応募メッセージの不確定送信を空の再取得結果で解除しない
+
+- Date: 2026-11-14 NZ. Owner: COLOR Jobseeker Native only. Repository: `workmarketjp-gif/app.hoikucolor-recruit`; branch: `native/color-jobseeker-integration-r216-20261114`; base: `f32fff17fcca1871992e83344a48ce5f648ed941`. In-scope route: `native/src/app/application/[id].tsx` (jobseeker-only), synthetic candidate/session. Web reference: candidate message conversation in the existing jobseeker Web; deployed Web SHA/rendered comparison not independently verified in this run.
+- Existing r219 defect: a successful canonical list fetch with no matching submitted candidate message cleared `uncertainMessageRef` and `messageSendNeedsReview`, enabling a possible duplicate send after an ambiguous durable mutation. This is not proof the original message failed; a delayed server write or eventually consistent read could be responsible.
+- r220 source change: classify canonical read as `confirmed` / `unverified` / `none`; only a new exact-body candidate message (not a previously known ID) releases the uncertain-send lock. Unverified outcomes retain the original draft, owner/session/application-bound review, explicit explanatory warning and manual read-only recheck. No automatic sends, RPC changes, permission changes or production changes.
+
+| Web→Native workflow | Android implementation | iOS implementation | Canonical state / evidence | Remaining gate |
+|---|---|---|---|---|
+| 応募詳細→メッセージ送信失敗→最新を確認→送信状況未確定 | Common Native source logic changed; **not rendered/installed** | Common Native source logic changed; **not rendered/installed** | r220 Node 8 new behavioral tests PASS, combined with existing message-composer tests 13/13 PASS; isolated strict TypeScript helper PASS. Canonical API real save/readback unverified | Android emulator/device + iOS simulator/device, Web side-by-side, exact-SHA Expo typecheck, canonical delayed-send E2E and signed distribution |
+
+- State: **IMPLEMENTING**, not DEVELOPER_VERIFIED. No accepted builds. Keep source verification distinct from on-device QA. The repeated read must remain manual and read-only; an empty canonical result must not be treated as permission to resend. After a positive match, normal drafting can resume. Further server-side request-id correlation is outside this Native-only ownership and requires the shared owner.
+- Cost: no paid Actions/EAS/API, store submission or production writes. PR #113 (Hello Work documentation) remains outside this path; do not merge it here. CI/Cloudflare budget and signing permissions remain unresolved.
