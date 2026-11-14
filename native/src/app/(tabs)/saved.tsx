@@ -25,6 +25,10 @@ export default function SavedJobsScreen() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
+  const [ownedOpenError, setOwnedOpenError] = useState<CandidateOwnedView<string> | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const navigationBusyRef = useRef(false);
+  const navigationSequence = useRef(0);
   const generation = useRef(0);
   const refreshSequence = useRef(0);
   const refreshPendingRef = useRef(false);
@@ -42,6 +46,7 @@ export default function SavedJobsScreen() {
 
   const jobs = readCandidateFreshlyVerifiedView(ownedJobs, ownerKey, privateVisible, freshlyVerifiedOwner.current);
   const error = readCandidateOwnedView(ownedError, ownerKey, privateVisible);
+  const openError = readCandidateOwnedView(ownedOpenError, ownerKey, privateVisible);
   const canAct = canActOnSavedJobs({
     hasVerifiedRows: jobs !== null,
     loading,
@@ -56,6 +61,7 @@ export default function SavedJobsScreen() {
 
   const load = useCallback(async (manual = false) => {
     const requestOwner = ownerKey;
+    if (navigationBusyRef.current) return;
     if (!canStartSavedJobsRefresh({
       refreshPending: refreshPendingRef.current,
       mutationPending: mutationBusyRef.current,
@@ -115,6 +121,10 @@ export default function SavedJobsScreen() {
       mutationSequence.current += 1;
       mutationBusyRef.current = false;
       setBusyId(null);
+      navigationSequence.current += 1;
+      navigationBusyRef.current = false;
+      setOpeningId(null);
+      setOwnedOpenError(null);
     }
     focusedOwnerRef.current = ownerKey;
     focusActiveRef.current = privateVisible && Boolean(ownerKey);
@@ -128,6 +138,10 @@ export default function SavedJobsScreen() {
       setOwnedJobs(null);
       setOwnedError(null);
       setBusyId(null);
+      navigationSequence.current += 1;
+      navigationBusyRef.current = false;
+      setOpeningId(null);
+      setOwnedOpenError(null);
       setLoading(true);
       return;
     }
@@ -140,6 +154,10 @@ export default function SavedJobsScreen() {
       refreshPendingRef.current = false;
       setOwnedJobs(null);
       setOwnedError(null);
+      navigationSequence.current += 1;
+      navigationBusyRef.current = false;
+      setOpeningId(null);
+      setOwnedOpenError(null);
       setLoading(true);
       // Do not clear an in-flight server mutation: it may still complete.
       // The generation fence prevents its delayed result from being painted.
@@ -147,7 +165,7 @@ export default function SavedJobsScreen() {
   }, [load, ownerKey, privateVisible]));
 
   const remove = async (jobId: string) => {
-    if (!canAct || refreshPendingRef.current || mutationBusyRef.current ||
+    if (!canAct || refreshPendingRef.current || navigationBusyRef.current || mutationBusyRef.current ||
         !privateVisibleRef.current || !ownerKey ||
         !jobs?.some((job) => job.id === jobId)) return;
     mutationBusyRef.current = true;
@@ -205,18 +223,45 @@ export default function SavedJobsScreen() {
 
   const open = async (jobId: string, destination: SavedJobDestination = 'detail') => {
     const chosen = jobs?.find((job) => job.id === jobId);
-    if (!canAct || !privateVisibleRef.current || !ownerKey || !chosen) return;
+    if (!canAct || refreshPendingRef.current || mutationBusyRef.current ||
+        navigationBusyRef.current || !privateVisibleRef.current || !ownerKey || !chosen) return;
     const route = savedJobNavigationPath(jobId, chosen, destination, Date.now());
     if (!route) return;
+    // Ref is acquired synchronously, before Clerk token I/O and before React
+    // disables the card. A timeout never starts a navigation afterwards.
+    navigationBusyRef.current = true;
+    const navigationId = ++navigationSequence.current;
     const requestGeneration = generation.current;
-    const pinned = await pinCandidateAction();
-    if (pinned?.isCurrent() &&
-        candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey &&
-        canPresent(ownerKey, requestGeneration) && focusActiveRef.current &&
-        !refreshPendingRef.current && !mutationBusyRef.current) {
-      // A ?apply=1 route is only a request to OPEN the existing document step.
-      // Job Detail validates the live job/profile/applications again before use.
+    setOpeningId(jobId);
+    setOwnedOpenError(null);
+    let navigated = false;
+    try {
+      const pinned = await boundedPrivateRead(() => {
+        if (!canPresent(ownerKey, requestGeneration) || !focusActiveRef.current)
+          throw new Error('安全なログイン状態を確認できませんでした。');
+        return pinCandidateAction();
+      });
+      if (!pinned?.isCurrent() ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey ||
+          !canPresent(ownerKey, requestGeneration) || !focusActiveRef.current ||
+          refreshPendingRef.current || mutationBusyRef.current ||
+          navigationId !== navigationSequence.current) return;
+      // A ?apply=1 route only opens the existing document step. Job Detail
+      // revalidates current job/profile/application before every actual action.
       router.push(route as never);
+      navigated = true;
+    } catch {
+      if (navigationId === navigationSequence.current &&
+          canPresent(ownerKey, requestGeneration) && focusActiveRef.current) {
+        setOwnedOpenError({ ownerKey,
+          value: '求人詳細を開けませんでした。通信状態を確認してもう一度お試しください。' });
+      }
+    } finally {
+      // Keep the navigation lease until blur after a successful push.
+      if (!navigated && navigationId === navigationSequence.current) {
+        navigationBusyRef.current = false;
+        setOpeningId(null);
+      }
     }
   };
 
@@ -229,12 +274,13 @@ export default function SavedJobsScreen() {
       <View style={styles.headerRow}>
         <Text style={styles.summary}>{jobs === null ? '—' : `${jobs.length}件`}</Text>
         <Pressable accessibilityRole="button" accessibilityLabel="気になる求人を更新"
-          accessibilityState={{ disabled: loading || busyId !== null }}
-          onPress={() => void load(true)} disabled={loading || busyId !== null}>
+          accessibilityState={{ disabled: loading || busyId !== null || openingId !== null }}
+          onPress={() => void load(true)} disabled={loading || busyId !== null || openingId !== null}>
           <Text style={styles.link}>更新</Text>
         </Pressable>
       </View>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      {openError ? <Text accessibilityRole="alert" style={styles.error}>{openError}</Text> : null}
       {jobs !== null && (loading || error) ? (
         <Text style={styles.staleNotice} accessibilityLiveRegion="polite">
           {loading ? '前回確認できた求人を表示しています。更新が完了するまで操作できません。'
@@ -242,6 +288,9 @@ export default function SavedJobsScreen() {
         </Text>
       ) : null}
       {(loading || (jobs === null && !error)) ? <ActivityIndicator /> : null}
+      {openingId ? <Text style={styles.staleNotice} accessibilityLiveRegion="polite">
+        求人詳細を開いています…
+      </Text> : null}
       {!loading && !error && jobs?.length === 0 ? (
         <View testID="saved-empty-state" style={styles.empty}>
           <Text style={styles.emptyTitle}>気になる求人はまだありません</Text>
@@ -254,10 +303,10 @@ export default function SavedJobsScreen() {
         </View>
       ) : null}
       {jobs !== null && jobs.length >= 2 ? (
-        <Pressable style={styles.compareButton} disabled={!canAct}
-          accessibilityRole="button" accessibilityState={{ disabled: !canAct }}
+        <Pressable style={styles.compareButton} disabled={!canAct || openingId !== null}
+          accessibilityRole="button" accessibilityState={{ disabled: !canAct || openingId !== null }}
           onPress={() => {
-          if (!canAct || refreshPendingRef.current) return;
+          if (!canAct || refreshPendingRef.current || navigationBusyRef.current) return;
           // Match Web Saved → Compare: pass the first three canonical saved IDs.
           // Compare revalidates IDs against its own authorized published catalog.
           const query = jobs.slice(0, 3)
@@ -270,7 +319,7 @@ export default function SavedJobsScreen() {
       ) : null}
       {(jobs ?? []).map((job) => (
         <SavedJobPreviewCard key={ownerKey + ':' + job.id} job={job}
-          disabled={!canAct || busyId !== null} removing={busyId === job.id}
+          disabled={!canAct || busyId !== null || openingId !== null} removing={busyId === job.id}
           onOpen={() => void open(job.id)}
           onApply={() => void open(job.id, 'apply')}
           onVisit={() => void open(job.id, 'visit')}
