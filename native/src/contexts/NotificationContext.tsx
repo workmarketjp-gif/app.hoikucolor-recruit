@@ -41,6 +41,7 @@ import {
 import { resolveCanonicalNotificationRead, type CanonicalNotificationRead } from '../lib/notificationReadSnapshot';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { createNotificationMarkAllSingleFlight } from '../lib/notificationMarkAllSingleFlight';
+import { createNotificationCardOpenGate } from '../lib/notificationCardOpenGate';
 
 const NotificationContext = createContext<{
   notifications: JobseekerNotification[];
@@ -57,6 +58,7 @@ const NotificationContext = createContext<{
   openNotification: (notificationId: string) => Promise<void>;
   markAllRead: () => Promise<void>;
   markAllReadPending: boolean;
+  openingNotificationId: string | null;
 } | null>(null);
 
 function responseNotificationId(response: any) {
@@ -85,6 +87,8 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   const pendingCanonicalReconciliation = useRef(false);
   const canonicalLoadGeneration = useRef(0);
   const markAllGate = useRef(createNotificationMarkAllSingleFlight());
+  const cardOpenGate = useRef(createNotificationCardOpenGate());
+  const [pendingOpenCard, setPendingOpenCard] = useState<{ ownerKey: string; notificationId: string } | null>(null);
   const [pendingMarkAllOwner, setPendingMarkAllOwner] = useState<string | null>(null);
   const verificationRef = useRef<string | null>(null);
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
@@ -251,25 +255,42 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   }, [privacy.shieldVisible, pinCandidateAction, refresh, router]);
 
   const openNotification = useCallback(async (notificationId: string) => {
-    const pinned = await pinCandidateAction();
-    if (!pinned) return;
+    const pressedOwner = ownerKey;
+    // Block same-frame repeated taps before React can render the disabled card.
+    // The push-response path also uses processingIds; do not start a second
+    // list-card write while an owned notification response is being handled.
+    if (!pressedOwner || privacy.shieldVisible || !privacy.canAccessPrivateData() ||
+        processingIds.current.has(notificationId) ||
+        !cardOpenGate.current.tryStart(pressedOwner, notificationId)) return;
+    processingIds.current.add(notificationId);
+    setPendingOpenCard({ ownerKey: pressedOwner, notificationId });
+    let pinned: Awaited<ReturnType<typeof pinCandidateAction>> | null = null;
     try {
-      const route = await resolveNotificationRoute(pinned.client, notificationId);
+      // Bound only pre-write private reads. An already-started mark-read RPC
+      // must not be timed out and automatically retried with an unknown result.
+      pinned = await boundedPrivateRead(() => pinCandidateAction());
+      if (!pinned || !pinned.isCurrent() ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== pressedOwner) return;
+      const route = await boundedPrivateRead(() => resolveNotificationRoute(pinned.client, notificationId));
       const target = nativeNotificationHref(route, notificationId);
       if (!pinned.isCurrent()) return;
       await markNotificationRead(pinned.client, notificationId);
       if (!pinned.isCurrent()) return;
-      // A readback failure is not an acknowledged empty list; leave the
-      // canonical error visible and do not infer a successful badge update.
+      // A readback failure is not a confirmed empty list or zero badge.
       await refresh().catch(() => undefined);
       if (!pinned.isCurrent()) return;
       router.push(target as never);
     } catch {
-      if (!pinned.isCurrent()) return;
-      const key = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
-      if (key) setOwnedError({ ownerKey: key, value: '通知を開けませんでした。もう一度お試しください。' });
+      if (pinned && (!pinned.isCurrent() ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== pressedOwner)) return;
+      setOwnedError({ ownerKey: pressedOwner, value: '通知を開けませんでした。もう一度お試しください。' });
+    } finally {
+      processingIds.current.delete(notificationId);
+      cardOpenGate.current.complete(pressedOwner, notificationId);
+      setPendingOpenCard((current) =>
+        current?.ownerKey === pressedOwner && current.notificationId === notificationId ? null : current);
     }
-  }, [pinCandidateAction, refresh, router]);
+  }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData, privacy.shieldVisible, refresh, router]);
 
   const markAllRead = useCallback(async () => {
     const ownerAtPress = ownerKey;
@@ -398,7 +419,9 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     openNotification,
     markAllRead,
     markAllReadPending: privateAllowed && pendingMarkAllOwner === ownerKey,
-  }), [loading, markAllRead, openNotification, ownerKey, pendingMarkAllOwner, privateAllowed, pushState,
+    openingNotificationId: privateAllowed && pendingOpenCard?.ownerKey === ownerKey
+      ? pendingOpenCard.notificationId : null,
+  }), [loading, markAllRead, openNotification, ownerKey, pendingMarkAllOwner, pendingOpenCard, privateAllowed, pushState,
     reconciliationRevision, refresh, safeError, safeSnapshot, syncPush]);
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;

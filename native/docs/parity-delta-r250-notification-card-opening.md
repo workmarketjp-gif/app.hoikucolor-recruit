@@ -1,0 +1,17 @@
+# r250 — Notification card repeated taps and pre-write read deadlines (2026-11-15 NZ)
+
+State: **IMPLEMENTING**. Frozen Web reference: authenticated JOBSEEKER `src/components/NotificationCenter.tsx` via `/notifications` affordance, Web main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, checked 2026-11-15. Synthetic state: candidate A notifications list, two quick taps on same notification, concurrent different notification, account/session swap during Clerk token or route RPC stall. Web source comparison only; no same-state Web/device rendered capture.
+
+**Gap:** card `openNotification()` previously had no synchronous entry guard and unbounded pre-write Clerk token/route reads. Repeated taps could launch duplicate mark-read RPCs/navigation; late read responses required an explicit owner/session check at the mutation boundary. Push handler already has a separate processing-ID guard. The Web's expected interaction is one user-intended opening, not multiple navigations.
+
+**Native repair:** add owner/session-and-notification keyed immediate single-flight; coordinate with existing notification response processing IDs, disable only the pending list card with an accessible busy state; bound the **pre-write** Clerk and canonical route reads using existing 15-second helper and validate pinned candidate/session before the mutation. The mark-read RPC itself is **never timed out, automatically retried or treated as confirmed without its existing canonical confirmation**. Keep existing post-write readback, error redaction, App Lock, private list and RLS. No Web/source/backend/schema/production change.
+
+**Focused QA:** `cd native && node --experimental-strip-types --test qa/native-notification-card-open-gate-r250.test.mjs` (6 behavior tests) and helper-only `tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext src/lib/notificationCardOpenGate.ts`. Tests execute real helper source; Native TSX wiring inspected separately, not a compiled app or mounted component. No actual RPC writes were issued.
+
+| Workflow / state | Android | iOS |
+| --- | --- | --- |
+| `notifications` → card → owned route → mark read → readback; rapid taps/account-switch | IMPLEMENTING: helper source tested; Native rendered, real Clerk/API and keyboard/large text **NOT VERIFIED** | IMPLEMENTING: helper source tested; Native rendered, real Clerk/API and keyboard/large text **NOT VERIFIED** |
+| App brand and date/card visual parity with same-state Web | IMPLEMENTING: no native screenshot | IMPLEMENTING: no native screenshot |
+| Signed installable acceptance | BLOCKED_EXTERNAL: Android SDK/emulator + signing route absent | BLOCKED_EXTERNAL: macOS/Xcode and authorized iOS distribution absent |
+
+Repo `workmarketjp-gif/app.hoikucolor-recruit`, branch `native/color-jobseeker-integration-r216-20261114`, parent `4c0d7f15653bdbe5c12e09e9abfc950e9e02a10d`. Only COLOR Native-owned files; open PR #113 affects Hello Work QA/ops only. GitHub `.github/workflows/ci.yml` push main and PR only; no automatic development-branch CI or new paid Actions/EAS. Connected Cloudflare Worker trigger last recorded as main-only, not newly verified here. No PR/main/production/DB/auth/RLS/Worker, real candidate messages/applications, paid agents, or signing. Quota unknown. Next: Expo SDK-backed typecheck; installed Android + iOS Web-vs-Native and synthetic canonical mark/readback, then signed distribution.

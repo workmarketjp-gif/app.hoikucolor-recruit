@@ -57,6 +57,11 @@ export default function NotificationsScreen() {
         <Pressable
           key={notification.id}
           accessibilityRole="button"
+          disabled={notifications.openingNotificationId === notification.id}
+          accessibilityState={{
+            disabled: notifications.openingNotificationId === notification.id,
+            busy: notifications.openingNotificationId === notification.id,
+          }}
           style={[styles.card, !notification.read_at && styles.unreadCard]}
           onPress={() => void notifications.openNotification(notification.id)}
         >
