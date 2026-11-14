@@ -11,6 +11,7 @@ import { getJobseekerProfile, listRankedJobs, type JobseekerJob, type JobseekerP
 import { getJobseekerMatchingPreferences, type JobseekerMatchingPreferences } from '../lib/candidateParityApi';
 import { matchJob, type JobMatchResult } from '../lib/jobMatching';
 import { comparisonVerifiedMetric } from '../lib/comparisonVerifiedEvidence';
+import { readCandidateComparisonBounded } from '../lib/comparisonCanonicalRead';
 
 type ComparedJob = { job: JobseekerJob; match: JobMatchResult };
 type ComparisonSource = 'facility' | 'workplace' | 'finance' | 'match';
@@ -153,18 +154,22 @@ export default function CompareScreen() {
     setOwnedError(null);
     setLoading(true);
     try {
-      const pinned = await pinCandidateAction();
-      const pinnedOwner = pinned && candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
-      if (!pinned || !pinnedOwner || pinnedOwner !== ownerKey || !pinned.isCurrent()) {
-        throw new Error('CANDIDATE_SESSION_CHANGED');
-      }
-      const [nextJobs, nextProfile, nextPreferences] = await Promise.all([
-        listRankedJobs(pinned.client),
-        getJobseekerProfile(pinned.client),
-        getJobseekerMatchingPreferences(pinned.client),
-      ]);
-      if (!pinned.isCurrent() || current !== generation.current || pinnedOwner !== ownerKey ||
-          !privacy.canAccessPrivateData()) return;
+      // The token acquisition and all three canonical reads each have a
+      // finite deadline. One pinned candidate owns the entire snapshot.
+      const { pinned, jobs: nextJobs, profile: nextProfile, preferences: nextPreferences } =
+        await readCandidateComparisonBounded({
+          pin: pinCandidateAction,
+          isCurrent: () => current === generation.current && !!ownerKey &&
+            privacy.canAccessPrivateData(),
+          ownsPin: (candidate) =>
+            candidateViewOwnerKey(candidate.ownerId, candidate.ownerSessionId) === ownerKey,
+          readJobs: (candidate) => listRankedJobs(candidate.client),
+          readProfile: (candidate) => getJobseekerProfile(candidate.client),
+          readPreferences: (candidate) => getJobseekerMatchingPreferences(candidate.client),
+        });
+      const pinnedOwner = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
+      if (!pinned.isCurrent() || !pinnedOwner || current !== generation.current ||
+          pinnedOwner !== ownerKey || !privacy.canAccessPrivateData()) return;
       // Web /compare?job_id=... can preselect up to three jobs. Treat the
       // URL as a request only: the canonical published-job result authorizes
       // which of those IDs can be displayed. Do not reapply the original
