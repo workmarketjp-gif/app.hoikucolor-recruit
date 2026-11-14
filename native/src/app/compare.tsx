@@ -12,6 +12,7 @@ import { getJobseekerMatchingPreferences, type JobseekerMatchingPreferences } fr
 import { matchJob, type JobMatchResult } from '../lib/jobMatching';
 import { comparisonVerifiedMetric } from '../lib/comparisonVerifiedEvidence';
 import { readCandidateComparisonBounded } from '../lib/comparisonCanonicalRead';
+import { comparisonConditionCell, comparisonVerifiedCell, type ComparisonCellPresentation } from '../lib/comparisonCellPresentation';
 
 type ComparedJob = { job: JobseekerJob; match: JobMatchResult };
 type ComparisonSource = 'facility' | 'workplace' | 'finance' | 'match';
@@ -67,8 +68,8 @@ function metricLabel(compared: ComparedJob[], kind: 'workplace' | 'finance', key
   return fallback[key] || key;
 }
 
-function metricValue(job: JobseekerJob, kind: 'workplace' | 'finance', key: string) {
-  return comparisonVerifiedMetric(job, kind, key)?.displayValue ?? '実績未公開';
+function metricValue(job: JobseekerJob, kind: 'workplace' | 'finance', key: string): ComparisonCellPresentation {
+  return comparisonVerifiedCell(comparisonVerifiedMetric(job, kind, key));
 }
 
 function sourceLabel(source: ComparisonSource) {
@@ -87,7 +88,7 @@ function ComparisonRow({
   key?: string;
   label: string;
   source: ComparisonSource;
-  values: string[];
+  values: (string | ComparisonCellPresentation)[];
   note?: string;
 }) {
   return (
@@ -101,13 +102,20 @@ function ComparisonRow({
         <Text style={styles.rowLabel}>{label}</Text>
         {note ? <Text style={styles.rowNote}>{note}</Text> : null}
       </View>
-      {values.map((value, index) => (
-        <View key={`${label}-${index}`} style={styles.valueCell}>
-          <Text style={[styles.valueText, value.includes('未公開') || value.includes('未掲載') || value.includes('明記なし') ? styles.missing : null]}>
-            {value}
-          </Text>
-        </View>
-      ))}
+      {values.map((raw, index) => {
+        const cell = typeof raw === 'string'
+          ? { value: raw, caption: null, emphasized: false }
+          : raw;
+        return (
+          <View key={`${label}-${index}`} style={styles.valueCell}>
+            <Text style={[styles.valueText,
+              cell.value.includes('未公開') || cell.value.includes('未掲載') || cell.value.includes('明記なし') ? styles.missing : null,
+              cell.emphasized ? styles.strongValue : null,
+            ]}>{cell.value}</Text>
+            {cell.caption ? <Text style={styles.evidenceCaption}>{cell.caption}</Text> : null}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -345,7 +353,7 @@ export default function CompareScreen() {
               ))}
             </View>
 
-            <ComparisonRow label="希望条件マッチ" source="match" values={compared.map(({ match }) => match.condition_score === null ? '希望条件未設定' : `${match.condition_score}%`)} />
+            <ComparisonRow label="希望条件マッチ" source="match" values={compared.map(({ match }) => comparisonConditionCell(match.condition_score)} />
             <ComparisonRow label="保育観サイン" source="match" note="求人文面に明示された表現だけを確認" values={compared.map(({ match }) => match.matched_childcare_values.length ? match.matched_childcare_values.join('・') : '明示的な一致サインなし')} />
             <ComparisonRow label="勤務地" source="facility" values={compared.map(({ job }) => [job.prefecture, job.city, job.address].filter(Boolean).join(' ') || '未掲載')} />
             <ComparisonRow label="雇用形態" source="facility" values={compared.map(({ job }) => job.employment_type || '未掲載')} />
@@ -422,6 +430,8 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: 15, fontWeight: '900' },
   rowNote: { fontSize: 12, lineHeight: 18, color: '#626772' },
   valueText: { fontSize: 15, lineHeight: 21 },
+  strongValue: { color: '#16714a', fontWeight: '900' },
+  evidenceCaption: { fontSize: 14, lineHeight: 20, color: '#606873' },
   missing: { color: '#8a909b' },
   headerFacility: { fontSize: 15, fontWeight: '900' },
   headerJob: { fontSize: 14, color: '#606873' },
