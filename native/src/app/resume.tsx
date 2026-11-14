@@ -36,6 +36,7 @@ import {
 import { MAX_RESUME_EDUCATION, MAX_RESUME_EMPLOYMENT, canAppendResumeEntry, educationStatusChange, moveResumeEntry, resumeCurrentChange } from '../lib/resumeEditor';
 import { RESUME_AUTOSAVE_DELAY_MS, shouldConfirmResumeReload, shouldScheduleResumeAutosave } from '../lib/resumeAutosavePolicy';
 import { captureResumeRemoval, isResumeRemovalStillCurrent } from '../lib/resumeEntryRemovalConfirmation';
+import { resumePdfFailureNotice } from '../lib/resumePdfFailurePresentation';
 
 const sections = ['基本情報', '学歴', '職歴', '資格', '保育経験', '自己PR', '確認・保存'] as const;
 const sectionQuestions = ['あなたのことを教えてください', 'どの学校を卒業しましたか？', 'これまで、どこで働きましたか？', 'どんな資格・免許を持っていますか？', '保育の経験を教えてください', 'あなたの強みや思いを書きましょう', '入力内容を確認して保存しましょう'] as const;
@@ -570,7 +571,7 @@ export default function ResumeScreen() {
       setPdfSaved({ type, isDefault: record.is_default });
     } catch (cause) {
       if (stillCurrent()) {
-        setPdfError(cause instanceof Error ? cause.message : 'PDFを作成・保存できませんでした。');
+        setPdfError(resumePdfFailureNotice(cause));
       } else if (live(expectedOwner, startedGeneration)) {
         // Registration may already have committed before the photo/draft changed.
         // Do not call it a success or automatically submit another PDF.

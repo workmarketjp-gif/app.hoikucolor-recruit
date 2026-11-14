@@ -1,3 +1,11 @@
+## Latest isolated delta (r237, 2026-11-14 NZ) — Resume generated-PDF error privacy
+
+- **Reference:** JOBSEEKER Web `/resume`, main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`; Native parent `1ff2f5079ba1eace7c267f65fb51dfc37dbb1df8`. Synthetic candidate, failed private Storage/Clerk/RPC during explicit PDF creation; no deployed Web/rendered Native capture.
+- **Gap:** `createPdf()` previously displayed arbitrary `cause.message` after failing a read, generated-PDF render or private Storage/RPC upload. Such messages may include internal paths, IDs and backend details. Only allow reviewed fixed Japanese messages; all unexpected errors now display a generic ambiguous-save notice asking the candidate to inspect the authorized document list before another attempt. Existing no-auto-resend/upload, session lease, quarantine and server authority are unchanged; no data or production API altered.
+- **Actual test:** Node 22.16 `node --experimental-strip-types --test native/qa/native-resume-pdf-error-privacy-r237.test.mjs` **6/6 PASS** on actual new helper. Global TypeScript 5.8.3 dependency-free strict compile PASS. Screen import/catch wiring verified from the committed source. Full Expo typecheck, Native render, authorized Storage/RPC persistence and signed acceptance build NOT VERIFIED.
+- **Matrix:** `/resume` explicit PDF error: Android **IMPLEMENTING** (source privacy test only); iOS **IMPLEMENTING** (source privacy test only). No native simulator, installed UI/error state/safe area/voice-over, real API readback, or signed builds.
+- **Cost:** PR and main CI triggers only; Cloudflare connected `app-hoikucolor-recruit` Worker build Git trigger includes main only. No PR/main/Production/DB/Auth/Storage changes, no paid Actions, EAS, other agents or real candidate data. Additional quota and signing/distribution unverified.
+
 ## Latest isolated delta (r236, 2026-11-14 NZ) — Resume row deletion confirmation lease
 
 - **Baseline/state:** Jobseeker Web `/resume` at `main fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, authenticated synthetic candidate A editing 学歴/職歴; Native branch parent `35cb67865224d514b5f1f3b2e13eff24dcfcff42`. Source comparison only, no deployed screenshot.
