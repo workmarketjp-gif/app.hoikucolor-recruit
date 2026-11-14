@@ -214,7 +214,9 @@ export function NotificationProvider({ children }: PropsWithChildren) {
         deferredResponses.current.set(notificationId, response);
         return 'deferred' as const;
       }
-      await markNotificationRead(pinned.client, notificationId).catch(() => undefined);
+      // A missing/revoked or unconfirmed owned row cannot be acknowledged as read.
+      // The existing catch routes safely to notifications and leaves retry pending.
+      await markNotificationRead(pinned.client, notificationId);
       if (!pinned.isCurrent()) {
         deferredResponses.current.set(notificationId, response);
         return 'deferred' as const;

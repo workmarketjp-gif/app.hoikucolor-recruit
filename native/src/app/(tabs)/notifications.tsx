@@ -2,6 +2,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View, ActivityIndicator } from
 import { useNotifications } from '../../contexts/NotificationContext';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { candidateNotificationCountPresentation, candidateNotificationEmptyPresentation } from '../../lib/notificationListPresentation';
+import { notificationRelativeTime } from '../../lib/notificationRelativeTime';
 
 export default function NotificationsScreen() {
   usePrivateScreenCapture('notifications');
@@ -55,6 +56,7 @@ export default function NotificationsScreen() {
       {notifications.loaded ? notifications.notifications.map((notification) => (
         <Pressable
           key={notification.id}
+          accessibilityRole="button"
           style={[styles.card, !notification.read_at && styles.unreadCard]}
           onPress={() => void notifications.openNotification(notification.id)}
         >
@@ -63,7 +65,7 @@ export default function NotificationsScreen() {
             {!notification.read_at ? <Text style={styles.unreadMark}>未読</Text> : null}
           </View>
           <Text style={styles.body}>{notification.body}</Text>
-          <Text style={styles.date}>{new Date(notification.created_at).toLocaleString('ja-JP')}</Text>
+          <Text style={styles.date}>{notificationRelativeTime(notification.created_at)}</Text>
         </Pressable>
       )) : null}
 
@@ -91,12 +93,12 @@ const styles = StyleSheet.create({
   count: { fontWeight: '800' },
   link: { fontWeight: '800', textDecorationLine: 'underline' },
   card: { backgroundColor: '#fff', borderRadius: 14, padding: 15, gap: 7 },
-  unreadCard: { borderWidth: 1, borderColor: '#b7c8ff' },
+  unreadCard: { backgroundColor: '#fff8fa', borderWidth: 1, borderColor: '#ffd5df' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   title: { fontSize: 16, fontWeight: '800', flex: 1 },
   body: { color: '#4f5965', lineHeight: 20 },
   date: { color: '#7b8490', fontSize: 12 },
-  unreadMark: { fontSize: 11, fontWeight: '800', backgroundColor: '#edf4ff', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
+  unreadMark: { fontSize: 11, fontWeight: '800', backgroundColor: '#fff1f4', color: '#a8244e', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
   empty: { backgroundColor: '#fff', borderRadius: 14, padding: 20, color: '#606873' },
   error: { color: '#AC2643', fontSize: 14, lineHeight: 21, fontWeight: '700' },
   permissionCard: { backgroundColor: '#fff', borderRadius: 14, padding: 16, gap: 10 },

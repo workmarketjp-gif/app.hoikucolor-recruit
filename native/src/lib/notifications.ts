@@ -8,6 +8,7 @@ import { Platform } from 'react-native';
 import { getNativeReleaseIdentity } from './appIdentity';
 import { scopedNotificationHref } from './scopedNotificationRoute';
 import { parseCanonicalNotificationRows, parseCanonicalUnreadNotificationCount } from './notificationReadSnapshot';
+import { requireConfirmedNotificationRead } from './notificationMarkReadConfirmation';
 
 const INSTALLATION_ID_KEY = 'hc.native.installation-id.v1';
 const PUSH_BINDING_QUARANTINED = 'PUSH_BINDING_QUARANTINED';
@@ -122,8 +123,9 @@ export async function getUnreadNotificationCount(client: SupabaseClient): Promis
 }
 
 export async function markNotificationRead(client: SupabaseClient, notificationId: string) {
-  const { error } = await client.rpc('hc_jobseeker_mark_notification_read', { p_notification_id: notificationId });
+  const { data, error } = await client.rpc('hc_jobseeker_mark_notification_read', { p_notification_id: notificationId });
   if (error) throw error;
+  requireConfirmedNotificationRead(data);
 }
 
 export async function markAllNotificationsRead(client: SupabaseClient) {
