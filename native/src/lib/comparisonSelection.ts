@@ -23,3 +23,14 @@ export function requestedComparisonJobIds(params: string | readonly string[] | n
   const ids = typeof params === 'string' ? [params] : Array.isArray(params) ? params : [];
   return [...new Set(ids.filter((id): id is string => typeof id === 'string' && UUID.test(id)))].slice(0, 3);
 }
+
+
+/**
+ * Compose Saved -> Compare from the current verified canonical saved-job IDs.
+ * Compare still re-reads its published candidate-authorized catalog.
+ */
+export function savedComparisonRoute(savedJobIds: readonly string[]): string | null {
+  const ids = requestedComparisonJobIds(savedJobIds);
+  if (ids.length < 2) return null;
+  return `/compare?${ids.map((id) => `job_id=${encodeURIComponent(id)}`).join('&')}`;
+}

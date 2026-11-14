@@ -11,6 +11,7 @@ import { canCommitSavedJobsView, removeSavedJobAndConfirm } from '../../lib/save
 import { boundedPrivateRead } from '../../lib/privateReadDeadline';
 import { readCandidateJobDiscoveryBounded } from '../../lib/jobDiscoveryCanonicalRead';
 import { canActOnSavedJobs, canStartSavedJobsRefresh, retainSavedJobsDuringManualRefresh } from '../../lib/savedJobsRefreshPolicy';
+import { savedComparisonRoute } from '../../lib/comparisonSelection';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, readCandidateOwnedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
 
@@ -221,18 +222,16 @@ export default function SavedJobsScreen() {
     }
   };
 
-  const open = async (jobId: string, destination: SavedJobDestination = 'detail') => {
-    const chosen = jobs?.find((job) => job.id === jobId);
+  // Card and Compare navigation must share one synchronous lease; React state
+  // alone cannot prevent same-frame taps or an async Clerk account switch.
+  const navigateVerifiedSavedRoute = async (route: string, busyKey: string) => {
     if (!canAct || refreshPendingRef.current || mutationBusyRef.current ||
-        navigationBusyRef.current || !privateVisibleRef.current || !ownerKey || !chosen) return;
-    const route = savedJobNavigationPath(jobId, chosen, destination, Date.now());
-    if (!route) return;
-    // Ref is acquired synchronously, before Clerk token I/O and before React
-    // disables the card. A timeout never starts a navigation afterwards.
+        navigationBusyRef.current || !privateVisibleRef.current ||
+        !focusActiveRef.current || !ownerKey) return;
     navigationBusyRef.current = true;
     const navigationId = ++navigationSequence.current;
     const requestGeneration = generation.current;
-    setOpeningId(jobId);
+    setOpeningId(busyKey);
     setOwnedOpenError(null);
     let navigated = false;
     try {
@@ -246,8 +245,8 @@ export default function SavedJobsScreen() {
           !canPresent(ownerKey, requestGeneration) || !focusActiveRef.current ||
           refreshPendingRef.current || mutationBusyRef.current ||
           navigationId !== navigationSequence.current) return;
-      // A ?apply=1 route only opens the existing document step. Job Detail
-      // revalidates current job/profile/application before every actual action.
+      // Compare revalidates the candidate-authorized published catalog.
+      // Apply/visit links only open their existing guarded screen.
       router.push(route as never);
       navigated = true;
     } catch {
@@ -257,12 +256,26 @@ export default function SavedJobsScreen() {
           value: '求人詳細を開けませんでした。通信状態を確認してもう一度お試しください。' });
       }
     } finally {
-      // Keep the navigation lease until blur after a successful push.
       if (!navigated && navigationId === navigationSequence.current) {
         navigationBusyRef.current = false;
         setOpeningId(null);
       }
     }
+  };
+
+  const open = async (jobId: string, destination: SavedJobDestination = 'detail') => {
+    const chosen = jobs?.find((job) => job.id === jobId);
+    if (!chosen) return;
+    const route = savedJobNavigationPath(jobId, chosen, destination, Date.now());
+    if (!route) return;
+    await navigateVerifiedSavedRoute(route, jobId);
+  };
+
+  const compare = async () => {
+    // Only fresh, same-owner saved rows can create this request.
+    const route = savedComparisonRoute(jobs?.slice(0, 3).map((job) => job.id) ?? []);
+    if (!route) return;
+    await navigateVerifiedSavedRoute(route, 'compare');
   };
 
   if (!privateVisible || !ownerKey) {
@@ -289,7 +302,7 @@ export default function SavedJobsScreen() {
       ) : null}
       {(loading || (jobs === null && !error)) ? <ActivityIndicator /> : null}
       {openingId ? <Text style={styles.staleNotice} accessibilityLiveRegion="polite">
-        求人詳細を開いています…
+        {openingId === 'compare' ? '比較画面を開いています…' : '求人詳細を開いています…'}
       </Text> : null}
       {!loading && !error && jobs?.length === 0 ? (
         <View testID="saved-empty-state" style={styles.empty}>
@@ -305,15 +318,7 @@ export default function SavedJobsScreen() {
       {jobs !== null && jobs.length >= 2 ? (
         <Pressable style={styles.compareButton} disabled={!canAct || openingId !== null}
           accessibilityRole="button" accessibilityState={{ disabled: !canAct || openingId !== null }}
-          onPress={() => {
-          if (!canAct || refreshPendingRef.current || navigationBusyRef.current) return;
-          // Match Web Saved → Compare: pass the first three canonical saved IDs.
-          // Compare revalidates IDs against its own authorized published catalog.
-          const query = jobs.slice(0, 3)
-            .map((job) => 'job_id=' + encodeURIComponent(job.id))
-            .join('&');
-          router.push(('/compare?' + query) as never);
-        }}>
+          onPress={() => void compare()}>
           <Text style={styles.compareButtonText}>園を比較する</Text>
         </Pressable>
       ) : null}

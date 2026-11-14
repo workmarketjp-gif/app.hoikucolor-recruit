@@ -1,0 +1,8 @@
+# COLOR Native r230 — Saved → Compare session-pinned navigation
+
+- Web reference: JOBSEEKER `/saved` → `/compare`, main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, source reviewed 2026-11-14 NZ with synthetic candidate/two saved jobs; no paired deployed screenshot. Native parent `cfae714e13990720c43c39a2b17267226b8e3df7`, branch `native/color-jobseeker-integration-r216-20261114`.
+- **Source gap addressed:** Previously direct Compare push bypassed the saved detail/apply/visit synchronous navigation lease and the current Clerk candidate+session pin. The same lease now covers all saved routes and prevents double-tap navigation and a stale account/session push after token I/O. The Compare screen independently validates its published catalog; no backend or role behavior is changed.
+- Only two/three distinct UUIDs from current saved canonical rows form the query; malformed IDs and duplicates do not inject extra parameters. No automatic apply/message/send.
+- Scoped Node 4/4 behavioral assertions, with the prior r228/r229 focused set 16/16 PASS locally; isolated TypeScript helper passed. Screen wiring/static checks are not Native runtime/Expo typecheck.
+- Matrix: Android IMPLEMENTING — source guard fixed; rendered UI/backend acceptance NOT VERIFIED. iOS IMPLEMENTING — same. Neither signed/installable candidate is available.
+- No PR/main/production/schema/RLS/auth changes, paid Actions/EAS or candidate data use. PR/main-trigger CI checked; Cloudflare/billing complete route unverified. Next: SDK-backed Expo typecheck, real two-OS render/navigation/revocation and canonical persistence QA.
