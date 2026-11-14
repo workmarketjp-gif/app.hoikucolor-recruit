@@ -7,6 +7,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import { getNativeReleaseIdentity } from './appIdentity';
 import { scopedNotificationHref } from './scopedNotificationRoute';
+import { parseCanonicalUnreadNotificationCount } from './notificationReadSnapshot';
 
 const INSTALLATION_ID_KEY = 'hc.native.installation-id.v1';
 const PUSH_BINDING_QUARANTINED = 'PUSH_BINDING_QUARANTINED';
@@ -117,9 +118,7 @@ export async function listNotifications(client: SupabaseClient, limit = 50): Pro
 export async function getUnreadNotificationCount(client: SupabaseClient): Promise<number> {
   const { data, error } = await client.rpc('hc_jobseeker_get_unread_notification_count_v1');
   if (error) throw error;
-  const count = Number(data);
-  if (!Number.isInteger(count) || count < 0) throw new Error('NOTIFICATION_UNREAD_COUNT_UNAVAILABLE');
-  return count;
+  return parseCanonicalUnreadNotificationCount(data);
 }
 
 export async function markNotificationRead(client: SupabaseClient, notificationId: string) {
