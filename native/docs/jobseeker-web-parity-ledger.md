@@ -1,3 +1,9 @@
+## Latest isolated delta (r241, 2026-11-15 NZ) — Resume row edit freshness
+
+- JOBSEEKER Web `/resume` frozen at `main fa779e73`; actual Web source reviewed 2026-11-15 in a two-row synthetic editing state. Native row callbacks previously rebuilt arrays from stale render snapshots. r241 applies edits/moves by unique row ID to current functional state, uses fresh values for status/age chips, and checks append limits under rapid taps; no API or server change. See [r241 details](parity-delta-r241-resume-row-stale-callback.md).
+- Node targeted real-helper tests **6/6 PASS**, strict helper-only TypeScript PASS; no Expo full compile or Android/iOS real UI, live canonical save/readback, signed build. Both OSes remain **IMPLEMENTING**.
+- Single COLOR writer on `native/color-jobseeker-integration-r216-20261114`, parent `f6860996e7f661f396dcaaab751fa5af422f7b14`; unrelated draft PR owns Hello Work only. No main/PR/production/paid Actions/EAS/DB changes.
+
 ## Latest isolated delta (r240, 2026-11-14 NZ) — Résumé photo uncertain-delete state
 
 - **Web reference:** JOBSEEKER `/resume`, main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, `src/views/ResumeBuilderView.tsx` blob `61859463d2103b8323446a8dbbb1d6297cedc749`; candidate A removing an app-private résumé photo during an OS filesystem failure. Source/state review 2026-11-14, no runtime capture.

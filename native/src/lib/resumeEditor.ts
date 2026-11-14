@@ -10,6 +10,28 @@ export function moveResumeEntry<T>(items: readonly T[], index: number, delta: -1
   return next;
 }
 
+/**
+ * Row callbacks can be queued while React renders an older list. Apply them to
+ * the latest array by stable identity rather than to a captured render index.
+ * Duplicate/missing IDs are deliberately left unchanged to avoid corrupting
+ * another school or employer entry.
+ */
+export function patchResumeEntryById<T extends { id: string }>(
+  items: readonly T[], id: string, patch: Partial<T> | ((current: T) => Partial<T>),
+): T[] {
+  if (!id || items.filter((item) => item.id === id).length !== 1) return [...items];
+  return items.map((item) => item.id === id
+    ? { ...item, ...(typeof patch === 'function' ? patch(item) : patch) } : item);
+}
+
+/** A stale move action cannot move whichever different row occupies its old index. */
+export function moveResumeEntryById<T extends { id: string }>(
+  items: readonly T[], id: string, delta: -1 | 1,
+): T[] {
+  if (!id || items.filter((item) => item.id === id).length !== 1) return [...items];
+  return moveResumeEntry(items, items.findIndex((item) => item.id === id), delta);
+}
+
 export function canAppendResumeEntry(items: readonly unknown[], limit: number): boolean {
   return items.length < limit;
 }

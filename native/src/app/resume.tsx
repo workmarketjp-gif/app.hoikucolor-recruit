@@ -33,7 +33,7 @@ import {
   getCandidateResume, saveCandidateResumeAndConfirm, toResumePayload, type CandidateResume,
   type ResumeEducation, type ResumeEmployment,
 } from '../lib/resumeCanonical';
-import { MAX_RESUME_EDUCATION, MAX_RESUME_EMPLOYMENT, canAppendResumeEntry, educationStatusChange, moveResumeEntry, resumeCurrentChange } from '../lib/resumeEditor';
+import { MAX_RESUME_EDUCATION, MAX_RESUME_EMPLOYMENT, canAppendResumeEntry, educationStatusChange, moveResumeEntryById, patchResumeEntryById, resumeCurrentChange } from '../lib/resumeEditor';
 import { RESUME_AUTOSAVE_DELAY_MS, shouldConfirmResumeReload, shouldScheduleResumeAutosave } from '../lib/resumeAutosavePolicy';
 import { captureResumeRemoval, isResumeRemovalStillCurrent } from '../lib/resumeEntryRemovalConfirmation';
 import { resumePdfFailureNotice } from '../lib/resumePdfFailurePresentation';
@@ -666,38 +666,40 @@ export default function ResumeScreen() {
         />
         {section === 1 ? <>
           {view.education.map((entry, index) => {
-            const patch = (data: Partial<ResumeEducation>) => change('education', view.education.map((e, i) => i === index ? { ...e, ...data } : e));
+            const patch = (data: Partial<ResumeEducation> | ((current: ResumeEducation) => Partial<ResumeEducation>)) =>
+              edit((current) => ({ ...current, education: patchResumeEntryById(current.education, entry.id, data) }));
             return <View style={styles.entry} key={entry.id}>
               <Text style={styles.entryTitle}>{entry.organization || '学校 ' + (index + 1)}</Text>
               <View style={styles.rowActions}>
                 <Pressable accessibilityRole="button" accessibilityLabel={'学歴 ' + (index + 1) + ' を上へ移動'} disabled={index === 0}
-                  style={[styles.rowAction, index === 0 && styles.disabled]} onPress={() => change('education', moveResumeEntry(view.education, index, -1))}><Text style={styles.buttonText}>↑ 上へ</Text></Pressable>
+                  style={[styles.rowAction, index === 0 && styles.disabled]} onPress={() => edit((current) => ({ ...current, education: moveResumeEntryById(current.education, entry.id, -1) }))}><Text style={styles.buttonText}>↑ 上へ</Text></Pressable>
                 <Pressable accessibilityRole="button" accessibilityLabel={'学歴 ' + (index + 1) + ' を下へ移動'} disabled={index === view.education.length - 1}
-                  style={[styles.rowAction, index === view.education.length - 1 && styles.disabled]} onPress={() => change('education', moveResumeEntry(view.education, index, 1))}><Text style={styles.buttonText}>↓ 下へ</Text></Pressable>
+                  style={[styles.rowAction, index === view.education.length - 1 && styles.disabled]} onPress={() => edit((current) => ({ ...current, education: moveResumeEntryById(current.education, entry.id, 1) }))}><Text style={styles.buttonText}>↓ 下へ</Text></Pressable>
               </View>
               <Field label="学校名" value={entry.organization} onChange={(v) => patch({ organization: v ?? '' })} />
               <Field label="学部・学科" value={entry.department} onChange={(v) => patch({ department: v })} />
               <ResumeYearMonthField label="入学した年月" value={entry.start_ym} onChange={(v) => patch({ start_ym: v })} />
               <ResumeYearMonthField label="卒業した年月" value={entry.end_ym} disabled={entry.is_current} onChange={(v) => patch({ end_ym: v })} />
               <Text style={styles.label}>卒業の状態</Text>
-              <View style={styles.choices}>{statuses.map((label) => <Choice key={label} label={label} selected={entry.education_status === label} onPress={() => patch(educationStatusChange(entry, label))} />)}</View>
+              <View style={styles.choices}>{statuses.map((label) => <Choice key={label} label={label} selected={entry.education_status === label} onPress={() => patch((current) => educationStatusChange(current, label))} />)}</View>
               <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => confirmRemove('education', index)}><Text style={styles.buttonText}>この学歴を削除</Text></Pressable>
             </View>;
           })}
           {canAppendResumeEntry(view.education, MAX_RESUME_EDUCATION)
-            ? <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => change('education', [...view.education, { id: Crypto.randomUUID(), organization: '', department: null, start_ym: null, end_ym: null, is_current: false, education_status: null }])}><Text style={styles.buttonText}>＋ 学校を追加</Text></Pressable>
+            ? <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => edit((current) => ({ ...current, education: canAppendResumeEntry(current.education, MAX_RESUME_EDUCATION) ? [...current.education, { id: Crypto.randomUUID(), organization: '', department: null, start_ym: null, end_ym: null, is_current: false, education_status: null }] : current.education }))}><Text style={styles.buttonText}>＋ 学校を追加</Text></Pressable>
             : <Text style={styles.hint}>学歴は{MAX_RESUME_EDUCATION}件まで追加できます。</Text>}
         </> : null}
         {section === 2 ? <>
           {view.employment.map((entry, index) => {
-            const patch = (data: Partial<ResumeEmployment>) => change('employment', view.employment.map((e, i) => i === index ? { ...e, ...data } : e));
+            const patch = (data: Partial<ResumeEmployment> | ((current: ResumeEmployment) => Partial<ResumeEmployment>)) =>
+              edit((current) => ({ ...current, employment: patchResumeEntryById(current.employment, entry.id, data) }));
             return <View style={styles.entry} key={entry.id}>
               <Text style={styles.entryTitle}>{entry.organization || '職場 ' + (index + 1)}</Text>
               <View style={styles.rowActions}>
                 <Pressable accessibilityRole="button" accessibilityLabel={'職歴 ' + (index + 1) + ' を上へ移動'} disabled={index === 0}
-                  style={[styles.rowAction, index === 0 && styles.disabled]} onPress={() => change('employment', moveResumeEntry(view.employment, index, -1))}><Text style={styles.buttonText}>↑ 上へ</Text></Pressable>
+                  style={[styles.rowAction, index === 0 && styles.disabled]} onPress={() => edit((current) => ({ ...current, employment: moveResumeEntryById(current.employment, entry.id, -1) }))}><Text style={styles.buttonText}>↑ 上へ</Text></Pressable>
                 <Pressable accessibilityRole="button" accessibilityLabel={'職歴 ' + (index + 1) + ' を下へ移動'} disabled={index === view.employment.length - 1}
-                  style={[styles.rowAction, index === view.employment.length - 1 && styles.disabled]} onPress={() => change('employment', moveResumeEntry(view.employment, index, 1))}><Text style={styles.buttonText}>↓ 下へ</Text></Pressable>
+                  style={[styles.rowAction, index === view.employment.length - 1 && styles.disabled]} onPress={() => edit((current) => ({ ...current, employment: moveResumeEntryById(current.employment, entry.id, 1) }))}><Text style={styles.buttonText}>↓ 下へ</Text></Pressable>
               </View>
               <Field label="勤務先・施設名" value={entry.organization} onChange={(v) => patch({ organization: v ?? '' })} />
               <Field label="所属・部署" value={entry.department} onChange={(v) => patch({ department: v })} />
@@ -705,13 +707,13 @@ export default function ResumeScreen() {
               <ResumeOptionField label="雇用形態" value={entry.employment_type} choices={employmentTypeOptions} onChange={(v) => patch({ employment_type: v })} />
               <Field label="職種" value={entry.job_title} onChange={(v) => patch({ job_title: v })} />
               <ResumeYearMonthField label="働き始めた年月" value={entry.start_ym} onChange={(v) => patch({ start_ym: v })} />
-              <View style={styles.toggle}><Text style={styles.label}>今もここで働いている</Text><Switch value={entry.is_current} onValueChange={(v) => patch(resumeCurrentChange(entry, v))} /></View>
+              <View style={styles.toggle}><Text style={styles.label}>今もここで働いている</Text><Switch value={entry.is_current} onValueChange={(v) => patch((current) => resumeCurrentChange(current, v))} /></View>
               {!entry.is_current ? <ResumeYearMonthField label="辞めた年月" value={entry.end_ym} onChange={(v) => patch({ end_ym: v })} /> : null}
               <Field label="担当人数" value={entry.children_count} onChange={(v) => patch({ children_count: v })} />
               <Field label="役職" value={entry.management_role} onChange={(v) => patch({ management_role: v })} />
               <View style={styles.toggle}><Text>クラス担任</Text><Switch value={entry.class_lead} onValueChange={(v) => patch({ class_lead: v })} /></View>
               <Text style={styles.label}>担当年齢</Text>
-              <View style={styles.choices}>{ageGroups.map((label) => <Choice key={label} label={label} selected={entry.age_groups.includes(label)} onPress={() => patch({ age_groups: entry.age_groups.includes(label) ? entry.age_groups.filter((x) => x !== label) : [...entry.age_groups, label] })} />)}</View>
+              <View style={styles.choices}>{ageGroups.map((label) => <Choice key={label} label={label} selected={entry.age_groups.includes(label)} onPress={() => patch((current) => ({ age_groups: current.age_groups.includes(label) ? current.age_groups.filter((x) => x !== label) : [...current.age_groups, label] }))} />)}</View>
               <Field label="業務内容" value={entry.duties} multiline onChange={(v) => patch({ duties: v })} />
               <Field label="実績・工夫したこと" value={entry.achievements} multiline onChange={(v) => patch({ achievements: v })} />
               {!entry.is_current ? <ResumeOptionField label="退職の理由（書き方）" value={entry.leaving_reason} choices={leavingReasonOptions} onChange={(v) => patch({ leaving_reason: v })} /> : null}
@@ -719,7 +721,7 @@ export default function ResumeScreen() {
             </View>;
           })}
           {canAppendResumeEntry(view.employment, MAX_RESUME_EMPLOYMENT)
-            ? <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => change('employment', [...view.employment, { id: Crypto.randomUUID(), organization: '', department: null, start_ym: null, end_ym: null, is_current: false, facility_type: null, employment_type: null, job_title: null, age_groups: [], class_lead: false, management_role: null, children_count: null, duties: null, achievements: null, leaving_reason: null }])}><Text style={styles.buttonText}>＋ 職場を追加</Text></Pressable>
+            ? <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => edit((current) => ({ ...current, employment: canAppendResumeEntry(current.employment, MAX_RESUME_EMPLOYMENT) ? [...current.employment, { id: Crypto.randomUUID(), organization: '', department: null, start_ym: null, end_ym: null, is_current: false, facility_type: null, employment_type: null, job_title: null, age_groups: [], class_lead: false, management_role: null, children_count: null, duties: null, achievements: null, leaving_reason: null }] : current.employment }))}><Text style={styles.buttonText}>＋ 職場を追加</Text></Pressable>
             : <Text style={styles.hint}>職歴は{MAX_RESUME_EMPLOYMENT}件まで追加できます。</Text>}
         </> : null}
         {section === 5 ? <>
