@@ -63,3 +63,14 @@ test('qualification max count still applies to consecutive changes', () => {
   selected = setResumeQualification(selected,{},'保育士',true).qualifications;
   assert.throws(()=>setResumeQualification(selected,{},'幼稚園教諭',true),/50件/);
 });
+
+test('queued picker update consults the live selection after a different event removes that qualification', () => {
+  const selection = { current: ['保育士', '幼稚園教諭'] };
+  const pendingDateChange = (current) =>
+    updateResumeQualificationAcquiredDate(current, selection.current, '保育士', '2026-11');
+  let latest = { '保育士': '2020-03', '幼稚園教諭': '2021-08' };
+  selection.current = ['幼稚園教諭'];
+  latest = pruneResumeQualificationAcquiredDates(latest, selection.current);
+  latest = pendingDateChange(latest);
+  assert.deepEqual(latest, { '幼稚園教諭': '2021-08' });
+});

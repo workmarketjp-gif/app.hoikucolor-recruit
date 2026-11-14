@@ -12,7 +12,7 @@ State: **IMPLEMENTING** (Native source-level change and focused tests only; Andr
 - Existing Web qualification catalog, 50-item limit, unknown saved values, 1200ms save policy and no-automatic-retry-on-ambiguous-save are unchanged. No real candidate documents or messages were used.
 
 ## Actual verification and remaining gate
-- Focused Node 22.16.0 `node --experimental-strip-types --test qa/native-resume-qualification-date-concurrency-r243.test.mjs`: **7/7 PASS** against the exact local helper source, including simultaneous dates, late picker, item removal, unknown qualification, idempotence and 50-item boundary.
+- Focused Node 22.16.0 `node --experimental-strip-types --test qa/native-resume-qualification-date-concurrency-r243.test.mjs`: **8/8 PASS** against the exact local helper source, including simultaneous dates, late picker, item removal, unknown qualification, idempotence and 50-item boundary.
 - Strict isolated helper TypeScript `tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck src/lib/resumeLinkedProfilePolicy.ts`: PASS with system TypeScript 5.8.3. This is **not** Expo's locked `~5.9.2` whole-app compile.
 - Native screen/parent wiring requires GitHub postwrite verification; no React Native component render, iOS simulator, Android emulator, real RPC save/readback or physical device acceptance was performed. The environment lacks a direct GitHub DNS checkout, installed Expo project dependencies, Android SDK/emulator, macOS/Xcode and verified signing/distribution credentials.
 
