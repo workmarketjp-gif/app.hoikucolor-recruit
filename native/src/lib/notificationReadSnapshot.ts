@@ -45,3 +45,42 @@ export function parseCanonicalUnreadNotificationCount(raw: unknown): number {
   }
   return count;
 }
+
+/**
+ * A PostgreSQL RETURNS TABLE notification RPC resolves to an array, including
+ * [] when it genuinely has no rows. A successful HTTP response with null,
+ * a scalar or malformed rows is not proof of an empty inbox.
+ *
+ * Keep this boundary strict so unknown read_at values cannot silently become
+ * "unread" and a broken response cannot trigger a false all-read/empty state.
+ * Do not filter invalid rows (that would hide genuine notifications).
+ */
+export type CanonicalNotificationRow = Readonly<{
+  id: string;
+  application_id: string | null;
+  notification_type: string;
+  title: string;
+  body: string;
+  link_url: string | null;
+  read_at: string | null;
+  created_at: string;
+}>;
+
+export function parseCanonicalNotificationRows<T extends CanonicalNotificationRow>(raw: unknown): T[] {
+  if (!Array.isArray(raw)) throw new Error('NOTIFICATION_LIST_UNAVAILABLE');
+  const seenIds = new Set<string>();
+  for (const value of raw) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value) ||
+        typeof value.id !== 'string' || value.id.length === 0 || seenIds.has(value.id) ||
+        (value.application_id !== null && typeof value.application_id !== 'string') ||
+        typeof value.notification_type !== 'string' || !value.notification_type ||
+        typeof value.title !== 'string' || typeof value.body !== 'string' ||
+        (value.link_url !== null && typeof value.link_url !== 'string') ||
+        (value.read_at !== null && typeof value.read_at !== 'string') ||
+        typeof value.created_at !== 'string' || !value.created_at) {
+      throw new Error('NOTIFICATION_LIST_UNAVAILABLE');
+    }
+    seenIds.add(value.id);
+  }
+  return raw as T[];
+}
