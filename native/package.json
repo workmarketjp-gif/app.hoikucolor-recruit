@@ -93,7 +93,7 @@
     "test:notification-private-readback": "node --experimental-strip-types --test qa/native-notification-private-readback.test.mjs",
     "test:scoped-notification-route": "node --experimental-strip-types --test qa/native-scoped-notification-route.test.mjs",
     "test:comparison-bounded-read": "node --experimental-strip-types --test qa/native-comparison-bounded-read-r231.test.mjs qa/native-job-discovery-private-read-r228.test.mjs",
-    "test:comparison-private-readback": "node --experimental-strip-types --test qa/native-comparison-selection.test.mjs qa/native-match-saved-readback.test.mjs qa/native-comparison-verified-evidence.test.mjs qa/native-comparison-cell-presentation-r232.test.mjs",
+    "test:comparison-private-readback": "node --experimental-strip-types --test qa/native-comparison-selection.test.mjs qa/native-match-saved-readback.test.mjs qa/native-comparison-verified-evidence.test.mjs qa/native-comparison-cell-presentation-r232.test.mjs qa/native-comparison-finance-record-count-r233.test.mjs",
     "test:application-event-presentation": "node --experimental-strip-types --test qa/native-application-event-presentation.test.mjs",
     "test:resume-canonical": "node --experimental-strip-types --test qa/native-resume-canonical.test.mjs",
     "test:resume-linked-profile": "node --experimental-strip-types --test qa/native-resume-linked-profile-fields.test.mjs qa/native-resume-childcare-parity.test.mjs",
