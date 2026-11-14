@@ -24,6 +24,7 @@ import { organicJobRankLabels, type OrganicJobRankLabel } from '../../lib/jobRan
 import { jobSearchCardPresentation } from '../../lib/jobSearchCardPresentation';
 import { keywordForCurrentCandidate, type CandidateKeywordDraft } from '../../lib/jobSearchKeywordDraft';
 import { canStartManualJobSearch } from '../../lib/jobSearchManualSubmit';
+import { readCandidateJobDiscoveryBounded } from '../../lib/jobDiscoveryCanonicalRead';
 
 function salary(job: JobseekerJob) {
   const prefix = job.salary_type === 'hourly' ? '時給' : job.salary_type === 'annual' ? '年収' : '月給';
@@ -171,12 +172,14 @@ export default function JobsScreen() {
     setOwnedFacets(null);
     setOwnedFacetError(null);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) {
-        throw new Error('絞り込み条件を確認できませんでした。');
-      }
-      const next = await getJobSearchFacets(pinned.client);
-      if (!pinned.isCurrent() || current !== facetGeneration.current || privacy.shieldVisible || !ownerKey) return;
+      const { value: next } = await readCandidateJobDiscoveryBounded({
+        pin: pinCandidateAction,
+        isCurrent: () => current === facetGeneration.current && ownerKey === latestOwnerRef.current &&
+          latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible,
+        ownsPin: (pinned) => candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey,
+        read: (pinned) => getJobSearchFacets(pinned.client),
+      });
+      if (current !== facetGeneration.current || privacy.shieldVisible || !ownerKey) return;
       setOwnedFacets({ ownerKey, value: next });
     } catch {
       if (current === facetGeneration.current && ownerKey && !privacy.shieldVisible) {
@@ -199,17 +202,25 @@ export default function JobsScreen() {
       setTotalCount(0);
     }
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) throw new Error('安全なログイン状態を確認できませんでした。');
-      if (!reset && (savedIds === null || visibleJobs === null)) throw new Error('検索結果を確認できません。更新してください。');
-      const [page, canonicalSaved] = await Promise.all([
-        searchJobseekerJobs(pinned.client, {
-          ...createJobSearchQuery(requestedQuery, requestedFilters),
-          limit: 24,
-          cursor: reset ? null : cursor,
-        }),
-        reset ? listSavedJobIds(pinned.client) : Promise.resolve(savedIds ?? []),
-      ]);
+      const { pinned, value: [page, canonicalSaved] } = await readCandidateJobDiscoveryBounded({
+        pin: pinCandidateAction,
+        isCurrent: () => currentGeneration === generation.current && ownerKey === latestOwnerRef.current &&
+          latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible,
+        ownsPin: (pinned) => candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey,
+        read: (pinned) => {
+          if (!reset && (savedIds === null || visibleJobs === null)) {
+            throw new Error('検索結果を確認できません。更新してください。');
+          }
+          return Promise.all([
+            searchJobseekerJobs(pinned.client, {
+              ...createJobSearchQuery(requestedQuery, requestedFilters),
+              limit: 24,
+              cursor: reset ? null : cursor,
+            }),
+            reset ? listSavedJobIds(pinned.client) : Promise.resolve(savedIds ?? []),
+          ]);
+        },
+      });
       if (!pinned.isCurrent() || currentGeneration !== generation.current) return;
       setOwnedJobs((previous) => {
         const ownedKey = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
