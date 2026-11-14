@@ -23,7 +23,7 @@ export function comparisonVerifiedCell(
   // The existing canonical verified adapter appends this exact locally composed
   // caption only if a nonnegative sample size was verified. Do not split
   // arbitrary employer text or invent a record count for absent samples.
-  const captionMatch = /\n(\d+(?:件|か月分)の記録から集計)$/.exec(metric.displayValue);
+  const captionMatch = /\n(\d+件の記録から集計)$/.exec(metric.displayValue);
   const value = captionMatch
     ? metric.displayValue.slice(0, -captionMatch[0].length)
     : metric.displayValue;
