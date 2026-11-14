@@ -89,3 +89,42 @@ test('revocation after RPC launch rejects a late otherwise-valid snapshot', asyn
   resolvePrefs({ classroom_experience: ['fake'] });
   await assert.rejects(pending, /ログイン状態/);
 });
+
+
+// Exact production pre-write and post-write read helpers are shared with profile.
+// These tests never issue a real mutation; they assert the invocation boundary.
+import { pinCandidateProfilePrewrite, readCandidateProfileAfterWrite } from '../src/lib/profileCanonicalRead.ts';
+
+test('hung prewrite Clerk pin expires without starting an upsert or preference save', async () => {
+  let writes = 0;
+  const operation = (async () => {
+    await pinCandidateProfilePrewrite(() => new Promise(() => {}), () => true, 25);
+    writes++;
+  })();
+  await assert.rejects(operation, /タイムアウト/);
+  assert.equal(writes, 0);
+});
+
+test('late prewrite token cannot authorize a subsequent save after deadline', async () => {
+  let release, writes = 0;
+  const operation = (async () => {
+    await pinCandidateProfilePrewrite(() => new Promise(resolve => { release = resolve; }), () => true, 25);
+    writes++;
+  })();
+  await assert.rejects(operation, /タイムアウト/);
+  release(pinFor());
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(writes, 0);
+});
+
+test('postwrite canonical read expires without launching another profile mutation', async () => {
+  let reads = 0, writes = 0;
+  await assert.rejects(readCandidateProfileAfterWrite({
+    pinned: pinFor(),
+    isCurrent: () => true,
+    timeoutMs: 25,
+    load: async () => { reads++; return new Promise(() => {}); },
+  }), /タイムアウト/);
+  assert.equal(reads, 1);
+  assert.equal(writes, 0);
+});
