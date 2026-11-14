@@ -21,7 +21,7 @@ test('verified workplace and finance evidence keep the original value, unit and 
     value: '3.5時間', caption: '14件の記録から集計', emphasized: false,
   });
   assert.deepEqual(comparisonVerifiedCell({ displayValue: '10か月\n10件の記録から集計' }), {
-    value: '10か月', caption: '10か月分の記録から集計', emphasized: false,
+    value: '10か月', caption: '10件の記録から集計', emphasized: false,
   });
 });
 
