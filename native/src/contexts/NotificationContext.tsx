@@ -39,6 +39,7 @@ import {
   type CandidateOwnedView,
 } from '../lib/candidateViewOwner';
 import { resolveCanonicalNotificationRead, type CanonicalNotificationRead } from '../lib/notificationReadSnapshot';
+import { boundedPrivateRead } from '../lib/privateReadDeadline';
 
 const NotificationContext = createContext<{
   notifications: JobseekerNotification[];
@@ -110,7 +111,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     setOwnedError(null);
     setLoading(true);
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await boundedPrivateRead(() => pinCandidateAction());
       const pinnedOwnerKey = candidateViewOwnerKey(pinned?.ownerId, pinned?.ownerSessionId);
       if (!pinned || !pinnedOwnerKey || pinnedOwnerKey !== ownerKey ||
           generation !== canonicalLoadGeneration.current || !pinned.isCurrent()) {
@@ -118,9 +119,9 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       }
 
       const [rowsResult, countResult, attentionResult] = await Promise.allSettled([
-        listNotifications(pinned.client, 50),
-        getUnreadNotificationCount(pinned.client),
-        getJobseekerAttentionSummary(pinned.client),
+        boundedPrivateRead(() => listNotifications(pinned.client, 50)),
+        boundedPrivateRead(() => getUnreadNotificationCount(pinned.client)),
+        boundedPrivateRead(() => getJobseekerAttentionSummary(pinned.client)),
       ]);
 
       if (!pinned.isCurrent() || generation !== canonicalLoadGeneration.current ||
