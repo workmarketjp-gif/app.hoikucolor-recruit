@@ -1,3 +1,11 @@
+## Latest isolated delta (r236, 2026-11-14 NZ) — Resume row deletion confirmation lease
+
+- **Baseline/state:** Jobseeker Web `/resume` at `main fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, authenticated synthetic candidate A editing 学歴/職歴; Native branch parent `35cb67865224d514b5f1f3b2e13eff24dcfcff42`. Source comparison only, no deployed screenshot.
+- **Native gap closed:** Android/iOS `Alert.alert` destructive callback can execute after row reorder, edit, canonical reload, account/session switch or App Lock. The previous callback deleted by the stale row index. Now capture exact row object/index, owner/session, focus generation and draft revision when opening the dialog; validate all before allowing a deletion. If another row occupies the old index or data changed, require fresh confirmation without deleting. Existing editable education/employment fields, backend autosave/RLS, and Web parity remain unchanged.
+- **Focused real-source verification:** Node 22.16.0 `node --experimental-strip-types --test native/qa/native-resume-remove-confirmation-r236.test.mjs`: **9/9 PASS** on the exact new dependency-free helper; TypeScript 5.8.3 isolated strict `tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution bundler native/src/lib/resumeEntryRemovalConfirmation.ts`: **PASS**. App TSX source wiring inspected for import, capture/current checks and both delete callbacks. Full Expo typecheck, mounted React Native component, canonical server save/readback and platform UI QA NOT VERIFIED.
+- **Matrix:** `/resume` → 学歴/職歴 → 削除確認: Android **IMPLEMENTING**, iOS **IMPLEMENTING**; both require rendered Alert and same-state Web comparison, keyboard/accessibility, save/reload QA and signed artifacts.
+- **Cost/scope:** Native-only source + focused regression, no candidate records or production APIs changed. `.github/workflows/ci.yml` triggers only main/PR, not this development branch. Connected Cloudflare `app-hoikucolor-recruit` Worker Git trigger includes only main. No paid CI/EAS, external agent, PR, merge or production deployment. Billing remainder and signing/distribution permissions unverified.
+
 ## Latest COLOR Native delta (r227, 2026-11-14 NZ) — Profile save pre-write private-error redaction
 
 ## Latest isolated delta (r235, 2026-11-14 NZ) — Resume autosave Clerk prewrite lease

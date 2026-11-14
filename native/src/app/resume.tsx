@@ -35,6 +35,7 @@ import {
 } from '../lib/resumeCanonical';
 import { MAX_RESUME_EDUCATION, MAX_RESUME_EMPLOYMENT, canAppendResumeEntry, educationStatusChange, moveResumeEntry, resumeCurrentChange } from '../lib/resumeEditor';
 import { RESUME_AUTOSAVE_DELAY_MS, shouldConfirmResumeReload, shouldScheduleResumeAutosave } from '../lib/resumeAutosavePolicy';
+import { captureResumeRemoval, isResumeRemovalStillCurrent } from '../lib/resumeEntryRemovalConfirmation';
 
 const sections = ['基本情報', '学歴', '職歴', '資格', '保育経験', '自己PR', '確認・保存'] as const;
 const sectionQuestions = ['あなたのことを教えてください', 'どの学校を卒業しましたか？', 'これまで、どこで働きましたか？', 'どんな資格・免許を持っていますか？', '保育の経験を教えてください', 'あなたの強みや思いを書きましょう', '入力内容を確認して保存しましょう'] as const;
@@ -97,6 +98,8 @@ export default function ResumeScreen() {
   const draftRevision = useRef(0);
   const savingRef = useRef(false);
   const [resume, setResume] = useState<CandidateResume | null>(null);
+  const resumeRef = useRef(resume);
+  resumeRef.current = resume;
   const [loadedOwner, setLoadedOwner] = useState<string | null>(null);
   const [section, setSection] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -595,14 +598,31 @@ export default function ResumeScreen() {
   };
 
   const confirmRemove = (kind: 'education' | 'employment', index: number) => {
-    const expectedOwner = ownerKey;
-    const expectedGeneration = generation.current;
+    if (!resume || !ownerKey || !canRead || loadedOwner !== ownerKey) return;
+    const entries = kind === 'education' ? resume.education : resume.employment;
+    const confirmation = captureResumeRemoval(ownerKey, generation.current, draftRevision.current, index, entries);
+    if (!confirmation) return;
     Alert.alert(kind === 'education' ? 'この学歴を削除しますか？' : 'この職歴を削除しますか？',
       '削除した内容は保存するまで正式データには反映されません。', [
         { text: 'キャンセル', style: 'cancel' },
         { text: '削除', style: 'destructive', onPress: () => {
-          if (ownerRef.current !== expectedOwner || generation.current !== expectedGeneration ||
-              !privacy.canAccessPrivateData()) return;
+          // Native Alert callbacks are asynchronous unlike Web window.confirm.
+          // An edit, move, canonical reload, lock, or account change can happen
+          // while this dialog is open. Never remove whatever is now at index.
+          if (ownerRef.current !== confirmation.owner || generation.current !== confirmation.generation ||
+              privacy.shieldVisible || !privacy.canAccessPrivateData()) return;
+          const latest = resumeRef.current;
+          const currentItem = kind === 'education'
+            ? latest?.education[index] ?? null : latest?.employment[index] ?? null;
+          if (!isResumeRemovalStillCurrent(confirmation, {
+            owner: ownerRef.current, generation: generation.current,
+            draftRevision: draftRevision.current,
+            privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+            item: currentItem,
+          })) {
+            Alert.alert('もう一度確認してください', '確認中に履歴書が変更されました。削除したい項目をもう一度選んでください。');
+            return;
+          }
           edit((current) => ({ ...current, [kind]: current[kind].filter((_, i) => i !== index) }));
         } },
       ]);
