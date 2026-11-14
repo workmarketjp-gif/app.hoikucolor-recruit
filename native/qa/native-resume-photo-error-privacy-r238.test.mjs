@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { resumePhotoFailureNotice, UNCONFIRMED_RESUME_PHOTO_NOTICE } from '../src/lib/resumePhotoFailurePresentation.ts';
+import { resumePhotoFailureNotice, UNCONFIRMED_RESUME_PHOTO_NOTICE,
+  resumePhotoRemovalFailureDecision, UNCONFIRMED_RESUME_PHOTO_REMOVAL_NOTICE } from '../src/lib/resumePhotoFailurePresentation.ts';
 
 test('picker/type/size validation retains reviewed Japanese guidance', () => {
   for (const message of [
@@ -48,4 +49,11 @@ test('fallback reports uncertainty, not false confirmation of cache save/removal
   const message = resumePhotoFailureNotice(new Error('private path'));
   assert.match(message, /保存状態を確認できない/);
   assert.doesNotMatch(message, /保存しました|削除しました|アップロードしました/);
+});
+
+test('unknown deletion state quarantines stale preview rather than claiming retained or removed', () => {
+  const result = resumePhotoRemovalFailureDecision();
+  assert.deepEqual(result, { preview: null, notice: UNCONFIRMED_RESUME_PHOTO_REMOVAL_NOTICE });
+  assert.match(result.notice, /削除結果を確認できませんでした/);
+  assert.doesNotMatch(result.notice, /削除しました|保存しました|削除できませんでした。もう一度お試し/);
 });

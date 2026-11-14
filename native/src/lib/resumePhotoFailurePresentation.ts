@@ -36,3 +36,11 @@ export function resumePhotoFailureNotice(cause: unknown): string {
   }
   return UNCONFIRMED_RESUME_PHOTO_NOTICE;
 }
+
+export const UNCONFIRMED_RESUME_PHOTO_REMOVAL_NOTICE =
+  '証明写真の削除結果を確認できませんでした。写真が端末に残っているか、画面を再読み込みして確認してください。';
+
+/** A failed physical delete might already have removed the file. Quarantine stale previews. */
+export function resumePhotoRemovalFailureDecision(): { preview: null; notice: string } {
+  return { preview: null, notice: UNCONFIRMED_RESUME_PHOTO_REMOVAL_NOTICE };
+}

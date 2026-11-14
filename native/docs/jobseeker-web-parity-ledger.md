@@ -1,3 +1,11 @@
+## Latest isolated delta (r240, 2026-11-14 NZ) — Résumé photo uncertain-delete state
+
+- **Web reference:** JOBSEEKER `/resume`, main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, `src/views/ResumeBuilderView.tsx` blob `61859463d2103b8323446a8dbbb1d6297cedc749`; candidate A removing an app-private résumé photo during an OS filesystem failure. Source/state review 2026-11-14, no runtime capture.
+- **Source correction:** A session-leased physical delete may succeed before its existence check fails; previous Native catch misleadingly declared deletion failed and retained an unverified photo preview. Now any uncertain removal clears the preview, shows a fixed no-PII notice, and requires user-initiated owner-bound cache reload before confirming retained/deleted. No auto-retry, external original deletion, server/photo upload or RLS change.
+- **Tests:** Existing `native-resume-photo-error-privacy-r238.test.mjs` expanded to **7/7 PASS** under Node 22.16.0 with real helper blob; strict TypeScript 5.8.3 helper-only PASS. GitHub screen wiring checked. Full Expo typecheck, Android/iOS installed UI, physical file cleanup, canonical readback and signed builds remain NOT VERIFIED.
+- **Matrix:** `/resume` remove proof photo under ambiguous filesystem failure — Android IMPLEMENTING, iOS IMPLEMENTING. Both source-only, pending visual/runtime tests and signed distribution.
+- **Ownership/cost:** COLOR branch `native/color-jobseeker-integration-r216-20261114` parent `07fbf178`; PR #113 unrelated. No main/PR/Production/DB/Worker/Auth changes, paid CI or EAS build.
+
 ## Latest isolated delta (r239, 2026-11-14 NZ) — Résumé ambiguous autosave and privacy
 
 - **Reference:** JOBSEEKER Web `/resume`, main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, `src/views/ResumeBuilderView.tsx` blob `61859463d2103b8323446a8dbbb1d6297cedc749`; authenticated synthetic candidate, private resume autosave during a failed Clerk/RPC/canonical read; 2026-11-14 source comparison only.

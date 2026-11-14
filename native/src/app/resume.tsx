@@ -37,7 +37,7 @@ import { MAX_RESUME_EDUCATION, MAX_RESUME_EMPLOYMENT, canAppendResumeEntry, educ
 import { RESUME_AUTOSAVE_DELAY_MS, shouldConfirmResumeReload, shouldScheduleResumeAutosave } from '../lib/resumeAutosavePolicy';
 import { captureResumeRemoval, isResumeRemovalStillCurrent } from '../lib/resumeEntryRemovalConfirmation';
 import { resumePdfFailureNotice } from '../lib/resumePdfFailurePresentation';
-import { resumePhotoFailureNotice } from '../lib/resumePhotoFailurePresentation';
+import { resumePhotoFailureNotice, resumePhotoRemovalFailureDecision } from '../lib/resumePhotoFailurePresentation';
 import { resumeSaveFailureDecision } from '../lib/resumeSaveFailurePolicy';
 
 const sections = ['基本情報', '学歴', '職歴', '資格', '保育経験', '自己PR', '確認・保存'] as const;
@@ -357,7 +357,11 @@ export default function ResumeScreen() {
       if (stillEligible()) setPhotoPreview(null);
     } catch {
       if (stillEligible()) {
-        setPhotoError('端末内の証明写真を削除できませんでした。もう一度お試しください。');
+        // A delete may have committed before its filesystem confirmation failed.
+        // Hide the old preview until a fresh owner-bound cache read proves it.
+        const decision = resumePhotoRemovalFailureDecision();
+        setPhotoPreview(decision.preview);
+        setPhotoError(decision.notice);
       }
     } finally {
       photoInFlight.current = false;
