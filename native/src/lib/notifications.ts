@@ -14,7 +14,6 @@ import { requireConfirmedNotificationMarkAllCount } from './notificationMarkAllC
 const INSTALLATION_ID_KEY = 'hc.native.installation-id.v1';
 const PUSH_BINDING_QUARANTINED = 'PUSH_BINDING_QUARANTINED';
 const LOCAL_PUSH_PRESENTATION_PURGE_INCOMPLETE = 'LOCAL_PUSH_PRESENTATION_PURGE_INCOMPLETE';
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 let pushBindingGeneration = 0;
 let pushBindingBlocked = false;
