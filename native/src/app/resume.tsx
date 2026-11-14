@@ -24,6 +24,9 @@ import { captureCandidateLocalStateSessionLease } from '../lib/candidateLocalSta
 import { isPrivateDocumentPickerCacheUri } from '../lib/documentPickerCache';
 import { getJobseekerProfile } from '../lib/jobseekerCoreApi';
 import { getJobseekerMatchingPreferences, emptyJobseekerMatchingPreferences } from '../lib/candidateParityApi';
+import { readCandidateJobDiscoveryBounded } from '../lib/jobDiscoveryCanonicalRead';
+import { readResumeReviewSnapshotBounded } from '../lib/resumeReviewSnapshotRead';
+import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import {
   getCandidateResume, saveCandidateResumeAndConfirm, toResumePayload, ResumeReadbackUnconfirmed, ResumeRevisionConflict, type CandidateResume,
@@ -155,13 +158,24 @@ export default function ResumeScreen() {
     setLoading(true);
     if (!expectedOwner || !privacy.canAccessPrivateData()) return;
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== expectedOwner) return;
-      const canonical = await getCandidateResume(pinned.client);
-      if (!pinned.isCurrent() || !live(expectedOwner, request)) return;
+      const { pinned, value: canonical } = await readCandidateJobDiscoveryBounded({
+        pin: pinCandidateAction,
+        isCurrent: () => live(expectedOwner, request) && !privacy.shieldVisible,
+        ownsPin: (candidate) =>
+          candidateViewOwnerKey(candidate.ownerId, candidate.ownerSessionId) === expectedOwner,
+        read: (candidate) => getCandidateResume(candidate.client),
+      });
+      if (!pinned.isCurrent() || !live(expectedOwner, request) || privacy.shieldVisible) return;
       let cached: ResumePhotoPreview | null = null;
       try {
-        cached = await loadCachedResumePhoto(pinned.ownerId);
+        // Photo cache is optional, but its read must not hold the entire
+        // editable resume behind an indefinite device file-system call.
+        cached = await boundedPrivateRead(() => {
+          if (!pinned.isCurrent() || !live(expectedOwner, request) || privacy.shieldVisible) {
+            throw new Error('写真の表示権限を確認できませんでした。');
+          }
+          return loadCachedResumePhoto(pinned.ownerId);
+        });
       } catch {
         if (pinned.isCurrent() && live(expectedOwner, request)) {
           setPhotoError('端末に保存された証明写真を確認できませんでした。もう一度選んでください。');
@@ -177,7 +191,7 @@ export default function ResumeScreen() {
     } finally {
       if (live(expectedOwner, request)) setLoading(false);
     }
-  }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData]);
+  }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData, privacy.shieldVisible]);
 
   useFocusEffect(useCallback(() => {
     photoScreenActive.current = true;
@@ -419,16 +433,17 @@ export default function ResumeScreen() {
     setReviewBusy(true);
     void (async () => {
       try {
-        const pinned = await pinCandidateAction();
-        if (!pinned?.isCurrent() ||
-            candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== expectedOwner) {
-          throw new Error('ログイン状態を確認できませんでした。');
-        }
-        const [canonicalResume, profile, prefs] = await Promise.all([
-          getCandidateResume(pinned.client),
-          getJobseekerProfile(pinned.client),
-          getJobseekerMatchingPreferences(pinned.client),
-        ]);
+        const { pinned, resume: canonicalResume, profile, preferences: prefs } =
+          await readResumeReviewSnapshotBounded({
+            pin: pinCandidateAction,
+            isCurrent: () => active && reviewRequest.current === request &&
+              live(expectedOwner, startedGeneration) && !privacy.shieldVisible,
+            ownsPin: (candidate) =>
+              candidateViewOwnerKey(candidate.ownerId, candidate.ownerSessionId) === expectedOwner,
+            readResume: (candidate) => getCandidateResume(candidate.client),
+            readProfile: (candidate) => getJobseekerProfile(candidate.client),
+            readPreferences: (candidate) => getJobseekerMatchingPreferences(candidate.client),
+          });
         if (!active || reviewRequest.current !== request || !pinned.isCurrent() ||
             !live(expectedOwner, startedGeneration)) return;
         // A newly registered candidate may have no profile row yet. The Web
@@ -493,15 +508,18 @@ export default function ResumeScreen() {
     setPdfError(null);
     setPdfSaved(null);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() ||
-          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== expectedOwner ||
-          !stillCurrent()) throw new Error('ログイン状態が変わりました。書類作成を中止しました。');
-      const [canonicalResume, profile, prefs] = await Promise.all([
-        getCandidateResume(pinned.client),
-        getJobseekerProfile(pinned.client),
-        getJobseekerMatchingPreferences(pinned.client),
-      ]);
+      // Bound only the read-only preflight. Rendering, PDF upload and the
+      // subsequent Storage/RPC write are never timed out or retried here.
+      const { pinned, resume: canonicalResume, profile, preferences: prefs } =
+        await readResumeReviewSnapshotBounded({
+          pin: pinCandidateAction,
+          isCurrent: stillCurrent,
+          ownsPin: (candidate) =>
+            candidateViewOwnerKey(candidate.ownerId, candidate.ownerSessionId) === expectedOwner,
+          readResume: (candidate) => getCandidateResume(candidate.client),
+          readProfile: (candidate) => getJobseekerProfile(candidate.client),
+          readPreferences: (candidate) => getJobseekerMatchingPreferences(candidate.client),
+        });
       if (!pinned.isCurrent() || !stillCurrent()) throw new Error('DOCUMENT_UPLOAD_QUARANTINED');
       if (profile && profile.clerk_user_id !== pinned.ownerId) {
         throw new Error('プロフィールの閲覧権限を確認できませんでした。');
