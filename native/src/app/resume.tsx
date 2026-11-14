@@ -10,6 +10,8 @@ import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { ResumeYearMonthField } from '../components/ResumeYearMonthField';
+import { ResumeBirthDateField } from '../components/ResumeBirthDateField';
+import { normalizeResumePostalCodeInput } from '../lib/resumeBasicFieldPolicy';
 import { ResumeChildcareEditor } from '../components/ResumeChildcareEditor';
 import { ResumeReviewPanel } from '../components/ResumeReviewPanel';
 import { buildResumeReview, type ResumeReview } from '../lib/resumeReviewModel';
@@ -48,12 +50,17 @@ const facilityTypeOptions = ['認可保育園', '認定こども園', '幼稚園
 const employmentTypeOptions = ['正社員', '契約社員', 'パート・アルバイト', '派遣'];
 const leavingReasonOptions = ['一身上の都合により退職', '契約期間満了により退職', '会社都合により退職', '退職'];
 const nullable = (v: string) => v.trim() || null;
-type FieldProps = { label: string; value: string | null; onChange: (value: string | null) => void; multiline?: boolean; hint?: string };
-function Field({ label, value, onChange, multiline, hint }: FieldProps) {
+type FieldProps = {
+  label: string; value: string | null; onChange: (value: string | null) => void;
+  multiline?: boolean; hint?: string; maxLength?: number;
+  normalize?: (value: string) => string | null;
+};
+function Field({ label, value, onChange, multiline, hint, maxLength, normalize }: FieldProps) {
   return <View style={styles.field}>
     <Text style={styles.label}>{label}</Text>
     {hint ? <Text style={styles.hint}>{hint}</Text> : null}
-    <TextInput accessibilityLabel={label} value={value ?? ''} onChangeText={(v) => onChange(nullable(v))}
+    <TextInput accessibilityLabel={label} value={value ?? ''} maxLength={maxLength}
+      onChangeText={(v) => onChange(normalize ? normalize(v) : nullable(v))}
       multiline={multiline} textAlignVertical={multiline ? 'top' : 'center'}
       style={[styles.input, multiline && styles.textArea]} />
   </View>;
@@ -658,13 +665,18 @@ export default function ResumeScreen() {
             ...current, qualification_acquired: update(current.qualification_acquired),
           }))}
           basicAddressFields={<>
-            <Field label="生年月日" hint="西暦YYYY-MM-DD" value={view.birth_date} onChange={(v) => change('birth_date', v)} />
-            <Field label="性別" value={view.gender} onChange={(v) => change('gender', v)} />
-            <Field label="郵便番号" value={view.postal_code} onChange={(v) => change('postal_code', v)} />
-            <Field label="住所" value={view.address} onChange={(v) => change('address', v)} />
-            <Field label="住所のふりがな" value={view.address_kana} onChange={(v) => change('address_kana', v)} />
+            <ResumeBirthDateField value={view.birth_date} onChange={(v) => change('birth_date', v)} />
+            <Field label="性別" hint="任意。書かなくても問題ありません。" maxLength={20}
+              value={view.gender} onChange={(v) => change('gender', v)} />
+            <Field label="郵便番号" hint="例：150-0001" maxLength={8} normalize={normalizeResumePostalCodeInput}
+              value={view.postal_code} onChange={(v) => change('postal_code', v)} />
+            <Field label="住所" hint="都道府県から、建物名・部屋番号まで" maxLength={200}
+              value={view.address} onChange={(v) => change('address', v)} />
+            <Field label="住所のふりがな" maxLength={200}
+              value={view.address_kana} onChange={(v) => change('address_kana', v)} />
           </>}
-          basicContactAddressField={<Field label="現住所以外の連絡先" value={view.contact_address} onChange={(v) => change('contact_address', v)} />}
+          basicContactAddressField={<Field label="現住所以外の連絡先" hint="任意。実家など、別の連絡先を希望する場合だけ" maxLength={200}
+            value={view.contact_address} onChange={(v) => change('contact_address', v)} />}
         />
         {section === 1 ? <>
           {view.education.map((entry, index) => {
