@@ -26,6 +26,7 @@ import { getJobseekerProfile } from '../lib/jobseekerCoreApi';
 import { getJobseekerMatchingPreferences, emptyJobseekerMatchingPreferences } from '../lib/candidateParityApi';
 import { readCandidateJobDiscoveryBounded } from '../lib/jobDiscoveryCanonicalRead';
 import { readResumeReviewSnapshotBounded } from '../lib/resumeReviewSnapshotRead';
+import { pinForApplicationMutation } from '../lib/applicationMutationPin';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import {
@@ -367,8 +368,14 @@ export default function ResumeScreen() {
     const submittedRevision = draftRevision.current;
     const startedGeneration = generation.current;
     const expectedOwner = ownerKey;
+    let writeStarted = false;
     try {
-      const pinned = await pinCandidateAction();
+      // Only Clerk token acquisition has a presentation deadline. An expired
+      // token must never start an autosave; the canonical write is unbounded.
+      const pinned = await pinForApplicationMutation(
+        pinCandidateAction,
+        () => live(expectedOwner, startedGeneration) && !privacy.shieldVisible,
+      );
       if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== expectedOwner || !live(expectedOwner, startedGeneration)) {
         // A credential/pin failure in the still-visible owner scope is not a
         // reason to retry every 1.2 seconds. Hide stale progress and reload.
@@ -379,6 +386,7 @@ export default function ResumeScreen() {
         }
         return;
       }
+      writeStarted = true;
       const confirmed = await saveCandidateResumeAndConfirm(pinned.client, submitted);
       if (!pinned.isCurrent() || !live(expectedOwner, startedGeneration)) return;
       if (submittedRevision === draftRevision.current) {
@@ -394,7 +402,9 @@ export default function ResumeScreen() {
         // Even an unknown server response may have committed: never auto-resend.
         setAutoSavePaused(true);
         setRequiresReload(cause instanceof ResumeReadbackUnconfirmed || cause instanceof ResumeRevisionConflict);
-        setError(cause instanceof Error ? cause.message : '保存結果を確認できませんでした。');
+        setError(!writeStarted
+          ? '保存前のログイン確認に失敗しました。再送信せず、状態を確認してから最新の履歴書を読み込んでください。'
+          : cause instanceof Error ? cause.message : '保存結果を確認できませんでした。');
       }
     } finally {
       savingRef.current = false;
