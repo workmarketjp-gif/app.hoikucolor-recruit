@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const saved = readFileSync(new URL('../src/app/(tabs)/saved.tsx', import.meta.url), 'utf8');
+const navigation = readFileSync(new URL('../src/lib/savedJobNavigation.ts', import.meta.url), 'utf8');
 const card = readFileSync(new URL('../src/components/SavedJobPreviewCard.tsx', import.meta.url), 'utf8');
 const webCard = readFileSync(new URL('../../src/components/JobCard.tsx', import.meta.url), 'utf8');
 test('Web saved action is a full expandable job card with real conditions', () => {
@@ -16,9 +17,12 @@ test('Web saved action is a full expandable job card with real conditions', () =
 test('saved record remains owner-pinned; visit and detail routes are Native', () => {
   assert.match(saved, /pinCandidateAction\(\)/);
   assert.match(saved, /canPresent\(ownerKey, requestGeneration\)/);
-  assert.match(saved, /presentSavedJobCard\(chosen, Date\.now\(\)\)\.canVisit/);
-  assert.match(saved, /\/visits\?jobId=/);
-  assert.match(saved, /\/job\//);
+  assert.match(saved, /savedJobNavigationPath\(jobId, chosen, destination, Date\.now\(\)\)/);
+  assert.match(navigation, /if \(destination === 'visit' && !details\.canVisit\) return null/);
+  assert.match(navigation, /if \(destination === 'apply' && !details\.directApply\) return null/);
+  assert.match(navigation, /return \`\/visits\?jobId=\$\{id\}\`/);
+  assert.match(navigation, /return \`\/job\/\$\{id\}\`/);
+  assert.match(navigation, /UUID\.test\(jobId\)/);
   assert.doesNotMatch(card, /Linking\.openURL|https:\/\//);
 });
 test('canonical save/un-save and error gating remain wired', () => {
