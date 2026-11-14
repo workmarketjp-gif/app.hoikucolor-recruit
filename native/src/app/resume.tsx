@@ -37,6 +37,7 @@ import { MAX_RESUME_EDUCATION, MAX_RESUME_EMPLOYMENT, canAppendResumeEntry, educ
 import { RESUME_AUTOSAVE_DELAY_MS, shouldConfirmResumeReload, shouldScheduleResumeAutosave } from '../lib/resumeAutosavePolicy';
 import { captureResumeRemoval, isResumeRemovalStillCurrent } from '../lib/resumeEntryRemovalConfirmation';
 import { resumePdfFailureNotice } from '../lib/resumePdfFailurePresentation';
+import { resumePhotoFailureNotice } from '../lib/resumePhotoFailurePresentation';
 
 const sections = ['基本情報', '学歴', '職歴', '資格', '保育経験', '自己PR', '確認・保存'] as const;
 const sectionQuestions = ['あなたのことを教えてください', 'どの学校を卒業しましたか？', 'これまで、どこで働きましたか？', 'どんな資格・免許を持っていますか？', '保育の経験を教えてください', 'あなたの強みや思いを書きましょう', '入力内容を確認して保存しましょう'] as const;
@@ -324,7 +325,7 @@ export default function ResumeScreen() {
         // Cache write may have failed after replacing bytes; do not display a
         // previous preview as if it still matches a confirmed on-disk photo.
         setPhotoPreview(null);
-        setPhotoError(cause instanceof Error ? cause.message : '写真を読み込めませんでした。');
+        setPhotoError(resumePhotoFailureNotice(cause));
       }
     } finally {
       photoInFlight.current = false;
