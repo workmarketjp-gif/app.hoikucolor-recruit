@@ -17,6 +17,7 @@ export function comparisonVerifiedMetric(
   const metric = verifiedEvidence(profile, kind)?.metrics.find((entry) => entry.key === key);
   if (!metric) return null;
   const sample = metric.recordCount === null ? '' :
-    `\n${metric.recordCount}${kind === 'finance' ? 'か月分' : '件'}の記録から集計`;
+    // Finance sample_size counts verified records, not months of duration.
+    `\n${metric.recordCount}件の記録から集計`;
   return { label: metric.label, displayValue: `${metric.value}${sample}` };
 }
