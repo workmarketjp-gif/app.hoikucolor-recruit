@@ -147,7 +147,8 @@ export default function SavedJobsScreen() {
   }, [load, ownerKey, privateVisible]));
 
   const remove = async (jobId: string) => {
-    if (!canAct || !privateVisibleRef.current || !ownerKey ||
+    if (!canAct || refreshPendingRef.current || mutationBusyRef.current ||
+        !privateVisibleRef.current || !ownerKey ||
         !jobs?.some((job) => job.id === jobId)) return;
     mutationBusyRef.current = true;
     const mutationId = ++mutationSequence.current;
