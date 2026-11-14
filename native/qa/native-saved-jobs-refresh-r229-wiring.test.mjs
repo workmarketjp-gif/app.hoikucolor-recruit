@@ -21,6 +21,7 @@ test('manual refresh is single flight; stale jobs cannot open, compare or remove
   assert.match(screen, /retainSavedJobsDuringManualRefresh\(\{/);
   assert.match(screen, /onPress=\{\(\) => void load\(true\)\}/);
   assert.match(screen, /const canAct = canActOnSavedJobs\(\{/);
+  assert.match(screen, /if \(!canAct \|\| refreshPendingRef\.current \|\| mutationBusyRef\.current/);
   assert.match(screen, /if \(!canAct \|\| !privateVisibleRef\.current/);
   assert.match(screen, /disabled=\{!canAct\}/);
   assert.match(screen, /disabled=\{!canAct \|\| busyId !== null\}/);
