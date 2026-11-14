@@ -100,6 +100,7 @@
     "test:resume-autosave": "node --experimental-strip-types --test qa/native-resume-autosave.test.mjs qa/native-resume-editor-parity.test.mjs",
     "test:resume-review": "node --experimental-strip-types --test qa/native-resume-review.test.mjs",
     "test:resume-private-snapshot": "node --experimental-strip-types --test qa/native-resume-private-snapshot-r234.test.mjs",
+    "test:resume-prewrite-pin": "node --experimental-strip-types --test qa/native-resume-prewrite-pin-r235.test.mjs",
     "test:resume-photo-preview": "node --experimental-strip-types --test qa/native-resume-photo-sanitizer.test.mjs qa/native-resume-photo-cache-record.test.mjs qa/native-resume-photo-cache-wiring.test.mjs qa/native-resume-photo-preview.test.mjs qa/native-resume-photo-dimensions.test.mjs",
     "test:tab-icons": "node --experimental-strip-types --test qa/native-candidate-tab-glyphs.test.mjs qa/native-candidate-tab-icons-wiring.test.mjs",
     "test:generated-pdf-vault": "node --experimental-strip-types --test qa/native-generated-pdf-document.test.mjs",
