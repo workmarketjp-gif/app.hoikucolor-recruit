@@ -15,7 +15,7 @@ Status: **IMPLEMENTING (source tested; both Native OS runtimes NOT VERIFIED)**.
 
 ## Real evidence
 - First development HEAD: `fd782e4dc24b0f80f4ae0b8d33ce3ca699692735`. Current integration head must be re-read from GitHub; `main` untouched, unrelated open PR #113 only at initial ownership check. One COLOR Native writer on branch `native/color-jobseeker-integration-r216-20261114`.
-- Node 22.16.0: `node --experimental-strip-types --test qa/native-resume-linked-bounded-read-r242.test.mjs` **7/7 PASS** on actual new helper/test blobs `8e880bf7ee96d606ba2dcf15bbcbacab54e6326b`/`870b935b5574b44b08c7c83e280eeccfad51ccbc` and exact previously committed dependency blobs `6c62f3f0`, `459e84cf`, `47909bc9`.
+- Node 22.16.0: `node --experimental-strip-types --test qa/native-resume-linked-bounded-read-r242.test.mjs` **10/10 PASS** on actual new helper/test blobs `8e880bf7ee96d606ba2dcf15bbcbacab54e6326b`/`80e0b55d2c9ffc285fddfba541c2b3544ee03c20` and exact previously committed dependency blobs `6c62f3f0`, `459e84cf`, `47909bc9`, `f826c746`, `75f5d4a3`.
 - `tsc --noEmit --strict --allowImportingTsExtensions --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck src/lib/resumeLinkedCanonicalRead.ts` **PASS**, dependency-free helper tree only.
 - GitHub connector postwrite confirmed the Native screen uses bounded paired reads, prewrite pin, and *two* bounded readbacks, with raw pin paths absent. This is a **source assertion**, NOT SDK-backed Expo UI compilation or Native runtime QA.
 - Full `npm ci`/Expo typecheck not executed due no usable project checkout/installed locked dependencies and direct clone DNS failure. Android SDK/emulator, macOS/Xcode simulator, signing and approved distribution were not available/verified.
