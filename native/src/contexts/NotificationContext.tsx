@@ -42,6 +42,7 @@ import { resolveCanonicalNotificationRead, type CanonicalNotificationRead } from
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { createNotificationMarkAllSingleFlight } from '../lib/notificationMarkAllSingleFlight';
 import { createNotificationCardOpenGate } from '../lib/notificationCardOpenGate';
+import { tryBeginNotificationResponse } from '../lib/notificationResponseFlight';
 
 const NotificationContext = createContext<{
   notifications: JobseekerNotification[];
@@ -208,15 +209,19 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       return 'deferred' as const;
     }
 
-    const pinned = await pinCandidateAction();
-    if (!pinned) {
-      deferredResponses.current.set(notificationId, response);
-      return 'deferred' as const;
-    }
-
-    processingIds.current.add(notificationId);
+    // Cold-start replay and the live OS callback can arrive in the same
+    // frame: claim synchronously before any asynchronous Clerk/session read.
+    if (!tryBeginNotificationResponse(processingIds.current, notificationId)) return 'ignored' as const;
+    let pinned: Awaited<ReturnType<typeof pinCandidateAction>> | null = null;
     try {
-      const route = await resolveNotificationRoute(pinned.client, notificationId);
+      // Reads are bounded, never the already-issued mark-read mutation.
+      pinned = await boundedPrivateRead(() => pinCandidateAction());
+      if (!pinned || !pinned.isCurrent() || privacy.shieldVisible) {
+        deferredResponses.current.set(notificationId, response);
+        return 'deferred' as const;
+      }
+      const active = pinned;
+      const route = await boundedPrivateRead(() => resolveNotificationRoute(active.client, notificationId));
       const target = nativeNotificationHref(route, notificationId);
       if (!pinned.isCurrent()) {
         deferredResponses.current.set(notificationId, response);
@@ -236,7 +241,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       await refresh().catch(() => undefined);
       return 'handled' as const;
     } catch (error) {
-      if (!pinned.isCurrent()) {
+      if (!pinned || !pinned.isCurrent() || privacy.shieldVisible) {
         deferredResponses.current.set(notificationId, response);
         return 'deferred' as const;
       }

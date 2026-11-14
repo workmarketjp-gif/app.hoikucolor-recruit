@@ -1,0 +1,17 @@
+# r251 — Push notification replay/live-listener single-flight (2026-11-15 NZ)
+
+**State: IMPLEMENTING.** Source baseline: JOBSEEKER Web notification bell `src/components/NotificationCenter.tsx` on Web main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, and Native `NotificationContext.tsx` on parent `ff73ba7c990a9230725eacb6c14926b3265205c7`, inspected 2026-11-15. Role/state: synthetic authorized candidate A, one push response arriving simultaneously through `getLastNotificationResponseAsync` and the live Expo listener, or stalled Clerk pin/route RPC. This is a source comparison, not a Web/Native same-state screenshot.
+
+**Observed Native gap:** `handleResponse` checked a processing-ID set before awaiting Clerk but added the ID only *after* the asynchronous pin. Two notifications for the same ID could therefore each pass the check, run separate canonical mark-read RPCs and push the route twice. A stalled pin or route RPC also had no display deadline, and a thrown pre-pin request could escape its callback without a deferred retry.
+
+**Repair:** a synchronous, shared processing-ID acquisition before any await, released in `finally`. Each read-only pre-write Clerk/route operation gets the existing 15-second presentation deadline. On unavailable/revoked pin, defer without acknowledging the response. The canonical mark-read mutation is **not** timed out, retried or inferred successful. The existing list-card path uses the same processing set, while server-side recipient/route ownership, App Lock and all private APIs remain unchanged. No live push, message or application was sent.
+
+**Focused tests:** `cd native && node --experimental-strip-types --test qa/native-notification-response-flight-r251.test.mjs` — **5/5 PASS** against the actual new helper source on Node 22.16.0. `tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution bundler src/lib/notificationResponseFlight.ts` — **PASS** using the installed TypeScript compiler. Provider source wiring checked for a pre-await acquisition, pre-write read deadlines and unconditional `finally` cleanup. **Full Expo typecheck and mounted/installed app not verified.**
+
+| Workflow | Android | iOS |
+| --- | --- | --- |
+| Cold/warm push tap, duplicate replay, stalled Clerk or route read | IMPLEMENTING: real-source helper tests; OS runtime/push delivery/rendered QA NOT VERIFIED | IMPLEMENTING: real-source helper tests; OS runtime/push delivery/rendered QA NOT VERIFIED |
+| Notification → owned route → canonical read marker → readback | IMPLEMENTING: actual synthetic API and Web correspondence NOT VERIFIED | IMPLEMENTING: actual synthetic API and Web correspondence NOT VERIFIED |
+| Signed installable MASA acceptance | BLOCKED_EXTERNAL: Android SDK/emulator and signing/distribution not verified | BLOCKED_EXTERNAL: macOS/Xcode and authorized iOS distribution not verified |
+
+Owner: COLOR only, `workmarketjp-gif/app.hoikucolor-recruit`, `native/color-jobseeker-integration-r216-20261114`, parent `ff73ba7c990a9230725eacb6c14926b3265205c7`. Existing open PR #113 owns Hello Work paths, no overlap. `.github/workflows/ci.yml` triggers main push / PR, not branch-only commit. No PR, main, production, Cloudflare, auth, DB/RLS, new paid Actions/EAS/agents or real candidate changes. Connected Cloudflare billing and remaining quota not independently verified in this run. Next: exact-SHA Expo full compilation, synthetic canonical readback and Android/iOS rendered Web-parity, then signed distribution.
