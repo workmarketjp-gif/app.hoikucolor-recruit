@@ -6,7 +6,7 @@ import Constants from 'expo-constants';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import { getNativeReleaseIdentity } from './appIdentity';
-import { scopedNotificationHref } from './scopedNotificationRoute';
+import { scopedNotificationHref, verifiedApplicationNotificationId } from './scopedNotificationRoute';
 import { parseCanonicalNotificationRows, parseCanonicalUnreadNotificationCount } from './notificationReadSnapshot';
 import { requireConfirmedNotificationRead } from './notificationMarkReadConfirmation';
 import { requireConfirmedNotificationMarkAllCount } from './notificationMarkAllConfirmation';
@@ -153,7 +153,8 @@ export function nativeNotificationHref(route: { route_key: string; route_params:
     // Do not acknowledge a notification as opened if the verified target is missing.
     throw new Error('NOTIFICATION_TARGET_UNAVAILABLE');
   }
-  const applicationId = route.route_params?.applicationId;
+  // Reject an invalid candidate-owned application destination before callers mark it read.
+  const applicationId = verifiedApplicationNotificationId(route);
   const visitId = route.route_params?.visitId;
   const jobId = route.route_params?.jobId;
   const interviewId = route.route_params?.interviewId;
