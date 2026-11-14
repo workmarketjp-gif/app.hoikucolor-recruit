@@ -90,7 +90,6 @@ test('revocation after RPC launch rejects a late otherwise-valid snapshot', asyn
   await assert.rejects(pending, /ログイン状態/);
 });
 
-
 // Exact production pre-write and post-write read helpers are shared with profile.
 // These tests never issue a real mutation; they assert the invocation boundary.
 import { pinCandidateProfilePrewrite, readCandidateProfileAfterWrite } from '../src/lib/profileCanonicalRead.ts';
