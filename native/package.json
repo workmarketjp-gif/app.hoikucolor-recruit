@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit",
     "test:resume-save-failure-r239": "node --experimental-strip-types --test qa/native-resume-save-failure-r239.test.mjs",
     "test:resume-row-stale-callback": "node --experimental-strip-types --test qa/native-resume-row-stale-callback-r241.test.mjs",
+    "test:resume-linked-bounded-read": "node --experimental-strip-types --test qa/native-resume-linked-bounded-read-r242.test.mjs",
     "test:contracts": "node qa/run-native-contracts.mjs",
     "test:contracts:available": "node qa/run-native-contracts.mjs --available-only",
     "test:application-journey": "node qa/native-application-journey-contract.mjs",
