@@ -12,6 +12,8 @@ import {
   saveJobseekerMatchingPreferences, type JobseekerMatchingPreferences,
 } from '../lib/candidateParityApi';
 import { canonicalProfileMatchesSubmission } from '../lib/profileSaveGuard';
+import { readResumeLinkedProfileSnapshotBounded } from '../lib/resumeLinkedCanonicalRead';
+import { pinCandidateProfilePrewrite, readCandidateProfileAfterWrite } from '../lib/profileCanonicalRead';
 import { canonicalScoutPreferencesMatch } from '../lib/scoutPreferencesReadback';
 import {
   RESUME_CLASSROOM_OPTIONS, RESUME_LEADERSHIP_OPTIONS, RESUME_LINKED_AUTOSAVE_DELAY_MS,
@@ -92,11 +94,15 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
     clearPrivateView();
     if (!expectedOwner || !privacy.canAccessPrivateData()) return;
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== expectedOwner) return;
-      const [canonicalProfile, canonicalPreferences] = await Promise.all([
-        getJobseekerProfile(pinned.client), getJobseekerMatchingPreferences(pinned.client),
-      ]);
+      const { pinned, profile: canonicalProfile, preferences: canonicalPreferences } =
+        await readResumeLinkedProfileSnapshotBounded({
+          pin: pinCandidateAction,
+          isCurrent: () => isLive(expectedOwner, request),
+          ownsPin: (candidate) =>
+            candidateViewOwnerKey(candidate.ownerId, candidate.ownerSessionId) === expectedOwner,
+          readProfile: (candidate) => getJobseekerProfile(candidate.client),
+          readPreferences: (candidate) => getJobseekerMatchingPreferences(candidate.client),
+        });
       if (!pinned.isCurrent() || !isLive(expectedOwner, request)) return;
       if (canonicalProfile && canonicalProfile.clerk_user_id !== pinned.ownerId) {
         throw new Error('プロフィールの閲覧権限を確認できませんでした。');
@@ -159,15 +165,23 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
     const submittedRevision = isProfile ? profileRevision.current : preferenceRevision.current;
     setError(null);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== expectedOwner || !isLive(expectedOwner, startedGeneration)) {
+      // Only the pre-write Clerk token may time out; never time out or
+      // automatically retry the profile/preferences mutation itself.
+      const pinned = await pinCandidateProfilePrewrite(
+        pinCandidateAction, () => isLive(expectedOwner, startedGeneration),
+      );
+      if (!pinned.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== expectedOwner || !isLive(expectedOwner, startedGeneration)) {
         throw new Error('ログイン状態を確認できませんでした。最新の内容を読み込み直してください。');
       }
       if (isProfile) {
         const submitted = draft as JobseekerProfileInput;
         await upsertJobseekerProfile(pinned.client, submitted);
         if (!pinned.isCurrent() || !isLive(expectedOwner, startedGeneration)) return;
-        const verified = await getJobseekerProfile(pinned.client);
+        const verified = await readCandidateProfileAfterWrite({
+          pinned,
+          isCurrent: () => isLive(expectedOwner, startedGeneration),
+          load: (candidate) => getJobseekerProfile(candidate.client),
+        });
         if (!pinned.isCurrent() || !isLive(expectedOwner, startedGeneration)) return;
         if (!verified || verified.clerk_user_id !== pinned.ownerId ||
             !canonicalProfileMatchesSubmission(submitted, verified)) {
@@ -182,7 +196,11 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
         const submitted = draft as JobseekerMatchingPreferences;
         await saveJobseekerMatchingPreferences(pinned.client, submitted);
         if (!pinned.isCurrent() || !isLive(expectedOwner, startedGeneration)) return;
-        const verified = await getJobseekerMatchingPreferences(pinned.client);
+        const verified = await readCandidateProfileAfterWrite({
+          pinned,
+          isCurrent: () => isLive(expectedOwner, startedGeneration),
+          load: (candidate) => getJobseekerMatchingPreferences(candidate.client),
+        });
         if (!pinned.isCurrent() || !isLive(expectedOwner, startedGeneration)) return;
         if (!canonicalScoutPreferencesMatch(submitted, verified)) {
           throw new Error('担当経験・役職の保存結果を確認できませんでした。');
