@@ -8,8 +8,11 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { listSavedJobs, unsaveJob, type SavedJobseekerJob } from '../../lib/jobseekerCoreApi';
 import { canCommitSavedJobsView, removeSavedJobAndConfirm } from '../../lib/savedJobsReadback';
+import { boundedPrivateRead } from '../../lib/privateReadDeadline';
+import { readCandidateJobDiscoveryBounded } from '../../lib/jobDiscoveryCanonicalRead';
+import { canActOnSavedJobs, canStartSavedJobsRefresh, retainSavedJobsDuringManualRefresh } from '../../lib/savedJobsRefreshPolicy';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
-import { candidateViewOwnerKey, readCandidateOwnedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
+import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, readCandidateOwnedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
 
 export default function SavedJobsScreen() {
   usePrivateScreenCapture('saved');
@@ -23,6 +26,9 @@ export default function SavedJobsScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const generation = useRef(0);
+  const refreshSequence = useRef(0);
+  const refreshPendingRef = useRef(false);
+  const freshlyVerifiedOwner = useRef<string | null>(null);
   const mutationBusyRef = useRef(false);
   const mutationSequence = useRef(0);
   const focusedOwnerRef = useRef<string | null>(null);
@@ -32,39 +38,70 @@ export default function SavedJobsScreen() {
   const privateVisibleRef = useRef(privateVisible);
   currentOwnerRef.current = ownerKey;
   privateVisibleRef.current = privateVisible;
+  if (!privateVisible) freshlyVerifiedOwner.current = null;
 
-  const jobs = readCandidateOwnedView(ownedJobs, ownerKey, privateVisible);
+  const jobs = readCandidateFreshlyVerifiedView(ownedJobs, ownerKey, privateVisible, freshlyVerifiedOwner.current);
   const error = readCandidateOwnedView(ownedError, ownerKey, privateVisible);
+  const canAct = canActOnSavedJobs({
+    hasVerifiedRows: jobs !== null,
+    loading,
+    readFailed: Boolean(error),
+    privateAllowed: privateVisible,
+    focusActive: focusActiveRef.current,
+    mutationPending: mutationBusyRef.current,
+  });
   const canPresent = (requestOwner: string | null, requestGeneration: number) =>
     canCommitSavedJobsView(requestOwner, currentOwnerRef.current, requestGeneration,
       generation.current, privateVisibleRef.current);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (manual = false) => {
     const requestOwner = ownerKey;
+    if (!canStartSavedJobsRefresh({
+      refreshPending: refreshPendingRef.current,
+      mutationPending: mutationBusyRef.current,
+      privateAllowed: privateVisibleRef.current,
+      focusActive: focusActiveRef.current,
+      ownerKey: requestOwner,
+    })) return;
+    refreshPendingRef.current = true;
+    const refreshId = ++refreshSequence.current;
     const requestGeneration = ++generation.current;
+    const retainRows = retainSavedJobsDuringManualRefresh({
+      manual,
+      ownerKey: requestOwner,
+      verifiedOwnerKey: freshlyVerifiedOwner.current,
+      privateAllowed: privateVisibleRef.current,
+      focusActive: focusActiveRef.current,
+      mutationPending: mutationBusyRef.current,
+    });
+    if (!retainRows) {
+      freshlyVerifiedOwner.current = null;
+      setOwnedJobs(null);
+    }
     setLoading(true);
-    setOwnedJobs(null);
     setOwnedError(null);
+    const isCurrent = () => focusActiveRef.current &&
+      canCommitSavedJobsView(requestOwner, currentOwnerRef.current,
+        requestGeneration, generation.current, privateVisibleRef.current);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() ||
-          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestOwner) {
-        throw new Error('安全なログイン状態を確認できませんでした。');
-      }
-      const next = await listSavedJobs(pinned.client);
-      if (!pinned.isCurrent() || !requestOwner ||
-          !canCommitSavedJobsView(requestOwner, currentOwnerRef.current, requestGeneration,
-            generation.current, privateVisibleRef.current)) return;
-      setOwnedJobs({ ownerKey: requestOwner, value: next });
+      const verified = await readCandidateJobDiscoveryBounded({
+        pin: pinCandidateAction,
+        read: (pinned) => listSavedJobs(pinned.client),
+        isCurrent,
+        ownsPin: (pinned) =>
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === requestOwner,
+      });
+      if (!verified.pinned.isCurrent() || !isCurrent() || !requestOwner) return;
+      freshlyVerifiedOwner.current = requestOwner;
+      setOwnedJobs({ ownerKey: requestOwner, value: verified.value });
     } catch {
-      if (requestOwner &&
-          canCommitSavedJobsView(requestOwner, currentOwnerRef.current, requestGeneration,
-            generation.current, privateVisibleRef.current)) {
-        setOwnedError({ ownerKey: requestOwner, value: '気になる求人を取得できませんでした。更新してください。' });
+      if (isCurrent() && requestOwner) {
+        setOwnedError({ ownerKey: requestOwner,
+          value: '気になる求人を取得できませんでした。通信状態を確認して更新してください。' });
       }
     } finally {
-      if (canCommitSavedJobsView(requestOwner, currentOwnerRef.current, requestGeneration,
-          generation.current, privateVisibleRef.current)) setLoading(false);
+      if (refreshId === refreshSequence.current) refreshPendingRef.current = false;
+      if (isCurrent()) setLoading(false);
     }
   }, [ownerKey, pinCandidateAction]);
 
@@ -83,6 +120,9 @@ export default function SavedJobsScreen() {
     focusActiveRef.current = privateVisible && Boolean(ownerKey);
     if (!privateVisible || !ownerKey) {
       generation.current += 1;
+      freshlyVerifiedOwner.current = null;
+      refreshSequence.current += 1;
+      refreshPendingRef.current = false;
       mutationBusyRef.current = false;
       mutationSequence.current += 1;
       setOwnedJobs(null);
@@ -95,6 +135,9 @@ export default function SavedJobsScreen() {
     return () => {
       focusActiveRef.current = false;
       generation.current += 1;
+      freshlyVerifiedOwner.current = null;
+      refreshSequence.current += 1;
+      refreshPendingRef.current = false;
       setOwnedJobs(null);
       setOwnedError(null);
       setLoading(true);
@@ -104,8 +147,8 @@ export default function SavedJobsScreen() {
   }, [load, ownerKey, privateVisible]));
 
   const remove = async (jobId: string) => {
-    if (!privateVisibleRef.current || !ownerKey || loading ||
-        mutationBusyRef.current || !jobs?.some((job) => job.id === jobId)) return;
+    if (!canAct || !privateVisibleRef.current || !ownerKey ||
+        !jobs?.some((job) => job.id === jobId)) return;
     mutationBusyRef.current = true;
     const mutationId = ++mutationSequence.current;
     const requestOwner = ownerKey;
@@ -113,19 +156,31 @@ export default function SavedJobsScreen() {
     setBusyId(jobId);
     setOwnedError(null);
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await boundedPrivateRead(() => {
+        if (!canPresent(requestOwner, requestGeneration) || !focusActiveRef.current)
+          throw new Error('安全なログイン状態を確認できませんでした。');
+        return pinCandidateAction();
+      });
       if (!pinned?.isCurrent() ||
           candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestOwner ||
           !canPresent(requestOwner, requestGeneration)) return;
       const canonical = await removeSavedJobAndConfirm(jobId,
         () => unsaveJob(pinned.client, jobId),
-        () => listSavedJobs(pinned.client));
+        () => boundedPrivateRead(() => {
+          // A completed mutation does not authorize an old candidate/session
+          // to start a new private read after a lock or account switch.
+          if (!pinned.isCurrent() || !canPresent(requestOwner, requestGeneration) ||
+              !focusActiveRef.current)
+            throw new Error('安全なログイン状態を確認できませんでした。');
+          return listSavedJobs(pinned.client);
+        }));
       if (!pinned.isCurrent() || !canPresent(requestOwner, requestGeneration)) return;
       setOwnedJobs({ ownerKey: requestOwner, value: canonical });
     } catch {
       if (canPresent(requestOwner, requestGeneration)) {
         // An interrupted mutation may have succeeded server-side. Do not
         // display stale rows or allow another remove until a fresh read.
+        freshlyVerifiedOwner.current = null;
         setOwnedJobs(null);
         setOwnedError({ ownerKey: requestOwner,
           value: '保存状況を確認できませんでした。更新してご確認ください。' });
@@ -149,14 +204,15 @@ export default function SavedJobsScreen() {
 
   const open = async (jobId: string, destination: SavedJobDestination = 'detail') => {
     const chosen = jobs?.find((job) => job.id === jobId);
-    if (!privateVisibleRef.current || !ownerKey || !chosen) return;
+    if (!canAct || !privateVisibleRef.current || !ownerKey || !chosen) return;
     const route = savedJobNavigationPath(jobId, chosen, destination, Date.now());
     if (!route) return;
     const requestGeneration = generation.current;
     const pinned = await pinCandidateAction();
     if (pinned?.isCurrent() &&
         candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey &&
-        canPresent(ownerKey, requestGeneration)) {
+        canPresent(ownerKey, requestGeneration) && focusActiveRef.current &&
+        !refreshPendingRef.current && !mutationBusyRef.current) {
       // A ?apply=1 route is only a request to OPEN the existing document step.
       // Job Detail validates the live job/profile/applications again before use.
       router.push(route as never);
@@ -171,9 +227,19 @@ export default function SavedJobsScreen() {
     <ScrollView contentContainerStyle={styles.page}>
       <View style={styles.headerRow}>
         <Text style={styles.summary}>{jobs === null ? '—' : `${jobs.length}件`}</Text>
-        <Pressable onPress={() => void load()} disabled={loading || busyId !== null}><Text style={styles.link}>更新</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="気になる求人を更新"
+          accessibilityState={{ disabled: loading || busyId !== null }}
+          onPress={() => void load(true)} disabled={loading || busyId !== null}>
+          <Text style={styles.link}>更新</Text>
+        </Pressable>
       </View>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      {jobs !== null && (loading || error) ? (
+        <Text style={styles.staleNotice} accessibilityLiveRegion="polite">
+          {loading ? '前回確認できた求人を表示しています。更新が完了するまで操作できません。'
+            : '前回確認できた求人を表示しています。最新の保存状況を確認できるまで操作できません。'}
+        </Text>
+      ) : null}
       {(loading || (jobs === null && !error)) ? <ActivityIndicator /> : null}
       {!loading && !error && jobs?.length === 0 ? (
         <View testID="saved-empty-state" style={styles.empty}>
@@ -187,7 +253,10 @@ export default function SavedJobsScreen() {
         </View>
       ) : null}
       {jobs !== null && jobs.length >= 2 ? (
-        <Pressable style={styles.compareButton} onPress={() => {
+        <Pressable style={styles.compareButton} disabled={!canAct}
+          accessibilityRole="button" accessibilityState={{ disabled: !canAct }}
+          onPress={() => {
+          if (!canAct || refreshPendingRef.current) return;
           // Match Web Saved → Compare: pass the first three canonical saved IDs.
           // Compare revalidates IDs against its own authorized published catalog.
           const query = jobs.slice(0, 3)
@@ -200,7 +269,7 @@ export default function SavedJobsScreen() {
       ) : null}
       {(jobs ?? []).map((job) => (
         <SavedJobPreviewCard key={ownerKey + ':' + job.id} job={job}
-          disabled={loading || busyId !== null} removing={busyId === job.id}
+          disabled={!canAct || busyId !== null} removing={busyId === job.id}
           onOpen={() => void open(job.id)}
           onApply={() => void open(job.id, 'apply')}
           onVisit={() => void open(job.id, 'visit')}
@@ -233,4 +302,5 @@ const styles = StyleSheet.create({
   emptyAction: { minHeight: 48, alignSelf: 'flex-start', paddingHorizontal: 22, borderRadius: 12, backgroundColor: '#E9265A', justifyContent: 'center', alignItems: 'center' },
   emptyActionText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   error: { color: '#b42318', backgroundColor: '#fff1f0', padding: 12, borderRadius: 10 },
+  staleNotice: { color: '#67545E', fontSize: 14, lineHeight: 22, backgroundColor: '#FFF0F3', padding: 12, borderRadius: 10 },
 });
