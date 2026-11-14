@@ -23,7 +23,7 @@ export default function NotificationsScreen() {
     unreadCount: notifications.unreadCount,
   });
   // Never mutate from an unavailable or contradictory canonical read.
-  const canMarkAll = countPresentation.kind === 'unread';
+  const canMarkAll = countPresentation.kind === 'unread' && !notifications.markAllReadPending;
 
   return (
     <ScrollView contentContainerStyle={styles.page}>

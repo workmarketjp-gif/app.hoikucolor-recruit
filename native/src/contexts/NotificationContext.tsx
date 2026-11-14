@@ -40,6 +40,7 @@ import {
 } from '../lib/candidateViewOwner';
 import { resolveCanonicalNotificationRead, type CanonicalNotificationRead } from '../lib/notificationReadSnapshot';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
+import { createNotificationMarkAllSingleFlight } from '../lib/notificationMarkAllSingleFlight';
 
 const NotificationContext = createContext<{
   notifications: JobseekerNotification[];
@@ -55,6 +56,7 @@ const NotificationContext = createContext<{
   openPushSettings: () => Promise<void>;
   openNotification: (notificationId: string) => Promise<void>;
   markAllRead: () => Promise<void>;
+  markAllReadPending: boolean;
 } | null>(null);
 
 function responseNotificationId(response: any) {
@@ -82,6 +84,8 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   const deferredResponses = useRef<Map<string, any>>(new Map());
   const pendingCanonicalReconciliation = useRef(false);
   const canonicalLoadGeneration = useRef(0);
+  const markAllGate = useRef(createNotificationMarkAllSingleFlight());
+  const [pendingMarkAllOwner, setPendingMarkAllOwner] = useState<string | null>(null);
   const verificationRef = useRef<string | null>(null);
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
   const privateAllowed = Boolean(ownerKey) && !privacy.shieldVisible && privacy.canAccessPrivateData();
@@ -268,18 +272,35 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   }, [pinCandidateAction, refresh, router]);
 
   const markAllRead = useCallback(async () => {
-    const pinned = await pinCandidateAction();
-    if (!pinned) return;
+    const ownerAtPress = ownerKey;
+    if (!ownerAtPress || privacy.shieldVisible || !privacy.canAccessPrivateData() ||
+        !markAllGate.current.tryStart(ownerAtPress)) return;
+    const pressGeneration = canonicalLoadGeneration.current;
+    setPendingMarkAllOwner(ownerAtPress);
     try {
-      await markAllNotificationsRead(pinned.client);
-      if (!pinned.isCurrent()) return;
-      await refresh();
+      // Pin before any write. A stalled credential read must not hold an
+      // invisible in-flight action forever; a started RPC is never timed out.
+      const pinned = await boundedPrivateRead(() => pinCandidateAction());
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerAtPress ||
+          !pinned.isCurrent() || pressGeneration !== canonicalLoadGeneration.current) return;
+      try {
+        // A malformed integer result is an unknown write outcome. Refresh is
+        // deliberately NOT used to infer success inside the adapter.
+        await markAllNotificationsRead(pinned.client);
+        if (!pinned.isCurrent()) return;
+        await refresh();
+      } catch {
+        if (!pinned.isCurrent()) return;
+        setOwnedError({ ownerKey: ownerAtPress, value: '通知を既読にできませんでした。更新して再確認してください。' });
+      }
     } catch {
-      if (!pinned.isCurrent()) return;
-      const key = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
-      if (key) setOwnedError({ ownerKey: key, value: '通知を既読にできませんでした。もう一度お試しください。' });
+      // Pre-write credential failure: no mutation was launched.
+      setOwnedError({ ownerKey: ownerAtPress, value: '通知を既読にできませんでした。もう一度お試しください。' });
+    } finally {
+      markAllGate.current.complete(ownerAtPress);
+      setPendingMarkAllOwner((current) => current === ownerAtPress ? null : current);
     }
-  }, [pinCandidateAction, refresh]);
+  }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData, privacy.shieldVisible, refresh]);
 
   const consumeLastResponse = useCallback(async () => {
     const response = await Notifications.getLastNotificationResponseAsync();
@@ -376,7 +397,8 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     openPushSettings: () => Linking.openSettings(),
     openNotification,
     markAllRead,
-  }), [loading, markAllRead, openNotification, privateAllowed, pushState,
+    markAllReadPending: privateAllowed && pendingMarkAllOwner === ownerKey,
+  }), [loading, markAllRead, openNotification, ownerKey, pendingMarkAllOwner, privateAllowed, pushState,
     reconciliationRevision, refresh, safeError, safeSnapshot, syncPush]);
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;
