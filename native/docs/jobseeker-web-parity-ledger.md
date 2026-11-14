@@ -1,3 +1,11 @@
+## Latest isolated delta (r239, 2026-11-14 NZ) — Résumé ambiguous autosave and privacy
+
+- **Reference:** JOBSEEKER Web `/resume`, main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`, `src/views/ResumeBuilderView.tsx` blob `61859463d2103b8323446a8dbbb1d6297cedc749`; authenticated synthetic candidate, private resume autosave during a failed Clerk/RPC/canonical read; 2026-11-14 source comparison only.
+- **Source correction:** Native previously displayed arbitrary `cause.message` on post-write failure; unrecognized post-RPC errors also did not set `requiresReload`, allowing edit to restart a potentially duplicated mutation. A new dedicated presenter displays only reviewed Japanese messages, permits editing after explicit input rejection, and requires a fresh canonical read before any further write after uncertain outcome, revision conflict or account deletion. Existing no-auto-resubmit/session gate preserved; backend untouched.
+- **Tests/evidence:** Node 22.16.0 `node --experimental-strip-types --test native/qa/native-resume-save-failure-r239.test.mjs` **7/7 PASS** against exact new helper/test blobs; global TypeScript 5.8.3 strict helper-only `tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext native/src/lib/resumeSaveFailurePolicy.ts` PASS. Screen wiring checked via GitHub source; no full Expo compilation or rendered Native QA.
+- **Android:** IMPLEMENTING (source-tested only). **iOS:** IMPLEMENTING (source-tested only). Both still require Web/Native same-state screen, long text, keyboard, failed save, actual synthetic canonical readback, signed installable handoff.
+- **Ownership/cost:** branch `native/color-jobseeker-integration-r216-20261114`, base `7b816060`; unrelated PR #113 owns Hello Work paths. Direct branch update without PR/main/Production/DB/RLS/paid Actions/EAS/agents. GitHub Actions main/PR trigger; billing, signing/distribution unknown.
+
 ## Latest isolated delta (r237, 2026-11-14 NZ) — Resume generated-PDF error privacy
 
 - **Reference:** JOBSEEKER Web `/resume`, main `fa779e73b324d07c2a2b10ec0c5e7ea71bd283a6`; Native parent `1ff2f5079ba1eace7c267f65fb51dfc37dbb1df8`. Synthetic candidate, failed private Storage/Clerk/RPC during explicit PDF creation; no deployed Web/rendered Native capture.

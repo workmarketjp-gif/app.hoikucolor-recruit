@@ -30,7 +30,7 @@ import { pinForApplicationMutation } from '../lib/applicationMutationPin';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import {
-  getCandidateResume, saveCandidateResumeAndConfirm, toResumePayload, ResumeReadbackUnconfirmed, ResumeRevisionConflict, type CandidateResume,
+  getCandidateResume, saveCandidateResumeAndConfirm, toResumePayload, type CandidateResume,
   type ResumeEducation, type ResumeEmployment,
 } from '../lib/resumeCanonical';
 import { MAX_RESUME_EDUCATION, MAX_RESUME_EMPLOYMENT, canAppendResumeEntry, educationStatusChange, moveResumeEntry, resumeCurrentChange } from '../lib/resumeEditor';
@@ -38,6 +38,7 @@ import { RESUME_AUTOSAVE_DELAY_MS, shouldConfirmResumeReload, shouldScheduleResu
 import { captureResumeRemoval, isResumeRemovalStillCurrent } from '../lib/resumeEntryRemovalConfirmation';
 import { resumePdfFailureNotice } from '../lib/resumePdfFailurePresentation';
 import { resumePhotoFailureNotice } from '../lib/resumePhotoFailurePresentation';
+import { resumeSaveFailureDecision } from '../lib/resumeSaveFailurePolicy';
 
 const sections = ['基本情報', '学歴', '職歴', '資格', '保育経験', '自己PR', '確認・保存'] as const;
 const sectionQuestions = ['あなたのことを教えてください', 'どの学校を卒業しましたか？', 'これまで、どこで働きましたか？', 'どんな資格・免許を持っていますか？', '保育の経験を教えてください', 'あなたの強みや思いを書きましょう', '入力内容を確認して保存しましょう'] as const;
@@ -404,12 +405,12 @@ export default function ResumeScreen() {
       }
     } catch (cause) {
       if (live(expectedOwner, startedGeneration)) {
-        // Even an unknown server response may have committed: never auto-resend.
+        // A rejected input can be corrected by editing, but any ambiguous RPC
+        // outcome must require canonical reload before another write.
+        const decision = resumeSaveFailureDecision(cause, writeStarted);
         setAutoSavePaused(true);
-        setRequiresReload(cause instanceof ResumeReadbackUnconfirmed || cause instanceof ResumeRevisionConflict);
-        setError(!writeStarted
-          ? '保存前のログイン確認に失敗しました。再送信せず、状態を確認してから最新の履歴書を読み込んでください。'
-          : cause instanceof Error ? cause.message : '保存結果を確認できませんでした。');
+        setRequiresReload(decision.requiresReload);
+        setError(decision.notice);
       }
     } finally {
       savingRef.current = false;
