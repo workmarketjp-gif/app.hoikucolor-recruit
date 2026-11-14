@@ -43,6 +43,7 @@ import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { createNotificationMarkAllSingleFlight } from '../lib/notificationMarkAllSingleFlight';
 import { createNotificationCardOpenGate } from '../lib/notificationCardOpenGate';
 import { tryBeginNotificationResponse } from '../lib/notificationResponseFlight';
+import { shouldDeferMessageNotificationRead } from '../lib/notificationMessageReadParity';
 
 const NotificationContext = createContext<{
   notifications: JobseekerNotification[];
@@ -229,7 +230,11 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       }
       // A missing/revoked or unconfirmed owned row cannot be acknowledged as read.
       // The existing catch routes safely to notifications and leaves retry pending.
-      await markNotificationRead(pinned.client, notificationId);
+      // Web leaves a message notification unread until its facility bubble is visible.
+      // Only the server-verified message target may defer this canonical write.
+      if (!shouldDeferMessageNotificationRead(route, target)) {
+        await markNotificationRead(pinned.client, notificationId);
+      }
       if (!pinned.isCurrent()) {
         deferredResponses.current.set(notificationId, response);
         return 'deferred' as const;
@@ -279,7 +284,9 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       const route = await boundedPrivateRead(() => resolveNotificationRoute(pinned.client, notificationId));
       const target = nativeNotificationHref(route, notificationId);
       if (!pinned.isCurrent()) return;
-      await markNotificationRead(pinned.client, notificationId);
+      if (!shouldDeferMessageNotificationRead(route, target)) {
+        await markNotificationRead(pinned.client, notificationId);
+      }
       if (!pinned.isCurrent()) return;
       // A readback failure is not a confirmed empty list or zero badge.
       await refresh().catch(() => undefined);

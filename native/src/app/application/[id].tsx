@@ -19,6 +19,7 @@ import { applicationSelectionTimeline, webNextScheduledInterview } from '../../l
 import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
 import { canSubmitCandidateMessage, classifyUncertainCandidateMessageReview, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
 import { markVisibleApplicationMessagesRead } from '../../lib/attentionApi';
+import { useNotifications } from '../../contexts/NotificationContext';
 import { visibleCandidateFacilityMessageId, type CandidateMessageReadViewport } from '../../lib/candidateMessageReadVisibility';
 import { focusedApplicationMessagesOffset } from '../../lib/focusedApplicationMessages';
 import { applicationVisitExperienceLabel, applicationVisitStatusLabel, canSubmitInterviewResponse, formatApplicationEventDateTimeJapan, formatApplicationVisitDuration, interviewStatusLabel } from '../../lib/applicationEventPresentation';
@@ -234,6 +235,7 @@ function ApplicationDetailContent() {
   const params = useLocalSearchParams<{ id?: string | string[]; focus?: string | string[]; interviewId?: string | string[]; documentWarning?: string | string[] }>();
   const router = useRouter();
   const { pinCandidateAction } = usePinnedCandidateAction();
+  const { refresh: refreshNotifications } = useNotifications();
   const applicationId = firstParam(params.id) ?? '';
   const focus = firstParam(params.focus) ?? null;
   const focusedInterviewId = firstParam(params.interviewId) ?? null;
@@ -632,9 +634,12 @@ function ApplicationDetailContent() {
         if (visibleCandidateFacilityMessageId({
           ...readViewportRef.current, facilityMessageId: latestFacilityMessageId,
         }) !== target) return;
-        await markVisibleApplicationMessagesRead(pinned.client, applicationId);
+        const updatedCount = await markVisibleApplicationMessagesRead(pinned.client, applicationId);
         if (pinned.isCurrent() && readGeneration === generation.current) {
           acknowledgedFacilityMessageRef.current = target;
+          // Canonical unread badges can change only after the visible-message RPC
+          // confirms a real update. Keep this refresh read-only and owner-pinned.
+          if (updatedCount > 0) void refreshNotifications().catch(() => undefined);
         }
       } catch {
         // No fabricated read success; a fresh canonical reload can retry.
