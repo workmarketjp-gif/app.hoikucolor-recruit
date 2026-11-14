@@ -654,7 +654,9 @@ export default function ResumeScreen() {
         <ResumeChildcareEditor
           section={section === 0 ? 'basic' : section === 3 ? 'licenses' : section === 4 ? 'childcare' : null}
           qualificationAcquired={view.qualification_acquired}
-          onQualificationAcquiredChange={(next) => change('qualification_acquired', next)}
+          onQualificationAcquiredChange={(update) => edit((current) => ({
+            ...current, qualification_acquired: update(current.qualification_acquired),
+          }))}
           basicAddressFields={<>
             <Field label="生年月日" hint="西暦YYYY-MM-DD" value={view.birth_date} onChange={(v) => change('birth_date', v)} />
             <Field label="性別" value={view.gender} onChange={(v) => change('gender', v)} />

@@ -28,6 +28,29 @@ export function setResumeQualification(
   return { qualifications, acquisitionDates: nextAcquisitionDates };
 }
 
+
+/** Commit against the latest résumé draft, not a captured render of another field. */
+export function updateResumeQualificationAcquiredDate(
+  current: Record<string, string>, selected: readonly string[], rawName: string, value: string | null,
+): Record<string, string> {
+  const name = rawName.trim();
+  // A picker opened before a qualification was removed must not revive its date.
+  if (!name || !selected.includes(name) || (current[name] ?? null) === value) return current;
+  const next = { ...current };
+  if (value) next[name] = value;
+  else delete next[name];
+  return next;
+}
+
+/** Removing a qualification removes only dates no longer owned by a selected qualification. */
+export function pruneResumeQualificationAcquiredDates(
+  current: Record<string, string>, selected: readonly string[],
+): Record<string, string> {
+  const allowed = new Set(selected);
+  if (Object.keys(current).every((name) => allowed.has(name))) return current;
+  return Object.fromEntries(Object.entries(current).filter(([name]) => allowed.has(name)));
+}
+
 /** Same normalization for text input and Web's optional/null profile fields. */
 export function resumeOptionalProfileText(value: string): string | null {
   return value.length ? value : null;

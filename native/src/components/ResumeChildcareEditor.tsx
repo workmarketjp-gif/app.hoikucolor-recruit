@@ -5,7 +5,7 @@ import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { ResumeYearMonthField } from './ResumeYearMonthField';
-import { RESUME_PROFILE_QUALIFICATION_OPTIONS, RESUME_PROFILE_QUALIFICATION_LIMIT, setResumeQualification, resumeOptionalProfileText } from '../lib/resumeLinkedProfilePolicy';
+import { RESUME_PROFILE_QUALIFICATION_OPTIONS, RESUME_PROFILE_QUALIFICATION_LIMIT, setResumeQualification, updateResumeQualificationAcquiredDate, pruneResumeQualificationAcquiredDates, resumeOptionalProfileText } from '../lib/resumeLinkedProfilePolicy';
 import { getJobseekerProfile, upsertJobseekerProfile, type JobseekerProfileInput } from '../lib/jobseekerCoreApi';
 import {
   emptyJobseekerMatchingPreferences, getJobseekerMatchingPreferences,
@@ -34,7 +34,7 @@ type Target = 'profile' | 'preferences';
 export function ResumeChildcareEditor({ section, qualificationAcquired, onQualificationAcquiredChange, basicAddressFields, basicContactAddressField }: {
   section: 'basic' | 'licenses' | 'childcare' | null;
   qualificationAcquired: Readonly<Record<string, string>>;
-  onQualificationAcquiredChange: (next: Record<string, string>) => void;
+  onQualificationAcquiredChange: (update: (current: Record<string, string>) => Record<string, string>) => void;
   /** Résumé fields are owned by the parent canonical résumé draft, not profile RPC. */
   basicAddressFields: ReactNode;
   basicContactAddressField: ReactNode;
@@ -53,6 +53,11 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
   const preferenceInFlight = useRef(false);
   const [loadedOwner, setLoadedOwner] = useState<string | null>(null);
   const [profile, setProfile] = useState<JobseekerProfileInput | null>(null);
+  // Synchronous event refs prevent batched chip/picker callbacks from reading an older render.
+  const selectedQualificationsRef = useRef<string[]>([]);
+  selectedQualificationsRef.current = profile?.qualifications ?? [];
+  const acquisitionDatesRef = useRef(qualificationAcquired);
+  acquisitionDatesRef.current = qualificationAcquired;
   const [preferences, setPreferences] = useState<JobseekerMatchingPreferences | null>(null);
   const [yearsText, setYearsText] = useState('');
   const [customQualification, setCustomQualification] = useState('');
@@ -71,6 +76,8 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
     generation.current === request && ownerRef.current === expectedOwner && privacy.canAccessPrivateData();
 
   const clearPrivateView = () => {
+    selectedQualificationsRef.current = [];
+    acquisitionDatesRef.current = {};
     setLoadedOwner(null);
     setProfile(null);
     setPreferences(null);
@@ -272,12 +279,17 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
       return false;
     }
     try {
-      const next = setResumeQualification(profile.qualifications, qualificationAcquired, rawName, enabled);
-      if (next.qualifications.length === profile.qualifications.length &&
-          next.qualifications.every((name, i) => name === profile.qualifications[i])) return true;
+      const prior = selectedQualificationsRef.current;
+      const next = setResumeQualification(prior, {}, rawName, enabled);
+      if (next.qualifications.length === prior.length &&
+          next.qualifications.every((name, i) => name === prior[i])) return true;
+      selectedQualificationsRef.current = next.qualifications;
       editProfile((current) => ({ ...current, qualifications: next.qualifications }));
-      if (Object.keys(next.acquisitionDates).length !== Object.keys(qualificationAcquired).length) {
-        onQualificationAcquiredChange(next.acquisitionDates);
+      const dates = acquisitionDatesRef.current;
+      const pruned = pruneResumeQualificationAcquiredDates(dates, next.qualifications);
+      if (pruned !== dates) {
+        acquisitionDatesRef.current = pruned;
+        onQualificationAcquiredChange((current) => pruneResumeQualificationAcquiredDates(current, next.qualifications));
       }
       return true;
     } catch (cause) {
@@ -318,7 +330,7 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
         const selected = profile.qualifications.includes(name);
         return <Pressable key={name} accessibilityRole="button" accessibilityState={{ selected }}
           style={[styles.choice, selected && styles.selected]}
-          onPress={() => applyQualification(name, !selected)}>
+          onPress={() => applyQualification(name, !selectedQualificationsRef.current.includes(name))}>
           <Text style={[styles.choiceText, selected && styles.selectedText]}>{name}</Text>
         </Pressable>;
       })}</View>
@@ -339,9 +351,12 @@ export function ResumeChildcareEditor({ section, qualificationAcquired, onQualif
       {profile.qualifications.map((name) => <ResumeYearMonthField
         key={name} label={name + 'を取得した年月'} value={qualificationAcquired[name] ?? null}
         onChange={(value) => {
-          const next = { ...qualificationAcquired };
-          if (value) next[name] = value; else delete next[name];
-          onQualificationAcquiredChange(next);
+          const dates = acquisitionDatesRef.current;
+          const next = updateResumeQualificationAcquiredDate(dates, selectedQualificationsRef.current, name, value);
+          if (next === dates) return;
+          acquisitionDatesRef.current = next;
+          onQualificationAcquiredChange((current) =>
+            updateResumeQualificationAcquiredDate(current, selectedQualificationsRef.current, name, value));
         }} />)}
     </> : null}
     {section === 'childcare' ? <>
