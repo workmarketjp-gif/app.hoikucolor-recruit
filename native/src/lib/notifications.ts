@@ -6,7 +6,7 @@ import Constants from 'expo-constants';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import { getNativeReleaseIdentity } from './appIdentity';
-import { scopedNotificationHref, verifiedApplicationNotificationId } from './scopedNotificationRoute';
+import { scopedNotificationHref, verifiedApplicationNotificationId, verifiedOptionalNotificationFocusId } from './scopedNotificationRoute';
 import { parseCanonicalNotificationRows, parseCanonicalUnreadNotificationCount } from './notificationReadSnapshot';
 import { requireConfirmedNotificationRead } from './notificationMarkReadConfirmation';
 import { requireConfirmedNotificationMarkAllCount } from './notificationMarkAllConfirmation';
@@ -155,10 +155,9 @@ export function nativeNotificationHref(route: { route_key: string; route_params:
   }
   // Reject an invalid candidate-owned application destination before callers mark it read.
   const applicationId = verifiedApplicationNotificationId(route);
-  const visitId = route.route_params?.visitId;
-  const jobId = route.route_params?.jobId;
-  const interviewId = route.route_params?.interviewId;
   if (route.route_key === 'visits') {
+    const visitId = verifiedOptionalNotificationFocusId(route.route_params?.visitId);
+    const jobId = verifiedOptionalNotificationFocusId(route.route_params?.jobId);
     if (!visitId) return '/visits';
     const query = new URLSearchParams({ visitId });
     if (jobId) query.set('jobId', jobId);
@@ -170,8 +169,9 @@ export function nativeNotificationHref(route: { route_key: string; route_params:
     return `/application/${applicationId}?${query.toString()}`;
   }
   if (applicationId && route.route_key === 'application_interview') {
+    const interviewId = verifiedOptionalNotificationFocusId(route.route_params?.interviewId);
     const query = new URLSearchParams({ focus: 'interview' });
-    if (interviewId && UUID_PATTERN.test(interviewId)) query.set('interviewId', interviewId);
+    if (interviewId) query.set('interviewId', interviewId);
     if (navigationKey) query.set('focusKey', navigationKey);
     return `/application/${applicationId}?${query.toString()}`;
   }

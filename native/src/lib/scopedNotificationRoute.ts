@@ -14,6 +14,14 @@ export function verifiedNotificationId(value: unknown): string | null {
   return typeof value === 'string' && UUID.test(value) ? value : null;
 }
 
+/** Reject a present malformed optional notification focus identity before read. */
+export function verifiedOptionalNotificationFocusId(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const id = verifiedNotificationId(value);
+  if (!id) throw new Error('NOTIFICATION_TARGET_UNAVAILABLE');
+  return id;
+}
+
 export function scopedNotificationHref(route: ScopedNotificationRoute): string | null {
   const params = route.route_params;
   if (route.route_key === 'scouts') {
