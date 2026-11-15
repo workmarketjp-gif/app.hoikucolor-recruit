@@ -7,6 +7,7 @@ import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { disclosedCareerSalary } from '../lib/careerSalaryDisclosure';
 import { careerMutationNotice } from '../lib/careerMutationNotice';
+import { visibleCareerWeightChoices } from '../lib/careerSalaryWeightChoices';
 import { captureCareerDeleteConfirmation, mayExecuteCareerDeletion, type CareerDeleteConfirmation } from '../lib/careerDeleteConfirmation';
 import { careerMutationFailure, careerReadFailure } from '../lib/careerMutationRecovery';
 import { beginCareerWrite, finishCareerWrite, type CareerWriteLease } from '../lib/careerWriteFlight';
@@ -725,7 +726,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
             {scenario === 'balance' ? (
               <>
                 <Text style={styles.fieldLabel}>給与と休日の優先度：{weight === 50 ? '同じくらい' : weight > 50 ? '給与を優先' : '休日を優先'}</Text>
-                <View style={styles.chips}>{[0, 25, 50, 75, 100].map((w) => <Choice key={w} text={w + '%'} active={weight === w} onPress={() => { formRevision.current += 1; setWeight(w); }} />)}</View>
+                <View style={styles.chips}>{visibleCareerWeightChoices(weight).map((w) => <Choice key={w} text={w + '%'} active={weight === w} onPress={() => { formRevision.current += 1; setWeight(w); }} />)}</View>
               </>
             ) : null}
             <StateMessage state={selectedDetails} onRetry={() => void refreshDetails()} />
