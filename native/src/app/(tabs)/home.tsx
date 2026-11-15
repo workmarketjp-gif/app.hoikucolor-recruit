@@ -4,6 +4,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { CareerExperience } from '../../components/CareerExperience';
 import { homeAttentionActions } from '../../lib/homeAttentionActions';
 import { useHomeApplicationProgress } from '../../hooks/useHomeApplicationProgress';
+import { canShowCalmHomeLinks } from '../../lib/homeCalmNavigation';
 import { FeaturedHomeJobs } from '../../components/FeaturedHomeJobs';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -39,6 +40,17 @@ export default function HomeScreen() {
   const summary = notifications.attentionSummary;
   const actions = homeAttentionActions(summary);
   const applicationProgress = useHomeApplicationProgress();
+  // The Web suppresses busy attention rows only after BOTH private reads
+  // succeeded and all four pending categories are confirmed to be zero.
+  const calmHome = canShowCalmHomeLinks({
+    applicationCount: applicationProgress.count,
+    applicationLoading: applicationProgress.loading,
+    applicationError: applicationProgress.error,
+    attentionSummary: summary,
+    attentionLoaded: notifications.loaded,
+    attentionLoading: notifications.loading,
+    attentionError: notifications.error,
+  });
 
   return (
     <ScrollView contentContainerStyle={styles.page}>
@@ -49,6 +61,7 @@ export default function HomeScreen() {
         <Text style={styles.subtle}>求人探しから応募後の連絡まで、ここから進められます。</Text>
       </View>
 
+      {!calmHome ? (
       <View style={styles.card}>
         <View style={styles.rowBetween}>
           <Text style={styles.sectionTitle}>いま確認すること</Text>
@@ -96,6 +109,18 @@ export default function HomeScreen() {
           <Text style={styles.subtle}>通知センター未読 {notifications.unreadCount} 件</Text>
         ) : null}
       </View>
+      ) : null}
+
+      <CareerExperience variant="home" />
+      {calmHome ? (
+        <View style={styles.calmLinks} accessibilityLabel="応募とメッセージ">
+          <HomeActionRow id="home-calm-applications" label="応募管理"
+            onPress={() => router.push(actions.applicationHref)} />
+          <HomeActionRow id="home-calm-messages" label="メッセージ"
+            onPress={() => router.push('/messages' as never)} />
+        </View>
+      ) : null}
+      <FeaturedHomeJobs />
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>求人を探す</Text>
@@ -107,9 +132,6 @@ export default function HomeScreen() {
           <Text style={styles.secondaryButtonText}>保存した求人を見る</Text>
         </Pressable>
       </View>
-
-      <CareerExperience variant="home" />
-      <FeaturedHomeJobs />
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>あなたに合う園を探す</Text>
@@ -152,6 +174,7 @@ const styles = StyleSheet.create({
   urgentActionLabel: { color: '#A91E48', fontWeight: '800' },
   actionCount: { fontSize: 15, color: '#BE2455', fontWeight: '800', minWidth: 28, textAlign: 'right' },
   chevron: { color: '#B55776', fontSize: 22, fontWeight: '600' },
+  calmLinks: { gap: 8 },
   refreshNotice: { padding: 12, backgroundColor: '#FFF8FA', borderRadius: 12, gap: 8 },
   refreshNoticeText: { color: '#9D3449', fontSize: 14, lineHeight: 21 },
   refreshButton: { minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center', paddingHorizontal: 14,
