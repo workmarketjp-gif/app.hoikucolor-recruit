@@ -118,6 +118,7 @@ function InterviewCard({
         client: pinned.client,
         ownerId: pinned.ownerId,
         ownerSessionId: pinned.ownerSessionId,
+        isCurrent: () => pinned.isCurrent() && stillCurrent(),
         applicationId,
         interviewId: interview.id,
         responseStatus,

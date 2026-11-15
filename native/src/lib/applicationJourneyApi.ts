@@ -23,6 +23,7 @@ import { confirmsRequestedVisit } from './visitRequestReadback';
 import { requestCandidateVisitWithLease } from './visitRequestSessionLease';
 import { cancelCandidateVisitWithLease } from './visitCancellationReadback';
 import { sendCandidateMessageWithSessionLease } from './messageSendSessionLease';
+import { respondCandidateInterviewWithLease } from './interviewResponseSessionLease';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -312,6 +313,7 @@ export async function respondToInterviewDurable(params: {
   client: SupabaseClient;
   ownerId: string;
   ownerSessionId: string;
+  isCurrent: () => boolean;
   applicationId: string;
   interviewId: string;
   responseStatus: JobseekerInterviewResponseStatus;
@@ -328,31 +330,39 @@ export async function respondToInterviewDurable(params: {
     throw new Error('日程変更を希望する場合は、希望日時や都合のよい時間帯を入力してください。');
   }
 
-  const lease = captureDurableMutationSessionLease(params.ownerId, params.ownerSessionId);
-  await prepareDurableMutation({
-    userId: params.ownerId,
-    kind: 'interview',
-    scopeId: params.interviewId,
-    payloadParts: [params.applicationId, params.interviewId, params.responseStatus, message],
-    lease,
+  return respondCandidateInterviewWithLease({
+    isCurrent: params.isCurrent,
+    prepare: async () => {
+      const lease = captureDurableMutationSessionLease(params.ownerId, params.ownerSessionId);
+      await prepareDurableMutation({
+        userId: params.ownerId,
+        kind: 'interview',
+        scopeId: params.interviewId,
+        payloadParts: [params.applicationId, params.interviewId, params.responseStatus, message],
+        lease,
+      });
+    },
+    invoke: async () => {
+      const { error } = await params.client.rpc('hc_jobseeker_respond_interview', {
+        p_interview_id: params.interviewId,
+        p_response_status: params.responseStatus,
+        p_candidate_message: message,
+      });
+      if (error) throw error;
+    },
+    readback: () => getApplicationDetail(params.client, params.applicationId),
+    confirms: (detail) => {
+      const confirmed = detail?.interviews.find((interview) => interview.id === params.interviewId);
+      return Boolean(
+        confirmed &&
+        confirmed.candidate_response_status === params.responseStatus &&
+        (confirmed.candidate_response_message ?? null) === (message ?? null)
+      );
+    },
+    clear: () => clearDurableMutation({
+      userId: params.ownerId, kind: 'interview', scopeId: params.interviewId,
+    }),
   });
-  const { error } = await params.client.rpc('hc_jobseeker_respond_interview', {
-    p_interview_id: params.interviewId,
-    p_response_status: params.responseStatus,
-    p_candidate_message: message,
-  });
-  if (error) throw error;
-
-  const detail = await getApplicationDetail(params.client, params.applicationId);
-  const confirmed = detail?.interviews.find((interview) => interview.id === params.interviewId);
-  if (
-    !confirmed ||
-    confirmed.candidate_response_status !== params.responseStatus ||
-    (confirmed.candidate_response_message ?? null) !== (message ?? null)
-  ) {
-    throw new Error('面接回答の反映を確認できませんでした。再読み込みして確認してください。');
-  }
-  await clearDurableMutation({ userId: params.ownerId, kind: 'interview', scopeId: params.interviewId });
 }
 
 export async function acceptOffer(
