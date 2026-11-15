@@ -15,6 +15,7 @@ import { pinCandidateForRead } from '../../lib/pinnedCandidateRead';
 import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
 import { createApplicationDecisionGate } from '../../lib/applicationDecisionGate';
 import { applicationDecisionDisclosure, canConfirmApplicationWithdrawal, isFreshApplicationWithdrawal } from '../../lib/applicationDecisionDisclosure';
+import { acceptCandidateOfferWithFreshReadback } from '../../lib/applicationOfferAcceptance';
 import { applicationSelectionTimeline, webNextScheduledInterview } from '../../lib/applicationSelectionTimeline';
 import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
 import { canSubmitCandidateMessage, classifyUncertainCandidateMessageReview, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
@@ -537,14 +538,27 @@ function ApplicationDetailContent() {
   };
 
   const acceptCurrentOffer = async () => {
+    const offeredSnapshot = detail?.application ?? null;
+    if (!offeredSnapshot ||
+        !applicationDecisionDisclosure(offeredSnapshot.status, offeredSnapshot.candidate_offer_response)?.canAccept) return;
     await runDecision(async (stillCurrent) => {
       setError(null);
       const pinned = await pinForApplicationMutation(pinCandidateAction, stillCurrent);
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
       if (!pinned.isCurrent() || !stillCurrent()) return;
-      const next = await acceptOffer(pinned.client, applicationId, offerMessage);
+      const result = await acceptCandidateOfferWithFreshReadback({
+        presented: offeredSnapshot,
+        isCurrent: () => pinned.isCurrent() && stillCurrent(),
+        readCurrent: () => getApplicationDetail(pinned.client, applicationId),
+        accept: () => acceptOffer(pinned.client, applicationId, offerMessage),
+      });
       if (!pinned.isCurrent() || !stillCurrent()) return;
-      setDetail(next);
+      if (result.kind === 'stale') {
+        // Show the new authorized status; a missing detail is not a confirmed refusal.
+        if (result.detail) setDetail(result.detail);
+        throw new Error('応募状況が更新されました。最新の内定状況を確認してから操作してください。');
+      }
+      setDetail(result.detail);
     }, setError);
   };
 

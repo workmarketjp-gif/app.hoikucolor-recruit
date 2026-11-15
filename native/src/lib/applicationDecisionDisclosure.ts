@@ -61,3 +61,20 @@ export function isFreshApplicationWithdrawal(
       (confirmation.candidate_offer_response ?? null) !== (canonical.candidate_offer_response ?? null)) return false;
   return applicationDecisionDisclosure(canonical.status, canonical.candidate_offer_response) !== null;
 }
+
+/**
+ * Accepting an offer is an irreversible candidate decision, not a blind action
+ * on a potentially outdated card. Only the exact still-offered, unaccepted
+ * application may proceed after a fresh candidate-authorized detail read.
+ * This is a UI freshness check; the server must still authorize the RPC and
+ * enforce the current offer state atomically.
+ */
+export function isFreshApplicationOfferAcceptance(
+  presented: WithdrawalApplicationSnapshot | null | undefined,
+  canonical: WithdrawalApplicationSnapshot | null | undefined,
+): boolean {
+  if (!presented || !canonical || !presented.id || presented.id !== canonical.id) return false;
+  if (presented.status !== canonical.status ||
+      (presented.candidate_offer_response ?? null) !== (canonical.candidate_offer_response ?? null)) return false;
+  return applicationDecisionDisclosure(canonical.status, canonical.candidate_offer_response)?.canAccept === true;
+}
