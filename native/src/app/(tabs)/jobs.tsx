@@ -21,6 +21,7 @@ import { updateSavedJobAndConfirm } from '../../lib/savedJobsReadback';
 import { shouldRefreshJobsOnReturn, type JobSearchFocusState } from '../../lib/jobSearchFocus';
 import { jobSearchFailureChannel } from '../../lib/jobSearchFailureChannel';
 import { retainedJobSearchFacets } from '../../lib/jobSearchFacetRetention';
+import { isJobSearchFacetSelected } from '../../lib/jobSearchFacetSelection';
 import { organicJobRankLabels, type OrganicJobRankLabel } from '../../lib/jobRankingDisclosure';
 import { jobSearchCardPresentation } from '../../lib/jobSearchCardPresentation';
 import { keywordForCurrentCandidate, type CandidateKeywordDraft } from '../../lib/jobSearchKeywordDraft';
@@ -412,6 +413,7 @@ export default function JobsScreen() {
       <View style={styles.searchCard}>
         <TextInput
           testID="job-search-keyword"
+          accessibilityLabel="キーワード検索"
           value={query}
           onChangeText={editQuery}
           placeholder="園名・職種・地域で検索"
@@ -425,10 +427,10 @@ export default function JobsScreen() {
           style={styles.input}
         />
         <View style={styles.filterRow}>
-          <Pressable testID="job-filter-prefecture" accessibilityRole="button" style={[styles.filterChip, Boolean(filters.prefecture) && styles.filterChipActive]} onPress={() => setPicker('prefecture')}>
+          <Pressable testID="job-filter-prefecture" accessibilityRole="button" accessibilityLabel={`勤務地：${filters.prefecture || '指定しない'}`} style={[styles.filterChip, Boolean(filters.prefecture) && styles.filterChipActive]} onPress={() => setPicker('prefecture')}>
             <Text style={styles.filterChipText}>{filters.prefecture || '勤務地'} ▾</Text>
           </Pressable>
-          <Pressable testID="job-filter-employment" accessibilityRole="button" style={[styles.filterChip, Boolean(filters.employmentType) && styles.filterChipActive]} onPress={() => setPicker('employment')}>
+          <Pressable testID="job-filter-employment" accessibilityRole="button" accessibilityLabel={`雇用形態：${filters.employmentType || '指定しない'}`} style={[styles.filterChip, Boolean(filters.employmentType) && styles.filterChipActive]} onPress={() => setPicker('employment')}>
             <Text style={styles.filterChipText}>{filters.employmentType || '雇用形態'} ▾</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ selected: filters.hoVerifiedOnly }} style={[styles.filterChip, filters.hoVerifiedOnly && styles.filterChipActive]} onPress={() => selectFilter({ hoVerifiedOnly: !filters.hoVerifiedOnly })}>
@@ -530,11 +532,20 @@ export default function JobsScreen() {
             <Text style={styles.modalTitle}>{picker === 'prefecture' ? '勤務地' : '雇用形態'}</Text>
             <ScrollView style={styles.modalOptions} keyboardShouldPersistTaps="handled">
               {!facets ? <Text style={styles.subtle}>絞り込み条件を確認しています。読み込めない場合は再読み込みしてください。</Text> : null}
-              {['', ...new Set((picker === 'prefecture' ? facets?.prefectures ?? [] : facets?.employmentTypes ?? []).filter(Boolean))].map((value) => (
-                <Pressable key={value || 'all'} accessibilityRole="button" style={styles.modalOption} onPress={() => selectFilter(picker === 'prefecture' ? { prefecture: value } : { employmentType: value })}>
-                  <Text style={styles.modalOptionText}>{value || '指定しない'}</Text>
-                </Pressable>
-              ))}
+              {['', ...new Set((picker === 'prefecture' ? facets?.prefectures ?? [] : facets?.employmentTypes ?? []).filter(Boolean))].map((value) => {
+                const selected = isJobSearchFacetSelected(picker, filters, value);
+                return (
+                  <Pressable key={value || 'all'} accessibilityRole="radio" accessibilityState={{ selected }}
+                    style={[styles.modalOption, selected && styles.modalOptionSelected]}
+                    onPress={() => {
+                      if (!picker) return;
+                      selectFilter(picker === 'prefecture' ? { prefecture: value } : { employmentType: value });
+                    }}>
+                    <Text style={[styles.modalOptionText, selected && styles.modalOptionTextSelected]}>{value || '指定しない'}</Text>
+                    {selected ? <Text importantForAccessibility="no" style={styles.modalOptionCheck}>✓</Text> : null}
+                  </Pressable>
+                );
+              })}
             </ScrollView>
             <Pressable accessibilityRole="button" style={styles.modalClose} onPress={() => setPicker(null)}><Text style={styles.modalCloseText}>閉じる</Text></Pressable>
           </View>
@@ -558,8 +569,11 @@ const styles = StyleSheet.create({
   modalPanel: { maxHeight: '70%', padding: 20, paddingBottom: 32, backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, gap: 12 },
   modalTitle: { fontSize: 20, fontWeight: '900', color: '#34222B' },
   modalOptions: { flexGrow: 0 },
-  modalOption: { minHeight: 48, justifyContent: 'center', paddingVertical: 12, borderBottomWidth: 1, borderColor: '#F5EBEF' },
-  modalOptionText: { fontSize: 16, color: '#34222B', fontWeight: '700' },
+  modalOption: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingVertical: 12, borderBottomWidth: 1, borderColor: '#F5EBEF' },
+  modalOptionSelected: { backgroundColor: '#FFF0F4', borderRadius: 10, paddingHorizontal: 10 },
+  modalOptionText: { fontSize: 16, color: '#34222B', fontWeight: '700', flexShrink: 1 },
+  modalOptionTextSelected: { color: '#BD2450' },
+  modalOptionCheck: { fontSize: 18, color: '#E9265A', fontWeight: '800' },
   modalClose: { minHeight: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E9265A', borderRadius: 12 },
   modalCloseText: { color: '#fff', fontWeight: '800', fontSize: 16 },
   searchCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 10 },
