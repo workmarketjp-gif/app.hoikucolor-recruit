@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { confirmSavedCareer, confirmDeletedCareer } from './careerPostwriteReadback.ts';
 
 /**
  * Hoiku Color Web /career parity: use the identical owner-scoped RPCs and
@@ -188,19 +189,12 @@ export async function getCareerConditions(client: SupabaseClient): Promise<Caree
 
 export async function saveCareerConditions(client: SupabaseClient, conditions: CareerConditions): Promise<CareerConditions> {
   await call(client, 'hc_jobseeker_save_career_conditions', { p_conditions: conditions });
-  const saved = await getCareerConditions(client);
-  const keys = Object.keys(conditions) as (keyof CareerConditions)[];
-  if (!saved || !keys.every((key) => saved[key] === conditions[key])) {
-    throw new Error('保存した内容を確認できませんでした。もう一度お試しください。');
-  }
-  return saved;
+  return confirmSavedCareer(() => getCareerConditions(client), conditions);
 }
 
 export async function deleteCareerConditions(client: SupabaseClient): Promise<void> {
   await call(client, 'hc_jobseeker_delete_career_conditions');
-  if (await getCareerConditions(client)) {
-    throw new Error('保存した条件を削除できませんでした。もう一度お試しください。');
-  }
+  await confirmDeletedCareer(() => getCareerConditions(client));
 }
 
 export async function getMatchingPreferencesForCareer(client: SupabaseClient): Promise<MatchingPreferencesForCareer> {
