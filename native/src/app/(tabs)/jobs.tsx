@@ -20,6 +20,7 @@ import { EMPTY_JOB_SEARCH_FILTERS, createJobSearchQuery, hasActiveJobFilters, ty
 import { updateSavedJobAndConfirm } from '../../lib/savedJobsReadback';
 import { shouldRefreshJobsOnReturn, type JobSearchFocusState } from '../../lib/jobSearchFocus';
 import { jobSearchFailureChannel } from '../../lib/jobSearchFailureChannel';
+import { retainedJobSearchFacets } from '../../lib/jobSearchFacetRetention';
 import { organicJobRankLabels, type OrganicJobRankLabel } from '../../lib/jobRankingDisclosure';
 import { jobSearchCardPresentation } from '../../lib/jobSearchCardPresentation';
 import { keywordForCurrentCandidate, type CandidateKeywordDraft } from '../../lib/jobSearchKeywordDraft';
@@ -169,7 +170,10 @@ export default function JobsScreen() {
 
   const loadFacets = useCallback(async () => {
     const current = ++facetGeneration.current;
-    setOwnedFacets(null);
+    // Preserve only this candidate/session's confirmed facet NAMES on retry.
+    // A failed refresh must not wipe usable filter options or imply zero jobs.
+    setOwnedFacets((previous) => retainedJobSearchFacets(previous, ownerKey,
+      latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible));
     setOwnedFacetError(null);
     try {
       const { value: next } = await readCandidateJobDiscoveryBounded({
