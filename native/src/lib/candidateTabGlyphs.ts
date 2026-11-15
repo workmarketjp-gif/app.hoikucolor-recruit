@@ -1,9 +1,9 @@
 /**
  * 24x24, dependency-free line geometry for the five approved Hoiku Color Web
- * mobile tabs. Coordinates follow src/components/Icon.tsx (Web main fa779e73).
+ * mobile tabs and their Home statistic shortcuts. Coordinates follow src/components/Icon.tsx (Web main fa779e73).
  * RN View primitives render these without system-dependent Unicode glyphs.
  */
-export type TabGlyph = 'home' | 'search' | 'yen' | 'heart' | 'user';
+export type TabGlyph = 'home' | 'search' | 'yen' | 'heart' | 'user' | 'briefcase' | 'chat';
 export type TabGlyphPrimitive =
   | { kind: 'stroke'; x1: number; y1: number; x2: number; y2: number }
   | { kind: 'ring'; x: number; y: number; diameter: number }
@@ -45,6 +45,25 @@ const user = [
   { kind: 'shoulders' as const, x: 4.5, y: 13.5, width: 15, height: 7.5 },
 ];
 
+// Home statistic icons follow the approved Web's briefcase and chat outlines.
+const briefcase = [
+  stroke(5, 7, 19, 7), stroke(3, 9, 3, 18), stroke(21, 9, 21, 18),
+  stroke(5, 20, 19, 20), stroke(3, 12, 10, 12), stroke(14, 12, 21, 12),
+  stroke(8, 7, 8, 5), stroke(8, 5, 10, 3), stroke(10, 3, 14, 3),
+  stroke(14, 3, 16, 5), stroke(16, 5, 16, 7),
+  stroke(10, 12, 10, 14), stroke(10, 14, 14, 14), stroke(14, 14, 14, 12),
+  stroke(3, 9, 5, 7), stroke(19, 7, 21, 9),
+  stroke(3, 18, 5, 20), stroke(19, 20, 21, 18),
+];
+const chat = [
+  stroke(4.5, 5, 19.5, 5), stroke(3.5, 6, 3.5, 16),
+  stroke(4.5, 17, 5.5, 17), stroke(5.5, 17, 5.5, 20.5),
+  stroke(5.5, 20.5, 10, 17), stroke(10, 17, 19.5, 17),
+  stroke(20.5, 6, 20.5, 16), stroke(3.5, 6, 4.5, 5),
+  stroke(19.5, 5, 20.5, 6), stroke(3.5, 16, 4.5, 17),
+  stroke(19.5, 17, 20.5, 16),
+];
+
 export const candidateTabGlyphs: Readonly<Record<TabGlyph, readonly TabGlyphPrimitive[]>> = {
-  home, search, yen, heart, user,
+  home, search, yen, heart, user, briefcase, chat,
 };
