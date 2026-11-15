@@ -5,23 +5,52 @@ import { CareerExperience } from '../../components/CareerExperience';
 import { homeAttentionActions } from '../../lib/homeAttentionActions';
 import { useHomeApplicationProgress } from '../../hooks/useHomeApplicationProgress';
 import { canShowCalmHomeLinks } from '../../lib/homeCalmNavigation';
+import { homeStatRowPresentation } from '../../lib/homeStatRowPresentation';
 import { FeaturedHomeJobs } from '../../components/FeaturedHomeJobs';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { useNotifications } from '../../contexts/NotificationContext';
 
-function HomeActionRow({ id, label, count, urgent = false, onPress }: {
-  id: string; label: string; count?: number | null; urgent?: boolean; onPress: () => void;
+function HomeActionRow({ id, label, count, urgent = false, onPress, stat = false, error = null, onRetry }: {
+  id: string;
+  label: string;
+  count?: number | null;
+  urgent?: boolean;
+  onPress: () => void;
+  stat?: boolean;
+  error?: string | null;
+  onRetry?: () => Promise<void>;
 }) {
+  // Match Web's StatRow: a failed read retries on the same row rather than
+  // opening a destination with an unverified, stale or missing count.
+  const statPresentation = stat ? homeStatRowPresentation(count ?? null, error ?? null) : null;
+  const handlePress = () => {
+    if (stat && statPresentation?.retry && onRetry) {
+      // The notification provider exposes failures in its state; an onPress
+      // callback must not leak a rejected promise to React Native.
+      void onRetry().catch(() => undefined);
+      return;
+    }
+    onPress();
+  };
+  const a11yLabel = stat
+    ? (statPresentation?.retry
+      ? `${label}をもう一度読み込む`
+      : `${label}、${statPresentation?.value ?? '…'}`)
+    : `${label}${count === undefined ? '' : count === null ? '、件数未取得' : `、${count}件`}`;
   return (
     <Pressable
       testID={id}
       accessibilityRole="button"
-      accessibilityLabel={`${label}${count === undefined ? '' : count === null ? '、件数未取得' : `、${count}件`}`}
-      onPress={onPress}
+      accessibilityLabel={a11yLabel}
+      onPress={handlePress}
       style={[styles.actionRow, urgent && styles.urgentAction]}
     >
       <Text style={[styles.actionLabel, urgent && styles.urgentActionLabel]}>{label}</Text>
-      {count !== undefined ? (
+      {statPresentation ? (
+        <Text style={[styles.actionCount, statPresentation.retry && styles.actionErrorText]}>
+          {statPresentation.value}
+        </Text>
+      ) : count !== undefined ? (
         <Text style={styles.actionCount}>{count === null ? '未取得' : `${count}件`}</Text>
       ) : null}
       <Text style={styles.chevron} importantForAccessibility="no">›</Text>
@@ -81,26 +110,18 @@ export default function HomeScreen() {
             onPress={() => router.push(actions.scout!.href as never)} />
         ) : null}
         <HomeActionRow id="home-applications" label="選考中の応募"
-          count={applicationProgress.count}
+          count={applicationProgress.count} stat error={applicationProgress.error}
+          onRetry={applicationProgress.refresh}
           onPress={() => router.push(actions.applicationHref)} />
-        {applicationProgress.error ? (
-          <View style={styles.refreshNotice}>
-            <Text style={styles.refreshNoticeText}>{applicationProgress.error}</Text>
-            <Pressable accessibilityRole="button" style={styles.refreshButton}
-              disabled={applicationProgress.loading}
-              onPress={() => void applicationProgress.refresh()}>
-              <Text style={styles.refreshButtonText}>応募状況を再読み込み</Text>
-            </Pressable>
-          </View>
-        ) : null}
         <HomeActionRow id="home-next-message" label="新着メッセージ"
-          count={actions.message.count}
+          count={actions.message.count} stat error={notifications.error}
+          onRetry={notifications.refresh}
           onPress={() => router.push(actions.message.href as never)} />
-        {notifications.error ? (
+        {notifications.error && actions.message.count !== null ? (
           <View style={styles.refreshNotice}>
             <Text style={styles.refreshNoticeText}>新着情報を確認できませんでした。</Text>
             <Pressable accessibilityRole="button" style={styles.refreshButton}
-              onPress={() => void notifications.refresh()}>
+              onPress={() => { void notifications.refresh().catch(() => undefined); }}>
               <Text style={styles.refreshButtonText}>再読み込み</Text>
             </Pressable>
           </View>
@@ -173,6 +194,7 @@ const styles = StyleSheet.create({
   actionLabel: { flex: 1, color: '#30212B', fontSize: 15, fontWeight: '700', lineHeight: 22 },
   urgentActionLabel: { color: '#A91E48', fontWeight: '800' },
   actionCount: { fontSize: 15, color: '#BE2455', fontWeight: '800', minWidth: 28, textAlign: 'right' },
+  actionErrorText: { color: '#9D3449', fontSize: 13, lineHeight: 20, flexShrink: 1, maxWidth: 140 },
   chevron: { color: '#B55776', fontSize: 22, fontWeight: '600' },
   calmLinks: { gap: 8 },
   refreshNotice: { padding: 12, backgroundColor: '#FFF8FA', borderRadius: 12, gap: 8 },
