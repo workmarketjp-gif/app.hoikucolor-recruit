@@ -21,3 +21,62 @@ export function careerPrefectureOptions(
   return [...options].sort(([a], [b]) => a.localeCompare(b, 'ja'))
     .map(([value, count]) => ({ value, count }));
 }
+
+
+/**
+ * A successful canonical salary-market read authorizes showing its facet NAMES,
+ * not carrying a past request's job COUNTS into another search scope. This
+ * snapshot is held in component state and must be bound to its candidate session.
+ */
+export type CareerFacetNames = Readonly<{
+  prefectures: readonly string[];
+  employmentTypes: readonly string[];
+}>;
+
+export function rememberCareerFacetNames(
+  previous: CareerFacetNames | null,
+  facets: Readonly<{
+    coverage: readonly CareerPrefectureCoverage[];
+    employment_types: readonly string[];
+  }>,
+): CareerFacetNames {
+  const prefectures = new Set(previous?.prefectures ?? []);
+  const employmentTypes = new Set(previous?.employmentTypes ?? []);
+  for (const row of facets.coverage ?? []) {
+    if (typeof row?.prefecture === 'string' && row.prefecture.trim()) prefectures.add(row.prefecture);
+  }
+  for (const type of facets.employment_types ?? []) {
+    if (typeof type === 'string' && type.trim()) employmentTypes.add(type);
+  }
+  return { prefectures: [...prefectures].sort((a, b) => a.localeCompare(b, 'ja')),
+    employmentTypes: [...employmentTypes].sort((a, b) => a.localeCompare(b, 'ja')) };
+}
+
+/** Keep proven facet names selectable while another request loads or fails. */
+export function careerPrefectureOptionsWithHistory(
+  coverage: readonly CareerPrefectureCoverage[],
+  selected: string,
+  priorNames: readonly string[],
+): CareerPrefectureOption[] {
+  const items = careerPrefectureOptions(coverage, selected);
+  const present = new Set(items.map((item) => item.value));
+  for (const name of priorNames) {
+    if (typeof name === 'string' && name.trim() && !present.has(name)) {
+      items.push({ value: name, count: null });
+      present.add(name);
+    }
+  }
+  return items.sort((a, b) => a.value.localeCompare(b.value, 'ja'));
+}
+
+export function careerEmploymentOptions(
+  currentTypes: readonly string[],
+  selected: string,
+  priorNames: readonly string[],
+): string[] {
+  const options = new Set<string>();
+  for (const name of [...priorNames, ...currentTypes, selected]) {
+    if (typeof name === 'string' && name.trim()) options.add(name);
+  }
+  return [...options].sort((a, b) => a.localeCompare(b, 'ja'));
+}

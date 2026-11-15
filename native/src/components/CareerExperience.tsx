@@ -9,7 +9,10 @@ import { disclosedCareerSalary } from '../lib/careerSalaryDisclosure';
 import { careerMutationNotice } from '../lib/careerMutationNotice';
 import { careerScenarioPresentation } from '../lib/careerScenarioPresentation';
 import { CareerPrefectureSelect } from './CareerPrefectureSelect';
-import { careerPrefectureOptions } from '../lib/careerPrefectureOptions';
+import {
+  careerEmploymentOptions, careerPrefectureOptionsWithHistory, rememberCareerFacetNames,
+  type CareerFacetNames,
+} from '../lib/careerPrefectureOptions';
 import { visibleCareerWeightChoices } from '../lib/careerSalaryWeightChoices';
 import { captureCareerDeleteConfirmation, mayExecuteCareerDeletion, type CareerDeleteConfirmation } from '../lib/careerDeleteConfirmation';
 import { careerMutationFailure, careerReadFailure } from '../lib/careerMutationRecovery';
@@ -237,6 +240,8 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const [days, setDays] = useState<number>(120);
   const [checkOpen, setCheckOpen] = useState(variant === 'page');
   const [market, setMarket] = useState<Owned<Loadable<PostedSalaryMarket>> | null>(null);
+  // In-memory session-scoped facet NAMES; counts must always come from the current RPC.
+  const [knownFacets, setKnownFacets] = useState<Owned<CareerFacetNames> | null>(null);
   const [official, setOfficial] = useState<Owned<Loadable<OfficialWageStats | null>> | null>(null);
   const [holiday, setHoliday] = useState<Owned<Loadable<HolidayMarket>> | null>(null);
   const [results, setResults] = useState<Owned<Loadable<CareerScenarioResponse>> | null>(null);
@@ -260,7 +265,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     setBaseError(null);
     setFields(blank);
     setBasis(null);
-    setMarket(null); setOfficial(null); setHoliday(null); setResults(null); setDetailsResult(null);
+    setKnownFacets(null); setMarket(null); setOfficial(null); setHoliday(null); setResults(null); setDetailsResult(null);
     setSaveMessage(null);
     if (!ownerKey || !privacy.canAccessPrivateData()) return;
     try {
@@ -308,7 +313,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
 
   useEffect(() => {
     generation.current += 1; marketGeneration.current += 1; scenarioGeneration.current += 1; detailsGeneration.current += 1;
-    setBase(null); setFields(blank); setMarket(null); setOfficial(null); setHoliday(null); setResults(null); setDetailsResult(null);
+    setBase(null); setFields(blank); setKnownFacets(null); setMarket(null); setOfficial(null); setHoliday(null); setResults(null); setDetailsResult(null);
     setBusy(false);
     if (!allowed || !ownerKey) return;
     void loadBase();
@@ -324,11 +329,16 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const selectedHoliday = ready && holiday?.ownerKey === ownerKey ? holiday.value : null;
   const selectedResults = ready && results?.ownerKey === ownerKey ? results.value : null;
   const selectedDetails = ready && detailsResult?.ownerKey === ownerKey ? detailsResult.value : null;
-  // Mirrors Web /career's complete, ja-sorted salary-market coverage list.
-  // Keep a selected profile prefecture without inventing a published-job count.
-  const prefectureOptions = careerPrefectureOptions(
+  // Keep confirmed facet NAMES when filters change or a request fails. Never reuse
+  // counts from a previous region/type, or any state from a different candidate session.
+  const priorFacets = ready && knownFacets?.ownerKey === ownerKey ? knownFacets.value : null;
+  const prefectureOptions = careerPrefectureOptionsWithHistory(
     selectedMarket?.status === 'ready' ? selectedMarket.data.facets.coverage ?? [] : [],
-    area.prefecture,
+    area.prefecture, priorFacets?.prefectures ?? [],
+  );
+  const employmentOptions = careerEmploymentOptions(
+    selectedMarket?.status === 'ready' ? selectedMarket.data.facets.employment_types ?? [] : [],
+    area.employmentType, priorFacets?.employmentTypes ?? [],
   );
 
   const refreshMarket = useCallback(async () => {
@@ -356,8 +366,18 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       try { commit(setter, { status: 'ready', data: await boundedPrivateRead(fn) }); }
       catch (error) { commit(setter, error instanceof CareerApiUnavailableError ? { status: 'unavailable' } : { status: 'error', error: careerReadFailure() }); }
     };
+    const updateMarket = (next: Owned<Loadable<PostedSalaryMarket>>) => {
+      if (next.value.status === 'ready') {
+        const verifiedFacets = next.value.data.facets;
+        setKnownFacets((previous) => ({
+          ownerKey,
+          value: rememberCareerFacetNames(previous?.ownerKey === ownerKey ? previous.value : null, verifiedFacets),
+        }));
+      }
+      setMarket(next);
+    };
     await Promise.all([
-      read(() => getPostedSalaryMarket(pinned.client, area.prefecture, area.employmentType), setMarket),
+      read(() => getPostedSalaryMarket(pinned.client, area.prefecture, area.employmentType), updateMarket),
       read(() => getOfficialWageStats(pinned.client, area.prefecture), setOfficial),
       read(() => getHolidayMarket(pinned.client, area.prefecture), setHoliday),
     ]);
@@ -720,7 +740,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
             <Text style={styles.fieldLabel}>雇用形態</Text>
             <View style={styles.chips}>
               <Choice text="指定なし" active={!area.employmentType} onPress={() => setArea((p) => ({ ...p, employmentType: '' }))} />
-              {(selectedMarket?.status === 'ready' ? selectedMarket.data.facets.employment_types : []).map((item) => <Choice key={item} text={item} active={area.employmentType === item} onPress={() => setArea((p) => ({ ...p, employmentType: item }))} />)}
+              {employmentOptions.map((item) => <Choice key={item} text={item} active={area.employmentType === item} onPress={() => setArea((p) => ({ ...p, employmentType: item }))} />)}
             </View>
             {current.conditionsAvailable ? <Action label={busy ? '確認中…' : 'この条件を保存する'} disabled={busy || requiresReload} onPress={() => void save()} />
               : <Text style={styles.footnote}>入力した内容は画面を閉じると消えます。条件保存のAPIは現在利用できません。</Text>}
