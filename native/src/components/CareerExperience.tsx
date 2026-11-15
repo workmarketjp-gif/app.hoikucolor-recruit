@@ -9,6 +9,7 @@ import { disclosedCareerSalary } from '../lib/careerSalaryDisclosure';
 import { careerMutationNotice } from '../lib/careerMutationNotice';
 import { careerScenarioPresentation } from '../lib/careerScenarioPresentation';
 import { careerQuickSalaryNeedsInput, initialCareerQuickPath } from '../lib/careerQuickSalaryPath';
+import { careerQuickResultActions } from '../lib/careerQuickResultActions';
 import { CareerPrefectureSelect } from './CareerPrefectureSelect';
 import {
   careerEmploymentOptions, careerPrefectureOptionsWithHistory, rememberCareerFacetNames,
@@ -178,20 +179,25 @@ function OfficialWages({ data, experienceYears }: { data: OfficialWageStats | nu
   );
 }
 
-function ResultCards({ result, onOpenJob, scenario, salaryLine = null }: {
+function ResultCards({ result, onOpenJob, scenario, salaryLine = null, quick }: {
   result: CareerScenarioResponse; onOpenJob: (id: string) => void;
   scenario: CareerScenarioId; salaryLine?: number | null;
+  quick?: { prefecture: string; onWiden: () => void };
 }) {
   const presentation = careerScenarioPresentation(result, scenario);
+  // The Web quick exploration has a three-card preview and a nationwide recovery.
+  // The detailed simulator keeps its existing untruncated result list.
+  const quickActions = quick ? careerQuickResultActions(result, quick.prefecture, scenario === 'balance' ? 'holidays' : 'salary') : null;
   if (!result.ready) return presentation.unavailable ? (
     <View style={styles.notice}>
       <Text style={styles.bold}>{presentation.unavailable.title}</Text>
       <Text style={styles.muted}>{presentation.unavailable.description}</Text>
+      {quick && quickActions?.showWiden ? <Action label="全国の求人で探す" secondary onPress={quick.onWiden} /> : null}
     </View>
   ) : null;
   return (
     <>
-      <Text style={styles.count}>{result.total}件の求人が見つかりました</Text>
+      {quick && presentation.empty ? null : <Text style={styles.count}>{result.total}件の求人が見つかりました{quickActions ? `（${quickActions.locationLabel}）` : ''}</Text>}
       {salaryLine !== null && scenario !== 'balance' ? (
         <Text style={styles.footnote}>月給の目安ライン {formatMan(salaryLine)}</Text>
       ) : null}
@@ -200,8 +206,9 @@ function ResultCards({ result, onOpenJob, scenario, salaryLine = null }: {
         <View style={styles.notice}>
           <Text style={styles.bold}>{presentation.empty.title}</Text>
           <Text style={styles.muted}>{presentation.empty.description}</Text>
+          {quick && quickActions?.showWiden ? <Action label="全国の求人で探す" secondary onPress={quick.onWiden} /> : null}
         </View>
-      ) : result.jobs.map((job) => (
+      ) : (quickActions ? result.jobs.slice(0, quickActions.previewCount) : result.jobs).map((job) => (
         <View key={job.id} style={styles.opportunity}>
           <Text style={styles.facility}>{job.facility_name ?? '園'}</Text>
           <Text style={styles.bold}>{job.title || '募集内容'}{job.employment_type ? '・' + job.employment_type : ''}</Text>
@@ -211,7 +218,7 @@ function ResultCards({ result, onOpenJob, scenario, salaryLine = null }: {
           <Pressable accessibilityRole="button" onPress={() => onOpenJob(job.id)}><Text style={styles.link}>くわしく見る ›</Text></Pressable>
         </View>
       ))}
-      {presentation.extraCount ? <Text style={styles.footnote}>{presentation.extraCount}</Text> : null}
+      {!quick && presentation.extraCount ? <Text style={styles.footnote}>{presentation.extraCount}</Text> : null}
     </>
   );
 }
@@ -306,7 +313,6 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       setWeight(conditions?.salary_weight ?? 50);
       setDays(conditions?.desired_annual_holidays && DAY_OPTIONS.includes(conditions.desired_annual_holidays as (typeof DAY_OPTIONS)[number])
         ? conditions.desired_annual_holidays : 120);
-      setPath(conditions?.current_monthly_salary != null || preferences.desired_monthly_salary_min != null ? 'salary' : 'holidays');
       setBase({ ownerKey, value: { conditions, conditionsAvailable: conditionRead.available, preferences, profile } });
     } catch (error) {
       if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, generation.current, privateViewAllowed.current)) {
@@ -731,8 +737,11 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
           <Text style={styles.muted}>月給の目安を入力すると、条件に合う求人を探せます。</Text>
         ) : (
           <><StateMessage state={selectedResults} onRetry={() => void refreshScenario()} />
-            {selectedResults?.status === 'ready' ? <ResultCards result={selectedResults.data} onOpenJob={openJob} scenario={path === 'salary' ? 'keep-income' : 'balance'} salaryLine={path === 'salary' ? pathSalaryLine : null} /> : null}
-            <Action label="求人を探すで探す" secondary onPress={() => router.push('/(tabs)/jobs')} />
+            {selectedResults?.status === 'ready' ? <ResultCards result={selectedResults.data} onOpenJob={openJob} scenario={path === 'salary' ? 'keep-income' : 'balance'} salaryLine={path === 'salary' ? pathSalaryLine : null}
+              quick={{ prefecture: area.prefecture, onWiden: () => setArea((previous) => ({ ...previous, prefecture: '' })) }} /> : null}
+            <Action label={selectedResults?.status === 'ready'
+              ? careerQuickResultActions(selectedResults.data, area.prefecture, path === 'salary' ? 'salary' : 'holidays').moreLabel ?? '求人を探すで探す'
+              : '求人を探すで探す'} secondary onPress={() => router.push('/(tabs)/jobs')} />
           </>
         )}
       </Section>
