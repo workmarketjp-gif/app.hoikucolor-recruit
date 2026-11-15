@@ -6,7 +6,7 @@ import Constants from 'expo-constants';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import { getNativeReleaseIdentity } from './appIdentity';
-import { scopedNotificationHref, verifiedApplicationNotificationId, verifiedOptionalNotificationFocusId } from './scopedNotificationRoute';
+import { scopedNotificationHref, verifiedApplicationNotificationId, verifiedOptionalNotificationFocusId, parseCanonicalResolvedNotificationRoute, type ScopedNotificationRoute } from './scopedNotificationRoute';
 import { parseCanonicalNotificationRows, parseCanonicalUnreadNotificationCount } from './notificationReadSnapshot';
 import { requireConfirmedNotificationRead } from './notificationMarkReadConfirmation';
 import { requireConfirmedNotificationMarkAllCount } from './notificationMarkAllConfirmation';
@@ -139,12 +139,11 @@ export async function resolveNotificationRoute(client: SupabaseClient, notificat
     p_notification_id: notificationId,
   });
   if (error) throw error;
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row) throw new Error('NOTIFICATION_ROUTE_NOT_FOUND');
-  return row as { route_key: string; route_params: Record<string, string>; notification_type: string };
+  // A malformed, unsupported or ambiguous route must not be acknowledged as read.
+  return parseCanonicalResolvedNotificationRoute(data);
 }
 
-export function nativeNotificationHref(route: { route_key: string; route_params: Record<string, string> }, navigationKey?: string) {
+export function nativeNotificationHref(route: ScopedNotificationRoute, navigationKey?: string) {
   // The RPC proves scout/spot ownership; never route from an untrusted push payload or Web link_url.
   const scopedTarget = scopedNotificationHref(route);
   if (scopedTarget) return scopedTarget;
