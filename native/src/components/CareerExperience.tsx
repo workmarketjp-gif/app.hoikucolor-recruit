@@ -8,6 +8,8 @@ import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { disclosedCareerSalary } from '../lib/careerSalaryDisclosure';
 import { careerMutationNotice } from '../lib/careerMutationNotice';
 import { careerScenarioPresentation } from '../lib/careerScenarioPresentation';
+import { CareerPrefectureSelect } from './CareerPrefectureSelect';
+import { careerPrefectureOptions } from '../lib/careerPrefectureOptions';
 import { visibleCareerWeightChoices } from '../lib/careerSalaryWeightChoices';
 import { captureCareerDeleteConfirmation, mayExecuteCareerDeletion, type CareerDeleteConfirmation } from '../lib/careerDeleteConfirmation';
 import { careerMutationFailure, careerReadFailure } from '../lib/careerMutationRecovery';
@@ -322,6 +324,12 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const selectedHoliday = ready && holiday?.ownerKey === ownerKey ? holiday.value : null;
   const selectedResults = ready && results?.ownerKey === ownerKey ? results.value : null;
   const selectedDetails = ready && detailsResult?.ownerKey === ownerKey ? detailsResult.value : null;
+  // Mirrors Web /career's complete, ja-sorted salary-market coverage list.
+  // Keep a selected profile prefecture without inventing a published-job count.
+  const prefectureOptions = careerPrefectureOptions(
+    selectedMarket?.status === 'ready' ? selectedMarket.data.facets.coverage ?? [] : [],
+    area.prefecture,
+  );
 
   const refreshMarket = useCallback(async () => {
     const ticket = ++marketGeneration.current;
@@ -625,14 +633,10 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         </>
       )}
       <Section title="さがす地域">
-        <TextInput accessibilityLabel="地域" style={styles.input} value={area.prefecture} onChangeText={(prefecture) => setArea((prev) => ({ ...prev, prefecture }))} placeholder="全国の求人／例：東京都" />
-        {selectedMarket?.status === 'ready' ? (
-          <View style={styles.chips}>
-            <Choice text="全国" active={!area.prefecture} onPress={() => setArea((prev) => ({ ...prev, prefecture: '' }))} />
-            {(selectedMarket.data.facets.coverage ?? []).slice(0, 12).map((row) => <Choice key={row.prefecture} text={row.prefecture} active={area.prefecture === row.prefecture} onPress={() => setArea((prev) => ({ ...prev, prefecture: row.prefecture }))} />)}
-          </View>
-        ) : null}
-        <Text style={styles.footnote}>求人票の都道府県だけを対象にします。入力した地域に公開求人がない場合、全国をお選びください。</Text>
+        <CareerPrefectureSelect selected={area.prefecture} options={prefectureOptions}
+          showCounts={variant === 'page'}
+          onChange={(prefecture) => setArea((prev) => ({ ...prev, prefecture }))} />
+        <Text style={styles.footnote}>求人票の都道府県から選べます。該当する公開求人がない場合は全国をお選びください。</Text>
       </Section>
 
       {variant === 'page' || checkOpen ? (
@@ -776,7 +780,6 @@ const styles = StyleSheet.create({
   link: { color: '#D42152', fontWeight: '800', fontSize: 15, lineHeight: 22 },
   field: { gap: 7 },
   fieldLabel: { fontSize: 14, fontWeight: '700', color: '#3E3540' },
-  input: { borderWidth: 1, borderColor: '#E6CAD3', backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, color: '#29222C', fontSize: 16, minHeight: 48 },
   numberRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   numberInput: { flex: 1, minWidth: 0, borderWidth: 1, borderColor: '#E6CAD3', borderRadius: 12, paddingHorizontal: 14, minHeight: 48, color: '#29222C', fontSize: 17, fontWeight: '700' },
   unit: { fontSize: 13, color: '#62565F', fontWeight: '700' },
