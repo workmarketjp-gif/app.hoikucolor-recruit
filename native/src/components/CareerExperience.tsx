@@ -7,6 +7,7 @@ import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { disclosedCareerSalary } from '../lib/careerSalaryDisclosure';
 import { careerMutationNotice } from '../lib/careerMutationNotice';
+import { careerScenarioPresentation } from '../lib/careerScenarioPresentation';
 import { visibleCareerWeightChoices } from '../lib/careerSalaryWeightChoices';
 import { captureCareerDeleteConfirmation, mayExecuteCareerDeletion, type CareerDeleteConfirmation } from '../lib/careerDeleteConfirmation';
 import { careerMutationFailure, careerReadFailure } from '../lib/careerMutationRecovery';
@@ -171,13 +172,30 @@ function OfficialWages({ data, experienceYears }: { data: OfficialWageStats | nu
   );
 }
 
-function ResultCards({ result, onOpenJob }: { result: CareerScenarioResponse; onOpenJob: (id: string) => void }) {
-  if (!result.ready) return <Text style={styles.muted}>条件を確認できる求人がまだありません。条件を変更して探してください。</Text>;
-  if (result.jobs.length === 0) return <Text style={styles.muted}>この条件に合う求人は見つかりませんでした。希望を広げてお試しください。</Text>;
+function ResultCards({ result, onOpenJob, scenario, salaryLine = null }: {
+  result: CareerScenarioResponse; onOpenJob: (id: string) => void;
+  scenario: CareerScenarioId; salaryLine?: number | null;
+}) {
+  const presentation = careerScenarioPresentation(result, scenario);
+  if (!result.ready) return presentation.unavailable ? (
+    <View style={styles.notice}>
+      <Text style={styles.bold}>{presentation.unavailable.title}</Text>
+      <Text style={styles.muted}>{presentation.unavailable.description}</Text>
+    </View>
+  ) : null;
   return (
     <>
       <Text style={styles.count}>{result.total}件の求人が見つかりました</Text>
-      {result.jobs.map((job) => (
+      {salaryLine !== null && scenario !== 'balance' ? (
+        <Text style={styles.footnote}>月給の目安ライン {formatMan(salaryLine)}</Text>
+      ) : null}
+      {presentation.unknownHolidays ? <Text style={styles.footnote}>{presentation.unknownHolidays}</Text> : null}
+      {presentation.empty ? (
+        <View style={styles.notice}>
+          <Text style={styles.bold}>{presentation.empty.title}</Text>
+          <Text style={styles.muted}>{presentation.empty.description}</Text>
+        </View>
+      ) : result.jobs.map((job) => (
         <View key={job.id} style={styles.opportunity}>
           <Text style={styles.facility}>{job.facility_name ?? '園'}</Text>
           <Text style={styles.bold}>{job.title || '募集内容'}{job.employment_type ? '・' + job.employment_type : ''}</Text>
@@ -187,6 +205,7 @@ function ResultCards({ result, onOpenJob }: { result: CareerScenarioResponse; on
           <Pressable accessibilityRole="button" onPress={() => onOpenJob(job.id)}><Text style={styles.link}>くわしく見る ›</Text></Pressable>
         </View>
       ))}
+      {presentation.extraCount ? <Text style={styles.footnote}>{presentation.extraCount}</Text> : null}
     </>
   );
 }
@@ -679,7 +698,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
           <Text style={styles.muted}>月給の目安を入力すると、条件に合う求人を探せます。</Text>
         ) : (
           <><StateMessage state={selectedResults} onRetry={() => void refreshScenario()} />
-            {selectedResults?.status === 'ready' ? <ResultCards result={selectedResults.data} onOpenJob={openJob} /> : null}
+            {selectedResults?.status === 'ready' ? <ResultCards result={selectedResults.data} onOpenJob={openJob} scenario={path === 'salary' ? 'keep-income' : 'balance'} salaryLine={path === 'salary' ? pathSalaryLine : null} /> : null}
             <Action label="求人を探すで探す" secondary onPress={() => router.push('/(tabs)/jobs')} />
           </>
         )}
@@ -730,7 +749,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
               </>
             ) : null}
             <StateMessage state={selectedDetails} onRetry={() => void refreshDetails()} />
-            {selectedDetails?.status === 'ready' ? <ResultCards result={selectedDetails.data} onOpenJob={openJob} /> : null}
+            {selectedDetails?.status === 'ready' ? <ResultCards result={selectedDetails.data} onOpenJob={openJob} scenario={scenario} salaryLine={salaryLine} /> : null}
             <Text style={styles.footnote}>募集条件は採用時の給与を保証しません.年間休日が確認できない求人は推測で補いません。</Text>
           </Section>
         </>
