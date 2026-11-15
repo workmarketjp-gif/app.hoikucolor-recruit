@@ -8,6 +8,7 @@ import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { disclosedCareerSalary } from '../lib/careerSalaryDisclosure';
 import { careerMutationNotice } from '../lib/careerMutationNotice';
 import { careerScenarioPresentation } from '../lib/careerScenarioPresentation';
+import { careerQuickSalaryNeedsInput, initialCareerQuickPath } from '../lib/careerQuickSalaryPath';
 import { CareerPrefectureSelect } from './CareerPrefectureSelect';
 import {
   careerEmploymentOptions, careerPrefectureOptionsWithHistory, rememberCareerFacetNames,
@@ -298,6 +299,9 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       // The Web salary check never reveals saved salary until an explicit 月給 choice.
       setBasis(null);
       setArea({ prefecture: preferences.desired_prefectures[0] ?? profile?.prefecture ?? '', employmentType: '' });
+      // Web CareerPaths defaults to salary when current or desired pay provides a line.
+      const quickSalaryLine = scenarioSalaryLine('keep-income', conditions?.current_monthly_salary ?? null, null, preferences.desired_monthly_salary_min);
+      setPath(initialCareerQuickPath(quickSalaryLine));
       setScenario(conditions?.scenario ?? 'keep-income');
       setWeight(conditions?.salary_weight ?? 50);
       setDays(conditions?.desired_annual_holidays && DAY_OPTIONS.includes(conditions.desired_annual_holidays as (typeof DAY_OPTIONS)[number])
@@ -702,7 +706,12 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
           <Choice text="お休みを増やしたい" active={path === 'holidays'} onPress={() => setPath('holidays')} />
           <Choice text="自分らしい保育をしたい" active={path === 'values'} onPress={() => setPath('values')} />
         </View>
-        {path === 'salary' && salaryLine === null ? <NumberField label="月給の目安" unit="万円" hint="例：23" value={fields.salary} onChange={(v) => { setBasis('monthly'); edit('salary', v); }} /> : null}
+        {path === 'salary' ? <Text style={styles.muted}>{pathSalaryLine === null
+          ? '今のお給料か、希望する月給を入れると探せます。'
+          : own !== null
+            ? '今のお給料に、募集の給与が届く求人です。'
+            : '希望する最低月給に、募集の給与が届く求人です。'}</Text> : null}
+        {careerQuickSalaryNeedsInput(path, pathSalaryLine) ? <NumberField label="月給の目安" unit="万円" hint="例：23" value={fields.salary} onChange={(v) => { setBasis('monthly'); edit('salary', v); }} /> : null}
         {path === 'holidays' ? (
           <>
             <Text style={styles.muted}>年間休日が書かれた求人だけを、休みの多い順に並べます。</Text>
@@ -718,7 +727,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
             <Action label="保育観から求人を探す" onPress={() => router.push('/matches')} />
             <Action label="大切にしたい保育を見直す" secondary onPress={() => router.push('/scouts')} />
           </>
-        ) : path === 'salary' && salaryLine === null ? (
+        ) : careerQuickSalaryNeedsInput(path, pathSalaryLine) ? (
           <Text style={styles.muted}>月給の目安を入力すると、条件に合う求人を探せます。</Text>
         ) : (
           <><StateMessage state={selectedResults} onRetry={() => void refreshScenario()} />
