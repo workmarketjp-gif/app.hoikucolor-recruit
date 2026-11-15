@@ -20,6 +20,7 @@ import {
 import { getJobDocumentRequirements } from '../lib/jobDocumentRequirementApi';
 import { DocumentVaultSection } from './DocumentVaultSection';
 import { applyVaultReadbackState, canUseApplyDocumentState, isApplySubmissionUnavailable, reconcileApplyVaultSelection, type ApplyVaultChange, type ApplyVaultReadbackState } from '../lib/applyVaultSelection';
+import { evaluateApplyDocumentSubmissionPreflight } from '../lib/applyDocumentSubmissionPreflight';
 
 type Props = {
   jobId: string;
@@ -53,6 +54,8 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
   const [vaultReadback, setVaultReadback] = useState<ApplyVaultReadbackState>('loading');
   const vaultRefreshing = vaultReadback !== 'ready';
   const [vaultBusy, setVaultBusy] = useState(false);
+  const [preflightBusy, setPreflightBusy] = useState(false);
+  const submitPreflightInFlight = useRef(false);
   const knownDocuments = useRef<JobseekerDocument[]>([]);
   const generation = useRef(0);
 
@@ -122,7 +125,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
   const stateReady = ownerReady && loadedJobId === jobId;
   const rows = useMemo(() => (stateReady && requirements ? buildApplyDocumentRows(requirements, documents) : []), [stateReady, requirements, documents]);
   const missing = useMemo(() => missingRequiredDocuments(rows, selection), [rows, selection]);
-  const submissionUnavailable = isApplySubmissionUnavailable({ requirementsReady: stateReady && requirements !== null, submitting, vaultRefreshing, vaultBusy });
+  const submissionUnavailable = isApplySubmissionUnavailable({ requirementsReady: stateReady && requirements !== null, submitting: submitting || preflightBusy, vaultRefreshing, vaultBusy });
 
   // The vault sends [] during loading. It is not a verified empty list.
   // A new file is selected only after an explicit canonical upload.
@@ -156,10 +159,50 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
     setSelection((current) => reconcileApplyVaultSelection(previous, next, current, addingType, change, uploadedDocumentId));
   }, [addingType, jobId, loadedJobId, loadedOwnerKey, privacy.canAccessPrivateData, privacy.shieldVisible, session?.user?.id]);
 
-  const submit = () => {
+  const submit = async () => {
     setTriedSubmit(true);
-    if (!stateReady || !privacy.canAccessPrivateData() || missing.length || submissionUnavailable) return;
-    onSubmit(selectedDocumentIds(rows, selection));
+    if (!stateReady || !requirements || !privacy.canAccessPrivateData() ||
+        missing.length || submissionUnavailable || submitPreflightInFlight.current) return;
+    // A displayed sheet is not proof that the facility requirements or selected
+    // private documents still exist. Recheck both before handing off the write.
+    submitPreflightInFlight.current = true;
+    setPreflightBusy(true);
+    const current = generation.current;
+    const requestedOwnerKey = ownerKey;
+    try {
+      const pinned = await pinCandidateAction();
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
+        throw new Error('応募書類のログイン状態を確認できませんでした。');
+      }
+      const [freshRequirements, freshDocuments] = await Promise.all([
+        getJobDocumentRequirements(pinned.client, jobId),
+        listJobseekerDocuments(pinned.client),
+      ]);
+      if (!pinned.isCurrent() || current !== generation.current ||
+          ownerKeyRef.current !== requestedOwnerKey || !privacy.canAccessPrivateData()) return;
+      assertCandidateDocumentListOwner(freshDocuments, pinned.ownerId);
+      const outcome = evaluateApplyDocumentSubmissionPreflight(
+        requirements, freshRequirements, rows, selection, freshDocuments,
+      );
+      if (outcome !== 'ready') {
+        setLoadError({
+          ownerKey: requestedOwnerKey, jobId,
+          message: outcome === 'requirements_changed'
+            ? '園が応募に必要な書類を更新しました。最新の条件を確認してから応募してください。'
+            : '選んだ応募書類が更新・削除された可能性があります。書類を再確認してから応募してください。',
+        });
+        return;
+      }
+      onSubmit(selectedDocumentIds(rows, selection));
+    } catch {
+      if (current === generation.current && ownerKeyRef.current === requestedOwnerKey &&
+          privacy.canAccessPrivateData()) {
+        setLoadError({ ownerKey: requestedOwnerKey, jobId, message: '応募書類の最終確認に失敗しました。再読み込みしてから応募してください。' });
+      }
+    } finally {
+      submitPreflightInFlight.current = false;
+      if (current === generation.current) setPreflightBusy(false);
+    }
   };
 
   if (!ownerKey || !privateAllowed) {
@@ -204,7 +247,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
           onPress={() => setSelection((current) => ({ ...current, [row.type]: document.id }))}
           accessibilityRole="radio"
           accessibilityState={{ checked: selectedId === document.id }}
-          disabled={submitting || vaultRefreshing || vaultBusy}
+          disabled={submitting || preflightBusy || vaultRefreshing || vaultBusy}
         >
           <Text style={styles.optionText}>{selectedId === document.id ? '● ' : '○ '}{document.title}</Text>
           {document.is_default ? <Text style={styles.optionSub}>応募時に使う書類</Text> : null}
@@ -214,12 +257,12 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
           onPress={() => setSelection((current) => ({ ...current, [row.type]: null }))}
           accessibilityRole="radio"
           accessibilityState={{ checked: !selectedId }}
-          disabled={submitting || vaultRefreshing || vaultBusy}
+          disabled={submitting || preflightBusy || vaultRefreshing || vaultBusy}
         >
           <Text style={styles.optionText}>{!selectedId ? '● ' : '○ '}{row.level === 'requested_later' ? '今は送らない' : '送らない'}</Text>
         </Pressable> : null}
         {!row.candidates.length ? <Text style={styles.empty}>{row.level === 'required' ? 'まだ保存されていません。この応募に必要です。' : 'まだ保存されていません。'}</Text> : null}
-        <Pressable style={styles.secondary} disabled={submitting || vaultBusy} onPress={() => {
+        <Pressable style={styles.secondary} disabled={submitting || preflightBusy || vaultBusy} onPress={() => {
           const closing = addingType === row.type;
           // Block Submit synchronously, before the embedded vault starts its first read.
           if (!closing) setVaultReadback('loading');
@@ -235,21 +278,22 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
     <Text style={styles.note}>選んだ書類は、この応募先の園にだけ提出用のコピーが共有されます。PDF・JPEG・PNG、1ファイル10MBまで。</Text>
     {vaultReadback === 'failed' ? <View testID="apply-vault-readback-failed" style={{ gap: 8 }}>
       <Text style={styles.error} accessibilityLiveRegion="polite">応募書類の再確認に失敗しました。古い書類を使って応募することはできません。</Text>
-      <Pressable testID="apply-vault-retry" style={styles.secondary} disabled={submitting || vaultBusy} onPress={() => void load()} accessibilityRole="button">
+      <Pressable testID="apply-vault-retry" style={styles.secondary} disabled={submitting || preflightBusy || vaultBusy} onPress={() => void load()} accessibilityRole="button">
         <Text style={styles.secondaryText}>書類と応募条件を再読み込み</Text>
       </Pressable>
     </View> : vaultReadback === 'loading'
       ? <Text style={styles.hint} accessibilityLiveRegion="polite">書類一覧を再確認しています。確認が終わるまで応募できません。</Text>
       : null}
     {vaultBusy ? <Text style={styles.hint} accessibilityLiveRegion="polite">書類の選択・保存中は応募できません。</Text> : null}
+    {preflightBusy ? <Text style={styles.hint} accessibilityLiveRegion="polite">園の書類指定と選択済みファイルを確認しています。</Text> : null}
     {missing.length ? <Text style={triedSubmit ? styles.error : styles.hint} accessibilityLiveRegion="polite">
       {joinDocumentLabels(missing)}はこの求人の応募に必要です。保存済みの書類を選ぶか、ここで追加してください。
     </Text> : null}
 
     <Pressable style={styles.primary} disabled={submissionUnavailable} onPress={submit} accessibilityRole="button" accessibilityState={{ disabled: submissionUnavailable }}>
-      <Text style={styles.primaryText}>{submitting ? '応募しています…' : 'この内容で応募する'}</Text>
+      <Text style={styles.primaryText}>{submitting ? '応募しています…' : preflightBusy ? '書類を最終確認中…' : 'この内容で応募する'}</Text>
     </Pressable>
-    <Pressable style={styles.secondary} disabled={submitting || vaultBusy} onPress={onCancel} accessibilityRole="button">
+    <Pressable style={styles.secondary} disabled={submitting || preflightBusy || vaultBusy} onPress={onCancel} accessibilityRole="button">
       <Text style={styles.secondaryText}>戻る</Text>
     </Pressable>
   </View>;
