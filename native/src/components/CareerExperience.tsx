@@ -429,7 +429,12 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     setBusy(true); setSaveMessage(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !pinned.isCurrent()) return;
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !pinned.isCurrent()) {
+        if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, launchedGeneration, generation.current, privateViewAllowed.current)) {
+          setSaveMessage(careerMutationFailure(false).notice);
+        }
+        return;
+      }
       writeStarted = true;
       const saved = await saveCareerConditions(pinned.client, { ...(current.conditions ?? EMPTY), current_monthly_salary: own });
       if (pinned.isCurrent() && launchedGeneration === generation.current) {
@@ -437,7 +442,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         setSaveMessage(careerMutationNotice('salary', launchedRevision, formRevision.current));
       }
     } catch {
-      if (launchedGeneration === generation.current && privacy.canAccessPrivateData() && !privacy.shieldVisible) {
+      if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, launchedGeneration, generation.current, privateViewAllowed.current)) {
         const feedback = careerMutationFailure(writeStarted);
         if (feedback.requiresCanonicalReload) {
           recoveryGate.current = true;
@@ -470,7 +475,12 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     setBusy(true); setSaveMessage(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !pinned.isCurrent()) return;
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !pinned.isCurrent()) {
+        if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, launchedGeneration, generation.current, privateViewAllowed.current)) {
+          setSaveMessage(careerMutationFailure(false).notice);
+        }
+        return;
+      }
       writeStarted = true;
       const saved = await saveCareerConditions(pinned.client, {
         current_monthly_salary: own,
@@ -484,7 +494,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         setSaveMessage(careerMutationNotice('conditions', launchedRevision, formRevision.current));
       }
     } catch {
-      if (launchedGeneration === generation.current && privacy.canAccessPrivateData() && !privacy.shieldVisible) {
+      if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, launchedGeneration, generation.current, privateViewAllowed.current)) {
         const feedback = careerMutationFailure(writeStarted);
         if (feedback.requiresCanonicalReload) {
           recoveryGate.current = true;
@@ -510,7 +520,12 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     setBusy(true); setSaveMessage(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !pinned.isCurrent()) return;
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !pinned.isCurrent()) {
+        if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, launchedGeneration, generation.current, privateViewAllowed.current)) {
+          setSaveMessage(careerMutationFailure(false).notice);
+        }
+        return;
+      }
       writeStarted = true;
       await deleteCareerConditions(pinned.client);
       if (pinned.isCurrent() && launchedGeneration === generation.current) {
@@ -522,7 +537,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         setSaveMessage(careerMutationNotice('delete', launchedRevision, formRevision.current));
       }
     } catch {
-      if (launchedGeneration === generation.current && privacy.canAccessPrivateData() && !privacy.shieldVisible) {
+      if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, launchedGeneration, generation.current, privateViewAllowed.current)) {
         const feedback = careerMutationFailure(writeStarted);
         if (feedback.requiresCanonicalReload) {
           recoveryGate.current = true;
