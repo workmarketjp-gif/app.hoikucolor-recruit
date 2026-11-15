@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { CareerExperience } from '../../components/CareerExperience';
 import { homeAttentionActions } from '../../lib/homeAttentionActions';
+import { useHomeApplicationProgress } from '../../hooks/useHomeApplicationProgress';
 import { FeaturedHomeJobs } from '../../components/FeaturedHomeJobs';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -37,6 +38,7 @@ export default function HomeScreen() {
   const name = user?.fullName || user?.firstName || '求職者';
   const summary = notifications.attentionSummary;
   const actions = homeAttentionActions(summary);
+  const applicationProgress = useHomeApplicationProgress();
 
   return (
     <ScrollView contentContainerStyle={styles.page}>
@@ -65,8 +67,19 @@ export default function HomeScreen() {
             count={actions.scout.count} urgent
             onPress={() => router.push(actions.scout!.href as never)} />
         ) : null}
-        <HomeActionRow id="home-applications" label="応募管理"
+        <HomeActionRow id="home-applications" label="選考中の応募"
+          count={applicationProgress.count}
           onPress={() => router.push(actions.applicationHref)} />
+        {applicationProgress.error ? (
+          <View style={styles.refreshNotice}>
+            <Text style={styles.refreshNoticeText}>{applicationProgress.error}</Text>
+            <Pressable accessibilityRole="button" style={styles.refreshButton}
+              disabled={applicationProgress.loading}
+              onPress={() => void applicationProgress.refresh()}>
+              <Text style={styles.refreshButtonText}>応募状況を再読み込み</Text>
+            </Pressable>
+          </View>
+        ) : null}
         <HomeActionRow id="home-next-message" label="新着メッセージ"
           count={actions.message.count}
           onPress={() => router.push(actions.message.href as never)} />
