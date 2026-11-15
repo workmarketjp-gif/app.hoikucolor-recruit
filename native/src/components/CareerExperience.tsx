@@ -10,6 +10,8 @@ import { careerMutationNotice } from '../lib/careerMutationNotice';
 import { careerMutationFailure, careerReadFailure } from '../lib/careerMutationRecovery';
 import { beginCareerWrite, finishCareerWrite, type CareerWriteLease } from '../lib/careerWriteFlight';
 import { mayPresentCareerReadFailure } from '../lib/careerReadPreflight';
+import { boundedPrivateRead } from '../lib/privateReadDeadline';
+import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { getJobseekerProfile, type JobseekerProfile } from '../lib/jobseekerCoreApi';
 import {
   CareerApiUnavailableError, daysFromText, deleteCareerConditions, formatMan,
@@ -238,18 +240,19 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     setSaveMessage(null);
     if (!ownerKey || !privacy.canAccessPrivateData()) return;
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await pinCandidateForRead(pinCandidateAction, () =>
+        mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, generation.current, privateViewAllowed.current));
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) {
         if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, generation.current, privateViewAllowed.current)) setBaseError(careerReadFailure());
         return;
       }
       const [conditionRead, preferences, profile] = await Promise.all([
-        getCareerConditions(pinned.client).then((data) => ({ available: true, data })).catch((error: unknown) => {
+        boundedPrivateRead(() => getCareerConditions(pinned.client)).then((data) => ({ available: true, data })).catch((error: unknown) => {
           if (error instanceof CareerApiUnavailableError) return { available: false, data: null };
           throw error;
         }),
-        getMatchingPreferencesForCareer(pinned.client),
-        getJobseekerProfile(pinned.client),
+        boundedPrivateRead(() => getMatchingPreferencesForCareer(pinned.client)),
+        boundedPrivateRead(() => getJobseekerProfile(pinned.client)),
       ]);
       if (!pinned.isCurrent() || ticket !== generation.current || !privacy.canAccessPrivateData() || privacy.shieldVisible) return;
       // An owner-pinned canonical reread is the only way to release ambiguous writes.
@@ -312,14 +315,15 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       setHoliday({ ownerKey, value: failure });
     };
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>>;
-    try { pinned = await pinCandidateAction(); }
+    try { pinned = await pinCandidateForRead(pinCandidateAction, () =>
+        mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, marketGeneration.current, privateViewAllowed.current)); }
     catch { reportPreflightFailure(); return; }
     if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) { reportPreflightFailure(); return; }
     const commit = <T,>(setter: (next: Owned<Loadable<T>>) => void, value: Loadable<T>) => {
       if (pinned.isCurrent() && ticket === marketGeneration.current) setter({ ownerKey, value });
     };
     const read = async <T,>(fn: () => Promise<T>, setter: (next: Owned<Loadable<T>>) => void) => {
-      try { commit(setter, { status: 'ready', data: await fn() }); }
+      try { commit(setter, { status: 'ready', data: await boundedPrivateRead(fn) }); }
       catch (error) { commit(setter, error instanceof CareerApiUnavailableError ? { status: 'unavailable' } : { status: 'error', error: careerReadFailure() }); }
     };
     await Promise.all([
@@ -350,18 +354,19 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     if (!ready || !ownerKey || !requestedScenario) { setResults(null); return; }
     setResults({ ownerKey, value: { status: 'loading' } });
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await pinCandidateForRead(pinCandidateAction, () =>
+        mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, scenarioGeneration.current, privateViewAllowed.current));
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) {
         if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, scenarioGeneration.current, privateViewAllowed.current)) {
           setResults({ ownerKey, value: { status: 'error', error: careerReadFailure() } });
         }
         return;
       }
-      const response = await getCareerScenarioJobs(pinned.client,
+      const response = await boundedPrivateRead(() => getCareerScenarioJobs(pinned.client,
         requestedScenario === 'holidays'
           ? { scenario: 'balance', prefecture: area.prefecture, employmentType: '', salaryLine: null, holidayMoreThan: null, holidayAtLeast: days, salaryWeight: 0 }
           : { scenario: 'keep-income', prefecture: area.prefecture, employmentType: '', salaryLine: pathSalaryLine, holidayMoreThan: null, holidayAtLeast: null, salaryWeight: 50 },
-      );
+      ));
       if (pinned.isCurrent() && ticket === scenarioGeneration.current) setResults({ ownerKey, value: { status: 'ready', data: response } });
     } catch (error) {
       if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, scenarioGeneration.current, privateViewAllowed.current)) {
@@ -384,17 +389,18 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     if (!ready || !ownerKey || variant !== 'page') return;
     setDetailsResult({ ownerKey, value: { status: 'loading' } });
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await pinCandidateForRead(pinCandidateAction, () =>
+        mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, detailsGeneration.current, privateViewAllowed.current));
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) {
         if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, detailsGeneration.current, privateViewAllowed.current)) {
           setDetailsResult({ ownerKey, value: { status: 'error', error: careerReadFailure() } });
         }
         return;
       }
-      const response = await getCareerScenarioJobs(pinned.client, {
+      const response = await boundedPrivateRead(() => getCareerScenarioJobs(pinned.client, {
         scenario, prefecture: area.prefecture, employmentType: area.employmentType, salaryLine,
         holidayMoreThan: daysFromText(fields.holidays), holidayAtLeast: daysFromText(fields.wishHolidays), salaryWeight: weight,
-      });
+      }));
       if (pinned.isCurrent() && ticket === detailsGeneration.current) setDetailsResult({ ownerKey, value: { status: 'ready', data: response } });
     } catch (error) {
       if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, detailsGeneration.current, privateViewAllowed.current)) {
