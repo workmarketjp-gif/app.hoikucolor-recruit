@@ -6,6 +6,7 @@ import { CareerExperience } from '../../components/CareerExperience';
 import { homeAttentionActions } from '../../lib/homeAttentionActions';
 import { useHomeApplicationProgress } from '../../hooks/useHomeApplicationProgress';
 import { canShowCalmHomeLinks } from '../../lib/homeCalmNavigation';
+import { homeAttentionReadState } from '../../lib/homeAttentionReadState';
 import { homeStatRowPresentation } from '../../lib/homeStatRowPresentation';
 import { FeaturedHomeJobs } from '../../components/FeaturedHomeJobs';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
@@ -72,6 +73,9 @@ export default function HomeScreen() {
   const notifications = useNotifications();
   const name = user?.fullName || user?.firstName || '求職者';
   const summary = notifications.attentionSummary;
+  // The notification center's badge/list warning is independent of Web Home's
+  // successfully loaded, owner-pinned interview/scout/message summary.
+  const attentionState = homeAttentionReadState(summary, notifications.error);
   const actions = homeAttentionActions(summary);
   const applicationProgress = useHomeApplicationProgress();
   // The Web suppresses busy attention rows only after BOTH private reads
@@ -81,9 +85,9 @@ export default function HomeScreen() {
     applicationLoading: applicationProgress.loading,
     applicationError: applicationProgress.error,
     attentionSummary: summary,
-    attentionLoaded: notifications.loaded,
+    attentionLoaded: attentionState.loaded,
     attentionLoading: notifications.loading,
-    attentionError: notifications.error,
+    attentionError: attentionState.error,
   });
 
   return (
@@ -113,19 +117,10 @@ export default function HomeScreen() {
               onRetry={applicationProgress.refresh}
               onPress={() => router.push(actions.applicationHref)} />
             <HomeActionRow id="home-next-message" label="新着メッセージ" icon="chat"
-              count={actions.message.count} stat error={notifications.error}
+              count={actions.message.count} stat error={attentionState.error}
               onRetry={notifications.refresh}
               onPress={() => router.push(actions.message.href as never)} />
           </View>
-          {notifications.error && actions.message.count !== null ? (
-            <View style={styles.refreshNotice}>
-              <Text style={styles.refreshNoticeText}>新着情報を確認できませんでした。</Text>
-              <Pressable accessibilityRole="button" style={styles.refreshButton}
-                onPress={() => { void notifications.refresh().catch(() => undefined); }}>
-                <Text style={styles.refreshButtonText}>再読み込み</Text>
-              </Pressable>
-            </View>
-          ) : null}
         </View>
       ) : null}
 
@@ -165,9 +160,4 @@ const styles = StyleSheet.create({
   actionErrorText: { color: '#9D3449', fontSize: 13, lineHeight: 20, flexShrink: 1, maxWidth: 140 },
   chevron: { color: '#B55776', fontSize: 22, fontWeight: '600' },
   calmLinks: { gap: 8 },
-  refreshNotice: { padding: 12, backgroundColor: '#FFF0F5', borderRadius: 12, gap: 8 },
-  refreshNoticeText: { color: '#9D3449', fontSize: 14, lineHeight: 21 },
-  refreshButton: { minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center', paddingHorizontal: 14,
-    borderWidth: 1, borderColor: '#CA436A', borderRadius: 10 },
-  refreshButtonText: { color: '#9D2146', fontSize: 14, fontWeight: '800' },
 });
