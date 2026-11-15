@@ -7,6 +7,7 @@ import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { disclosedCareerSalary } from '../lib/careerSalaryDisclosure';
 import { careerMutationNotice } from '../lib/careerMutationNotice';
+import { careerMutationFailure, careerReadFailure } from '../lib/careerMutationRecovery';
 import { getJobseekerProfile, type JobseekerProfile } from '../lib/jobseekerCoreApi';
 import {
   CareerApiUnavailableError, daysFromText, deleteCareerConditions, formatMan,
@@ -35,10 +36,6 @@ const SCENARIOS: { id: CareerScenarioId; label: string; lead: string }[] = [
   { id: 'balance', label: 'バランス', lead: '年間休日が確認できた求人を、給与と休日の優先度で並べます。' },
 ];
 const DAY_OPTIONS = [110, 115, 120, 125] as const;
-
-function failure(error: unknown) {
-  return String((error as { message?: unknown })?.message ?? error);
-}
 
 function StateMessage({ state, onRetry }: { state: Loadable<unknown> | null; onRetry?: () => void }) {
   if (!state || state.status === 'loading') return <ActivityIndicator color="#FF2F5F" />;
@@ -215,6 +212,8 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const [detailed, setDetailed] = useState(false);
   const [baseError, setBaseError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [requiresReload, setRequiresReload] = useState(false);
+  const recoveryGate = useRef(false);
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
   const formRevision = useRef(0);
@@ -242,7 +241,10 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         getMatchingPreferencesForCareer(pinned.client),
         getJobseekerProfile(pinned.client),
       ]);
-      if (!pinned.isCurrent() || ticket !== generation.current) return;
+      if (!pinned.isCurrent() || ticket !== generation.current || !privacy.canAccessPrivateData() || privacy.shieldVisible) return;
+      // An owner-pinned canonical reread is the only way to release ambiguous writes.
+      recoveryGate.current = false;
+      setRequiresReload(false);
       const conditions = conditionRead.data;
       setFields({
         salary: manFromYen(conditions?.current_monthly_salary ?? null),
@@ -261,7 +263,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       setPath(conditions?.current_monthly_salary != null || preferences.desired_monthly_salary_min != null ? 'salary' : 'holidays');
       setBase({ ownerKey, value: { conditions, conditionsAvailable: conditionRead.available, preferences, profile } });
     } catch (error) {
-      if (ticket === generation.current) setBaseError(error instanceof CareerApiUnavailableError ? '保存条件のAPIを確認できません。' : failure(error));
+      if (ticket === generation.current) setBaseError(error instanceof CareerApiUnavailableError ? '保存条件のAPIを確認できません。' : careerReadFailure());
     }
   }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData]);
 
@@ -297,7 +299,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     };
     const read = async <T,>(fn: () => Promise<T>, setter: (next: Owned<Loadable<T>>) => void) => {
       try { commit(setter, { status: 'ready', data: await fn() }); }
-      catch (error) { commit(setter, error instanceof CareerApiUnavailableError ? { status: 'unavailable' } : { status: 'error', error: failure(error) }); }
+      catch (error) { commit(setter, error instanceof CareerApiUnavailableError ? { status: 'unavailable' } : { status: 'error', error: careerReadFailure() }); }
     };
     await Promise.all([
       read(() => getPostedSalaryMarket(pinned.client, area.prefecture, area.employmentType), setMarket),
@@ -336,7 +338,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       );
       if (pinned.isCurrent() && ticket === scenarioGeneration.current) setResults({ ownerKey, value: { status: 'ready', data: response } });
     } catch (error) {
-      if (ticket === scenarioGeneration.current) setResults({ ownerKey, value: error instanceof CareerApiUnavailableError ? { status: 'unavailable' } : { status: 'error', error: failure(error) } });
+      if (ticket === scenarioGeneration.current) setResults({ ownerKey, value: error instanceof CareerApiUnavailableError ? { status: 'unavailable' } : { status: 'error', error: careerReadFailure() } });
     }
   }, [ready, ownerKey, requestedScenario, pinCandidateAction, area.prefecture, days, pathSalaryLine]);
 
@@ -362,7 +364,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       });
       if (pinned.isCurrent() && ticket === detailsGeneration.current) setDetailsResult({ ownerKey, value: { status: 'ready', data: response } });
     } catch (error) {
-      if (ticket === detailsGeneration.current && privacy.canAccessPrivateData()) setDetailsResult({ ownerKey, value: error instanceof CareerApiUnavailableError ? { status: 'unavailable' } : { status: 'error', error: failure(error) } });
+      if (ticket === detailsGeneration.current && privacy.canAccessPrivateData()) setDetailsResult({ ownerKey, value: error instanceof CareerApiUnavailableError ? { status: 'unavailable' } : { status: 'error', error: careerReadFailure() } });
     }
   }, [ready, ownerKey, variant, pinCandidateAction, scenario, area.prefecture, area.employmentType, salaryLine, fields.holidays, fields.wishHolidays, weight, privacy.canAccessPrivateData]);
 
@@ -384,18 +386,27 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const saveSalaryOnly = async () => {
     const launchedGeneration = generation.current;
     const launchedRevision = formRevision.current;
-    if (!ready || !current || !ownerKey || busy || !current.conditionsAvailable || basis !== 'monthly' || own === null) return;
+    if (!ready || !current || !ownerKey || busy || recoveryGate.current || !current.conditionsAvailable || basis !== 'monthly' || own === null) return;
+    let writeStarted = false;
     setBusy(true); setSaveMessage(null);
     try {
       const pinned = await pinCandidateAction();
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      writeStarted = true;
       const saved = await saveCareerConditions(pinned.client, { ...(current.conditions ?? EMPTY), current_monthly_salary: own });
       if (pinned.isCurrent() && launchedGeneration === generation.current) {
         setBase({ ownerKey, value: { ...current, conditions: saved } });
         setSaveMessage(careerMutationNotice('salary', launchedRevision, formRevision.current));
       }
-    } catch (error) {
-      if (launchedGeneration === generation.current && privacy.canAccessPrivateData()) setSaveMessage(failure(error));
+    } catch {
+      if (launchedGeneration === generation.current && privacy.canAccessPrivateData() && !privacy.shieldVisible) {
+        const feedback = careerMutationFailure(writeStarted);
+        if (feedback.requiresCanonicalReload) {
+          recoveryGate.current = true;
+          setRequiresReload(true);
+        }
+        setSaveMessage(feedback.notice);
+      }
     } finally {
       if (launchedGeneration === generation.current) setBusy(false);
     }
@@ -404,7 +415,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const save = async () => {
     const launchedGeneration = generation.current;
     const launchedRevision = formRevision.current;
-    if (!ready || !current || busy || !ownerKey) return;
+    if (!ready || !current || busy || recoveryGate.current || !ownerKey) return;
     if (!current.conditionsAvailable) { setSaveMessage('条件の保存は現在利用できません。入力した内容は保存されていません。'); return; }
     if (fields.salary.trim() && own === null ||
         fields.holidays.trim() && daysFromText(fields.holidays) === null ||
@@ -413,10 +424,12 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       setSaveMessage('数値を確認してください。月給は0〜200万円、休日は0〜366日で入力してください。');
       return;
     }
+    let writeStarted = false;
     setBusy(true); setSaveMessage(null);
     try {
       const pinned = await pinCandidateAction();
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      writeStarted = true;
       const saved = await saveCareerConditions(pinned.client, {
         current_monthly_salary: own,
         current_annual_holidays: daysFromText(fields.holidays),
@@ -428,18 +441,29 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         setBase({ ownerKey, value: { ...current, conditions: saved } });
         setSaveMessage(careerMutationNotice('conditions', launchedRevision, formRevision.current));
       }
-    } catch (error) { if (privacy.canAccessPrivateData() && launchedGeneration === generation.current) setSaveMessage(failure(error)); }
+    } catch {
+      if (launchedGeneration === generation.current && privacy.canAccessPrivateData() && !privacy.shieldVisible) {
+        const feedback = careerMutationFailure(writeStarted);
+        if (feedback.requiresCanonicalReload) {
+          recoveryGate.current = true;
+          setRequiresReload(true);
+        }
+        setSaveMessage(feedback.notice);
+      }
+    }
     finally { if (launchedGeneration === generation.current) setBusy(false); }
   };
 
   const clear = async () => {
     const launchedGeneration = generation.current;
     const launchedRevision = formRevision.current;
-    if (!ready || !current || busy || !ownerKey || !current.conditionsAvailable) return;
+    if (!ready || !current || busy || recoveryGate.current || !ownerKey || !current.conditionsAvailable) return;
+    let writeStarted = false;
     setBusy(true); setSaveMessage(null);
     try {
       const pinned = await pinCandidateAction();
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      writeStarted = true;
       await deleteCareerConditions(pinned.client);
       if (pinned.isCurrent() && launchedGeneration === generation.current) {
         setBase({ ownerKey, value: { ...current, conditions: null } });
@@ -449,7 +473,16 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         }
         setSaveMessage(careerMutationNotice('delete', launchedRevision, formRevision.current));
       }
-    } catch (error) { if (privacy.canAccessPrivateData() && launchedGeneration === generation.current) setSaveMessage(failure(error)); }
+    } catch {
+      if (launchedGeneration === generation.current && privacy.canAccessPrivateData() && !privacy.shieldVisible) {
+        const feedback = careerMutationFailure(writeStarted);
+        if (feedback.requiresCanonicalReload) {
+          recoveryGate.current = true;
+          setRequiresReload(true);
+        }
+        setSaveMessage(feedback.notice);
+      }
+    }
     finally { if (launchedGeneration === generation.current) setBusy(false); }
   };
 
@@ -515,8 +548,10 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
           {variant === 'home' && disclosedOwn !== null && current.conditionsAvailable ? (
             current.conditions?.current_monthly_salary === own
               ? <Text style={styles.success}>この金額を保存しました。あなただけが見られます。</Text>
-              : <Action label={busy ? '保存を確認中…' : 'この金額を保存する'} disabled={busy} secondary onPress={() => void saveSalaryOnly()} />
+              : <Action label={busy ? '保存を確認中…' : 'この金額を保存する'} disabled={busy || requiresReload} secondary onPress={() => void saveSalaryOnly()} />
           ) : null}
+          {variant === 'home' && requiresReload ? <Action label="保存状況を再確認する" secondary onPress={() => void loadBase()} /> : null}
+          {variant === 'home' && requiresReload ? <Text style={styles.footnote}>確認すると保存済みの条件をサーバーから読み直します。</Text> : null}
           {variant === 'home' && saveMessage ? <Text style={saveMessage.includes('保存しました') ? styles.success : styles.error}>{saveMessage}</Text> : null}
           <Text style={styles.footnote}>数値の出典は区別して表示します。求人票の募集給与と公的統計の給与実績は同一の統計ではありません。</Text>
           {variant === 'home' ? <Action label="条件を細かく決めて比べる" secondary onPress={() => router.push('/(tabs)/career')} /> : null}
@@ -570,9 +605,11 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
               <Choice text="指定なし" active={!area.employmentType} onPress={() => setArea((p) => ({ ...p, employmentType: '' }))} />
               {(selectedMarket?.status === 'ready' ? selectedMarket.data.facets.employment_types : []).map((item) => <Choice key={item} text={item} active={area.employmentType === item} onPress={() => setArea((p) => ({ ...p, employmentType: item }))} />)}
             </View>
-            {current.conditionsAvailable ? <Action label={busy ? '確認中…' : 'この条件を保存する'} disabled={busy} onPress={() => void save()} />
+            {current.conditionsAvailable ? <Action label={busy ? '確認中…' : 'この条件を保存する'} disabled={busy || requiresReload} onPress={() => void save()} />
               : <Text style={styles.footnote}>入力した内容は画面を閉じると消えます。条件保存のAPIは現在利用できません。</Text>}
-            {current.conditions && current.conditionsAvailable ? <Action label="保存した条件を削除する" secondary disabled={busy} onPress={confirmClear} /> : null}
+            {current.conditions && current.conditionsAvailable ? <Action label="保存した条件を削除する" secondary disabled={busy || requiresReload} onPress={confirmClear} /> : null}
+            {requiresReload ? <Action label="保存状況を再確認する" secondary onPress={() => void loadBase()} /> : null}
+            {requiresReload ? <Text style={styles.footnote}>確認すると保存済みの条件をサーバーから読み直します。</Text> : null}
             {saveMessage ? <Text accessibilityRole="alert" style={saveMessage.includes('しました') ? styles.success : styles.error}>{saveMessage}</Text> : null}
             <Text style={styles.footnote}>保存した数値は本人だけの条件です。保存後はサーバーの値を再取得して照合します。</Text>
           </Section>
