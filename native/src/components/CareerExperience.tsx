@@ -8,6 +8,7 @@ import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { disclosedCareerSalary } from '../lib/careerSalaryDisclosure';
 import { careerMutationNotice } from '../lib/careerMutationNotice';
 import { careerMutationFailure, careerReadFailure } from '../lib/careerMutationRecovery';
+import { beginCareerWrite, finishCareerWrite, type CareerWriteLease } from '../lib/careerWriteFlight';
 import { getJobseekerProfile, type JobseekerProfile } from '../lib/jobseekerCoreApi';
 import {
   CareerApiUnavailableError, daysFromText, deleteCareerConditions, formatMan,
@@ -214,6 +215,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [requiresReload, setRequiresReload] = useState(false);
   const recoveryGate = useRef(false);
+  const activeCareerWrite = useRef<CareerWriteLease | null>(null);
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
   const formRevision = useRef(0);
@@ -387,11 +389,14 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     const launchedGeneration = generation.current;
     const launchedRevision = formRevision.current;
     if (!ready || !current || !ownerKey || busy || recoveryGate.current || !current.conditionsAvailable || basis !== 'monthly' || own === null) return;
+    // Claim synchronously: rapid taps can arrive before React renders busy=true.
+    const lease = beginCareerWrite(activeCareerWrite, ownerKey, launchedGeneration);
+    if (!lease) return;
     let writeStarted = false;
     setBusy(true); setSaveMessage(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !pinned.isCurrent()) return;
       writeStarted = true;
       const saved = await saveCareerConditions(pinned.client, { ...(current.conditions ?? EMPTY), current_monthly_salary: own });
       if (pinned.isCurrent() && launchedGeneration === generation.current) {
@@ -408,6 +413,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         setSaveMessage(feedback.notice);
       }
     } finally {
+      finishCareerWrite(activeCareerWrite, lease);
       if (launchedGeneration === generation.current) setBusy(false);
     }
   };
@@ -424,11 +430,14 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       setSaveMessage('数値を確認してください。月給は0〜200万円、休日は0〜366日で入力してください。');
       return;
     }
+    // Claim synchronously: rapid taps can arrive before React renders busy=true.
+    const lease = beginCareerWrite(activeCareerWrite, ownerKey, launchedGeneration);
+    if (!lease) return;
     let writeStarted = false;
     setBusy(true); setSaveMessage(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !pinned.isCurrent()) return;
       writeStarted = true;
       const saved = await saveCareerConditions(pinned.client, {
         current_monthly_salary: own,
@@ -451,18 +460,24 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         setSaveMessage(feedback.notice);
       }
     }
-    finally { if (launchedGeneration === generation.current) setBusy(false); }
+    finally {
+      finishCareerWrite(activeCareerWrite, lease);
+      if (launchedGeneration === generation.current) setBusy(false);
+    }
   };
 
   const clear = async () => {
     const launchedGeneration = generation.current;
     const launchedRevision = formRevision.current;
     if (!ready || !current || busy || recoveryGate.current || !ownerKey || !current.conditionsAvailable) return;
+    // Claim synchronously: rapid taps can arrive before React renders busy=true.
+    const lease = beginCareerWrite(activeCareerWrite, ownerKey, launchedGeneration);
+    if (!lease) return;
     let writeStarted = false;
     setBusy(true); setSaveMessage(null);
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !pinned.isCurrent()) return;
       writeStarted = true;
       await deleteCareerConditions(pinned.client);
       if (pinned.isCurrent() && launchedGeneration === generation.current) {
@@ -483,7 +498,10 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
         setSaveMessage(feedback.notice);
       }
     }
-    finally { if (launchedGeneration === generation.current) setBusy(false); }
+    finally {
+      finishCareerWrite(activeCareerWrite, lease);
+      if (launchedGeneration === generation.current) setBusy(false);
+    }
   };
 
   const confirmClear = () => Alert.alert('保存した条件を削除しますか？', '保存していたお給料・休日などの条件を削除します。', [
