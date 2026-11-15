@@ -10,6 +10,7 @@ import { careerMutationNotice } from '../lib/careerMutationNotice';
 import { careerScenarioPresentation } from '../lib/careerScenarioPresentation';
 import { careerQuickSalaryNeedsInput, initialCareerQuickPath } from '../lib/careerQuickSalaryPath';
 import { careerQuickResultActions } from '../lib/careerQuickResultActions';
+import { careerValuesPath } from '../lib/careerValuesPath';
 import { CareerPrefectureSelect } from './CareerPrefectureSelect';
 import {
   careerEmploymentOptions, careerPrefectureOptionsWithHistory, rememberCareerFacetNames,
@@ -645,6 +646,7 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const openJob = (id: string) => { if (ready) router.push({ pathname: '/job/[id]', params: { id } }); };
   if (!allowed || !ownerKey) return <View style={styles.suspended}><Text style={styles.muted}>ログイン状態を確認しています…</Text></View>;
   if (!current) return <View style={styles.suspended}>{baseError ? <Text style={styles.error}>{baseError}</Text> : <ActivityIndicator color="#FF2F5F" /> }<Action label="再確認する" secondary onPress={() => void loadBase()} /></View>;
+  const valuesPath = careerValuesPath(current.preferences.childcare_values);
 
   return (
     <View style={styles.root}>
@@ -726,13 +728,20 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
           </>
         ) : null}
         {path === 'values' ? (
-          <>
-            {current.preferences.childcare_values.length
-              ? <Text style={styles.muted}>大切にしたい保育：{current.preferences.childcare_values.join('・')}</Text>
-              : <Text style={styles.muted}>保育観を選ぶと、考え方が近い園から順に見られます。</Text>}
-            <Action label="保育観から求人を探す" onPress={() => router.push('/matches')} />
-            <Action label="大切にしたい保育を見直す" secondary onPress={() => router.push('/scouts')} />
-          </>
+          <View style={styles.valuePath}>
+            <Text style={styles.muted}>{valuesPath.introduction}</Text>
+            {valuesPath.values.length > 0 ? (
+              <View style={styles.chips} accessibilityLabel="大切にしたい保育観">
+                {valuesPath.values.map((value, index) => (
+                  <Text key={index + ':' + value} style={styles.valueTag}>{value}</Text>
+                ))}
+              </View>
+            ) : null}
+            <Action label={valuesPath.primaryLabel} onPress={() => router.push(valuesPath.primaryRoute)} />
+            {valuesPath.secondaryLabel ? (
+              <Action label={valuesPath.secondaryLabel} secondary onPress={() => router.push('/scouts')} />
+            ) : null}
+          </View>
         ) : careerQuickSalaryNeedsInput(path, pathSalaryLine) ? (
           <Text style={styles.muted}>月給の目安を入力すると、条件に合う求人を探せます。</Text>
         ) : (
@@ -823,6 +832,8 @@ const styles = StyleSheet.create({
   unit: { fontSize: 13, color: '#62565F', fontWeight: '700' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   pathStack: { gap: 8 },
+  valuePath: { gap: 10 },
+  valueTag: { backgroundColor: '#FFF0F4', color: '#9F2450', borderRadius: 12, overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   chip: { alignSelf: 'flex-start', borderWidth: 1, borderColor: '#EACDD7', backgroundColor: '#FFF9FB', paddingHorizontal: 12, paddingVertical: 11, borderRadius: 14, minHeight: 44, justifyContent: 'center' },
   chipActive: { borderColor: '#FF2F5F', backgroundColor: '#FFE4EC' },
   chipText: { color: '#514751', fontSize: 14, fontWeight: '700' },
