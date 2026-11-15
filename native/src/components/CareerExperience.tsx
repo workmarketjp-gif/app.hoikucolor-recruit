@@ -9,6 +9,7 @@ import { disclosedCareerSalary } from '../lib/careerSalaryDisclosure';
 import { careerMutationNotice } from '../lib/careerMutationNotice';
 import { careerMutationFailure, careerReadFailure } from '../lib/careerMutationRecovery';
 import { beginCareerWrite, finishCareerWrite, type CareerWriteLease } from '../lib/careerWriteFlight';
+import { mayPresentCareerReadFailure } from '../lib/careerReadPreflight';
 import { getJobseekerProfile, type JobseekerProfile } from '../lib/jobseekerCoreApi';
 import {
   CareerApiUnavailableError, daysFromText, deleteCareerConditions, formatMan,
@@ -196,6 +197,10 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
   const { pinCandidateAction } = usePinnedCandidateAction();
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
   const allowed = privacy.canAccessPrivateData() && !privacy.shieldVisible;
+  const visibleOwnerKey = useRef(ownerKey);
+  const privateViewAllowed = useRef(allowed);
+  visibleOwnerKey.current = ownerKey;
+  privateViewAllowed.current = allowed;
   const [base, setBase] = useState<Owned<CareerBase> | null>(null);
   const [fields, setFields] = useState<Fields>(blank);
   const [basis, setBasis] = useState<Basis>(null);
@@ -234,7 +239,10 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     if (!ownerKey || !privacy.canAccessPrivateData()) return;
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) {
+        if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, generation.current, privateViewAllowed.current)) setBaseError(careerReadFailure());
+        return;
+      }
       const [conditionRead, preferences, profile] = await Promise.all([
         getCareerConditions(pinned.client).then((data) => ({ available: true, data })).catch((error: unknown) => {
           if (error instanceof CareerApiUnavailableError) return { available: false, data: null };
@@ -265,7 +273,9 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       setPath(conditions?.current_monthly_salary != null || preferences.desired_monthly_salary_min != null ? 'salary' : 'holidays');
       setBase({ ownerKey, value: { conditions, conditionsAvailable: conditionRead.available, preferences, profile } });
     } catch (error) {
-      if (ticket === generation.current) setBaseError(error instanceof CareerApiUnavailableError ? '保存条件のAPIを確認できません。' : careerReadFailure());
+      if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, generation.current, privateViewAllowed.current)) {
+        setBaseError(error instanceof CareerApiUnavailableError ? '保存条件のAPIを確認できません。' : careerReadFailure());
+      }
     }
   }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData]);
 
@@ -294,8 +304,17 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     setMarket({ ownerKey, value: { status: 'loading' } });
     setOfficial({ ownerKey, value: { status: 'loading' } });
     setHoliday({ ownerKey, value: { status: 'loading' } });
-    const pinned = await pinCandidateAction();
-    if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+    const reportPreflightFailure = () => {
+      if (!mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, marketGeneration.current, privateViewAllowed.current)) return;
+      const failure = { status: 'error' as const, error: careerReadFailure() };
+      setMarket({ ownerKey, value: failure });
+      setOfficial({ ownerKey, value: failure });
+      setHoliday({ ownerKey, value: failure });
+    };
+    let pinned: Awaited<ReturnType<typeof pinCandidateAction>>;
+    try { pinned = await pinCandidateAction(); }
+    catch { reportPreflightFailure(); return; }
+    if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) { reportPreflightFailure(); return; }
     const commit = <T,>(setter: (next: Owned<Loadable<T>>) => void, value: Loadable<T>) => {
       if (pinned.isCurrent() && ticket === marketGeneration.current) setter({ ownerKey, value });
     };
@@ -332,7 +351,12 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     setResults({ ownerKey, value: { status: 'loading' } });
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) {
+        if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, scenarioGeneration.current, privateViewAllowed.current)) {
+          setResults({ ownerKey, value: { status: 'error', error: careerReadFailure() } });
+        }
+        return;
+      }
       const response = await getCareerScenarioJobs(pinned.client,
         requestedScenario === 'holidays'
           ? { scenario: 'balance', prefecture: area.prefecture, employmentType: '', salaryLine: null, holidayMoreThan: null, holidayAtLeast: days, salaryWeight: 0 }
@@ -340,7 +364,9 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
       );
       if (pinned.isCurrent() && ticket === scenarioGeneration.current) setResults({ ownerKey, value: { status: 'ready', data: response } });
     } catch (error) {
-      if (ticket === scenarioGeneration.current) setResults({ ownerKey, value: error instanceof CareerApiUnavailableError ? { status: 'unavailable' } : { status: 'error', error: careerReadFailure() } });
+      if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, scenarioGeneration.current, privateViewAllowed.current)) {
+        setResults({ ownerKey, value: error instanceof CareerApiUnavailableError ? { status: 'unavailable' } : { status: 'error', error: careerReadFailure() } });
+      }
     }
   }, [ready, ownerKey, requestedScenario, pinCandidateAction, area.prefecture, days, pathSalaryLine]);
 
@@ -359,14 +385,21 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     setDetailsResult({ ownerKey, value: { status: 'loading' } });
     try {
       const pinned = await pinCandidateAction();
-      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) {
+        if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, detailsGeneration.current, privateViewAllowed.current)) {
+          setDetailsResult({ ownerKey, value: { status: 'error', error: careerReadFailure() } });
+        }
+        return;
+      }
       const response = await getCareerScenarioJobs(pinned.client, {
         scenario, prefecture: area.prefecture, employmentType: area.employmentType, salaryLine,
         holidayMoreThan: daysFromText(fields.holidays), holidayAtLeast: daysFromText(fields.wishHolidays), salaryWeight: weight,
       });
       if (pinned.isCurrent() && ticket === detailsGeneration.current) setDetailsResult({ ownerKey, value: { status: 'ready', data: response } });
     } catch (error) {
-      if (ticket === detailsGeneration.current && privacy.canAccessPrivateData()) setDetailsResult({ ownerKey, value: error instanceof CareerApiUnavailableError ? { status: 'unavailable' } : { status: 'error', error: careerReadFailure() } });
+      if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, ticket, detailsGeneration.current, privateViewAllowed.current)) {
+        setDetailsResult({ ownerKey, value: error instanceof CareerApiUnavailableError ? { status: 'unavailable' } : { status: 'error', error: careerReadFailure() } });
+      }
     }
   }, [ready, ownerKey, variant, pinCandidateAction, scenario, area.prefecture, area.employmentType, salaryLine, fields.holidays, fields.wishHolidays, weight, privacy.canAccessPrivateData]);
 

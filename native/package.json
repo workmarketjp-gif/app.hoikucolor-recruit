@@ -118,7 +118,8 @@
     "test:resume-photo-export": "node --experimental-strip-types --test qa/native-resume-photo-export.test.mjs",
     "test:pinned-candidate-mount-lease": "node --experimental-strip-types --test qa/native-pinned-candidate-mount-lease.test.mjs qa/native-pinned-candidate-mount-lease-contract.mjs",
     "test:resume-photo-error-privacy": "node --experimental-strip-types --test qa/native-resume-photo-error-privacy-r238.test.mjs",
-    "test:career-write-single-flight": "node --experimental-strip-types --test qa/native-career-write-single-flight-r264.test.mjs qa/native-career-mutation-recovery-r263.test.mjs"
+    "test:career-write-single-flight": "node --experimental-strip-types --test qa/native-career-write-single-flight-r264.test.mjs qa/native-career-mutation-recovery-r263.test.mjs",
+    "test:career-read-preflight-r265": "node --experimental-strip-types --test qa/native-career-read-preflight-r265.test.mjs"
   },
   "dependencies": {
     "@clerk/expo": "^3.1.12",
