@@ -7,6 +7,7 @@ import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { disclosedCareerSalary } from '../lib/careerSalaryDisclosure';
 import { careerMutationNotice } from '../lib/careerMutationNotice';
+import { captureCareerDeleteConfirmation, mayExecuteCareerDeletion, type CareerDeleteConfirmation } from '../lib/careerDeleteConfirmation';
 import { careerMutationFailure, careerReadFailure } from '../lib/careerMutationRecovery';
 import { beginCareerWrite, finishCareerWrite, type CareerWriteLease } from '../lib/careerWriteFlight';
 import { mayPresentCareerReadFailure } from '../lib/careerReadPreflight';
@@ -520,10 +521,13 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     }
   };
 
-  const clear = async () => {
+  const clear = async (confirmation: CareerDeleteConfirmation) => {
     const launchedGeneration = generation.current;
     const launchedRevision = formRevision.current;
-    if (!ready || !current || busy || recoveryGate.current || !ownerKey || !current.conditionsAvailable) return;
+    // The confirmation belongs to the candidate, session, loaded data and draft
+    // visible when the destructive dialog was opened, not its delayed callback.
+    if (!mayExecuteCareerDeletion(confirmation, visibleOwnerKey.current, launchedGeneration, launchedRevision, privateViewAllowed.current) ||
+        !ready || !current || busy || recoveryGate.current || !ownerKey || !current.conditionsAvailable) return;
     // Claim synchronously: rapid taps can arrive before React renders busy=true.
     const lease = beginCareerWrite(activeCareerWrite, ownerKey, launchedGeneration);
     if (!lease) return;
@@ -532,8 +536,10 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     try {
       const pinned = await pinForApplicationMutation(pinCandidateAction, () =>
         mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, launchedGeneration, generation.current, privateViewAllowed.current) &&
+        mayExecuteCareerDeletion(confirmation, visibleOwnerKey.current, generation.current, formRevision.current, privateViewAllowed.current) &&
         activeCareerWrite.current === lease);
-      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !pinned.isCurrent()) {
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !pinned.isCurrent() ||
+          !mayExecuteCareerDeletion(confirmation, visibleOwnerKey.current, generation.current, formRevision.current, privateViewAllowed.current)) {
         if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, launchedGeneration, generation.current, privateViewAllowed.current)) {
           setSaveMessage(careerMutationFailure(false).notice);
         }
@@ -565,10 +571,18 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     }
   };
 
-  const confirmClear = () => Alert.alert('保存した条件を削除しますか？', '保存していたお給料・休日などの条件を削除します。', [
-    { text: 'キャンセル', style: 'cancel' },
-    { text: '削除する', style: 'destructive', onPress: () => void clear() },
-  ]);
+  const confirmClear = () => {
+    if (!ready || !current?.conditions || !current.conditionsAvailable || busy || recoveryGate.current) return;
+    const confirmation = captureCareerDeleteConfirmation(ownerKey, generation.current, formRevision.current, privateViewAllowed.current);
+    if (!confirmation) return;
+    Alert.alert('保存した条件を削除しますか？', '保存していたお給料・休日などの条件を削除します。', [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '削除する', style: 'destructive', onPress: () => {
+        if (!mayExecuteCareerDeletion(confirmation, visibleOwnerKey.current, generation.current, formRevision.current, privateViewAllowed.current)) return;
+        void clear(confirmation);
+      } },
+    ]);
+  };
 
   const openJob = (id: string) => { if (ready) router.push({ pathname: '/job/[id]', params: { id } }); };
   if (!allowed || !ownerKey) return <View style={styles.suspended}><Text style={styles.muted}>ログイン状態を確認しています…</Text></View>;
