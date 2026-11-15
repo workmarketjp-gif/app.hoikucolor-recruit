@@ -12,6 +12,7 @@ import { beginCareerWrite, finishCareerWrite, type CareerWriteLease } from '../l
 import { mayPresentCareerReadFailure } from '../lib/careerReadPreflight';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
+import { pinForApplicationMutation } from '../lib/applicationMutationPin';
 import { getJobseekerProfile, type JobseekerProfile } from '../lib/jobseekerCoreApi';
 import {
   CareerApiUnavailableError, daysFromText, deleteCareerConditions, formatMan,
@@ -434,7 +435,9 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     let writeStarted = false;
     setBusy(true); setSaveMessage(null);
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await pinForApplicationMutation(pinCandidateAction, () =>
+        mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, launchedGeneration, generation.current, privateViewAllowed.current) &&
+        activeCareerWrite.current === lease);
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !pinned.isCurrent()) {
         if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, launchedGeneration, generation.current, privateViewAllowed.current)) {
           setSaveMessage(careerMutationFailure(false).notice);
@@ -480,7 +483,9 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     let writeStarted = false;
     setBusy(true); setSaveMessage(null);
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await pinForApplicationMutation(pinCandidateAction, () =>
+        mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, launchedGeneration, generation.current, privateViewAllowed.current) &&
+        activeCareerWrite.current === lease);
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !pinned.isCurrent()) {
         if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, launchedGeneration, generation.current, privateViewAllowed.current)) {
           setSaveMessage(careerMutationFailure(false).notice);
@@ -525,7 +530,9 @@ export function CareerExperience({ variant }: { variant: 'home' | 'page' }) {
     let writeStarted = false;
     setBusy(true); setSaveMessage(null);
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await pinForApplicationMutation(pinCandidateAction, () =>
+        mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, launchedGeneration, generation.current, privateViewAllowed.current) &&
+        activeCareerWrite.current === lease);
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !pinned.isCurrent()) {
         if (mayPresentCareerReadFailure(ownerKey, visibleOwnerKey.current, launchedGeneration, generation.current, privateViewAllowed.current)) {
           setSaveMessage(careerMutationFailure(false).notice);
