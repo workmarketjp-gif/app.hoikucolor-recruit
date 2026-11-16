@@ -35,3 +35,30 @@ export function evaluateApplyDocumentSubmissionPreflight(
   }
   return 'ready';
 }
+
+export type FreshApplyDocumentState = Readonly<{
+  requirements: JobDocumentRequirements;
+  documents: readonly FreshDocument[];
+}>;
+
+/**
+ * The embedded document vault may finish a read or upload while the final
+ * requirements request is pending. Never submit the earlier radio selection
+ * after that local state has changed, even if the server still has the IDs.
+ * Caller pins the session and owns the revision/visibility check; this function
+ * neither sends an application nor retries an ambiguous write.
+ */
+export async function reviewApplyDocumentsBeforeSubmit(
+  shownRequirements: JobDocumentRequirements,
+  shownRows: readonly ApplyDocumentRow[],
+  selection: ApplyDocumentSelection,
+  readFresh: () => Promise<FreshApplyDocumentState>,
+  isCurrent: () => boolean,
+): Promise<ApplyDocumentPreflightResult | 'invalidated'> {
+  if (!isCurrent()) return 'invalidated';
+  const fresh = await readFresh();
+  if (!isCurrent()) return 'invalidated';
+  return evaluateApplyDocumentSubmissionPreflight(
+    shownRequirements, fresh.requirements, shownRows, selection, fresh.documents,
+  );
+}

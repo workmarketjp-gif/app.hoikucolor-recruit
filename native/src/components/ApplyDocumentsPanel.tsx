@@ -20,7 +20,7 @@ import {
 import { getJobDocumentRequirements } from '../lib/jobDocumentRequirementApi';
 import { DocumentVaultSection } from './DocumentVaultSection';
 import { applyVaultReadbackState, canUseApplyDocumentState, isApplySubmissionUnavailable, reconcileApplyVaultSelection, type ApplyVaultChange, type ApplyVaultReadbackState } from '../lib/applyVaultSelection';
-import { evaluateApplyDocumentSubmissionPreflight } from '../lib/applyDocumentSubmissionPreflight';
+import { reviewApplyDocumentsBeforeSubmit } from '../lib/applyDocumentSubmissionPreflight';
 
 type Props = {
   jobId: string;
@@ -55,12 +55,16 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
   const vaultRefreshing = vaultReadback !== 'ready';
   const [vaultBusy, setVaultBusy] = useState(false);
   const [preflightBusy, setPreflightBusy] = useState(false);
+  const [submissionNotice, setSubmissionNotice] = useState<string | null>(null);
   const submitPreflightInFlight = useRef(false);
   const knownDocuments = useRef<JobseekerDocument[]>([]);
   const generation = useRef(0);
+  // A vault refresh or radio edit invalidates a pending final check immediately.
+  const selectionRevision = useRef(0);
 
   const load = useCallback(async () => {
     const current = ++generation.current;
+    selectionRevision.current += 1;
     const requestedOwnerKey = ownerKey;
     setLoadedOwnerKey(null);
     setLoadedJobId(null);
@@ -74,6 +78,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
     setVaultBusy(false);
     setTriedSubmit(false);
     setLoadError(null);
+    setSubmissionNotice(null);
     if (!requestedOwnerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) return;
     try {
       const pinned = await pinCandidateAction();
@@ -105,6 +110,8 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
   useEffect(() => {
     if (!ownerKey || privacy.shieldVisible) {
       generation.current += 1;
+      selectionRevision.current += 1;
+      setSubmissionNotice(null);
       setLoadedOwnerKey(null);
       setLoadedJobId(null);
       setRequirements(null);
@@ -134,6 +141,8 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
       loadedOwnerKey, currentOwnerKey: ownerKeyRef.current,
       privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
     })) return;
+    selectionRevision.current += 1;
+    setSubmissionNotice(null);
     if (change === 'loading' || change === 'error') {
       // A failed list read is NOT a successful empty list. The candidate must retry.
       setVaultReadback(applyVaultReadbackState(change));
@@ -161,6 +170,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
 
   const submit = async () => {
     setTriedSubmit(true);
+    setSubmissionNotice(null);
     if (!stateReady || !requirements || !privacy.canAccessPrivateData() ||
         missing.length || submissionUnavailable || submitPreflightInFlight.current) return;
     // A displayed sheet is not proof that the facility requirements or selected
@@ -169,21 +179,35 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
     setPreflightBusy(true);
     const current = generation.current;
     const requestedOwnerKey = ownerKey;
+    const expectedSelectionRevision = selectionRevision.current;
     try {
       const pinned = await pinCandidateAction();
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
         throw new Error('応募書類のログイン状態を確認できませんでした。');
       }
-      const [freshRequirements, freshDocuments] = await Promise.all([
-        getJobDocumentRequirements(pinned.client, jobId),
-        listJobseekerDocuments(pinned.client),
-      ]);
-      if (!pinned.isCurrent() || current !== generation.current ||
-          ownerKeyRef.current !== requestedOwnerKey || !privacy.canAccessPrivateData()) return;
-      assertCandidateDocumentListOwner(freshDocuments, pinned.ownerId);
-      const outcome = evaluateApplyDocumentSubmissionPreflight(
-        requirements, freshRequirements, rows, selection, freshDocuments,
+      const isPreflightCurrent = () => pinned.isCurrent() && current === generation.current &&
+        ownerKeyRef.current === requestedOwnerKey && privacy.canAccessPrivateData() &&
+        selectionRevision.current === expectedSelectionRevision;
+      const invalidated = () => {
+        if (current === generation.current && ownerKeyRef.current === requestedOwnerKey &&
+            privacy.canAccessPrivateData()) {
+          setSubmissionNotice('書類の選択または一覧が更新されました。内容を確認し、もう一度応募してください。');
+        }
+      };
+      if (!isPreflightCurrent()) { invalidated(); return; }
+      const outcome = await reviewApplyDocumentsBeforeSubmit(
+        requirements, rows, selection,
+        async () => {
+          const [freshRequirements, freshDocuments] = await Promise.all([
+            getJobDocumentRequirements(pinned.client, jobId),
+            listJobseekerDocuments(pinned.client),
+          ]);
+          assertCandidateDocumentListOwner(freshDocuments, pinned.ownerId);
+          return { requirements: freshRequirements, documents: freshDocuments };
+        },
+        isPreflightCurrent,
       );
+      if (outcome === 'invalidated') { invalidated(); return; }
       if (outcome !== 'ready') {
         setLoadError({
           ownerKey: requestedOwnerKey, jobId,
@@ -244,7 +268,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
         {row.candidates.map((document) => <Pressable
           key={document.id}
           style={[styles.option, selectedId === document.id && styles.optionSelected]}
-          onPress={() => setSelection((current) => ({ ...current, [row.type]: document.id }))}
+          onPress={() => { selectionRevision.current += 1; setSubmissionNotice(null); setSelection((current) => ({ ...current, [row.type]: document.id })); }}
           accessibilityRole="radio"
           accessibilityState={{ checked: selectedId === document.id }}
           disabled={submitting || preflightBusy || vaultRefreshing || vaultBusy}
@@ -254,7 +278,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
         </Pressable>)}
         {row.level !== 'required' && row.candidates.length ? <Pressable
           style={[styles.option, !selectedId && styles.optionSelected]}
-          onPress={() => setSelection((current) => ({ ...current, [row.type]: null }))}
+          onPress={() => { selectionRevision.current += 1; setSubmissionNotice(null); setSelection((current) => ({ ...current, [row.type]: null })); }}
           accessibilityRole="radio"
           accessibilityState={{ checked: !selectedId }}
           disabled={submitting || preflightBusy || vaultRefreshing || vaultBusy}
@@ -264,6 +288,8 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
         {!row.candidates.length ? <Text style={styles.empty}>{row.level === 'required' ? 'まだ保存されていません。この応募に必要です。' : 'まだ保存されていません。'}</Text> : null}
         <Pressable style={styles.secondary} disabled={submitting || preflightBusy || vaultBusy} onPress={() => {
           const closing = addingType === row.type;
+          selectionRevision.current += 1;
+          setSubmissionNotice(null);
           // Block Submit synchronously, before the embedded vault starts its first read.
           if (!closing) setVaultReadback('loading');
           setAddingType(closing ? null : row.type);
@@ -286,6 +312,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
       : null}
     {vaultBusy ? <Text style={styles.hint} accessibilityLiveRegion="polite">書類の選択・保存中は応募できません。</Text> : null}
     {preflightBusy ? <Text style={styles.hint} accessibilityLiveRegion="polite">園の書類指定と選択済みファイルを確認しています。</Text> : null}
+    {submissionNotice ? <Text style={styles.hint} accessibilityLiveRegion="polite">{submissionNotice}</Text> : null}
     {missing.length ? <Text style={triedSubmit ? styles.error : styles.hint} accessibilityLiveRegion="polite">
       {joinDocumentLabels(missing)}はこの求人の応募に必要です。保存済みの書類を選ぶか、ここで追加してください。
     </Text> : null}
