@@ -26,3 +26,16 @@ export function visibleCandidateFacilityMessageId(view: CandidateMessageReadView
   // A single pixel of a bubble entering the viewport must not acknowledge it.
   return visible >= Math.min(56, messageHeight / 2) ? view.facilityMessageId : null;
 }
+
+
+/**
+ * Keyboard inset animations are not reflected in onLayout's ScrollView height
+ * on every platform. Treat a keyboard-covered bubble as unread until the
+ * keyboard has fully closed and a fresh visible-layout event occurs.
+ */
+export function visibleCandidateFacilityMessageIdWhenKeyboardHidden(
+  view: CandidateMessageReadViewport,
+  keyboardVisible: boolean,
+): string | null {
+  return keyboardVisible ? null : visibleCandidateFacilityMessageId(view);
+}
