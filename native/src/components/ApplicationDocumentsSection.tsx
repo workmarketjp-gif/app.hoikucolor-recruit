@@ -223,29 +223,36 @@ export function ApplicationDocumentsSection({
           candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
-      // One source at a time: session revocation must prevent the next new write.
+      const canPublishHandoff = () => canPublishApplicationDocumentHandoff({
+        open,
+        focused: focusedRef.current,
+        foreground: AppState.currentState === 'active',
+        privateAccess: privacy.canAccessPrivateData() && !privacy.shieldVisible && !contextLease.current.shieldVisible,
+        ownerCurrent: contextLease.current.viewKey === requestedViewKey && viewKey === requestedViewKey,
+        mutationPending: mutationPending.current,
+        presentationUnchanged: presentationEpoch.current === requestedPresentationEpoch,
+      }, alive.current && pinned.isCurrent() && version === requestVersion.current);
+      // One source at a time. Blur/refocus and OS background cycles must
+      // never resume the previous invocation's remaining document writes.
       for (const document of uniqueTargets) {
-        if (!alive.current || !focusedRef.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
-            version !== requestVersion.current) return;
+        if (!canPublishHandoff()) return;
         try {
           await attachJobseekerDocumentToApplication(pinned.client, document, applicationId);
         } catch {
           // Ambiguous transport reply: rely on canonical readback, never retry blindly.
         }
       }
-      if (!focusedRef.current) return; // Never launch follow-up private reads after blur.
+      if (!canPublishHandoff()) return; // Never read back a blurred or refocused batch.
       const { saved, submitted, expectations } = await readApplicationDocumentSnapshot({
         ownerId: pinned.ownerId,
         applicationId,
         loadSaved: () => listJobseekerDocuments(pinned.client),
         loadSubmitted: () => listSubmittedApplicationDocuments(pinned.client, applicationId),
         loadExpectations: () => listApplicationDocumentExpectations(pinned.client, applicationId),
-        isCurrent: () => alive.current && focusedRef.current && pinned.isCurrent() && version === requestVersion.current &&
-          privacy.canAccessPrivateData() && contextLease.current.viewKey === requestedViewKey,
+        isCurrent: canPublishHandoff,
       });
       projectApplicationDocuments(applicationId, saved, submitted, expectations);
-      if (!alive.current || !focusedRef.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
-          version !== requestVersion.current) return;
+      if (!canPublishHandoff()) return;
       freshlyVerifiedOwner.current = requestedViewKey;
       setSnapshot({ ownerKey: requestedViewKey, value: { saved, submitted, expectations } });
       const confirmed = uniqueTargets.filter((document) =>
@@ -257,15 +264,6 @@ export function ApplicationDocumentsSection({
       } else {
         setError('応募書類' + uniqueTargets.length + '件のうち' + (uniqueTargets.length - confirmed.length) + '件の提出を確認できませんでした。最新の提出状況を確認してください。');
       }
-      const canPublishHandoff = () => canPublishApplicationDocumentHandoff({
-        open,
-        focused: focusedRef.current,
-        foreground: AppState.currentState === 'active',
-        privateAccess: privacy.canAccessPrivateData() && !privacy.shieldVisible && !contextLease.current.shieldVisible,
-        ownerCurrent: contextLease.current.viewKey === requestedViewKey && viewKey === requestedViewKey,
-        mutationPending: mutationPending.current,
-        presentationUnchanged: presentationEpoch.current === requestedPresentationEpoch,
-      }, alive.current && pinned.isCurrent() && version === requestVersion.current);
       if (!canPublishHandoff()) return;
       try {
         const handoff = await boundedPrivateRead(() => {

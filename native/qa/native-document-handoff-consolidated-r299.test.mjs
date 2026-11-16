@@ -42,3 +42,12 @@ test('timed-out canonical reads cannot later grant application submission', asyn
 test('authorization exceptions remain errors under bounded reads', async () => {
   await assert.rejects(boundedPrivateRead(() => Promise.reject(new Error('OWNER_REVOKED')), 100), /OWNER_REVOKED/);
 });
+
+test('a started batch write may settle after blur but cannot start another document or private readback', () => {
+  // The write lease deliberately survives blur; the presentation epoch does not.
+  const blurred = { ...live, focused: false, mutationPending: true, presentationUnchanged: false };
+  const refocused = { ...live, mutationPending: true, presentationUnchanged: false };
+  assert.equal(canPublishApplicationDocumentHandoff(blurred, true), false);
+  assert.equal(canPublishApplicationDocumentHandoff(refocused, true), false);
+  assert.equal(canPublishApplicationDocumentHandoff(live, true), true);
+});
