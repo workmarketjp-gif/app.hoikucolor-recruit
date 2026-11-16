@@ -24,6 +24,7 @@ import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_ORDER, evidenceTypesForQualificatio
 import { qualificationEvidenceCounts } from '../lib/qualificationEvidenceCounts';
 import { resolveVaultUploadType, type ApplyVaultChange } from '../lib/applyVaultSelection';
 import { createVaultOperationLease } from '../lib/vaultOperationLease';
+import { presentDocumentVaultError } from '../lib/documentVaultErrorPresentation';
 
 // Keep the document catalogue and exact qualification mapping in sync with Web.
 const labels = DOCUMENT_TYPE_LABELS;
@@ -152,7 +153,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
           privacy.canAccessPrivateData() && (!pinned || pinned.isCurrent())) {
         // A failed canonical read must not unblock an embedded application form.
         onDocumentsChangedRef.current?.([], 'error');
-        Alert.alert('応募書類を読み込めませんでした', String((error as { message?: unknown })?.message ?? error));
+        Alert.alert('応募書類を読み込めませんでした', presentDocumentVaultError('read', error));
       }
     } finally {
       if (generation === loadGenerationRef.current && ownerKeyRef.current === requestOwnerKey &&
@@ -204,7 +205,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     } catch (error) {
       try { discardUnregisteredDocumentPickerCache(asset.uri); } catch {}
       if (operationValid() && mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
-        Alert.alert('書類を準備できませんでした', String((error as { message?: unknown })?.message ?? error));
+        Alert.alert('書類を準備できませんでした', presentDocumentVaultError('prepare', error));
       }
       return;
     }
@@ -340,7 +341,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
       }, pickerCacheGeneration, lease, replacement);
     } catch (error) {
       if (operationLeaseRef.current.isCurrent(lease) && mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
-        Alert.alert(replacement ? '書類を差し替えできませんでした' : '書類を保存できませんでした', String((error as { message?: unknown })?.message ?? error));
+        Alert.alert(replacement ? '書類を差し替えできませんでした' : '書類を保存できませんでした', presentDocumentVaultError('upload', error));
         // A network error may follow a committed upload. Reconcile before permitting apply.
         await load();
       }
@@ -391,7 +392,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
       }, pickerCacheGeneration, lease, replacement);
     } catch (error) {
       if (operationLeaseRef.current.isCurrent(lease) && mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
-        Alert.alert(replacement ? '撮影した書類を差し替えできませんでした' : '撮影した書類を保存できませんでした', String((error as { message?: unknown })?.message ?? error));
+        Alert.alert(replacement ? '撮影した書類を差し替えできませんでした' : '撮影した書類を保存できませんでした', presentDocumentVaultError('camera', error));
         await load();
       }
     } finally {
@@ -418,7 +419,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
       await Linking.openURL(url);
     } catch (error) {
       if (operationLeaseRef.current.isCurrent(lease) && (!pinned || pinned.isCurrent())) {
-        Alert.alert('書類を開けませんでした', String((error as { message?: unknown })?.message ?? error));
+        Alert.alert('書類を開けませんでした', presentDocumentVaultError('open', error));
       }
     } finally {
       if (operationLeaseRef.current.release(lease) && mountedRef.current) { onBusyChangedRef.current?.(false); setBusyId(null); }
@@ -443,7 +444,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
       setDocuments(canonical, ownerKey!);
     } catch (error) {
       if (operationLeaseRef.current.isCurrent(lease) && (!pinned || pinned.isCurrent())) {
-        Alert.alert('既定書類を変更できませんでした', String((error as { message?: unknown })?.message ?? error));
+        Alert.alert('既定書類を変更できませんでした', presentDocumentVaultError('default', error));
       }
     } finally { if (operationLeaseRef.current.release(lease) && mountedRef.current) { onBusyChangedRef.current?.(false); setBusyId(null); } }
   }
@@ -479,7 +480,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
       Alert.alert('削除しました', '書類庫から削除しました。提出済みの応募書類は保持されます。');
     } catch (error) {
       if (operationLeaseRef.current.isCurrent(lease) && (!pinned || pinned.isCurrent())) {
-        Alert.alert('書類を削除できませんでした', String((error as { message?: unknown })?.message ?? error));
+        Alert.alert('書類を削除できませんでした', presentDocumentVaultError('delete', error));
       }
     } finally { if (operationLeaseRef.current.release(lease) && mountedRef.current) { onBusyChangedRef.current?.(false); setBusyId(null); } }
   }
