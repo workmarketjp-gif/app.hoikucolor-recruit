@@ -1,5 +1,19 @@
 import type { ApplyDocumentSelection, ApplyDocumentRow, JobDocumentRequirements, JobseekerDocumentType } from './documentTypes';
 
+/**
+ * Embedded vault operation notifications must reach the apply guard before
+ * React has rendered the next busy state. A started operation revokes any
+ * pending preflight against the old selection, even if it finishes quickly.
+ */
+export function recordApplyVaultBusyTransition(
+  busy: boolean,
+  busyRef: { current: boolean },
+  selectionRevision: { current: number },
+): void {
+  if (busy && !busyRef.current) selectionRevision.current += 1;
+  busyRef.current = busy;
+}
+
 export type ApplyDocumentPreflightResult = 'ready' | 'requirements_changed' | 'document_changed';
 type FreshDocument = Readonly<{ id: string; document_type: JobseekerDocumentType; file_path?: string; updated_at?: string }>;
 

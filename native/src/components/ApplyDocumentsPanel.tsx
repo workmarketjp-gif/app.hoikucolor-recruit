@@ -20,7 +20,7 @@ import {
 import { getJobDocumentRequirements } from '../lib/jobDocumentRequirementApi';
 import { DocumentVaultSection } from './DocumentVaultSection';
 import { applyVaultReadbackState, canUseApplyDocumentState, isApplySubmissionUnavailable, reconcileApplyVaultSelection, type ApplyVaultChange, type ApplyVaultReadbackState } from '../lib/applyVaultSelection';
-import { reviewApplyDocumentsBeforeSubmit } from '../lib/applyDocumentSubmissionPreflight';
+import { recordApplyVaultBusyTransition, reviewApplyDocumentsBeforeSubmit } from '../lib/applyDocumentSubmissionPreflight';
 
 type Props = {
   jobId: string;
@@ -61,6 +61,11 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
   const generation = useRef(0);
   // A vault refresh or radio edit invalidates a pending final check immediately.
   const selectionRevision = useRef(0);
+  const vaultBusyRef = useRef(false);
+  const onVaultBusyChanged = useCallback((busy: boolean) => {
+    recordApplyVaultBusyTransition(busy, vaultBusyRef, selectionRevision);
+    setVaultBusy(busy);
+  }, []);
 
   const load = useCallback(async () => {
     const current = ++generation.current;
@@ -75,6 +80,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
     setSelection({});
     setAddingType(null);
     setVaultReadback('loading');
+    vaultBusyRef.current = false;
     setVaultBusy(false);
     setTriedSubmit(false);
     setLoadError(null);
@@ -120,7 +126,8 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
       setSelection({});
       setAddingType(null);
       setVaultReadback('loading');
-      setVaultBusy(false);
+      vaultBusyRef.current = false;
+    setVaultBusy(false);
       setLoadError(null);
       return;
     }
@@ -172,7 +179,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
     setTriedSubmit(true);
     setSubmissionNotice(null);
     if (!stateReady || !requirements || !privacy.canAccessPrivateData() ||
-        missing.length || submissionUnavailable || submitPreflightInFlight.current) return;
+        missing.length || submissionUnavailable || vaultBusyRef.current || submitPreflightInFlight.current) return;
     // A displayed sheet is not proof that the facility requirements or selected
     // private documents still exist. Recheck both before handing off the write.
     submitPreflightInFlight.current = true;
@@ -187,7 +194,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
       }
       const isPreflightCurrent = () => pinned.isCurrent() && current === generation.current &&
         ownerKeyRef.current === requestedOwnerKey && privacy.canAccessPrivateData() &&
-        selectionRevision.current === expectedSelectionRevision;
+        !vaultBusyRef.current && selectionRevision.current === expectedSelectionRevision;
       const invalidated = () => {
         if (current === generation.current && ownerKeyRef.current === requestedOwnerKey &&
             privacy.canAccessPrivateData()) {
@@ -297,7 +304,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
         }} accessibilityRole="button">
           <Text style={styles.secondaryText}>{addingType === row.type ? '閉じる' : row.candidates.length ? '別のファイルを追加' : `${DOCUMENT_TYPE_LABELS[row.type]}を追加`}</Text>
         </Pressable>
-        {addingType === row.type ? <DocumentVaultSection initialType={row.type} lockedType={row.type} onDocumentsChanged={onVaultChanged} onBusyChanged={setVaultBusy} /> : null}
+        {addingType === row.type ? <DocumentVaultSection initialType={row.type} lockedType={row.type} onDocumentsChanged={onVaultChanged} onBusyChanged={onVaultBusyChanged} /> : null}
       </View>;
     }) : <Text style={styles.subtle}>送る書類はありません。書類なしで応募できます。履歴書などは、応募後に応募内容の画面から追加で提出することもできます。</Text>}
 
