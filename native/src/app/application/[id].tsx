@@ -1,7 +1,7 @@
 import { useSession } from '@clerk/expo';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Keyboard, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { pinForApplicationMutation } from '../../lib/applicationMutationPin';
 import { readApplicationMessageReview } from '../../lib/applicationMessageReviewRead';
@@ -22,7 +22,7 @@ import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMess
 import { canSubmitCandidateMessage, classifyUncertainCandidateMessageReview, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
 import { markVisibleApplicationMessagesRead } from '../../lib/attentionApi';
 import { useNotifications } from '../../contexts/NotificationContext';
-import { visibleCandidateFacilityMessageId, type CandidateMessageReadViewport } from '../../lib/candidateMessageReadVisibility';
+import { visibleCandidateFacilityMessageIdWhenKeyboardHidden, type CandidateMessageReadViewport } from '../../lib/candidateMessageReadVisibility';
 import { focusedApplicationMessagesOffset } from '../../lib/focusedApplicationMessages';
 import { applicationVisitExperienceLabel, applicationVisitStatusLabel, canSubmitInterviewResponse, formatApplicationEventDateTimeJapan, formatApplicationVisitDuration, interviewStatusLabel } from '../../lib/applicationEventPresentation';
 import {
@@ -289,6 +289,20 @@ function ApplicationDetailContent() {
   const acknowledgedFacilityMessageRef = useRef<string | null>(null);
   const acknowledgingFacilityMessageRef = useRef<string | null>(null);
   const failedFacilityMessageRef = useRef<string | null>(null);
+  const keyboardVisibleRef = useRef(Keyboard.isVisible());
+
+  // Keyboard inset animation may not change ScrollView onLayout height on iOS.
+  // Never acknowledge a facility message while the keyboard can obscure it.
+  useEffect(() => {
+    const markVisible = () => { keyboardVisibleRef.current = true; };
+    const markHidden = () => { keyboardVisibleRef.current = false; };
+    const subscriptions = [
+      Keyboard.addListener('keyboardWillShow', markVisible),
+      Keyboard.addListener('keyboardDidShow', markVisible),
+      Keyboard.addListener('keyboardDidHide', markHidden),
+    ];
+    return () => subscriptions.forEach((subscription) => subscription.remove());
+  }, []);
 
   const load = useCallback(async (_quiet = false) => {
     const current = ++generation.current;
@@ -634,9 +648,10 @@ function ApplicationDetailContent() {
   const orderedMessages = useMemo(() => [...messages].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at)), [messages]);
   const latestFacilityMessageId = [...orderedMessages].reverse().find((message) => message.sender_role === 'facility')?.id ?? null;
   const maybeAcknowledgeVisibleFacilityMessage = () => {
-    const target = visibleCandidateFacilityMessageId({
-      ...readViewportRef.current, facilityMessageId: latestFacilityMessageId,
-    });
+    const target = visibleCandidateFacilityMessageIdWhenKeyboardHidden(
+      { ...readViewportRef.current, facilityMessageId: latestFacilityMessageId },
+      keyboardVisibleRef.current || Keyboard.isVisible(),
+    );
     if (!target || target === acknowledgedFacilityMessageRef.current ||
         target === acknowledgingFacilityMessageRef.current ||
         target === failedFacilityMessageRef.current) return;
@@ -647,9 +662,10 @@ function ApplicationDetailContent() {
         const pinned = await pinForApplicationMutation(pinCandidateAction, () => readGeneration === generation.current);
         if (!pinned || !pinned.isCurrent() || readGeneration !== generation.current) return;
         // Do not mark read after a slow session pin if the bubble is now hidden.
-        if (visibleCandidateFacilityMessageId({
-          ...readViewportRef.current, facilityMessageId: latestFacilityMessageId,
-        }) !== target) return;
+        if (visibleCandidateFacilityMessageIdWhenKeyboardHidden(
+          { ...readViewportRef.current, facilityMessageId: latestFacilityMessageId },
+          keyboardVisibleRef.current || Keyboard.isVisible(),
+        ) !== target) return;
         const updatedCount = await markVisibleApplicationMessagesRead(pinned.client, applicationId);
         if (pinned.isCurrent() && readGeneration === generation.current) {
           acknowledgedFacilityMessageRef.current = target;
