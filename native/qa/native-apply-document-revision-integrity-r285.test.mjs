@@ -5,7 +5,7 @@ import { evaluateApplyDocumentSubmissionPreflight as check, reviewApplyDocuments
 const requirements = { configured: true, items: [{ document_type: 'resume', requirement: 'required', note: null }] };
 const selected = { resume: 'resume-A' };
 const original = { id: 'resume-A', document_type: 'resume', file_path: 'synthetic-vault/a.pdf', updated_at: '2026-11-10T01:00:00Z' };
-const rows = [{ type: 'resume', level: 'required', candidates: [original] };
+const rows = [{ type: 'resume', level: 'required', candidates: [original] }];
 
 test('same ID and type with unchanged canonical file and revision are still eligible', () => {
   assert.equal(check(requirements, requirements, rows, selected, [original]), 'ready');
