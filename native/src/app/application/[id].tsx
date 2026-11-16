@@ -958,8 +958,8 @@ function ApplicationDetailContent() {
             } : undefined}
             style={[styles.message, message.sender_role === 'jobseeker' && styles.myMessage]}>
             <Text style={styles.messageRole}>{message.sender_role === 'jobseeker' ? 'あなた' : '園'}</Text>
-            <Text>{message.body}</Text>
-            <Text style={styles.meta}>{formatDateTime(message.created_at)}</Text>
+            <Text style={styles.messageBody}>{message.body}</Text>
+            <Text style={styles.messageMeta}>{formatDateTime(message.created_at)}</Text>
           </View>
         ))}
         <Text style={styles.formLabel}>メッセージ</Text>
@@ -969,9 +969,9 @@ function ApplicationDetailContent() {
           placeholder="園への質問や日程の相談など"
           multiline
           maxLength={4000}
-          style={styles.textArea}
+          style={[styles.textArea, styles.messageTextArea]}
         />
-        <Text style={styles.meta}>{messageDraft.length}/4000</Text>
+        <Text style={styles.messageMeta}>{messageDraft.length}/4000</Text>
         {messageSendError ? (
           <View style={styles.messageFeedback} accessibilityLiveRegion="polite">
             <Text style={styles.error}>{messageSendError}</Text>
@@ -1045,7 +1045,7 @@ const styles = StyleSheet.create({
   decisionActions: { gap: 10 },
   withdrawConfirmation: { backgroundColor: '#fff9fa', borderWidth: 1, borderColor: '#f2c6cc', borderRadius: 12, padding: 12, gap: 10 },
   confirmationWarning: { color: '#a61c2d', fontSize: 15, fontWeight: '800' },
-  focusedCard: { borderWidth: 2, borderColor: '#246bfd' },
+  focusedCard: { borderWidth: 2, borderColor: '#fb2f52' },
   messageFeedback: { gap: 10, padding: 12, borderRadius: 10, backgroundColor: '#FFF1F0' },
   sectionTitle: { fontSize: 18, fontWeight: '900' },
   cardHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
@@ -1055,15 +1055,18 @@ const styles = StyleSheet.create({
   responseBox: { backgroundColor: '#f5f8ff', borderRadius: 10, padding: 10, gap: 5 },
   responseTitle: { fontWeight: '800' },
   textArea: { minHeight: 88, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 12, padding: 12, textAlignVertical: 'top' },
-  primaryButton: { minHeight: 46, borderRadius: 12, backgroundColor: '#191c20', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
-  primaryText: { color: '#fff', fontWeight: '800' },
+  primaryButton: { minHeight: 52, borderRadius: 14, backgroundColor: '#fb2f52', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+  primaryText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   secondaryButton: { minHeight: 44, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: '#fff' },
   secondaryText: { fontWeight: '800' },
   dangerButton: { minHeight: 44, borderWidth: 1, borderColor: '#d92d20', borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: '#fff' },
   dangerText: { color: '#b42318', fontWeight: '900' },
   error: { color: '#b42318', backgroundColor: '#fff1f0', padding: 10, borderRadius: 9 },
-  focusLabel: { color: '#155eef', fontWeight: '800' },
-  message: { alignSelf: 'flex-start', maxWidth: '88%', backgroundColor: '#f0f2f5', borderRadius: 12, padding: 10, gap: 4 },
-  myMessage: { alignSelf: 'flex-end', backgroundColor: '#edf4ff' },
-  messageRole: { fontSize: 12, fontWeight: '800', color: '#606873' },
+  focusLabel: { color: '#c8173a', fontWeight: '800' },
+  message: { alignSelf: 'flex-start', maxWidth: '88%', backgroundColor: '#fff', borderWidth: 1, borderColor: '#e7e8eb', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, gap: 4 },
+  myMessage: { alignSelf: 'flex-end', backgroundColor: '#fff0f3', borderColor: 'transparent' },
+  messageRole: { fontSize: 14, fontWeight: '800', color: '#7d8796' },
+  messageBody: { fontSize: 15, lineHeight: 22, color: '#1e2a3b' },
+  messageMeta: { fontSize: 14, color: '#7d8796' },
+  messageTextArea: { minHeight: 96 },
 });
