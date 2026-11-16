@@ -20,6 +20,7 @@ import { homeJobAvailability } from '../../lib/homeFeaturedDetails';
 import { armPendingHomeApplication, clearPendingHomeApplication, hasPendingHomeApplication } from '../../lib/homeApplyPending';
 import { jobDetailReadbackRecovery } from '../../lib/jobDetailReadbackRecovery';
 import { presentSavedJobSource } from '../../lib/savedJobSourcePresentation';
+import { safeJobDetailErrorMessage } from '../../lib/jobDetailErrorPresentation';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -169,7 +170,7 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
         }
       }
     } catch (loadError) {
-      if (current === generation.current) setError(String((loadError as { message?: unknown })?.message ?? loadError));
+      if (current === generation.current) setError(safeJobDetailErrorMessage('load', loadError));
     } finally {
       if (current === generation.current) setLoading(false);
     }
@@ -363,7 +364,7 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
         setError('応募状況を確認できません。再送信せず応募管理で確認してください。');
         return;
       }
-      setError(String((applyError as { message?: unknown })?.message ?? applyError));
+      setError(safeJobDetailErrorMessage('pre_submit', applyError));
     } finally {
       applyInFlight.current = false;
       if (canContinue()) setApplying(false);
