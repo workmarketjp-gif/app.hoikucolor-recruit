@@ -22,6 +22,7 @@ import { DocumentVaultSection } from './DocumentVaultSection';
 import { applyVaultReadbackState, canUseApplyDocumentState, isApplySubmissionUnavailable, reconcileApplyVaultSelection, type ApplyVaultChange, type ApplyVaultReadbackState } from '../lib/applyVaultSelection';
 import { recordApplyVaultBusyTransition, reviewApplyDocumentsBeforeSubmit } from '../lib/applyDocumentSubmissionPreflight';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
+import { withCurrentApplyDocumentReadLease } from '../lib/applyDocumentReadLease';
 
 type Props = {
   jobId: string;
@@ -94,10 +95,15 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
           candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
-      const [nextRequirements, nextDocuments] = await boundedPrivateRead(() => Promise.all([
-        getJobDocumentRequirements(pinned.client, jobId),
-        listJobseekerDocuments(pinned.client),
-      ]));
+      const [nextRequirements, nextDocuments] = await boundedPrivateRead(() =>
+        withCurrentApplyDocumentReadLease(
+          () => current === generation.current && ownerKeyRef.current === requestedOwnerKey &&
+            pinned.isCurrent() && !privacy.shieldVisible && privacy.canAccessPrivateData(),
+          () => Promise.all([
+            getJobDocumentRequirements(pinned.client, jobId),
+            listJobseekerDocuments(pinned.client),
+          ]),
+        ));
       if (!pinned.isCurrent() || current !== generation.current ||
           ownerKeyRef.current !== requestedOwnerKey || !privacy.canAccessPrivateData()) return;
       assertCandidateDocumentListOwner(nextDocuments, pinned.ownerId);
@@ -208,10 +214,11 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
       const outcome = await reviewApplyDocumentsBeforeSubmit(
         requirements, rows, selection,
         async () => {
-          const [freshRequirements, freshDocuments] = await boundedPrivateRead(() => Promise.all([
-            getJobDocumentRequirements(pinned.client, jobId),
-            listJobseekerDocuments(pinned.client),
-          ]));
+          const [freshRequirements, freshDocuments] = await boundedPrivateRead(() =>
+            withCurrentApplyDocumentReadLease(isPreflightCurrent, () => Promise.all([
+              getJobDocumentRequirements(pinned.client, jobId),
+              listJobseekerDocuments(pinned.client),
+            ])));
           assertCandidateDocumentListOwner(freshDocuments, pinned.ownerId);
           return { requirements: freshRequirements, documents: freshDocuments };
         },
@@ -227,6 +234,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
         });
         return;
       }
+      if (!isPreflightCurrent()) { invalidated(); return; }
       onSubmit(selectedDocumentIds(rows, selection));
     } catch {
       if (current === generation.current && ownerKeyRef.current === requestedOwnerKey &&
