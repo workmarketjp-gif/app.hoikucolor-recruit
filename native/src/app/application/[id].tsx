@@ -15,6 +15,7 @@ import { pinCandidateForRead } from '../../lib/pinnedCandidateRead';
 import { draftAfterConfirmedMessageSend } from '../../lib/messageDraftIntegrity';
 import { createApplicationDecisionGate } from '../../lib/applicationDecisionGate';
 import { applicationDecisionDisclosure, canConfirmApplicationWithdrawal, isFreshApplicationWithdrawal } from '../../lib/applicationDecisionDisclosure';
+import { presentApplicationFailure } from '../../lib/applicationFailurePresentation';
 import { acceptCandidateOfferWithFreshReadback } from '../../lib/applicationOfferAcceptance';
 import { applicationSelectionTimeline, webNextScheduledInterview } from '../../lib/applicationSelectionTimeline';
 import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
@@ -130,7 +131,7 @@ function InterviewCard({
       if (!pinned.isCurrent() || !stillCurrent()) return;
       if (responseStatus === 'accepted') setRescheduleOpen(false);
     } catch (responseError) {
-      if (stillCurrent()) setError(String((responseError as { message?: unknown })?.message ?? responseError));
+      if (stillCurrent()) setError(presentApplicationFailure('interview-response', responseError));
     } finally {
       responseGate.finish(token);
       // Remounted interview cards also need a render to release the disabled
@@ -341,7 +342,7 @@ function ApplicationDetailContent() {
       if (current === generation.current) {
         setDocumentLoading(false);
         setMessagesLoading(false);
-        setError(String((loadError as { message?: unknown })?.message ?? loadError));
+        setError(presentApplicationFailure('detail-read', loadError));
       }
     } finally {
       if (current === generation.current) setLoading(false);
@@ -489,7 +490,7 @@ function ApplicationDetailContent() {
     try {
       await action(stillCurrent);
     } catch (actionError) {
-      if (stillCurrent()) onError(String((actionError as { message?: unknown })?.message ?? actionError));
+      if (stillCurrent()) onError(presentApplicationFailure('decision', actionError));
     } finally {
       // Blur keeps the network operation locked until it settles, but suppresses
       // stale detail/message/error updates. Unlocking busy is not private data.
