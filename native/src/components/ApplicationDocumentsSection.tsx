@@ -1,7 +1,7 @@
 import { useSession } from '@clerk/expo';
-import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, candidateApplicationViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
@@ -21,6 +21,7 @@ import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { presentApplicationDocumentError } from '../lib/applicationDocumentErrorPresentation';
 import { readApplicationDocumentSnapshot } from '../lib/applicationDocumentSnapshotRead';
 import { hasCanonicalApplicationAttachment, projectApplicationDocuments } from '../lib/applicationDocumentsPresentation';
+import { canStartFocusedApplicationDocumentsRefresh, canApplyFocusedApplicationDocumentsRefresh } from '../lib/focusedApplicationDocumentsRefresh';
 
 type DocumentSnapshot = {
   saved: JobseekerDocument[];
@@ -52,6 +53,8 @@ export function ApplicationDocumentsSection({
   const alive = useRef(true);
   const requestVersion = useRef(0);
   const mutationPending = useRef(false);
+  const readPending = useRef(false);
+  const focusedRef = useRef(false);
   const freshlyVerifiedOwner = useRef<string | null>(null);
   const contextLease = useRef({ viewKey, shieldVisible: privacy.shieldVisible });
   if (!canReadPrivate) freshlyVerifiedOwner.current = null;
@@ -66,6 +69,7 @@ export function ApplicationDocumentsSection({
     return () => {
       alive.current = false;
       requestVersion.current += 1;
+      readPending.current = false;
     };
   }, []);
 
@@ -76,6 +80,7 @@ export function ApplicationDocumentsSection({
         contextLease.current.shieldVisible === privacy.shieldVisible) return;
     contextLease.current = { viewKey, shieldVisible: privacy.shieldVisible };
     requestVersion.current += 1;
+    readPending.current = false;
     // Revoke the previous route/session's pending UI lock even if its
     // network operation never settles; the version check fences later writes.
     mutationPending.current = false;
@@ -88,16 +93,30 @@ export function ApplicationDocumentsSection({
     setNotice(null);
   }, [viewKey, privacy.shieldVisible]);
 
-  const refresh = async () => {
-    if (mutationPending.current || !ownerKey || !viewKey || !canReadPrivate || !contextCurrent) return;
+  const refresh = async (quiet = false) => {
+    const refreshState = () => ({
+      open,
+      focused: focusedRef.current,
+      foreground: AppState.currentState === 'active',
+      privateAccess: privacy.canAccessPrivateData() && !contextLease.current.shieldVisible,
+      ownerCurrent: Boolean(viewKey && ownerKey && contextLease.current.viewKey === viewKey),
+      mutationPending: mutationPending.current,
+    });
+    if (quiet && !canStartFocusedApplicationDocumentsRefresh(refreshState(), readPending.current)) return;
+    if (readPending.current || mutationPending.current || !ownerKey || !viewKey || !canReadPrivate || !contextCurrent) return;
+    readPending.current = true;
     const requestedOwnerKey = ownerKey;
     const requestedViewKey = viewKey;
     const version = ++requestVersion.current;
-    freshlyVerifiedOwner.current = null;
-    setSnapshot(null); // Do not show stale private rows while a read is unverified.
+    // Keep canonical rows visible during silent Web-parity refresh, but
+    // block any document action until freshness is confirmed.
+    if (!quiet) {
+      freshlyVerifiedOwner.current = null;
+      setSnapshot(null);
+      setNotice(null);
+    }
     setLoading(true);
     setError(null);
-    setNotice(null);
     try {
       const pinned = await pinCandidateAction();
       if (!pinned || !pinned.isCurrent() ||
@@ -111,11 +130,13 @@ export function ApplicationDocumentsSection({
         loadSubmitted: () => listSubmittedApplicationDocuments(pinned.client, applicationId),
         loadExpectations: () => listApplicationDocumentExpectations(pinned.client, applicationId),
         isCurrent: () => alive.current && pinned.isCurrent() && version === requestVersion.current &&
-          privacy.canAccessPrivateData() && contextLease.current.viewKey === requestedViewKey,
+          privacy.canAccessPrivateData() && contextLease.current.viewKey === requestedViewKey &&
+          (!quiet || canApplyFocusedApplicationDocumentsRefresh(refreshState())),
       });
       projectApplicationDocuments(applicationId, saved, submitted, expectations);
       if (!alive.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
-          version !== requestVersion.current) return;
+          version !== requestVersion.current ||
+          (quiet && !canApplyFocusedApplicationDocumentsRefresh(refreshState()))) return;
       freshlyVerifiedOwner.current = requestedViewKey;
       setSnapshot({ ownerKey: requestedViewKey, value: { saved, submitted, expectations } });
     } catch (caught) {
@@ -123,14 +144,48 @@ export function ApplicationDocumentsSection({
         setError(presentApplicationDocumentError('refresh', caught));
       }
     } finally {
-      if (alive.current && version === requestVersion.current) setLoading(false);
+      if (version === requestVersion.current) {
+        readPending.current = false;
+        if (alive.current) setLoading(false);
+      }
     }
   };
+
+  // An open Web panel updates saved, submitted and expected documents every
+  // 60 seconds and when visibility returns. Never poll a closed/private panel.
+  const quietRefreshRef = useRef<() => void>(() => undefined);
+  quietRefreshRef.current = () => { void refresh(true); };
+  useFocusEffect(useCallback(() => {
+    focusedRef.current = true;
+    return () => {
+      focusedRef.current = false;
+      ++requestVersion.current;
+      readPending.current = false;
+      freshlyVerifiedOwner.current = null;
+      setSnapshot(null);
+      setOpen(false);
+      setLoading(false);
+      setError(null);
+      setNotice(null);
+    };
+  }, []));
+  useFocusEffect(useCallback(() => {
+    if (!open) return;
+    const timer = setInterval(() => quietRefreshRef.current(), 60_000);
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') quietRefreshRef.current();
+    });
+    return () => {
+      clearInterval(timer);
+      subscription.remove();
+    };
+  }, [open]));
 
   const toggle = () => {
     if (mutationPending.current || !canReadPrivate || !ownerKey || !viewKey || !contextCurrent) return;
     if (open) {
       ++requestVersion.current;
+      readPending.current = false;
       setOpen(false);
       setSnapshot(null);
       freshlyVerifiedOwner.current = null;
@@ -144,7 +199,7 @@ export function ApplicationDocumentsSection({
   };
 
   const submitDocuments = async (targets: readonly JobseekerDocument[]) => {
-    if (!open || !visibleSnapshot || !ownerKey || !viewKey || !canReadPrivate || !targets.length || mutationPending.current || loading) return;
+    if (!open || !visibleSnapshot || !ownerKey || !viewKey || !canReadPrivate || !targets.length || mutationPending.current || readPending.current || loading || error !== null) return;
     const model = projectApplicationDocuments(applicationId, visibleSnapshot.saved, visibleSnapshot.submitted, visibleSnapshot.expectations);
     if (targets.some((document) => !visibleSnapshot.saved.some((row) => row.id === document.id)
       || model.attachedIds.has(document.id))) return;
@@ -223,7 +278,7 @@ export function ApplicationDocumentsSection({
   };
 
   const openSubmitted = async (document: AttachedApplicationDocument) => {
-    if (!visibleSnapshot || !canReadPrivate || !ownerKey || !viewKey || !open || mutationPending.current || loading ||
+    if (!visibleSnapshot || !canReadPrivate || !ownerKey || !viewKey || !open || mutationPending.current || readPending.current || loading || error !== null ||
       !visibleSnapshot.submitted.some((row) => row.id === document.id && row.application_id === applicationId)) return;
     mutationPending.current = true;
     const version = ++requestVersion.current;
@@ -256,7 +311,10 @@ export function ApplicationDocumentsSection({
   };
 
   const model = visibleSnapshot ? projectApplicationDocuments(applicationId, visibleSnapshot.saved, visibleSnapshot.submitted, visibleSnapshot.expectations) : null;
-  const blocked = loading || pending !== null || mutationPending.current || !canReadPrivate || !contextCurrent;
+  const blocked = loading || pending !== null || mutationPending.current || readPending.current || !canReadPrivate || !contextCurrent;
+  // A failed quiet read preserves the last confirmed rows for reference,
+  // not authorization to attach/open a possibly stale document.
+  const writesBlocked = blocked || error !== null;
   if (!canReadPrivate || !ownerKey || !viewKey || !contextCurrent) {
     return <View testID="application-documents-private-shield" />;
   }
@@ -286,7 +344,7 @@ export function ApplicationDocumentsSection({
                 <View style={styles.warning}>
                   <Text>応募時に設定されていた書類のうち、{model.missing.length}件がまだ提出されていません。</Text>
                   {model.repairable.length ? (
-                    <Pressable style={styles.button} disabled={blocked} onPress={() => void submitDocuments(model.repairable)} testID="application-documents-repair" accessibilityRole="button">
+                    <Pressable style={styles.button} disabled={writesBlocked} onPress={() => void submitDocuments(model.repairable)} testID="application-documents-repair" accessibilityRole="button">
                       <Text style={styles.buttonText}>{pending === 'batch' ? '提出中…' : '未提出の応募時書類をまとめて提出'}</Text>
                     </Pressable>
                   ) : null}
@@ -301,7 +359,7 @@ export function ApplicationDocumentsSection({
                       <Text style={styles.label}>{documentTypeLabel(document.document_type)}{document.is_default ? ' ・応募時に使用' : ''}</Text>
                       <Text style={styles.note}>{document.title}</Text>
                     </View>
-                    <Pressable style={styles.button} disabled={blocked || attached} onPress={() => void submitDocuments([document])} accessibilityRole="button" testID={'application-document-attach-' + document.id}>
+                    <Pressable style={styles.button} disabled={writesBlocked || attached} onPress={() => void submitDocuments([document])} accessibilityRole="button" testID={'application-document-attach-' + document.id}>
                       <Text style={styles.buttonText}>{attached ? '提出済み' : pending === document.id ? '提出中…' : 'この応募に提出'}</Text>
                     </Pressable>
                   </View>
@@ -316,7 +374,7 @@ export function ApplicationDocumentsSection({
                         <Text style={styles.label}>{documentTypeLabel(document.document_type)}</Text>
                         <Text style={styles.note}>{document.title}</Text>
                       </View>
-                      <Pressable style={styles.button} disabled={blocked} onPress={() => void openSubmitted(document)} accessibilityRole="button" testID={'application-document-open-' + document.id}>
+                      <Pressable style={styles.button} disabled={writesBlocked} onPress={() => void openSubmitted(document)} accessibilityRole="button" testID={'application-document-open-' + document.id}>
                         <Text style={styles.buttonText}>開く</Text>
                       </Pressable>
                     </View>
