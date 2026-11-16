@@ -21,7 +21,7 @@ import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { presentApplicationDocumentError } from '../lib/applicationDocumentErrorPresentation';
 import { readApplicationDocumentSnapshot } from '../lib/applicationDocumentSnapshotRead';
 import { hasCanonicalApplicationAttachment, projectApplicationDocuments } from '../lib/applicationDocumentsPresentation';
-import { canStartFocusedApplicationDocumentsRefresh, canApplyFocusedApplicationDocumentsRefresh } from '../lib/focusedApplicationDocumentsRefresh';
+import { canStartFocusedApplicationDocumentsRefresh, canApplyFocusedApplicationDocumentsRefresh, shouldRevokeDocumentReadOnBlur } from '../lib/focusedApplicationDocumentsRefresh';
 
 type DocumentSnapshot = {
   saved: JobseekerDocument[];
@@ -159,7 +159,9 @@ export function ApplicationDocumentsSection({
     focusedRef.current = true;
     return () => {
       focusedRef.current = false;
-      ++requestVersion.current;
+      // A started document submission must keep its duplicate-write lease
+      // until settlement; only ordinary reads can be invalidated on blur.
+      if (shouldRevokeDocumentReadOnBlur(mutationPending.current)) ++requestVersion.current;
       readPending.current = false;
       freshlyVerifiedOwner.current = null;
       setSnapshot(null);
@@ -219,7 +221,7 @@ export function ApplicationDocumentsSection({
       }
       // One source at a time: session revocation must prevent the next new write.
       for (const document of uniqueTargets) {
-        if (!alive.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
+        if (!alive.current || !focusedRef.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
             version !== requestVersion.current) return;
         try {
           await attachJobseekerDocumentToApplication(pinned.client, document, applicationId);
@@ -227,17 +229,18 @@ export function ApplicationDocumentsSection({
           // Ambiguous transport reply: rely on canonical readback, never retry blindly.
         }
       }
+      if (!focusedRef.current) return; // Never launch follow-up private reads after blur.
       const { saved, submitted, expectations } = await readApplicationDocumentSnapshot({
         ownerId: pinned.ownerId,
         applicationId,
         loadSaved: () => listJobseekerDocuments(pinned.client),
         loadSubmitted: () => listSubmittedApplicationDocuments(pinned.client, applicationId),
         loadExpectations: () => listApplicationDocumentExpectations(pinned.client, applicationId),
-        isCurrent: () => alive.current && pinned.isCurrent() && version === requestVersion.current &&
+        isCurrent: () => alive.current && focusedRef.current && pinned.isCurrent() && version === requestVersion.current &&
           privacy.canAccessPrivateData() && contextLease.current.viewKey === requestedViewKey,
       });
       projectApplicationDocuments(applicationId, saved, submitted, expectations);
-      if (!alive.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
+      if (!alive.current || !focusedRef.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
           version !== requestVersion.current) return;
       freshlyVerifiedOwner.current = requestedViewKey;
       setSnapshot({ ownerKey: requestedViewKey, value: { saved, submitted, expectations } });
@@ -294,7 +297,7 @@ export function ApplicationDocumentsSection({
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
       const url = await createAttachedApplicationDocumentSignedUrl(pinned.client, document);
-      if (!alive.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
+      if (!alive.current || !focusedRef.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
           version !== requestVersion.current) return;
       await Linking.openURL(url); // Existing vault uses the OS handler; URL is HTTPS-only.
     } catch (caught) {

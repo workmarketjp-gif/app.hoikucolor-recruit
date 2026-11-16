@@ -26,3 +26,8 @@ export function canApplyFocusedApplicationDocumentsRefresh(
   return state.open && state.focused && state.foreground &&
     state.privateAccess && state.ownerCurrent && !state.mutationPending;
 }
+
+/** Let a started attachment settle before releasing its duplicate-write lock. */
+export function shouldRevokeDocumentReadOnBlur(mutationPending: boolean): boolean {
+  return !mutationPending;
+}

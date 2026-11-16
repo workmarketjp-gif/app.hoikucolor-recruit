@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   canStartFocusedApplicationDocumentsRefresh,
   canApplyFocusedApplicationDocumentsRefresh,
+  shouldRevokeDocumentReadOnBlur,
 } from '../src/lib/focusedApplicationDocumentsRefresh.ts';
 
 const openPanel = {
@@ -44,4 +45,9 @@ test('in-progress document mutation quarantines refresh before and after an awai
 test('read that began while open must be discarded after the panel closes', () => {
   assert.equal(canStartFocusedApplicationDocumentsRefresh(openPanel, false), true);
   assert.equal(canApplyFocusedApplicationDocumentsRefresh({ ...openPanel, open: false }), false);
+});
+
+test('blur revokes ordinary reads but preserves an in-flight attachment lease', () => {
+  assert.equal(shouldRevokeDocumentReadOnBlur(false), true);
+  assert.equal(shouldRevokeDocumentReadOnBlur(true), false);
 });
