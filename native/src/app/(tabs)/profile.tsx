@@ -1,5 +1,5 @@
 import { useSession, useUser } from '@clerk/expo';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { DocumentVaultSection } from '../../components/DocumentVaultSection';
@@ -160,6 +160,12 @@ export default function ProfileScreen() {
   const returnJobId = specifiedJobIdFromRoute(route.return_job);
   const currentReturnJobRef = useRef(returnJobId);
   currentReturnJobRef.current = returnJobId;
+  // Tabs remain mounted. A delayed save must not navigate after this screen blurs.
+  const profileFocusedRef = useRef(false);
+  useFocusEffect(useCallback(() => {
+    profileFocusedRef.current = true;
+    return () => { profileFocusedRef.current = false; };
+  }, []));
   const { pinCandidateAction } = usePinnedCandidateAction();
   const appLock = useAppLock();
   const notifications = useNotifications();
@@ -372,7 +378,7 @@ export default function ProfileScreen() {
           canonicalConfirmed: true,
           unchangedDraft: submittedRevision === draftRevision.current,
           sessionCurrent: pinned.isCurrent() && isLive(requestOwner, requestGeneration),
-          privateAvailable: logoutSafetyRef.current.privateAllowed,
+          privateAvailable: logoutSafetyRef.current.privateAllowed && profileFocusedRef.current,
         });
       }
     } catch {
@@ -400,7 +406,7 @@ export default function ProfileScreen() {
     }
     // Navigation is not part of the mutation. Its failure cannot turn an
     // already confirmed profile write into an ambiguous/failed save.
-    if (confirmedReturnJob) {
+    if (confirmedReturnJob && profileFocusedRef.current && logoutSafetyRef.current.privateAllowed) {
       router.replace({ pathname: '/(tabs)/jobs', params: { job_id: confirmedReturnJob } } as never);
     }
   };
