@@ -1,7 +1,7 @@
 import type { ApplyDocumentSelection, ApplyDocumentRow, JobDocumentRequirements, JobseekerDocumentType } from './documentTypes';
 
 export type ApplyDocumentPreflightResult = 'ready' | 'requirements_changed' | 'document_changed';
-type FreshDocument = Readonly<{ id: string; document_type: JobseekerDocumentType }>;
+type FreshDocument = Readonly<{ id: string; document_type: JobseekerDocumentType; file_path?: string; updated_at?: string }>;
 
 /** Compare actual configured facility requirements, not the visual row order. */
 function sameRequirements(a: JobDocumentRequirements, b: JobDocumentRequirements): boolean {
@@ -30,8 +30,15 @@ export function evaluateApplyDocumentSubmissionPreflight(
     const selectedId = selection[row.type] ?? null;
     if (row.level === 'required' && !selectedId) return 'document_changed';
     if (!selectedId) continue;
-    if (!row.candidates.some(d => d.id === selectedId && d.document_type === row.type) ||
-        !freshDocuments.some(d => d.id === selectedId && d.document_type === row.type)) return 'document_changed';
+    const displayed = row.candidates.find(d => d.id === selectedId && d.document_type === row.type) as
+      (typeof row.candidates[number] & { file_path?: string; updated_at?: string }) | undefined;
+    const canonical = freshDocuments.find(d => d.id === selectedId && d.document_type === row.type);
+    if (!displayed || !canonical) return 'document_changed';
+    // Native vault rows include both fields. A document can be replaced or
+    // revised on another device without changing its ID or document type.
+    // Never submit a different revision than the candidate reviewed.
+    if (typeof displayed.file_path === 'string' && displayed.file_path !== canonical.file_path) return 'document_changed';
+    if (typeof displayed.updated_at === 'string' && displayed.updated_at !== canonical.updated_at) return 'document_changed';
   }
   return 'ready';
 }
