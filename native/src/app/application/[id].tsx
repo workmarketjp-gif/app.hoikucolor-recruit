@@ -689,12 +689,12 @@ function ApplicationDetailContent() {
   const nextInterview = webNextScheduledInterview(detail.interviews);
   const decisionDisclosure = applicationDecisionDisclosure(detail.application.status, detail.application.candidate_offer_response);
 
+  // iOS defaults to no keyboard inset; this preserves usable typing space
+  // without changing the existing message read-visibility calculations.
   return (
     <ScrollView
       ref={messageScrollRef}
       contentContainerStyle={styles.page}
-      // iOS defaults to no keyboard inset: keep the editable message composer
-      // scrollable above the keyboard without moving the read-visibility geometry.
       automaticallyAdjustKeyboardInsets
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
