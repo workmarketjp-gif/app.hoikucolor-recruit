@@ -1,7 +1,7 @@
 import { useSession } from '@clerk/expo';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Keyboard, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, Keyboard, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { pinForApplicationMutation } from '../../lib/applicationMutationPin';
 import { readApplicationMessageReview } from '../../lib/applicationMessageReviewRead';
@@ -21,6 +21,8 @@ import { applicationSelectionTimeline, webNextScheduledInterview } from '../../l
 import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
 import { canSubmitCandidateMessage, classifyUncertainCandidateMessageReview, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
 import { captureCandidateMessageInvocationReview, candidateMessageSendNeedsReview } from '../../lib/candidateMessageInvocationReview';
+import { canApplyFocusedCandidateMessageRefresh, canRefreshFocusedCandidateMessages } from '../../lib/focusedCandidateMessageRefresh';
+import { boundedPrivateRead } from '../../lib/privateReadDeadline';
 import { markVisibleApplicationMessagesRead } from '../../lib/attentionApi';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { visibleCandidateFacilityMessageIdWhenKeyboardHidden, type CandidateMessageReadViewport } from '../../lib/candidateMessageReadVisibility';
@@ -264,6 +266,10 @@ function ApplicationDetailContent() {
   const documentReadRevision = useRef(0);
   const documentStatusRetryPending = useRef(false);
   const messageSendPending = useRef(false);
+  const messageRefreshPendingRef = useRef(false);
+  const messageScreenFocusedRef = useRef(false);
+  const initialCanonicalLoadPendingRef = useRef(false);
+  const messageMutationRevisionRef = useRef(0);
   const decisionGate = useRef(createApplicationDecisionGate()).current;
   const [, setInterviewLeaseRevision] = useState(0);
   const uncertainMessageRef = useRef<{
@@ -307,6 +313,7 @@ function ApplicationDetailContent() {
 
   const load = useCallback(async (_quiet = false) => {
     const current = ++generation.current;
+    initialCanonicalLoadPendingRef.current = true;
     // A canonical refresh or same-screen refocus must surface an invoked
     // message whose old completion may have been discarded as stale.
     if (uncertainMessageRef.current) {
@@ -366,9 +373,53 @@ function ApplicationDetailContent() {
         setError(presentApplicationFailure('detail-read', loadError));
       }
     } finally {
-      if (current === generation.current) setLoading(false);
+      if (current === generation.current) {
+        initialCanonicalLoadPendingRef.current = false;
+        setLoading(false);
+      }
     }
   }, [applicationId, pinCandidateAction]);
+
+  // Web refreshes an opened thread every 60 seconds and on foreground return.
+  // Read only while this exact private screen is focused and the OS is active.
+  // Do not interrupt a send, decision, initial read, or ambiguous-write review.
+  const refreshFocusedMessages = useCallback(async () => {
+    const readGeneration = generation.current;
+    const mutationRevision = messageMutationRevisionRef.current;
+    const refreshState = () => ({
+      focused: messageScreenFocusedRef.current && readGeneration === generation.current,
+      foreground: AppState.currentState === 'active',
+      initialLoadComplete: !initialCanonicalLoadPendingRef.current && !loading && !messagesLoading,
+      mutationRevisionCurrent: mutationRevision === messageMutationRevisionRef.current,
+      mutationPending: messageSendPending.current || decisionGate.isBusy(),
+      sendNeedsReview: candidateMessageSendNeedsReview(messageSendNeedsReview, uncertainMessageRef.current),
+    });
+    if (!canRefreshFocusedCandidateMessages(refreshState(), messageRefreshPendingRef.current)) return;
+    messageRefreshPendingRef.current = true;
+    try {
+      const pinned = await pinCandidateForRead(
+        pinCandidateAction,
+        () => canApplyFocusedCandidateMessageRefresh(refreshState()),
+      );
+      const freshMessages = await boundedPrivateRead(() => {
+        if (!pinned.isCurrent() || !canApplyFocusedCandidateMessageRefresh(refreshState())) {
+          throw new Error('メッセージの表示状態が変更されました。');
+        }
+        return listApplicationMessages(pinned.client, applicationId);
+      });
+      // An in-flight poll started before a successful send must never replace
+      // its newly confirmed bubble with an older server snapshot.
+      if (!pinned.isCurrent() || !canApplyFocusedCandidateMessageRefresh(refreshState())) return;
+      setMessages(freshMessages);
+      setMessagesReadError(false);
+    } catch {
+      // Preserve the last visible thread and classify freshness as unknown.
+      // Never replace a failed canonical read with a fake empty list.
+      if (canApplyFocusedCandidateMessageRefresh(refreshState())) setMessagesReadError(true);
+    } finally {
+      messageRefreshPendingRef.current = false;
+    }
+  }, [applicationId, decisionGate, loading, messagesLoading, messageSendNeedsReview, pinCandidateAction]);
 
   // A document-status retry must not discard an already verified interview,
   // message conversation, or draft. The canonical handoff read is optional;
@@ -411,9 +462,20 @@ function ApplicationDetailContent() {
   // The ref prevents unrelated RPC result rerenders from repeating focus loads.
   const latestLoad = useRef(load);
   latestLoad.current = load;
+  const latestFocusedMessagesRefresh = useRef(refreshFocusedMessages);
+  latestFocusedMessagesRefresh.current = refreshFocusedMessages;
   useFocusEffect(useCallback(() => {
+    messageScreenFocusedRef.current = true;
     void latestLoad.current();
+    // The interval exists only while the application detail is focused.
+    const timer = setInterval(() => { void latestFocusedMessagesRefresh.current(); }, 60_000);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void latestFocusedMessagesRefresh.current();
+    });
     return () => {
+      messageScreenFocusedRef.current = false;
+      clearInterval(timer);
+      subscription.remove();
       generation.current += 1; // Never apply an in-flight read after blur.
       decisionGate.revoke(); // In-flight decision stays locked; old presentation is revoked.
       messageAnchorConsumedRef.current = false;
@@ -445,6 +507,7 @@ function ApplicationDetailContent() {
     const messageRequestGeneration = generation.current;
     let attemptedOwner: { ownerId: string; ownerSessionId: string } | null = null;
     let durableRequestStarted = false;
+    messageMutationRevisionRef.current += 1;
     messageSendPending.current = true;
     setBusy(true);
     setError(null);
@@ -514,6 +577,7 @@ function ApplicationDetailContent() {
     if (busy || messageSendPending.current) return;
     const token = decisionGate.begin();
     if (token === null) return;
+    messageMutationRevisionRef.current += 1;
     const actionGeneration = generation.current;
     const stillCurrent = () =>
       actionGeneration === generation.current && decisionGate.isCurrent(token);
