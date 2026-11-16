@@ -307,6 +307,12 @@ function ApplicationDetailContent() {
 
   const load = useCallback(async (_quiet = false) => {
     const current = ++generation.current;
+    // A canonical refresh or same-screen refocus must surface an invoked
+    // message whose old completion may have been discarded as stale.
+    if (uncertainMessageRef.current) {
+      setMessageSendNeedsReview(true);
+      setMessageSendError('送信が完了した可能性があります。重複を防ぐため、最新のメッセージを読み込んでからご確認ください。');
+    }
     const handoffRevision = ++documentReadRevision.current;
     messageAnchorConsumedRef.current = false;
     messageAnchorYRef.current = null;
@@ -406,12 +412,6 @@ function ApplicationDetailContent() {
   const latestLoad = useRef(load);
   latestLoad.current = load;
   useFocusEffect(useCallback(() => {
-    // An invoked RPC may complete after blur, even though this screen discards
-    // its now-stale response. Preserve the review fence on same-route refocus.
-    if (uncertainMessageRef.current) {
-      setMessageSendNeedsReview(true);
-      setMessageSendError('送信が完了した可能性があります。重複を防ぐため、最新のメッセージを読み込んでからご確認ください。');
-    }
     void latestLoad.current();
     return () => {
       generation.current += 1; // Never apply an in-flight read after blur.
