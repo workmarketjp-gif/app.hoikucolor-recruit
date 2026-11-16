@@ -499,7 +499,9 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
       )}
 
       {directApply && !closed && !unknown && !profile?.name?.trim() && !existingApplicationId ? (
-        <Pressable style={styles.secondary} onPress={() => router.push('/(tabs)/profile')}>
+        <Pressable style={styles.secondary} onPress={() => router.push({
+          pathname: '/(tabs)/profile', params: { return_job: job.id },
+        } as never)}>
           <Text style={styles.secondaryText}>プロフィールを登録する</Text>
         </Pressable>
       ) : null}

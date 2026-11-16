@@ -1,5 +1,5 @@
 import { useSession, useUser } from '@clerk/expo';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { DocumentVaultSection } from '../../components/DocumentVaultSection';
@@ -24,6 +24,8 @@ import { canConfirmCandidateSignOut } from '../../lib/candidateSignOutConfirmati
 import { canConfirmCandidateDeletion } from '../../lib/candidateDeletionConfirmation';
 import { presentProfilePrewriteFailure } from '../../lib/profileSaveFailurePresentation';
 import { pinCandidateProfilePrewrite, readCandidateProfileBounded, readCandidateProfileAfterWrite } from '../../lib/profileCanonicalRead';
+import { specifiedJobIdFromRoute } from '../../lib/jobSearchSpecifiedEntry';
+import { confirmedProfileReturnJobId } from '../../lib/profileReturnJob';
 
 const positionOptions = ['保育士', '保育教諭', '幼稚園教諭', '保育補助', '看護師', '栄養士', '調理師', '児童指導員', '子育て支援員'];
 const employmentOptions = ['正社員', '契約社員', 'パート・アルバイト', '派遣'];
@@ -154,6 +156,10 @@ export default function ProfileScreen() {
   const ownerKeyRef = useRef(ownerKey);
   ownerKeyRef.current = ownerKey;
   const router = useRouter();
+  const route = useLocalSearchParams<{ return_job?: string | string[] }>();
+  const returnJobId = specifiedJobIdFromRoute(route.return_job);
+  const currentReturnJobRef = useRef(returnJobId);
+  currentReturnJobRef.current = returnJobId;
   const { pinCandidateAction } = usePinnedCandidateAction();
   const appLock = useAppLock();
   const notifications = useNotifications();
@@ -287,6 +293,8 @@ export default function ProfileScreen() {
     const requestOwner = ownerKey;
     const requestGeneration = generation.current;
     const submittedRevision = draftRevision.current;
+    const returnJobAtSubmit = returnJobId;
+    let confirmedReturnJob: string | null = null;
     let writeAttempted = false;
     let localValidationMessage: string | null = null;
     savingRef.current = true;
@@ -354,6 +362,18 @@ export default function ProfileScreen() {
         hydrate(reread);
         setHasUnsavedChanges(false);
         setMessage('プロフィールを保存しました。');
+        // Web /profile?return_job=... returns to search only AFTER canonical
+        // save/readback and only for the same private candidate/session + route.
+        confirmedReturnJob = confirmedProfileReturnJobId({
+          requestedJobId: returnJobAtSubmit,
+          currentJobId: currentReturnJobRef.current,
+          saveOwnerKey: requestOwner,
+          currentOwnerKey: ownerKeyRef.current,
+          canonicalConfirmed: true,
+          unchangedDraft: submittedRevision === draftRevision.current,
+          sessionCurrent: pinned.isCurrent() && isLive(requestOwner, requestGeneration),
+          privateAvailable: logoutSafetyRef.current.privateAllowed,
+        });
       }
     } catch {
       if (isLive(requestOwner, requestGeneration)) {
@@ -377,6 +397,11 @@ export default function ProfileScreen() {
         // owner remains mounted. Do not strand its Save button in busy state.
         if (ownerKeyRef.current === requestOwner) setSaving(false);
       }
+    }
+    // Navigation is not part of the mutation. Its failure cannot turn an
+    // already confirmed profile write into an ambiguous/failed save.
+    if (confirmedReturnJob) {
+      router.replace({ pathname: '/(tabs)/jobs', params: { job_id: confirmedReturnJob } } as never);
     }
   };
 
@@ -453,6 +478,11 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+      {returnJobId ? (
+        <View style={styles.card}>
+          <Text style={styles.subtle}>応募に必要な項目を入力して保存すると、求人に戻ります。</Text>
+        </View>
+      ) : (
       <View style={styles.menuCard}>
         <Text style={styles.sectionTitle}>お仕事探しメニュー</Text>
         <Pressable style={styles.menuButton} accessibilityRole="button" onPress={() => router.push('/(tabs)/applications')}><Text style={styles.menuText}>応募管理</Text><Text style={styles.menuChevron}>›</Text></Pressable>
@@ -464,6 +494,7 @@ export default function ProfileScreen() {
         <Pressable style={styles.menuButton} onPress={() => router.push('/matches' as never)}><Text style={styles.menuText}>マッチ度を見る</Text><Text style={styles.menuChevron}>›</Text></Pressable>
         <Pressable style={styles.menuButton} onPress={() => router.push('/compare' as never)}><Text style={styles.menuText}>園を比較する</Text><Text style={styles.menuChevron}>›</Text></Pressable>
       </View>
+      )}
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>基本プロフィール</Text>
