@@ -20,6 +20,7 @@ import { acceptCandidateOfferWithFreshReadback } from '../../lib/applicationOffe
 import { applicationSelectionTimeline, webNextScheduledInterview } from '../../lib/applicationSelectionTimeline';
 import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
 import { canSubmitCandidateMessage, classifyUncertainCandidateMessageReview, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
+import { captureCandidateMessageInvocationReview, candidateMessageSendNeedsReview } from '../../lib/candidateMessageInvocationReview';
 import { markVisibleApplicationMessagesRead } from '../../lib/attentionApi';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { visibleCandidateFacilityMessageIdWhenKeyboardHidden, type CandidateMessageReadViewport } from '../../lib/candidateMessageReadVisibility';
@@ -405,6 +406,12 @@ function ApplicationDetailContent() {
   const latestLoad = useRef(load);
   latestLoad.current = load;
   useFocusEffect(useCallback(() => {
+    // An invoked RPC may complete after blur, even though this screen discards
+    // its now-stale response. Preserve the review fence on same-route refocus.
+    if (uncertainMessageRef.current) {
+      setMessageSendNeedsReview(true);
+      setMessageSendError('送信が完了した可能性があります。重複を防ぐため、最新のメッセージを読み込んでからご確認ください。');
+    }
     void latestLoad.current();
     return () => {
       generation.current += 1; // Never apply an in-flight read after blur.
@@ -431,7 +438,7 @@ function ApplicationDetailContent() {
     // Require a deliberate canonical re-read before a possible duplicate tap.
     if (messagesLoading || messagesReadError || !canSubmitCandidateMessage({
       draft: messageDraft, busy: busy || decisionGate.isBusy(), pending: messageSendPending.current,
-      needsReview: messageSendNeedsReview,
+      needsReview: candidateMessageSendNeedsReview(messageSendNeedsReview, uncertainMessageRef.current),
     })) return;
     const submittedDraft = messageDraft;
     const knownMessageIds = messages.map((message) => message.id);
@@ -459,7 +466,17 @@ function ApplicationDetailContent() {
         applicationId,
         body: submittedDraft,
         // Only a post-SecureStore, session-fenced RPC attempt is ambiguous.
-        onInvokeStarted: () => { durableRequestStarted = true; },
+        onInvokeStarted: () => {
+          durableRequestStarted = true;
+          // Capture before awaiting the RPC. Blur/session recovery can make its
+          // successful response stale; retry must remain locked until readback.
+          uncertainMessageRef.current = captureCandidateMessageInvocationReview({
+            submittedDraft, knownMessageIds,
+            ownerId: pinned.ownerId, ownerSessionId: pinned.ownerSessionId,
+            applicationId,
+          });
+          setMessageSendNeedsReview(true);
+        },
         // A pinned token by itself is insufficient: navigation/focus changes
         // must also fence the write after asynchronous SecureStore preparation.
         isCurrent: () => pinned.isCurrent() && messageRequestGeneration === generation.current,
@@ -1005,7 +1022,7 @@ function ApplicationDetailContent() {
         <Pressable style={styles.primaryButton}
           disabled={messagesLoading || messagesReadError || !canSubmitCandidateMessage({
             draft: messageDraft, busy: busy || decisionGate.isBusy(), pending: messageSendPending.current,
-            needsReview: messageSendNeedsReview,
+            needsReview: candidateMessageSendNeedsReview(messageSendNeedsReview, uncertainMessageRef.current),
           })}
           onPress={() => void sendMessage()}>
           <Text style={styles.primaryText}>{busy ? (messageSendNeedsReview ? '確認中…' : '送信中…') : '送信する'}</Text>
