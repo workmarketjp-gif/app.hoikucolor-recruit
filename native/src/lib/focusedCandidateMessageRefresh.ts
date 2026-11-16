@@ -8,6 +8,7 @@ export type FocusedCandidateMessageRefreshState = Readonly<{
   focused: boolean;
   foreground: boolean;
   initialLoadComplete: boolean;
+  mutationRevisionCurrent: boolean;
   mutationPending: boolean;
   sendNeedsReview: boolean;
 }>;
@@ -23,6 +24,6 @@ export function canRefreshFocusedCandidateMessages(
 export function canApplyFocusedCandidateMessageRefresh(
   state: FocusedCandidateMessageRefreshState,
 ): boolean {
-  return state.focused && state.foreground && state.initialLoadComplete &&
+  return state.focused && state.foreground && state.initialLoadComplete && state.mutationRevisionCurrent &&
     !state.mutationPending && !state.sendNeedsReview;
 }
