@@ -50,7 +50,8 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-foreground.png",
         "backgroundColor": "#FFF5F7"
-      }
+      },
+      "softwareKeyboardLayoutMode": "resize"
     },
     "extra": {
       "eas": {

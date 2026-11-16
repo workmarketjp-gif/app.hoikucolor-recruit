@@ -693,6 +693,10 @@ function ApplicationDetailContent() {
     <ScrollView
       ref={messageScrollRef}
       contentContainerStyle={styles.page}
+      // iOS defaults to no keyboard inset: keep the editable message composer
+      // scrollable above the keyboard without moving the read-visibility geometry.
+      automaticallyAdjustKeyboardInsets
+      keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
       scrollEventThrottle={100}
       onScroll={(event) => {
