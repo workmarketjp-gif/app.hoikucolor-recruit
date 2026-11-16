@@ -18,6 +18,7 @@ import {
 import { getApplicationDocumentHandoffState, type ApplicationDocumentHandoffState } from '../lib/applicationJourneyApi';
 import { documentTypeLabel } from '../lib/documentTypes';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
+import { presentApplicationDocumentError } from '../lib/applicationDocumentErrorPresentation';
 import { readApplicationDocumentSnapshot } from '../lib/applicationDocumentSnapshotRead';
 import { hasCanonicalApplicationAttachment, projectApplicationDocuments } from '../lib/applicationDocumentsPresentation';
 
@@ -119,7 +120,7 @@ export function ApplicationDocumentsSection({
       setSnapshot({ ownerKey: requestedViewKey, value: { saved, submitted, expectations } });
     } catch (caught) {
       if (alive.current && version === requestVersion.current) {
-        setError(String((caught as { message?: unknown })?.message ?? '応募書類を読み込めませんでした。'));
+        setError(presentApplicationDocumentError('refresh', caught));
       }
     } finally {
       if (alive.current && version === requestVersion.current) setLoading(false);
@@ -243,7 +244,7 @@ export function ApplicationDocumentsSection({
       await Linking.openURL(url); // Existing vault uses the OS handler; URL is HTTPS-only.
     } catch (caught) {
       if (alive.current && version === requestVersion.current) {
-        setError(String((caught as { message?: unknown })?.message ?? '提出済み書類を開けませんでした。'));
+        setError(presentApplicationDocumentError('open', caught));
       }
     } finally {
       // Never let a stale operation release the newer route's mutation lock.

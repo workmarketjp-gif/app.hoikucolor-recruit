@@ -343,7 +343,7 @@ const styles = StyleSheet.create({
   optionText: { fontSize: 15, lineHeight: 22, flexShrink: 1 },
   optionSub: { fontSize: 13, color: '#606873' },
   empty: { fontWeight: '800' },
-  primary: { minHeight: 52, borderRadius: 13, backgroundColor: '#191c20', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
+  primary: { minHeight: 52, borderRadius: 13, backgroundColor: '#FB2F52', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
   primaryText: { color: '#fff', fontWeight: '900' },
   secondary: { minHeight: 48, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 12, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
   secondaryText: { fontWeight: '800' },
