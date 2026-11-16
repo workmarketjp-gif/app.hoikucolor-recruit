@@ -1,5 +1,5 @@
 import { useSession } from '@clerk/expo';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
@@ -18,6 +18,8 @@ import {
 } from '../../lib/jobseekerCoreApi';
 import { EMPTY_JOB_SEARCH_FILTERS, createJobSearchQuery, hasActiveJobFilters, type JobSearchFilterCriteria } from '../../lib/jobSearchFilterCriteria';
 import { updateSavedJobAndConfirm } from '../../lib/savedJobsReadback';
+import { getCandidateJob } from '../../lib/applicationJourneyApi';
+import { presentSpecifiedJobPage, specifiedJobIdFromRoute, specifiedJobIdToRead } from '../../lib/jobSearchSpecifiedEntry';
 import { shouldRefreshJobsOnReturn, type JobSearchFocusState } from '../../lib/jobSearchFocus';
 import { jobSearchFailureChannel } from '../../lib/jobSearchFailureChannel';
 import { retainedJobSearchFacets } from '../../lib/jobSearchFacetRetention';
@@ -91,6 +93,8 @@ function JobCard({
 
 export default function JobsScreen() {
   const router = useRouter();
+  const routeParams = useLocalSearchParams<{ job_id?: string | string[] }>();
+  const routeSpecifiedJobId = specifiedJobIdFromRoute(routeParams.job_id);
   const { session } = useSession();
   const privacy = usePrivateDataQuarantine();
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
@@ -115,6 +119,8 @@ export default function JobsScreen() {
     generation.current += 1;
     setOwnedJobs(null);
     setOwnedSavedIds(null);
+    setOwnedSpecifiedJobId(null);
+    setOwnedSpecifiedJobNotice(null);
     setOwnedError(null);
     setOwnedPageError(null);
     setCursor(null);
@@ -139,11 +145,15 @@ export default function JobsScreen() {
   const [ownedJobs, setOwnedJobs] = useState<CandidateOwnedView<JobseekerJob[]> | null>(null);
   const [ownedSavedIds, setOwnedSavedIds] = useState<CandidateOwnedView<string[]> | null>(null);
   const savedIds = readCandidateOwnedView(ownedSavedIds, ownerKey, privateAllowed);
+  const [ownedSpecifiedJobId, setOwnedSpecifiedJobId] = useState<CandidateOwnedView<string | null> | null>(null);
+  const [ownedSpecifiedJobNotice, setOwnedSpecifiedJobNotice] = useState<CandidateOwnedView<string | null> | null>(null);
+  const specifiedJobId = readCandidateOwnedView(ownedSpecifiedJobId, ownerKey, privateAllowed);
+  const specifiedJobNotice = readCandidateOwnedView(ownedSpecifiedJobNotice, ownerKey, privateAllowed);
   const visibleJobs = readCandidateOwnedView(ownedJobs, ownerKey, privateAllowed);
   const jobs = visibleJobs ?? [];
   // The Web rank is the current visible organic position, never a fabricated
   // matching score or inferred verified status.
-  const rankLabels = organicJobRankLabels(jobs.map((job) => job.id));
+  const rankLabels = organicJobRankLabels(jobs.map((job) => job.id), specifiedJobId);
   const [cursor, setCursor] = useState<JobSearchCursor | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
@@ -202,12 +212,20 @@ export default function JobsScreen() {
     if (reset) {
       setOwnedJobs(null);
       setOwnedSavedIds(null);
+      setOwnedSpecifiedJobId(null);
+      setOwnedSpecifiedJobNotice(null);
       setCursor(null);
       setHasMore(false);
       setTotalCount(0);
     }
     try {
-      const { pinned, value: [page, canonicalSaved] } = await readCandidateJobDiscoveryBounded({
+      const targetJobId = specifiedJobIdToRead({
+        jobId: routeSpecifiedJobId,
+        reset,
+        keyword: requestedQuery,
+        hasFilters: hasActiveJobFilters(requestedQuery, requestedFilters),
+      });
+      const { pinned, value: [page, canonicalSaved, canonicalSpecifiedJob] } = await readCandidateJobDiscoveryBounded({
         pin: pinCandidateAction,
         isCurrent: () => currentGeneration === generation.current && ownerKey === latestOwnerRef.current &&
           latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible,
@@ -223,19 +241,27 @@ export default function JobsScreen() {
               cursor: reset ? null : cursor,
             }),
             reset ? listSavedJobIds(pinned.client) : Promise.resolve(savedIds ?? []),
+            targetJobId ? getCandidateJob(pinned.client, targetJobId) : Promise.resolve(null),
           ]);
         },
       });
       if (!pinned.isCurrent() || currentGeneration !== generation.current) return;
+      const presented = reset ? presentSpecifiedJobPage(page.jobs, targetJobId, canonicalSpecifiedJob)
+        : { jobs: page.jobs, specifiedJobId: null, notice: null };
       setOwnedJobs((previous) => {
         const ownedKey = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
         if (!ownedKey || ownedKey !== ownerKey) return previous;
         const previousJobs = readCandidateOwnedView(previous, ownedKey, true);
         const byId = new Map((reset ? [] : (previousJobs ?? [])).map((job) => [job.id, job]));
-        page.jobs.forEach((job) => byId.set(job.id, job));
+        presented.jobs.forEach((job) => byId.set(job.id, job));
         return { ownerKey: ownedKey, value: [...byId.values()] };
       });
-      if (reset) setOwnedSavedIds({ ownerKey: candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)!, value: canonicalSaved });
+      if (reset) {
+        const pinnedOwnerKey = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)!;
+        setOwnedSavedIds({ ownerKey: pinnedOwnerKey, value: canonicalSaved });
+        setOwnedSpecifiedJobId({ ownerKey: pinnedOwnerKey, value: presented.specifiedJobId });
+        setOwnedSpecifiedJobNotice({ ownerKey: pinnedOwnerKey, value: presented.notice });
+      }
       setCursor(page.nextCursor);
       setHasMore(page.hasMore);
       setTotalCount(page.totalCount);
@@ -255,7 +281,7 @@ export default function JobsScreen() {
       if (inFlightSearchGeneration.current === currentGeneration) inFlightSearchGeneration.current = null;
       if (currentGeneration === generation.current) setLoading(false);
     }
-  }, [cursor, ownerKey, pinCandidateAction, query, filters, savedIds, visibleJobs]);
+  }, [cursor, ownerKey, pinCandidateAction, query, filters, savedIds, visibleJobs, routeSpecifiedJobId]);
 
   // The screen remains mounted under other tabs and the job detail stack.
   // Keep the latest filters/query when navigating back, but do not present
@@ -284,6 +310,8 @@ export default function JobsScreen() {
       generation.current += 1;
       setOwnedJobs(null);
       setOwnedSavedIds(null);
+      setOwnedSpecifiedJobId(null);
+      setOwnedSpecifiedJobNotice(null);
       setOwnedError(null);
       setOwnedPageError(null);
       setCursor(null);
@@ -311,6 +339,8 @@ export default function JobsScreen() {
     setPicker(null);
     setOwnedJobs(null);
     setOwnedSavedIds(null);
+    setOwnedSpecifiedJobId(null);
+    setOwnedSpecifiedJobNotice(null);
     setOwnedError(null);
     setOwnedPageError(null);
     setCursor(null);
@@ -328,7 +358,7 @@ export default function JobsScreen() {
       facetGeneration.current += 1;
       mutationSequence.current += 1;
     };
-  }, [ownerKey, privacy.shieldVisible]);
+  }, [ownerKey, privacy.shieldVisible, routeSpecifiedJobId]);
 
   const selectFilter = (patch: Partial<JobSearchFilterCriteria>) => {
     if (!ownerKey || !privateAllowed || privacy.shieldVisible) return;
@@ -458,6 +488,7 @@ export default function JobsScreen() {
         )}
       </View>
 
+      {specifiedJobNotice ? <Text testID="job-specified-unavailable" accessibilityLiveRegion="polite" style={styles.subtle}>{specifiedJobNotice}</Text> : null}
       <View style={styles.rankingBox}>
         <Pressable accessibilityRole="button" accessibilityLabel="求人の表示順について"
           accessibilityState={{ expanded: rankingOpen }} style={styles.rankingToggle}
