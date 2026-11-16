@@ -6,7 +6,7 @@ import {
 } from '../src/lib/focusedCandidateMessageRefresh.ts';
 
 const active = {
-  focused: true, foreground: true, initialLoadComplete: true,
+  focused: true, foreground: true, initialLoadComplete: true, mutationRevisionCurrent: true,
   mutationPending: false, sendNeedsReview: false,
 };
 
@@ -47,4 +47,8 @@ test('a started polling read is discarded after route blur or app background', (
 
 test('a settled read may update canonical messages only in unchanged active state', () => {
   assert.equal(canApplyFocusedCandidateMessageRefresh(active), true);
+});
+
+test('poll started before a write cannot overwrite confirmed messages after write settles', () => {
+  assert.equal(canApplyFocusedCandidateMessageRefresh({ ...active, mutationRevisionCurrent: false }), false);
 });
