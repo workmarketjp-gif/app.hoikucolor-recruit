@@ -21,7 +21,7 @@ import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { presentApplicationDocumentError } from '../lib/applicationDocumentErrorPresentation';
 import { readApplicationDocumentSnapshot } from '../lib/applicationDocumentSnapshotRead';
 import { hasCanonicalApplicationAttachment, projectApplicationDocuments } from '../lib/applicationDocumentsPresentation';
-import { canStartFocusedApplicationDocumentsRefresh, canApplyFocusedApplicationDocumentsRefresh, shouldRevokeDocumentReadOnBlur } from '../lib/focusedApplicationDocumentsRefresh';
+import { canStartFocusedApplicationDocumentsRefresh, canApplyFocusedApplicationDocumentsRefresh, canPublishApplicationDocumentHandoff, canOpenAttachedApplicationDocumentUrl, shouldRevokeDocumentReadOnBlur } from '../lib/focusedApplicationDocumentsRefresh';
 
 type DocumentSnapshot = {
   saved: JobseekerDocument[];
@@ -55,6 +55,7 @@ export function ApplicationDocumentsSection({
   const mutationPending = useRef(false);
   const readPending = useRef(false);
   const focusedRef = useRef(false);
+  const presentationEpoch = useRef(0);
   const freshlyVerifiedOwner = useRef<string | null>(null);
   const contextLease = useRef({ viewKey, shieldVisible: privacy.shieldVisible });
   if (!canReadPrivate) freshlyVerifiedOwner.current = null;
@@ -159,6 +160,7 @@ export function ApplicationDocumentsSection({
     focusedRef.current = true;
     return () => {
       focusedRef.current = false;
+      ++presentationEpoch.current;
       // A started document submission must keep its duplicate-write lease
       // until settlement; only ordinary reads can be invalidated on blur.
       if (shouldRevokeDocumentReadOnBlur(mutationPending.current)) ++requestVersion.current;
@@ -175,6 +177,7 @@ export function ApplicationDocumentsSection({
     if (!open) return;
     const timer = setInterval(() => quietRefreshRef.current(), 60_000);
     const subscription = AppState.addEventListener('change', state => {
+      if (state !== 'active') ++presentationEpoch.current;
       if (state === 'active') quietRefreshRef.current();
     });
     return () => {
@@ -208,6 +211,7 @@ export function ApplicationDocumentsSection({
     const uniqueTargets = [...new Map(targets.map((document) => [document.id, document])).values()];
     const requestedOwnerKey = ownerKey;
     const requestedViewKey = viewKey;
+    const requestedPresentationEpoch = presentationEpoch.current;
     mutationPending.current = true;
     const version = ++requestVersion.current;
     setPending(uniqueTargets.length > 1 ? 'batch' : uniqueTargets[0].id);
@@ -253,18 +257,24 @@ export function ApplicationDocumentsSection({
       } else {
         setError('応募書類' + uniqueTargets.length + '件のうち' + (uniqueTargets.length - confirmed.length) + '件の提出を確認できませんでした。最新の提出状況を確認してください。');
       }
+      const canPublishHandoff = () => canPublishApplicationDocumentHandoff({
+        open,
+        focused: focusedRef.current,
+        foreground: AppState.currentState === 'active',
+        privateAccess: privacy.canAccessPrivateData() && !privacy.shieldVisible && !contextLease.current.shieldVisible,
+        ownerCurrent: contextLease.current.viewKey === requestedViewKey && viewKey === requestedViewKey,
+        mutationPending: mutationPending.current,
+        presentationUnchanged: presentationEpoch.current === requestedPresentationEpoch,
+      }, alive.current && pinned.isCurrent() && version === requestVersion.current);
+      if (!canPublishHandoff()) return;
       try {
         const handoff = await boundedPrivateRead(() => {
-          if (!alive.current || !pinned.isCurrent() || version !== requestVersion.current) {
-            throw new Error('閲覧状態が変わったため確認を中止しました。');
-          }
+          if (!canPublishHandoff()) throw new Error('閲覧状態が変わったため確認を中止しました。');
           return getApplicationDocumentHandoffState(pinned.client, applicationId);
         });
-        if (alive.current && pinned.isCurrent() && privacy.canAccessPrivateData() &&
-            version === requestVersion.current) onHandoffReadback(handoff);
+        if (canPublishHandoff()) onHandoffReadback(handoff);
       } catch {
-        if (alive.current && pinned.isCurrent() && privacy.canAccessPrivateData() &&
-            version === requestVersion.current) onHandoffReadback(null);
+        if (canPublishHandoff()) onHandoffReadback(null);
       }
     } catch {
       if (alive.current && version === requestVersion.current) {
@@ -286,22 +296,31 @@ export function ApplicationDocumentsSection({
     mutationPending.current = true;
     const version = ++requestVersion.current;
     const requestedOwnerKey = ownerKey;
+    const requestedViewKey = viewKey;
+    const requestedPresentationEpoch = presentationEpoch.current;
+    const canUseSignedUrl = () => canOpenAttachedApplicationDocumentUrl({
+      open,
+      focused: focusedRef.current,
+      foreground: AppState.currentState === 'active',
+      privateAccess: privacy.canAccessPrivateData() && !privacy.shieldVisible && !contextLease.current.shieldVisible,
+      ownerCurrent: contextLease.current.viewKey === requestedViewKey && viewKey === requestedViewKey,
+      mutationPending: mutationPending.current,
+      presentationUnchanged: presentationEpoch.current === requestedPresentationEpoch,
+    }, alive.current && version === requestVersion.current);
     setPending('open-' + document.id);
     setError(null);
     try {
       const pinned = await pinCandidateAction();
       if (!pinned || !pinned.isCurrent()) throw new Error('安全なログイン状態を確認できませんでした。');
-      if (candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey ||
-          !alive.current || !privacy.canAccessPrivateData() ||
-          version !== requestVersion.current) {
+      if (candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
+      if (!canUseSignedUrl()) return;
       const url = await createAttachedApplicationDocumentSignedUrl(pinned.client, document);
-      if (!alive.current || !focusedRef.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
-          version !== requestVersion.current) return;
+      if (!canUseSignedUrl() || !pinned.isCurrent()) return;
       await Linking.openURL(url); // Existing vault uses the OS handler; URL is HTTPS-only.
     } catch (caught) {
-      if (alive.current && version === requestVersion.current) {
+      if (canUseSignedUrl()) {
         setError(presentApplicationDocumentError('open', caught));
       }
     } finally {

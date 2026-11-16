@@ -21,6 +21,7 @@ import { getJobDocumentRequirements } from '../lib/jobDocumentRequirementApi';
 import { DocumentVaultSection } from './DocumentVaultSection';
 import { applyVaultReadbackState, canUseApplyDocumentState, isApplySubmissionUnavailable, reconcileApplyVaultSelection, type ApplyVaultChange, type ApplyVaultReadbackState } from '../lib/applyVaultSelection';
 import { recordApplyVaultBusyTransition, reviewApplyDocumentsBeforeSubmit } from '../lib/applyDocumentSubmissionPreflight';
+import { boundedPrivateRead } from '../lib/privateReadDeadline';
 
 type Props = {
   jobId: string;
@@ -87,14 +88,16 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
     setSubmissionNotice(null);
     if (!requestedOwnerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) return;
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
+      const pinned = await boundedPrivateRead(() => pinCandidateAction());
+      if (!pinned || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
+          ownerKeyRef.current !== requestedOwnerKey ||
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
-      const [nextRequirements, nextDocuments] = await Promise.all([
+      const [nextRequirements, nextDocuments] = await boundedPrivateRead(() => Promise.all([
         getJobDocumentRequirements(pinned.client, jobId),
         listJobseekerDocuments(pinned.client),
-      ]);
+      ]));
       if (!pinned.isCurrent() || current !== generation.current ||
           ownerKeyRef.current !== requestedOwnerKey || !privacy.canAccessPrivateData()) return;
       assertCandidateDocumentListOwner(nextDocuments, pinned.ownerId);
@@ -188,7 +191,7 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
     const requestedOwnerKey = ownerKey;
     const expectedSelectionRevision = selectionRevision.current;
     try {
-      const pinned = await pinCandidateAction();
+      const pinned = await boundedPrivateRead(() => pinCandidateAction());
       if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
         throw new Error('応募書類のログイン状態を確認できませんでした。');
       }
@@ -205,10 +208,10 @@ export function ApplyDocumentsPanel({ jobId, submitting, onCancel, onSubmit }: P
       const outcome = await reviewApplyDocumentsBeforeSubmit(
         requirements, rows, selection,
         async () => {
-          const [freshRequirements, freshDocuments] = await Promise.all([
+          const [freshRequirements, freshDocuments] = await boundedPrivateRead(() => Promise.all([
             getJobDocumentRequirements(pinned.client, jobId),
             listJobseekerDocuments(pinned.client),
-          ]);
+          ]));
           assertCandidateDocumentListOwner(freshDocuments, pinned.ownerId);
           return { requirements: freshRequirements, documents: freshDocuments };
         },

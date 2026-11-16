@@ -31,3 +31,21 @@ export function canApplyFocusedApplicationDocumentsRefresh(
 export function shouldRevokeDocumentReadOnBlur(mutationPending: boolean): boolean {
   return !mutationPending;
 }
+
+/** Publish private attachment handoff only to the still-focused owning route. */
+export function canPublishApplicationDocumentHandoff(
+  state: FocusedApplicationDocumentsRefreshState & Readonly<{ presentationUnchanged: boolean }>,
+  requestCurrent: boolean,
+): boolean {
+  return requestCurrent && state.presentationUnchanged &&
+    state.open && state.focused && state.foreground &&
+    state.privateAccess && state.ownerCurrent && state.mutationPending;
+}
+
+/** A private signed URL may reach the OS only during a current presentation lease. */
+export function canOpenAttachedApplicationDocumentUrl(
+  state: FocusedApplicationDocumentsRefreshState & Readonly<{ presentationUnchanged: boolean }>,
+  requestCurrent: boolean,
+): boolean {
+  return canPublishApplicationDocumentHandoff(state, requestCurrent);
+}
