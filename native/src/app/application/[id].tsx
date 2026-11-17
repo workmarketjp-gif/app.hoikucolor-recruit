@@ -46,6 +46,7 @@ import {
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { ApplicationDocumentsSection } from '../../components/ApplicationDocumentsSection';
 import { applicationMessageWebMeta } from '../../lib/applicationMessageWebMeta';
+import { awaitApplicationDocumentAttachmentAck } from '../../lib/awaitApplicationDocumentAttachmentAck';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -266,6 +267,7 @@ function ApplicationDetailContent() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [handoffError, setHandoffError] = useState<string | null>(null);
+  const [handoffRepairNeedsReview, setHandoffRepairNeedsReview] = useState(false);
   const generation = useRef(0);
   const documentReadRevision = useRef(0);
   const documentStatusRetryPending = useRef(false);
@@ -448,6 +450,9 @@ function ApplicationDetailContent() {
           revision === documentReadRevision.current,
         onResult: (result) => {
           setDocumentState(result.status === 'fulfilled' ? result.value : null);
+          // Explicit canonical reread is required before another repair after
+          // an uncertain write; a failed read never unlocks a possible duplicate.
+          if (result.status === 'fulfilled') setHandoffRepairNeedsReview(false);
           setHandoffError(result.status === 'rejected'
             ? '提出書類の確認に失敗しました。再度お試しください。' : null);
           setDocumentLoading(false);
@@ -702,18 +707,41 @@ function ApplicationDetailContent() {
   };
 
   const repairDocuments = async () => {
+    // A timed-out Storage/RPC write may still commit. Do not repeat it until
+    // the candidate explicitly confirms the current canonical handoff state.
+    if (handoffRepairNeedsReview) return;
     await runDecision(async (stillCurrent) => {
       setHandoffError(null);
       const pinned = await pinForApplicationMutation(pinCandidateAction, stillCurrent);
       if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
       if (!pinned.isCurrent() || !stillCurrent()) return;
-      const result = await repairApplicationDocumentHandoff(pinned.client, applicationId);
-      if (!pinned.isCurrent() || !stillCurrent()) return;
-      documentReadRevision.current += 1;
-      setDocumentState(result.state);
-      setDocumentLoading(false);
-      if (result.failed || result.state.missingSourceDocumentIds.length) {
-        setHandoffError('一部の提出書類を復旧できませんでした。書類一覧を確認して再度お試しください。');
+      let repairStarted = false;
+      try {
+        const result = await awaitApplicationDocumentAttachmentAck(
+          (canContinue) => {
+            if (!canContinue()) throw new Error('応募書類の復旧画面が変更されました。');
+            repairStarted = true;
+            return repairApplicationDocumentHandoff(pinned.client, applicationId, { canContinue });
+          },
+          () => pinned.isCurrent() && stillCurrent(),
+        );
+        if (!pinned.isCurrent() || !stillCurrent()) return;
+        documentReadRevision.current += 1;
+        setDocumentState(result.state);
+        setDocumentLoading(false);
+        setHandoffRepairNeedsReview(false);
+        if (result.failed || result.state.missingSourceDocumentIds.length) {
+          setHandoffError('一部の提出書類を復旧できませんでした。書類一覧を確認して再度お試しください。');
+        }
+      } catch (cause) {
+        if (repairStarted && pinned.isCurrent() && stillCurrent()) {
+          // Even a failed/missing acknowledgement cannot prove the write was
+          // rolled back. The only next action is a user-initiated canonical read.
+          setHandoffRepairNeedsReview(true);
+          setHandoffError('提出書類の復旧結果を確認できませんでした。重複を防ぐため提出状況を再読み込みしてください。');
+          return;
+        }
+        throw cause;
       }
     }, setHandoffError);
   };
@@ -915,11 +943,13 @@ function ApplicationDetailContent() {
           <Text style={styles.subtle}>提出書類の状態を確認しています…</Text>
         </View>
       ) : null}
-      {!documentLoading && (warnedDocumentHandoff || documentReadState !== 'confirmed') ? (
+      {!documentLoading && (handoffRepairNeedsReview || warnedDocumentHandoff || documentReadState !== 'confirmed') ? (
         <View style={styles.warningCard}>
           <Text style={styles.sectionTitle}>提出書類を確認してください</Text>
           <Text style={styles.subtle}>
-            {documentReadState === 'unverified'
+            {handoffRepairNeedsReview
+              ? '提出書類の復旧が完了したか確認できませんでした。すでに反映された可能性があります。最新の提出状況を確認するまで再提出しないでください。'
+              : documentReadState === 'unverified'
               ? '提出書類の状態を取得できませんでした。応募は完了していますが、添付状況は未確認です。通信状態を確認して再読み込みしてください。'
               : documentReadState === 'missing'
                 ? `応募は完了しています。提出書類の添付を確認できないものが${missingDocuments}件あります。`
@@ -928,10 +958,10 @@ function ApplicationDetailContent() {
           <Pressable
             style={styles.secondaryButton}
             disabled={busy || documentStatusRetryPending.current}
-            onPress={() => void (documentReadState === 'missing' ? repairDocuments() : retryDocumentStatus())}
+            onPress={() => void (handoffRepairNeedsReview || documentReadState !== 'missing' ? retryDocumentStatus() : repairDocuments())}
           >
             <Text style={styles.secondaryText}>
-              {documentReadState === 'missing' ? '提出書類を再確認・復旧' : '提出状況を再読み込み'}
+              {documentReadState === 'missing' && !handoffRepairNeedsReview ? '提出書類を再確認・復旧' : '提出状況を再読み込み'}
             </Text>
           </Pressable>
           {handoffError ? <Text style={styles.error}>{handoffError}</Text> : null}
