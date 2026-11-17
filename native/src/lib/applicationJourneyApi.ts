@@ -24,6 +24,7 @@ import { requestCandidateVisitWithLease } from './visitRequestSessionLease';
 import { cancelCandidateVisitWithLease } from './visitCancellationReadback';
 import { sendCandidateMessageWithSessionLease } from './messageSendSessionLease';
 import { respondCandidateInterviewWithLease } from './interviewResponseSessionLease';
+import { repairApplicationDocumentsSerial } from './repairApplicationDocumentsSerial';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -241,20 +242,33 @@ export async function getApplicationDocumentHandoffState(
 export async function repairApplicationDocumentHandoff(
   client: SupabaseClient,
   applicationId: string,
+  options: { canContinue?: () => boolean } = {},
 ): Promise<{ state: ApplicationDocumentHandoffState; failed: number }> {
+  // The presentation deadline cannot cancel an already-started Storage/RPC
+  // operation. Check the same lease before and after each await, and repair
+  // sequentially: a lost/unknown result must not start more attachments.
+  const canContinue = options.canContinue ?? (() => true);
+  const assertContinue = () => {
+    if (!canContinue()) throw new Error('応募書類の復旧結果を確認できませんでした。提出状況を再確認してください。');
+  };
+  assertContinue();
   const before = await getApplicationDocumentHandoffState(client, applicationId);
+  assertContinue();
   if (!before.missingSourceDocumentIds.length) return { state: before, failed: 0 };
   const documents = await listJobseekerDocuments(client);
-  const byId = new Map(documents.map((document) => [document.id, document]));
-  const results = await Promise.allSettled(
-    before.missingSourceDocumentIds.map(async (documentId) => {
-      const document = byId.get(documentId);
-      if (!document) throw new Error('元の応募書類が見つかりません。');
-      return attachJobseekerDocumentToApplication(client, document, applicationId);
-    }),
-  );
+  assertContinue();
+  const { failed } = await repairApplicationDocumentsSerial({
+    missingSourceIds: before.missingSourceDocumentIds,
+    documents,
+    getDocumentId: (document) => document.id,
+    canContinue,
+    attach: (document, continueLease) =>
+      attachJobseekerDocumentToApplication(client, document, applicationId, { canContinue: continueLease }),
+  });
+  assertContinue();
   const state = await getApplicationDocumentHandoffState(client, applicationId);
-  return { state, failed: results.filter((result) => result.status === 'rejected').length };
+  assertContinue();
+  return { state, failed };
 }
 
 export async function sendApplicationMessageDurable(params: {
