@@ -30,17 +30,32 @@ export function mayRecoverUnverifiedScoutInbox(state: ScoutVisibleRefreshState):
 }
 
 const initialPartialScoutFailureSuffix = 'を確認できませんでした。確認できた項目のみ表示しています。再読み込みしてください。';
-/** Amend only the original partial-load notice after canonical inbox recovery. */
+const retryPartialScoutFailureSuffix = 'を確認できませんでした。確認済みの入力内容は保持しています。';
+
+/**
+ * A quiet canonical inbox recovery may follow either the initial independent
+ * load or the explicit missing-section retry. Only reconcile an exact
+ * known partial-read notice: never alter unrelated write/privacy errors.
+ */
 export function scoutNoticeAfterInboxRecovery(
   previous: string | null,
   privacyVerified: boolean,
   preferencesVerified: boolean,
 ): string | null {
-  if (!previous || !previous.includes('届いたスカウト') ||
-      !previous.endsWith(initialPartialScoutFailureSuffix)) return previous;
+  if (!previous) return previous;
+  const recognizedPrefixes = new Set([
+    '届いたスカウト',
+    '届いたスカウト・公開範囲',
+    '届いたスカウト・希望条件',
+    '届いたスカウト・公開範囲・希望条件',
+  ]);
+  const suffix = [initialPartialScoutFailureSuffix, retryPartialScoutFailureSuffix]
+    .find((candidate) => previous.endsWith(candidate) &&
+      recognizedPrefixes.has(previous.slice(0, -candidate.length)));
+  if (!suffix) return previous;
   const stillMissing = [
     !privacyVerified ? '公開範囲' : null,
     !preferencesVerified ? '希望条件' : null,
   ].filter(Boolean);
-  return stillMissing.length ? `${stillMissing.join('・')}${initialPartialScoutFailureSuffix}` : null;
+  return stillMissing.length ? `${stillMissing.join('・')}${suffix}` : null;
 }
