@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { getJobseekerProfile, listSavedJobIds, saveJob, unsaveJob, type JobseekerJob, type JobseekerProfile } from '../../lib/jobseekerCoreApi';
-import { updateSavedJobAndConfirm } from '../../lib/savedJobsReadback';
+import { confirmSavedJobMutationWithinDeadline } from '../../lib/savedJobMutationDeadline';
 import { recoverAmbiguousApplication } from '../../lib/ambiguousApplicationRecovery';
 import { getCandidateJob, listApplications, submitApplication } from '../../lib/applicationJourneyApi';
 import { isDefinitiveExplicitDocumentRpcUnavailable } from '../../lib/explicitDocumentSubmissionSafety';
@@ -223,17 +223,20 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
     setFavoriteBusy(true);
     setFavoriteError(null);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() ||
-          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey ||
-          !focusActive.current || requestGeneration !== generation.current) return;
-      const confirmedIds = await updateSavedJobAndConfirm(
+      // Token acquisition and the explicit, single-send mutation/readback
+      // both have a presentation deadline. Timeout is NOT proof of rollback.
+      const canContinue = () => focusActive.current && requestGeneration === generation.current;
+      const pinned = await pinCandidateForRead(pinCandidateAction, canContinue);
+      if (candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey ||
+          !canContinue()) return;
+      const confirmedIds = await confirmSavedJobMutationWithinDeadline(
         jobId, shouldSave,
         () => shouldSave ? saveJob(pinned.client, jobId) : unsaveJob(pinned.client, jobId),
         () => listSavedJobIds(pinned.client),
+        () => canContinue() && pinned.isCurrent() &&
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey,
       );
-      if (!pinned.isCurrent() || !focusActive.current ||
-          requestGeneration !== generation.current) return;
+      if (!pinned.isCurrent() || !canContinue()) return;
       setSavedIds(confirmedIds);
     } catch {
       if (focusActive.current && requestGeneration === generation.current) {
