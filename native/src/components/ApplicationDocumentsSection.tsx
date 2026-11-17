@@ -23,6 +23,7 @@ import { pinForApplicationMutation } from '../lib/applicationMutationPin';
 import { awaitApplicationDocumentAttachmentAck } from '../lib/awaitApplicationDocumentAttachmentAck';
 import { applicationDocumentActionAccessibilityLabel } from '../lib/applicationDocumentActionAccessibilityLabel';
 import { openCandidateApplicationDocument } from '../lib/openCandidateApplicationDocument';
+import { shouldRefreshOpenedApplicationDocuments } from '../lib/manualApplicationConversationRefresh';
 import { presentApplicationDocumentError } from '../lib/applicationDocumentErrorPresentation';
 import { readApplicationDocumentSnapshot } from '../lib/applicationDocumentSnapshotRead';
 import { hasCanonicalApplicationAttachment, projectApplicationDocuments } from '../lib/applicationDocumentsPresentation';
@@ -37,9 +38,11 @@ type DocumentSnapshot = {
 /** Actual Web ApplicationMessages document flows; all reads/writes use the pinned candidate session. */
 export function ApplicationDocumentsSection({
   applicationId,
+  manualRefreshRequest = 0,
   onHandoffReadback,
 }: {
   applicationId: string;
+  manualRefreshRequest?: number;
   onHandoffReadback: (value: ApplicationDocumentHandoffState | null) => void;
 }) {
   const { pinCandidateAction } = usePinnedCandidateAction();
@@ -59,6 +62,7 @@ export function ApplicationDocumentsSection({
   const requestVersion = useRef(0);
   const mutationPending = useRef(false);
   const readPending = useRef(false);
+  const lastConsumedManualRefreshRequest = useRef(0);
   const focusedRef = useRef(false);
   const presentationEpoch = useRef(0);
   const freshlyVerifiedOwner = useRef<string | null>(null);
@@ -161,6 +165,24 @@ export function ApplicationDocumentsSection({
       }
     }
   };
+
+  // The same Web 更新 button reloads messages and documents. Consume each
+  // parent command once, including skipped commands while this panel is
+  // closed or busy. Opening the panel later uses its own canonical refresh.
+  useEffect(() => {
+    if (manualRefreshRequest <= lastConsumedManualRefreshRequest.current) return;
+    const previousRequest = lastConsumedManualRefreshRequest.current;
+    lastConsumedManualRefreshRequest.current = manualRefreshRequest;
+    if (!shouldRefreshOpenedApplicationDocuments(manualRefreshRequest, previousRequest, {
+      open,
+      focused: focusedRef.current,
+      foreground: AppState.currentState === 'active',
+      privateAccess: canReadPrivate && privacy.canAccessPrivateData() && !contextLease.current.shieldVisible,
+      ownerCurrent: Boolean(ownerKey && viewKey && contextLease.current.viewKey === viewKey),
+      mutationPending: mutationPending.current,
+    }, readPending.current)) return;
+    void refresh();
+  }, [manualRefreshRequest]);
 
   // An open Web panel updates saved, submitted and expected documents every
   // 60 seconds and when visibility returns. Never poll a closed/private panel.

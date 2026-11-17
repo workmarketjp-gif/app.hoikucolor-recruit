@@ -252,6 +252,7 @@ function ApplicationDetailContent() {
   const [messagesLoading, setMessagesLoading] = useState(true);
   const [messagesReadError, setMessagesReadError] = useState(false);
   const [messagesRefreshing, setMessagesRefreshing] = useState(false);
+  const [documentManualRefreshRequest, setDocumentManualRefreshRequest] = useState(0);
   const [documentState, setDocumentState] = useState<ApplicationDocumentHandoffState | null>(null);
   const [documentLoading, setDocumentLoading] = useState(true);
   const [messageDraft, setMessageDraft] = useState('');
@@ -721,6 +722,14 @@ function ApplicationDetailContent() {
   const manualMessageRefreshDisabled = loading || messagesLoading || messagesRefreshing || busy ||
     decisionGate.isBusy() || messageSendPending.current ||
     candidateMessageSendNeedsReview(messageSendNeedsReview, uncertainMessageRef.current);
+  // The Web's single 更新 reloads the thread and its opened documents.
+  // The child consumes the signal only if its own private panel is open.
+  const refreshMessagesAndOpenedDocuments = () => {
+    if (manualMessageRefreshDisabled || !messageScreenFocusedRef.current ||
+        AppState.currentState !== 'active' || messageRefreshPendingRef.current) return;
+    void refreshFocusedMessages();
+    setDocumentManualRefreshRequest((request) => request + 1);
+  };
   const messagesFocused = focus === 'messages';
   const maybeScrollToMessages = () => {
     const offset = focusedApplicationMessagesOffset({
@@ -1054,11 +1063,11 @@ function ApplicationDetailContent() {
             <Pressable
               style={styles.messageRefreshButton}
               accessibilityRole="button"
-              accessibilityLabel="園とのメッセージを更新"
+              accessibilityLabel="園とのメッセージと応募書類を更新"
               accessibilityState={{ disabled: manualMessageRefreshDisabled }}
               disabled={manualMessageRefreshDisabled}
               testID="application-messages-manual-refresh"
-              onPress={() => void refreshFocusedMessages()}
+              onPress={refreshMessagesAndOpenedDocuments}
             >
               <Text style={styles.messageRefreshText}>{messagesRefreshing ? '更新中…' : '更新'}</Text>
             </Pressable>
@@ -1121,6 +1130,7 @@ function ApplicationDetailContent() {
         </Pressable>
         <ApplicationDocumentsSection
           applicationId={applicationId}
+          manualRefreshRequest={documentManualRefreshRequest}
           onHandoffReadback={(confirmed) => {
             documentReadRevision.current += 1;
             setDocumentState(confirmed);
