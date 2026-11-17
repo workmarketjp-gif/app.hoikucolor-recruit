@@ -27,6 +27,7 @@ import { shouldRefreshOpenedApplicationDocuments } from '../lib/manualApplicatio
 import { presentApplicationDocumentError } from '../lib/applicationDocumentErrorPresentation';
 import { readApplicationDocumentSnapshot } from '../lib/applicationDocumentSnapshotRead';
 import { applicationDocumentHandoffProjection } from '../lib/applicationDocumentHandoffProjection';
+import { canUseApplicationDocumentSnapshotForAction } from '../lib/applicationDocumentReadFreshness';
 import { hasCanonicalApplicationAttachment, projectApplicationDocuments } from '../lib/applicationDocumentsPresentation';
 import { canStartFocusedApplicationDocumentsRefresh, canApplyFocusedApplicationDocumentsRefresh, canPublishApplicationDocumentHandoff, canOpenAttachedApplicationDocumentUrl, shouldRevokeDocumentReadOnBlur } from '../lib/focusedApplicationDocumentsRefresh';
 
@@ -56,6 +57,7 @@ export function ApplicationDocumentsSection({
   const [open, setOpen] = useState(false);
   const [snapshot, setSnapshot] = useState<CandidateOwnedView<DocumentSnapshot> | null>(null);
   const [loading, setLoading] = useState(false);
+  const [documentReadVerified, setDocumentReadVerified] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -98,6 +100,7 @@ export function ApplicationDocumentsSection({
     freshlyVerifiedOwner.current = null;
     setPending(null);
     setSnapshot(null);
+    setDocumentReadVerified(false);
     setOpen(false);
     setLoading(false);
     setError(null);
@@ -116,6 +119,9 @@ export function ApplicationDocumentsSection({
     if (quiet && !canStartFocusedApplicationDocumentsRefresh(refreshState(), readPending.current)) return;
     if (readPending.current || mutationPending.current || !ownerKey || !viewKey || !canReadPrivate || !contextCurrent) return;
     readPending.current = true;
+    // Even a quiet poll makes old rows read-only until its full canonical
+    // snapshot succeeds; a timeout must not silently restore attach/open.
+    setDocumentReadVerified(false);
     const requestedOwnerKey = ownerKey;
     const requestedViewKey = viewKey;
     const version = ++requestVersion.current;
@@ -160,10 +166,13 @@ export function ApplicationDocumentsSection({
       if (!readStillCurrent()) return;
       freshlyVerifiedOwner.current = requestedViewKey;
       setSnapshot({ ownerKey: requestedViewKey, value: { saved, submitted, expectations } });
+      setDocumentReadVerified(true);
       onHandoffReadback(handoff);
     } catch (caught) {
-      if (alive.current && version === requestVersion.current && reportErrors) {
-        setError(presentApplicationDocumentError('refresh', caught));
+      if (alive.current && version === requestVersion.current) {
+        // A failed silent read cannot authorize actions on the last-known rows.
+        setDocumentReadVerified(false);
+        if (reportErrors) setError(presentApplicationDocumentError('refresh', caught));
       }
     } finally {
       if (version === requestVersion.current) {
@@ -208,6 +217,7 @@ export function ApplicationDocumentsSection({
       readPending.current = false;
       freshlyVerifiedOwner.current = null;
       setSnapshot(null);
+      setDocumentReadVerified(false);
       setOpen(false);
       setLoading(false);
       setError(null);
@@ -234,6 +244,7 @@ export function ApplicationDocumentsSection({
       readPending.current = false;
       setOpen(false);
       setSnapshot(null);
+      setDocumentReadVerified(false);
       freshlyVerifiedOwner.current = null;
       setError(null);
       setNotice(null);
@@ -245,7 +256,7 @@ export function ApplicationDocumentsSection({
   };
 
   const submitDocuments = async (targets: readonly JobseekerDocument[]) => {
-    if (!open || !visibleSnapshot || !ownerKey || !viewKey || !canReadPrivate || !targets.length || mutationPending.current || readPending.current || loading || error !== null) return;
+    if (!open || !canUseApplicationDocumentSnapshotForAction(Boolean(visibleSnapshot), documentReadVerified) || !visibleSnapshot || !ownerKey || !viewKey || !canReadPrivate || !targets.length || mutationPending.current || readPending.current || loading || error !== null) return;
     const model = projectApplicationDocuments(applicationId, visibleSnapshot.saved, visibleSnapshot.submitted, visibleSnapshot.expectations);
     if (targets.some((document) => !visibleSnapshot.saved.some((row) => row.id === document.id)
       || model.attachedIds.has(document.id))) return;
@@ -254,6 +265,7 @@ export function ApplicationDocumentsSection({
     const requestedViewKey = viewKey;
     const requestedPresentationEpoch = presentationEpoch.current;
     mutationPending.current = true;
+    setDocumentReadVerified(false);
     const version = ++requestVersion.current;
     setPending(uniqueTargets.length > 1 ? 'batch' : uniqueTargets[0].id);
     setError(null);
@@ -309,6 +321,7 @@ export function ApplicationDocumentsSection({
       if (!canPublishHandoff()) return;
       freshlyVerifiedOwner.current = requestedViewKey;
       setSnapshot({ ownerKey: requestedViewKey, value: { saved, submitted, expectations } });
+      setDocumentReadVerified(true);
       const confirmed = uniqueTargets.filter((document) =>
         hasCanonicalApplicationAttachment(applicationId, document.id, submitted));
       if (confirmed.length === uniqueTargets.length) {
@@ -351,7 +364,7 @@ export function ApplicationDocumentsSection({
   };
 
   const openSubmitted = async (document: AttachedApplicationDocument) => {
-    if (!visibleSnapshot || !canReadPrivate || !ownerKey || !viewKey || !open || mutationPending.current || readPending.current || loading || error !== null ||
+    if (!canUseApplicationDocumentSnapshotForAction(Boolean(visibleSnapshot), documentReadVerified) || !visibleSnapshot || !canReadPrivate || !ownerKey || !viewKey || !open || mutationPending.current || readPending.current || loading || error !== null ||
       !visibleSnapshot.submitted.some((row) => row.id === document.id && row.application_id === applicationId)) return;
     mutationPending.current = true;
     const version = ++requestVersion.current;
@@ -402,7 +415,8 @@ export function ApplicationDocumentsSection({
   const blocked = loading || pending !== null || mutationPending.current || readPending.current || !canReadPrivate || !contextCurrent;
   // A failed quiet read preserves the last confirmed rows for reference,
   // not authorization to attach/open a possibly stale document.
-  const writesBlocked = blocked || error !== null;
+  const writesBlocked = blocked || error !== null ||
+    !canUseApplicationDocumentSnapshotForAction(Boolean(visibleSnapshot), documentReadVerified);
   if (!canReadPrivate || !ownerKey || !viewKey || !contextCurrent) {
     return <View testID="application-documents-private-shield" />;
   }
@@ -424,6 +438,9 @@ export function ApplicationDocumentsSection({
             <Text style={styles.buttonText}>最新の応募書類を確認</Text>
           </Pressable>
           {loading ? <Text style={styles.note}>応募書類を読み込んでいます…</Text> : null}
+          {!loading && visibleSnapshot && !documentReadVerified ? (
+            <Text style={styles.note} accessibilityLiveRegion="polite">最新の応募書類を確認できていません。更新後に提出・閲覧してください。</Text>
+          ) : null}
           {error ? <Text style={styles.error} accessibilityLiveRegion="polite">{error}</Text> : null}
           {notice ? <Text style={styles.success} accessibilityLiveRegion="polite">{notice}</Text> : null}
           {visibleSnapshot && model ? (

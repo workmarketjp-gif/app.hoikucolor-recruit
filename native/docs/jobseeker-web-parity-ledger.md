@@ -1,3 +1,10 @@
+## Latest isolated delta (r328, 2026-11-18 NZ) — Silent document refresh failure no longer reauthorizes stale action rows
+
+- **Web/source baseline:** JOBSEEKER `/applications` → opened `ApplicationMessages` document panel; Web main `8c502fdb`, component blob `6275c5e5`; synthetic candidate with prior saved/submitted documents and a failing silent refresh. Source-only, not rendered/physical comparison.
+- **Native fix:** Before r328, a quiet read failure cleared `error` and left old verified rows actionable. The read now revokes attach/open authority before polling and restores it only after a complete same-candidate/application canonical snapshot. Silent failure keeps last rows for reference with an explicit stale notice, blocks both handlers/buttons, and requires a successful user `最新の応募書類を確認` read. No server or schema changes.
+- **QA/matrix:** Node real-helper 8/8 PASS, isolated strict TypeScript helper PASS; GitHub component source wiring checked. Android **IMPLEMENTING**, iOS **IMPLEMENTING**; neither has installed Native screenshots, live canonical save/readback, full Expo typecheck or signed installable candidate. [r328 details](parity-delta-r328-application-document-quiet-refresh.md).
+- **Owner/cost:** COLOR-only `native/color-focused-document-refresh-r294-20261117`, parent `61aeb6bc1bcabde30e3a482b4ba04c5d734bb8c7`. No PR/main/production/Store/paid Actions/EAS/agents, quota/signing unknown.
+
 ## Latest isolated delta (r327, 2026-11-18 NZ) — Parent document handoff state after Web-equivalent refresh
 
 - **Baseline:** Web JOBSEEKER `/applications` → opened `ApplicationMessages` → `更新` and application attachments, main `8c502fdb3a1697eb9eedf1f7b02de30374cb7b5c`, blob `6275c5e50c3f67eea58a2ecb53d6b984fd34a497`; synthetic candidate with 2 expected sources. Source comparison only; no rendered Web/native snapshots.
