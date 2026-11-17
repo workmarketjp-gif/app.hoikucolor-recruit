@@ -18,6 +18,8 @@ import {
 import { getApplicationDocumentHandoffState, type ApplicationDocumentHandoffState } from '../lib/applicationJourneyApi';
 import { documentTypeLabel } from '../lib/documentTypes';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
+import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
+import { openCandidateApplicationDocument } from '../lib/openCandidateApplicationDocument';
 import { presentApplicationDocumentError } from '../lib/applicationDocumentErrorPresentation';
 import { readApplicationDocumentSnapshot } from '../lib/applicationDocumentSnapshotRead';
 import { hasCanonicalApplicationAttachment, projectApplicationDocuments } from '../lib/applicationDocumentsPresentation';
@@ -119,8 +121,13 @@ export function ApplicationDocumentsSection({
     setLoading(true);
     setError(null);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned || !pinned.isCurrent() ||
+      // A hung Clerk token must not leave the three-source document panel
+      // spinning indefinitely. Never start private RPCs after a stale refresh.
+      const pinned = await pinCandidateForRead(pinCandidateAction, () =>
+        alive.current && version === requestVersion.current && focusedRef.current &&
+        privacy.canAccessPrivateData() && !privacy.shieldVisible &&
+        contextLease.current.viewKey === requestedViewKey);
+      if (!pinned.isCurrent() ||
           candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
@@ -308,15 +315,21 @@ export function ApplicationDocumentsSection({
     setPending('open-' + document.id);
     setError(null);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned || !pinned.isCurrent()) throw new Error('安全なログイン状態を確認できませんでした。');
-      if (candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
-        throw new Error('安全なログイン状態を確認できませんでした。');
-      }
-      if (!canUseSignedUrl()) return;
-      const url = await createAttachedApplicationDocumentSignedUrl(pinned.client, document);
-      if (!canUseSignedUrl() || !pinned.isCurrent()) return;
-      await Linking.openURL(url); // Existing vault uses the OS handler; URL is HTTPS-only.
+      // Both the token and signed URL are private reads. Bound them separately,
+      // and never launch an OS viewer from a stale session, App Lock or blur.
+      await openCandidateApplicationDocument({
+        pin: async () => {
+          const pinned = await pinCandidateAction();
+          if (!pinned ||
+              candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
+            throw new Error('安全なログイン状態を確認できませんでした。');
+          }
+          return pinned;
+        },
+        getSignedUrl: (client) => createAttachedApplicationDocumentSignedUrl(client, document),
+        openUrl: (url) => Linking.openURL(url),
+        isCurrent: canUseSignedUrl,
+      });
     } catch (caught) {
       if (canUseSignedUrl()) {
         setError(presentApplicationDocumentError('open', caught));
