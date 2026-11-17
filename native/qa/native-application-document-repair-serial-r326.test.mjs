@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { repairApplicationDocumentsSerial } from '../src/lib/repairApplicationDocumentsSerial.ts';
+import { awaitApplicationDocumentAttachmentAck } from '../src/lib/awaitApplicationDocumentAttachmentAck.ts';
 
 const documents = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
 const run = (overrides = {}) => repairApplicationDocumentsSerial({
@@ -61,5 +62,42 @@ test('r326 repair: a late in-flight attachment can observe lost lease and block 
 test('r326 repair: when no documents need repair, the canonical zero case is read-only', async () => {
   let calls = 0;
   assert.deepEqual(await run({ missingSourceIds: [], attach: async () => { calls += 1; } }), { failed: 0 });
+  assert.equal(calls, 0);
+});
+
+test('r326 repair: expired acknowledgement never initiates the next document write', async () => {
+  const started = [];
+  let completeFirst;
+  let capturedLease;
+  const pending = awaitApplicationDocumentAttachmentAck(
+    (canContinue) => run({
+      canContinue,
+      attach: async (document, lease) => {
+        started.push(document.id);
+        capturedLease = lease;
+        if (document.id === 'a') await new Promise((resolve) => { completeFirst = resolve; });
+      },
+    }),
+    () => true,
+    10,
+  );
+  await assert.rejects(pending, /提出結果/);
+  assert.deepEqual(started, ['a']);
+  assert.equal(capturedLease(), false);
+  completeFirst(); // server may finish late, but the presentation lease is revoked
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, ['a']);
+});
+
+test('r326 repair: revoked before scheduled microtask starts no attachment', async () => {
+  let current = true;
+  let calls = 0;
+  const pending = awaitApplicationDocumentAttachmentAck(
+    (canContinue) => run({ canContinue, attach: async () => { calls += 1; } }),
+    () => current,
+    20,
+  );
+  current = false;
+  await assert.rejects(pending, /操作画面/);
   assert.equal(calls, 0);
 });
