@@ -44,6 +44,7 @@ import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { pinForScoutMutation } from '../lib/scoutMutationPin';
 import { confirmedScoutWriteReadback } from '../lib/scoutWriteReadback';
 import { scoutConsentCopy } from '../lib/scoutConsentCopy';
+import { boundedScoutMutationAcknowledgement } from '../lib/scoutMutationDeadline';
 import { requireCurrentPendingScout } from '../lib/scoutDecisionPrewrite';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import { mayShowScoutError, shouldPublishScoutRead, shouldPublishScoutInboxRefresh } from '../lib/scoutReadLease';
@@ -547,7 +548,10 @@ export default function ScoutsScreen() {
               }
               if (!mayPublishScoutWrite(pinned, serial, owner, readGeneration)) return;
               responseRpcStarted = true;
-              const status = await respondToJobseekerScout(pinned.client, item.scout_id, decision);
+              const status = await boundedScoutMutationAcknowledgement(
+                () => respondToJobseekerScout(pinned.client, item.scout_id, decision),
+                () => mayPublishScoutWrite(pinned, serial, owner, readGeneration),
+              );
               if (status !== decision) throw new Error('スカウト回答の結果が一致しません。');
               // Re-read with the SAME pinned candidate token. Never manufacture
               // responded_at or assume an RPC acknowledgement is the visible state.
@@ -594,7 +598,10 @@ export default function ScoutsScreen() {
       if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
-      const response = await setScoutOptIn(pinned.client, enabled);
+      const response = await boundedScoutMutationAcknowledgement(
+        () => setScoutOptIn(pinned.client, enabled),
+        () => mayPublishScoutWrite(pinned, serial, owner, readGeneration),
+      );
       if (response !== enabled) throw new Error('スカウト設定の保存結果が一致しません。');
       const confirmed = await confirmedScoutWriteReadback(
         () => getScoutPrivacySettings(pinned.client),
@@ -669,7 +676,10 @@ export default function ScoutsScreen() {
       if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
-      await addScoutBlockedOrganization(pinned.client, organization.organization_id);
+      await boundedScoutMutationAcknowledgement(
+        () => addScoutBlockedOrganization(pinned.client, organization.organization_id),
+        () => mayPublishScoutWrite(pinned, serial, owner, readGeneration),
+      );
       const confirmed = await confirmedScoutWriteReadback(
         () => getScoutPrivacySettings(pinned.client),
         (snapshot) => confirmScoutBlock(snapshot, organization.organization_id, true),
@@ -696,7 +706,10 @@ export default function ScoutsScreen() {
       if (!pinned || !mayPublishScoutWrite(pinned, serial, owner, readGeneration)) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
-      await removeScoutBlockedOrganization(pinned.client, organizationId);
+      await boundedScoutMutationAcknowledgement(
+        () => removeScoutBlockedOrganization(pinned.client, organizationId),
+        () => mayPublishScoutWrite(pinned, serial, owner, readGeneration),
+      );
       const confirmed = await confirmedScoutWriteReadback(
         () => getScoutPrivacySettings(pinned.client),
         (snapshot) => confirmScoutBlock(snapshot, organizationId, false),
@@ -742,7 +755,10 @@ export default function ScoutsScreen() {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
       // An acknowledged write is not a verified persisted preference.
-      await saveJobseekerMatchingPreferences(pinned.client, next);
+      await boundedScoutMutationAcknowledgement(
+        () => saveJobseekerMatchingPreferences(pinned.client, next),
+        () => mayPublishScoutWrite(pinned, serial, owner, readGeneration),
+      );
       const verified = await confirmedScoutWriteReadback(
         () => getJobseekerMatchingPreferences(pinned.client),
         (snapshot) => confirmScoutPreferences(next, snapshot),
