@@ -17,7 +17,8 @@ import {
   type JobseekerJob,
 } from '../../lib/jobseekerCoreApi';
 import { EMPTY_JOB_SEARCH_FILTERS, createJobSearchQuery, hasActiveJobFilters, type JobSearchFilterCriteria } from '../../lib/jobSearchFilterCriteria';
-import { updateSavedJobAndConfirm } from '../../lib/savedJobsReadback';
+import { confirmSavedJobMutationWithinDeadline } from '../../lib/savedJobMutationDeadline';
+import { pinCandidateForRead } from '../../lib/pinnedCandidateRead';
 import { getCandidateJob } from '../../lib/applicationJourneyApi';
 import { presentSpecifiedJobPage, specifiedJobIdFromRoute, specifiedJobIdToRead } from '../../lib/jobSearchSpecifiedEntry';
 import { shouldRefreshJobsOnReturn, type JobSearchFocusState } from '../../lib/jobSearchFocus';
@@ -388,16 +389,24 @@ export default function JobsScreen() {
     setBusyJobId(jobId);
     setOwnedError(null);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) {
-        throw new Error('安全なログイン状態を確認できませんでした。');
-      }
+      // A pending token request, one-shot mutation acknowledgment or canonical
+      // saved-ID read must not leave the search-card heart busy indefinitely.
+      // A timed-out write may still commit: do not retry or infer its result.
+      const canContinue = () => focusActive.current && requestGeneration === generation.current &&
+        attempt === mutationSequence.current && ownerKey === latestOwnerRef.current &&
+        latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible;
+      const pinned = await pinCandidateForRead(pinCandidateAction, canContinue);
+      if (candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey ||
+          !canContinue()) return;
       const shouldBeSaved = !savedIds.includes(jobId);
-      const canonical = await updateSavedJobAndConfirm(jobId, shouldBeSaved,
+      const canonical = await confirmSavedJobMutationWithinDeadline(
+        jobId, shouldBeSaved,
         () => shouldBeSaved ? saveJob(pinned.client, jobId) : unsaveJob(pinned.client, jobId),
-        () => listSavedJobIds(pinned.client));
-      if (!pinned.isCurrent() || attempt !== mutationSequence.current ||
-          requestGeneration !== generation.current || privacy.shieldVisible) return;
+        () => listSavedJobIds(pinned.client),
+        () => canContinue() && pinned.isCurrent() &&
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey,
+      );
+      if (!pinned.isCurrent() || !canContinue()) return;
       setOwnedSavedIds({ ownerKey, value: canonical });
     } catch {
       if (attempt === mutationSequence.current && requestGeneration === generation.current &&
