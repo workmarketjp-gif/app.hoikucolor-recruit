@@ -21,6 +21,8 @@ import { armPendingHomeApplication, clearPendingHomeApplication, hasPendingHomeA
 import { jobDetailReadbackRecovery } from '../../lib/jobDetailReadbackRecovery';
 import { presentSavedJobSource } from '../../lib/savedJobSourcePresentation';
 import { safeJobDetailErrorMessage } from '../../lib/jobDetailErrorPresentation';
+import { pinCandidateForRead } from '../../lib/pinnedCandidateRead';
+import { boundedPrivateRead } from '../../lib/privateReadDeadline';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -126,17 +128,34 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
     setFavoriteError(null);
     setChoosingDocuments(false);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
-      const [nextJob, nextProfile, applications, favoriteResult] = await Promise.all([
-        getCandidateJob(pinned.client, jobId),
-        getJobseekerProfile(pinned.client),
-        listApplications(pinned.client),
-        // A saved-list outage must not hide valid job details or block applications.
-        listSavedJobIds(pinned.client)
-          .then((ids) => ({ ids, failed: false } as const))
-          .catch(() => ({ ids: null, failed: true } as const)),
-      ]);
+      // A stalled Clerk pin or canonical read must not trap the Job Detail in a spinner.
+      // This is a presentation deadline only; no application or favorite mutation occurs here.
+      const readLease = () => focusActive.current && current === generation.current;
+      const pinned = await pinCandidateForRead(pinCandidateAction, readLease);
+      if (candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
+      const assertCurrentRead = () => {
+        if (!readLease() || !pinned.isCurrent()) {
+          throw new Error('安全なログイン状態を確認できませんでした。');
+        }
+      };
+      // Favorites are optional: an unavailable saved-list read must never become
+      // an empty saved list or prevent verified job/profile/application content.
+      const favoriteResultPromise = boundedPrivateRead(() => {
+        assertCurrentRead();
+        return listSavedJobIds(pinned.client);
+      }).then((ids) => ({ ids, failed: false } as const))
+        .catch(() => ({ ids: null, failed: true } as const));
+      const [nextJob, nextProfile, applications] = await boundedPrivateRead(() => {
+        assertCurrentRead();
+        return Promise.all([
+          getCandidateJob(pinned.client, jobId),
+          getJobseekerProfile(pinned.client),
+          listApplications(pinned.client),
+        ]);
+      });
+      const favoriteResult = await favoriteResultPromise;
       if (!pinned.isCurrent() || !focusActive.current || current !== generation.current ||
           candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
       // The private pending receipt is not proof of a successful server submit.
@@ -286,16 +305,20 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
     setApplying(true);
     setError(null);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned) throw new Error('安全なログイン状態を確認できませんでした。');
-      if (!canContinue() || !pinned.isCurrent() ||
-          pinned.ownerId !== ownerId || pinned.ownerSessionId !== ownerSessionId) return;
-      // Refresh authoritative inputs immediately before the attempted write.
-      const [freshJob, freshProfile, applications] = await Promise.all([
-        getCandidateJob(pinned.client, jobId),
-        getJobseekerProfile(pinned.client),
-        listApplications(pinned.client),
-      ]);
+      // Pre-submit reads are read-only: timeout prevents a frozen form but NEVER
+      // dispatches an application. Only the later explicit submit path may write.
+      const pinned = await pinCandidateForRead(pinCandidateAction, canContinue);
+      if (!canContinue() || pinned.ownerId !== ownerId || pinned.ownerSessionId !== ownerSessionId) return;
+      const [freshJob, freshProfile, applications] = await boundedPrivateRead(() => {
+        if (!canContinue() || !pinned.isCurrent()) {
+          throw new Error('安全なログイン状態を確認できませんでした。');
+        }
+        return Promise.all([
+          getCandidateJob(pinned.client, jobId),
+          getJobseekerProfile(pinned.client),
+          listApplications(pinned.client),
+        ]);
+      });
       if (!canContinue() || !pinned.isCurrent()) return;
       const decision = homeInlineApplyDecision(freshJob, freshProfile, applications, jobId, Date.now());
       if (decision.kind === 'existing') {
