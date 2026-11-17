@@ -251,6 +251,7 @@ function ApplicationDetailContent() {
   const [messages, setMessages] = useState<JobseekerMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(true);
   const [messagesReadError, setMessagesReadError] = useState(false);
+  const [messagesRefreshing, setMessagesRefreshing] = useState(false);
   const [documentState, setDocumentState] = useState<ApplicationDocumentHandoffState | null>(null);
   const [documentLoading, setDocumentLoading] = useState(true);
   const [messageDraft, setMessageDraft] = useState('');
@@ -336,6 +337,7 @@ function ApplicationDetailContent() {
     setMessages([]);
     setMessagesLoading(true);
     setMessagesReadError(false);
+    setMessagesRefreshing(false);
     setDocumentState(null);
     setDocumentLoading(true);
     setHandoffError(null);
@@ -397,6 +399,7 @@ function ApplicationDetailContent() {
     });
     if (!canRefreshFocusedCandidateMessages(refreshState(), messageRefreshPendingRef.current)) return;
     messageRefreshPendingRef.current = true;
+    setMessagesRefreshing(true);
     try {
       const pinned = await pinCandidateForRead(
         pinCandidateAction,
@@ -419,6 +422,7 @@ function ApplicationDetailContent() {
       if (canApplyFocusedCandidateMessageRefresh(refreshState())) setMessagesReadError(true);
     } finally {
       messageRefreshPendingRef.current = false;
+      if (readGeneration === generation.current) setMessagesRefreshing(false);
     }
   }, [applicationId, decisionGate, loading, messagesLoading, messageSendNeedsReview, pinCandidateAction]);
 
@@ -487,6 +491,7 @@ function ApplicationDetailContent() {
       setMessages([]);
       setMessagesLoading(true);
       setMessagesReadError(false);
+      setMessagesRefreshing(false);
       setDocumentState(null);
       setDocumentLoading(true);
       setWithdrawOpen(false);
@@ -711,6 +716,11 @@ function ApplicationDetailContent() {
     }, setHandoffError);
   };
 
+  // Web has an explicit thread-only refresh. Do not reset the draft,
+  // application detail, interview/offer state or an ambiguous send to reload messages.
+  const manualMessageRefreshDisabled = loading || messagesLoading || messagesRefreshing || busy ||
+    decisionGate.isBusy() || messageSendPending.current ||
+    candidateMessageSendNeedsReview(messageSendNeedsReview, uncertainMessageRef.current);
   const messagesFocused = focus === 'messages';
   const maybeScrollToMessages = () => {
     const offset = focusedApplicationMessagesOffset({
@@ -1039,7 +1049,20 @@ function ApplicationDetailContent() {
         }}>
         <View style={styles.cardHeadingRow}>
           <Text style={styles.sectionTitle}>園とのメッセージ</Text>
-          <Text style={styles.count}>{messagesLoading ? '確認中' : messagesReadError ? '未確認' : `${messages.length}件`}</Text>
+          <View style={styles.messageHeadingTools}>
+            <Text style={styles.count}>{messagesLoading ? '確認中' : messagesReadError ? '未確認' : `${messages.length}件`}</Text>
+            <Pressable
+              style={styles.messageRefreshButton}
+              accessibilityRole="button"
+              accessibilityLabel="園とのメッセージを更新"
+              accessibilityState={{ disabled: manualMessageRefreshDisabled }}
+              disabled={manualMessageRefreshDisabled}
+              testID="application-messages-manual-refresh"
+              onPress={() => void refreshFocusedMessages()}
+            >
+              <Text style={styles.messageRefreshText}>{messagesRefreshing ? '更新中…' : '更新'}</Text>
+            </Pressable>
+          </View>
         </View>
         {messagesFocused ? <Text style={styles.focusLabel}>園とのメッセージを表示しています</Text> : null}
         {messagesLoading ? <Text style={styles.subtle}>メッセージを確認しています…</Text> : null}
@@ -1155,6 +1178,9 @@ const styles = StyleSheet.create({
   messageFeedback: { gap: 10, padding: 12, borderRadius: 10, backgroundColor: '#FFF1F0' },
   sectionTitle: { fontSize: 18, fontWeight: '900' },
   cardHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  messageHeadingTools: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  messageRefreshButton: { minHeight: 44, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#f2c6cc', borderRadius: 10, backgroundColor: '#fff' },
+  messageRefreshText: { fontSize: 14, fontWeight: '800', color: '#b71f51' },
   count: { color: '#606873', fontWeight: '700' },
   eventCard: { borderWidth: 1, borderColor: '#e0e4e9', borderRadius: 12, padding: 12, gap: 7 },
   eventTitle: { fontWeight: '800' },
