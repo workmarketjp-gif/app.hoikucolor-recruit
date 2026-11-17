@@ -25,6 +25,7 @@ import { cancelCandidateVisitWithLease } from './visitCancellationReadback';
 import { sendCandidateMessageWithSessionLease } from './messageSendSessionLease';
 import { respondCandidateInterviewWithLease } from './interviewResponseSessionLease';
 import { repairApplicationDocumentsSerial } from './repairApplicationDocumentsSerial';
+import { applicationDocumentHandoffProjection } from './applicationDocumentHandoffProjection';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -228,15 +229,7 @@ export async function getApplicationDocumentHandoffState(
     listApplicationDocumentExpectations(client, applicationId),
     listSubmittedApplicationDocuments(client, applicationId),
   ]);
-  const submittedSourceIds = new Set(
-    submitted.flatMap((document) => document.source_jobseeker_document_id ? [document.source_jobseeker_document_id] : []),
-  );
-  const expectedSourceIds = [...new Set(expectations.map((expectation) => expectation.source_jobseeker_document_id_snapshot))];
-  return {
-    expectedCount: expectedSourceIds.length,
-    submittedFromVaultCount: expectedSourceIds.filter((id) => submittedSourceIds.has(id)).length,
-    missingSourceDocumentIds: expectedSourceIds.filter((id) => !submittedSourceIds.has(id)),
-  };
+  return applicationDocumentHandoffProjection(expectations, submitted);
 }
 
 export async function repairApplicationDocumentHandoff(
