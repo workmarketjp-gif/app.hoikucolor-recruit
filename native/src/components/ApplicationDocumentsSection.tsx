@@ -21,6 +21,7 @@ import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { pinForApplicationMutation } from '../lib/applicationMutationPin';
 import { awaitApplicationDocumentAttachmentAck } from '../lib/awaitApplicationDocumentAttachmentAck';
+import { applicationDocumentActionAccessibilityLabel } from '../lib/applicationDocumentActionAccessibilityLabel';
 import { openCandidateApplicationDocument } from '../lib/openCandidateApplicationDocument';
 import { presentApplicationDocumentError } from '../lib/applicationDocumentErrorPresentation';
 import { readApplicationDocumentSnapshot } from '../lib/applicationDocumentSnapshotRead';
@@ -398,13 +399,13 @@ export function ApplicationDocumentsSection({
             <>
               {model.missing.length ? (
                 <View style={styles.warning}>
-                  <Text>応募時に設定されていた書類のうち、{model.missing.length}件がまだ提出されていません。</Text>
+                  <Text>応募した時点で「応募時に使用」に設定されていた書類のうち、{model.missing.length}件がこの応募にはまだ提出されていません。</Text>
                   {model.repairable.length ? (
                     <Pressable style={styles.button} disabled={writesBlocked} onPress={() => void submitDocuments(model.repairable)} testID="application-documents-repair" accessibilityRole="button">
                       <Text style={styles.buttonText}>{pending === 'batch' ? '提出中…' : '未提出の応募時書類をまとめて提出'}</Text>
                     </Pressable>
                   ) : null}
-                  {model.unavailableMissingCount ? <Text style={styles.note}>{model.unavailableMissingCount}件は現在の書類庫にありません。現在の書類から提出してください。</Text> : null}
+                  {model.unavailableMissingCount ? <Text style={styles.note}>応募時に選ばれていた書類のうち{model.unavailableMissingCount}件は現在の書類庫にありません。必要な場合は、下の現在の書類をこの応募へ提出してください。</Text> : null}
                 </View>
               ) : null}
               {visibleSnapshot.saved.length ? visibleSnapshot.saved.map((document) => {
@@ -415,12 +416,12 @@ export function ApplicationDocumentsSection({
                       <Text style={styles.label}>{documentTypeLabel(document.document_type)}{document.is_default ? ' ・応募時に使用' : ''}</Text>
                       <Text style={styles.note}>{document.title}</Text>
                     </View>
-                    <Pressable style={styles.button} disabled={writesBlocked || attached} onPress={() => void submitDocuments([document])} accessibilityRole="button" testID={'application-document-attach-' + document.id}>
+                    <Pressable style={styles.button} disabled={writesBlocked || attached} onPress={() => void submitDocuments([document])} accessibilityRole="button" accessibilityLabel={applicationDocumentActionAccessibilityLabel(attached ? 'submitted' : 'submit', documentTypeLabel(document.document_type), document.title)} testID={'application-document-attach-' + document.id}>
                       <Text style={styles.buttonText}>{attached ? '提出済み' : pending === document.id ? '提出中…' : 'この応募に提出'}</Text>
                     </Pressable>
                   </View>
                 );
-              }) : <Text style={styles.note}>保存済みの書類はありません。マイページの「応募書類」から書類を保存すると、この応募にも提出できます。</Text>}
+              }) : <Text style={styles.note}>保存済みの書類はありません。マイページの「応募書類」から履歴書や保育士証を一度保存すると、次の応募でも再利用できます。</Text>}
               {visibleSnapshot.submitted.length ? (
                 <View style={styles.submitted}>
                   <Text style={styles.title}>この応募へ提出済み</Text>
@@ -430,7 +431,7 @@ export function ApplicationDocumentsSection({
                         <Text style={styles.label}>{documentTypeLabel(document.document_type)}</Text>
                         <Text style={styles.note}>{document.title}</Text>
                       </View>
-                      <Pressable style={styles.button} disabled={writesBlocked} onPress={() => void openSubmitted(document)} accessibilityRole="button" testID={'application-document-open-' + document.id}>
+                      <Pressable style={styles.button} disabled={writesBlocked} onPress={() => void openSubmitted(document)} accessibilityRole="button" accessibilityLabel={applicationDocumentActionAccessibilityLabel('open', documentTypeLabel(document.document_type), document.title)} testID={'application-document-open-' + document.id}>
                         <Text style={styles.buttonText}>開く</Text>
                       </Pressable>
                     </View>
