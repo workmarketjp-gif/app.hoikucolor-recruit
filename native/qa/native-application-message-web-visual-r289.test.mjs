@@ -35,7 +35,8 @@ test('message body and metadata follow Web readable type sizes', () => {
   assert.match(native, /<Text style=\{styles\.messageBody\}>\{message\.body\}<\/Text>/);
   assert.match(native, /messageBody:\s*\{[^}]*fontSize:\s*15/);
   assert.match(native, /messageMeta:\s*\{[^}]*fontSize:\s*14/);
-  assert.match(native, /<Text style=\{styles\.messageMeta\}>\{formatDateTime\(message\.created_at\)\}<\/Text>/);
+  assert.match(native, /<Text style=\{styles\.messageRole\}>\{applicationMessageWebMeta\(message\.sender_role, message\.created_at\)\}<\/Text>/);
+  assert.doesNotMatch(native, /<Text style=\{styles\.messageMeta\}>\{formatDateTime\(message\.created_at\)\}<\/Text>/);
 });
 
 test('message composer matches Web minimum size while retaining 4000 character bound', () => {

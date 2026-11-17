@@ -45,6 +45,7 @@ import {
 } from '../../lib/applicationJourneyApi';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { ApplicationDocumentsSection } from '../../components/ApplicationDocumentsSection';
+import { applicationMessageWebMeta } from '../../lib/applicationMessageWebMeta';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -1095,9 +1096,8 @@ function ApplicationDetailContent() {
               maybeAcknowledgeVisibleFacilityMessage();
             } : undefined}
             style={[styles.message, message.sender_role === 'jobseeker' && styles.myMessage]}>
-            <Text style={styles.messageRole}>{message.sender_role === 'jobseeker' ? 'あなた' : '園'}</Text>
+            <Text style={styles.messageRole}>{applicationMessageWebMeta(message.sender_role, message.created_at)}</Text>
             <Text style={styles.messageBody}>{message.body}</Text>
-            <Text style={styles.messageMeta}>{formatDateTime(message.created_at)}</Text>
           </View>
         ))}
         <Text style={styles.formLabel}>メッセージ</Text>
@@ -1207,7 +1207,7 @@ const styles = StyleSheet.create({
   focusLabel: { color: '#c8173a', fontWeight: '800' },
   message: { alignSelf: 'flex-start', maxWidth: '88%', backgroundColor: '#fff', borderWidth: 1, borderColor: '#e7e8eb', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, gap: 4 },
   myMessage: { alignSelf: 'flex-end', backgroundColor: '#fff0f3', borderColor: 'transparent' },
-  messageRole: { fontSize: 14, fontWeight: '800', color: '#7d8796' },
+  messageRole: { fontSize: 14, color: '#7d8796' },
   messageBody: { fontSize: 15, lineHeight: 22, color: '#1e2a3b' },
   messageMeta: { fontSize: 14, color: '#7d8796' },
   messageTextArea: { minHeight: 96 },
