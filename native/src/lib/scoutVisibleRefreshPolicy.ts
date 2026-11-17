@@ -23,3 +23,24 @@ export function mayRefreshVisibleScoutInbox(state: ScoutVisibleRefreshState): bo
     && state.scoutsVerified && !state.loading && !state.busy
     && !state.writePending && !state.searchPending && !state.refreshPending;
 }
+/** Recover a failed inbox when a separately verified panel already proves the
+ * exact private candidate owner. This does NOT mark the inbox verified. */
+export function mayRecoverUnverifiedScoutInbox(state: ScoutVisibleRefreshState): boolean {
+  return !state.scoutsVerified && mayRefreshVisibleScoutInbox({ ...state, scoutsVerified: true });
+}
+
+const initialPartialScoutFailureSuffix = 'を確認できませんでした。確認できた項目のみ表示しています。再読み込みしてください。';
+/** Amend only the original partial-load notice after canonical inbox recovery. */
+export function scoutNoticeAfterInboxRecovery(
+  previous: string | null,
+  privacyVerified: boolean,
+  preferencesVerified: boolean,
+): string | null {
+  if (!previous || !previous.includes('届いたスカウト') ||
+      !previous.endsWith(initialPartialScoutFailureSuffix)) return previous;
+  const stillMissing = [
+    !privacyVerified ? '公開範囲' : null,
+    !preferencesVerified ? '希望条件' : null,
+  ].filter(Boolean);
+  return stillMissing.length ? `${stillMissing.join('・')}${initialPartialScoutFailureSuffix}` : null;
+}

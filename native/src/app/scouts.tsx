@@ -39,7 +39,7 @@ import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { readIndependentScoutSections, scoutInitialLoadFailureMessage } from '../lib/scoutIndependentSections';
 import { retryMissingScoutSections } from '../lib/scoutMissingSectionRetry';
 import { scoutRefreshTarget } from '../lib/scoutRefreshIntent';
-import { mayRefreshVisibleScoutInbox, SCOUT_VISIBLE_REFRESH_MS } from '../lib/scoutVisibleRefreshPolicy';
+import { mayRecoverUnverifiedScoutInbox, mayRefreshVisibleScoutInbox, scoutNoticeAfterInboxRecovery, SCOUT_VISIBLE_REFRESH_MS } from '../lib/scoutVisibleRefreshPolicy';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { pinForScoutMutation } from '../lib/scoutMutationPin';
 import { requireCurrentPendingScout } from '../lib/scoutDecisionPrewrite';
@@ -264,7 +264,7 @@ export default function ScoutsScreen() {
   // silent polling share the exact pinned, read-only candidate API path.
   // Neither mode overwrites private preference drafts.
   const refreshScouts = async (quiet = false) => {
-    if (!mayRefreshVisibleScoutInbox({
+    const visibleReadState = {
       appActive: AppState.currentState === 'active',
       privateAllowed: privateAllowed && privateQuarantine.canAccessPrivateData(),
       ownerKey,
@@ -275,7 +275,9 @@ export default function ScoutsScreen() {
       writePending: writePendingRef.current,
       searchPending: searchPendingRef.current,
       refreshPending: scoutRefreshPendingRef.current,
-    })) return;
+    };
+    if (!mayRefreshVisibleScoutInbox(visibleReadState) &&
+        !(quiet && mayRecoverUnverifiedScoutInbox(visibleReadState))) return;
     const requestSerial = ++scoutRefreshSerialRef.current;
     const requestGeneration = generation.current;
     const requestOwner = ownerKey;
@@ -301,6 +303,13 @@ export default function ScoutsScreen() {
       const freshScouts = await boundedPrivateRead(() => listJobseekerScouts(pinned.client));
       if (!mayPublish(candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId), pinned.isCurrent())) return;
       setScouts(freshScouts);
+      if (!scoutsVerified) {
+        // Canonical inbox read verifies this section only; do not rehydrate drafts.
+        setScoutsVerified(true);
+        setError((previous) => scoutNoticeAfterInboxRecovery(
+          previous, privacy !== null, preferencesVerified,
+        ));
+      }
       if (quiet) setScoutRefreshError(null);
     } catch {
       if (!quiet && requestSerial === scoutRefreshSerialRef.current &&
