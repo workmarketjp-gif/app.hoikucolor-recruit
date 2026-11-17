@@ -43,6 +43,7 @@ import { mayRecoverUnverifiedScoutInbox, mayRefreshVisibleScoutInbox, scoutNotic
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { pinForScoutMutation } from '../lib/scoutMutationPin';
 import { confirmedScoutWriteReadback } from '../lib/scoutWriteReadback';
+import { scoutConsentCopy } from '../lib/scoutConsentCopy';
 import { requireCurrentPendingScout } from '../lib/scoutDecisionPrewrite';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import { mayShowScoutError, shouldPublishScoutRead, shouldPublishScoutInboxRefresh } from '../lib/scoutReadLease';
@@ -504,12 +505,15 @@ export default function ScoutsScreen() {
   const respond = (item: JobseekerScout, decision: 'accepted' | 'declined') => {
     if (!privateAllowed || !scoutsVerified || writePendingRef.current || busy !== null ||
         item.scout_status !== 'pending') return;
+    const consent = scoutConsentCopy(item.facility_name, decision);
+    if (!consent) {
+      setError('園名を確認できないため、スカウトへ回答できません。更新してご確認ください。');
+      return;
+    }
     const accepting = decision === 'accepted';
     Alert.alert(
-      accepting ? 'スカウトを承諾しますか？' : 'スカウトを辞退しますか？',
-      accepting
-        ? '承諾すると、この園へ氏名・連絡先が共有されます。'
-        : '辞退した場合、氏名・連絡先は園へ共有されません。',
+      consent.title,
+      consent.message,
       [
         { text: 'キャンセル', style: 'cancel' },
         {
