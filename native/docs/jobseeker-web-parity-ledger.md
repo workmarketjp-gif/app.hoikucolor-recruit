@@ -1,3 +1,10 @@
+## Latest isolated delta (r327, 2026-11-18 NZ) — Parent document handoff state after Web-equivalent refresh
+
+- **Baseline:** Web JOBSEEKER `/applications` → opened `ApplicationMessages` → `更新` and application attachments, main `8c502fdb3a1697eb9eedf1f7b02de30374cb7b5c`, blob `6275c5e50c3f67eea58a2ecb53d6b984fd34a497`; synthetic candidate with 2 expected sources. Source comparison only; no rendered Web/native snapshots.
+- **Native:** Before r327, document-panel refresh updated canonical child rows but left the parent application's missing-documents warning stale. Now the same verified 3-source read projects handoff status and notifies the parent only under a current candidate/route/foreground lease; the existing direct handoff adapter uses the exact same fail-closed projection. No extra API calls, no automatic writes/unlock of uncertain attachment repairs.
+- **Evidence:** Node real-source **28/28 PASS** (10 new + r326/r321 18), global TypeScript strict **helper-only PASS**, tested helper/test blob hashes match GitHub. No full Expo compile, live candidate API save/readback, installed Android/iOS comparison or signed builds. Both OSes **IMPLEMENTING**. See [r327 details](parity-delta-r327-application-document-parent-handoff.md).
+- **Ownership/cost:** COLOR-only branch `native/color-focused-document-refresh-r294-20261117`, base parent `34707ee5cab8bafc91ac228792a6bca67fd09785`. No PR/main/production/EAS/paid CI/external agents; billing/signing/distribution unknown.
+
 ## Latest isolated delta (r326, 2026-11-18 NZ) — Application document handoff repair safety
 
 - **Baseline:** Jobseeker Web `/applications` → application details/attachments `src/components/ApplicationMessages.tsx`, main `8c502fdb3a1697eb9eedf1f7b02de30374cb7b5c`, synthetic candidate with missing application documents. Source compared, not rendered captures.
