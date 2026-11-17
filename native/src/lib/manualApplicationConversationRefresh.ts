@@ -17,6 +17,7 @@ export function shouldRefreshOpenedApplicationDocuments(
   readPending: boolean,
 ): boolean {
   return Number.isSafeInteger(requestId) && requestId > 0 &&
-    Number.isSafeInteger(lastConsumedRequestId) && requestId > lastConsumedRequestId &&
+    Number.isSafeInteger(lastConsumedRequestId) && lastConsumedRequestId >= 0 &&
+    requestId > lastConsumedRequestId &&
     canStartFocusedApplicationDocumentsRefresh(state, readPending);
 }

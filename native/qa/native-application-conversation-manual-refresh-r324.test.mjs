@@ -33,4 +33,5 @@ test('r324: reject noninteger and unsafe sequence counters', () => {
   assert.equal(shouldRefreshOpenedApplicationDocuments(1.5, 0, visible, false), false);
   assert.equal(shouldRefreshOpenedApplicationDocuments(Number.MAX_SAFE_INTEGER + 1, 0, visible, false), false);
   assert.equal(shouldRefreshOpenedApplicationDocuments(1, -0.2, visible, false), false);
+  assert.equal(shouldRefreshOpenedApplicationDocuments(1, -1, visible, false), false);
 });

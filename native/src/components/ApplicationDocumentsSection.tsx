@@ -103,7 +103,7 @@ export function ApplicationDocumentsSection({
     setNotice(null);
   }, [viewKey, privacy.shieldVisible]);
 
-  const refresh = async (quiet = false) => {
+  const refresh = async (quiet = false, reportErrors = !quiet) => {
     const refreshState = () => ({
       open,
       focused: focusedRef.current,
@@ -155,7 +155,7 @@ export function ApplicationDocumentsSection({
       freshlyVerifiedOwner.current = requestedViewKey;
       setSnapshot({ ownerKey: requestedViewKey, value: { saved, submitted, expectations } });
     } catch (caught) {
-      if (alive.current && version === requestVersion.current) {
+      if (alive.current && version === requestVersion.current && reportErrors) {
         setError(presentApplicationDocumentError('refresh', caught));
       }
     } finally {
@@ -181,7 +181,9 @@ export function ApplicationDocumentsSection({
       ownerCurrent: Boolean(ownerKey && viewKey && contextLease.current.viewKey === viewKey),
       mutationPending: mutationPending.current,
     }, readPending.current)) return;
-    void refresh();
+    // Quiet mode retains confirmed rows but enforces focus/foreground across
+    // awaits. The explicit user request still surfaces an error if it fails.
+    void refresh(true, true);
   }, [manualRefreshRequest]);
 
   // An open Web panel updates saved, submitted and expected documents every
