@@ -26,6 +26,7 @@ import { openCandidateApplicationDocument } from '../lib/openCandidateApplicatio
 import { shouldRefreshOpenedApplicationDocuments } from '../lib/manualApplicationConversationRefresh';
 import { presentApplicationDocumentError } from '../lib/applicationDocumentErrorPresentation';
 import { readApplicationDocumentSnapshot } from '../lib/applicationDocumentSnapshotRead';
+import { applicationDocumentHandoffProjection } from '../lib/applicationDocumentHandoffProjection';
 import { hasCanonicalApplicationAttachment, projectApplicationDocuments } from '../lib/applicationDocumentsPresentation';
 import { canStartFocusedApplicationDocumentsRefresh, canApplyFocusedApplicationDocumentsRefresh, canPublishApplicationDocumentHandoff, canOpenAttachedApplicationDocumentUrl, shouldRevokeDocumentReadOnBlur } from '../lib/focusedApplicationDocumentsRefresh';
 
@@ -138,22 +139,28 @@ export function ApplicationDocumentsSection({
           candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
+      const readStillCurrent = () => alive.current && pinned.isCurrent() &&
+        version === requestVersion.current && focusedRef.current &&
+        AppState.currentState === 'active' && privacy.canAccessPrivateData() &&
+        !privacy.shieldVisible && contextLease.current.viewKey === requestedViewKey &&
+        (!quiet || canApplyFocusedApplicationDocumentsRefresh(refreshState()));
       const { saved, submitted, expectations } = await readApplicationDocumentSnapshot({
         ownerId: pinned.ownerId,
         applicationId,
         loadSaved: () => listJobseekerDocuments(pinned.client),
         loadSubmitted: () => listSubmittedApplicationDocuments(pinned.client, applicationId),
         loadExpectations: () => listApplicationDocumentExpectations(pinned.client, applicationId),
-        isCurrent: () => alive.current && pinned.isCurrent() && version === requestVersion.current &&
-          privacy.canAccessPrivateData() && contextLease.current.viewKey === requestedViewKey &&
-          (!quiet || canApplyFocusedApplicationDocumentsRefresh(refreshState())),
+        isCurrent: readStillCurrent,
       });
+      // Use only a complete, owner/application-verified snapshot. Updating
+      // saved/submitted rows without the parent warning leaves contradictory
+      // application status after the Web-equivalent manual/foreground refresh.
       projectApplicationDocuments(applicationId, saved, submitted, expectations);
-      if (!alive.current || !pinned.isCurrent() || !privacy.canAccessPrivateData() ||
-          version !== requestVersion.current ||
-          (quiet && !canApplyFocusedApplicationDocumentsRefresh(refreshState()))) return;
+      const handoff = applicationDocumentHandoffProjection(expectations, submitted);
+      if (!readStillCurrent()) return;
       freshlyVerifiedOwner.current = requestedViewKey;
       setSnapshot({ ownerKey: requestedViewKey, value: { saved, submitted, expectations } });
+      onHandoffReadback(handoff);
     } catch (caught) {
       if (alive.current && version === requestVersion.current && reportErrors) {
         setError(presentApplicationDocumentError('refresh', caught));
