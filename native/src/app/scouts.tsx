@@ -4,6 +4,7 @@ import { useSession } from '@clerk/expo';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -38,6 +39,7 @@ import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { readIndependentScoutSections, scoutInitialLoadFailureMessage } from '../lib/scoutIndependentSections';
 import { retryMissingScoutSections } from '../lib/scoutMissingSectionRetry';
 import { scoutRefreshTarget } from '../lib/scoutRefreshIntent';
+import { mayRefreshVisibleScoutInbox, SCOUT_VISIBLE_REFRESH_MS } from '../lib/scoutVisibleRefreshPolicy';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { pinForScoutMutation } from '../lib/scoutMutationPin';
 import { requireCurrentPendingScout } from '../lib/scoutDecisionPrewrite';
@@ -258,18 +260,28 @@ export default function ScoutsScreen() {
     };
   }, [load, focusedScoutId, privateAllowed]));
 
-  // The Web inbox polls while visible. Mobile offers an explicit, lower-cost
-  // refresh that never resets unsaved preference forms or privacy controls.
-  const refreshScouts = async () => {
-    if (!privateAllowed || verifiedOwnerRef.current !== ownerKey ||
-        !scoutsVerified || loading || busy !== null || writePendingRef.current ||
-        searchPendingRef.current || scoutRefreshPendingRef.current) return;
+  // The Web inbox polls every 60 seconds while visible. Manual refresh and
+  // silent polling share the exact pinned, read-only candidate API path.
+  // Neither mode overwrites private preference drafts.
+  const refreshScouts = async (quiet = false) => {
+    if (!mayRefreshVisibleScoutInbox({
+      appActive: AppState.currentState === 'active',
+      privateAllowed: privateAllowed && privateQuarantine.canAccessPrivateData(),
+      ownerKey,
+      verifiedOwnerKey: verifiedOwnerRef.current,
+      scoutsVerified,
+      loading,
+      busy: busy !== null,
+      writePending: writePendingRef.current,
+      searchPending: searchPendingRef.current,
+      refreshPending: scoutRefreshPendingRef.current,
+    })) return;
     const requestSerial = ++scoutRefreshSerialRef.current;
     const requestGeneration = generation.current;
     const requestOwner = ownerKey;
     scoutRefreshPendingRef.current = true;
     setRefreshingScouts(true);
-    setScoutRefreshError(null);
+    if (!quiet) setScoutRefreshError(null);
     const mayPublish = (resolvedOwnerKey: string | null, sessionCurrent: boolean) =>
       shouldPublishScoutInboxRefresh({
         expectedOwnerKey: requestOwner,
@@ -289,8 +301,9 @@ export default function ScoutsScreen() {
       const freshScouts = await boundedPrivateRead(() => listJobseekerScouts(pinned.client));
       if (!mayPublish(candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId), pinned.isCurrent())) return;
       setScouts(freshScouts);
+      if (quiet) setScoutRefreshError(null);
     } catch {
-      if (requestSerial === scoutRefreshSerialRef.current &&
+      if (!quiet && requestSerial === scoutRefreshSerialRef.current &&
           requestGeneration === generation.current &&
           requestOwner === currentOwnerRef.current &&
           privateQuarantine.canAccessPrivateData()) {
@@ -308,6 +321,25 @@ export default function ScoutsScreen() {
     }
   };
 
+
+  // Focus-scoped polling and foreground return match visible Web ScoutInbox.
+  // On blur, both resources are removed; the existing generation/session pin
+  // rejects already-started reads after a route or account change.
+  const refreshScoutsRef = useRef(refreshScouts);
+  refreshScoutsRef.current = refreshScouts;
+  useFocusEffect(useCallback(() => {
+    if (!privateAllowed) return;
+    let previousAppState = AppState.currentState;
+    const timer = setInterval(() => {
+      if (AppState.currentState === 'active') void refreshScoutsRef.current(true);
+    }, SCOUT_VISIBLE_REFRESH_MS);
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const resumed = previousAppState !== 'active' && nextState === 'active';
+      previousAppState = nextState;
+      if (resumed) void refreshScoutsRef.current(true);
+    });
+    return () => { clearInterval(timer); subscription.remove(); };
+  }, [ownerKey, privateAllowed]));
 
   // On a partial first-load failure, retry ONLY the unverified panels.
   // A full load would erase edits in already verified matching preferences.
@@ -826,9 +858,9 @@ export default function ScoutsScreen() {
           <View style={styles.settingRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.itemTitle}>匿名スカウトを受け取る</Text>
-              <Text style={styles.bodyMuted}>ONにすると、ブロックしていない園・法人から匿名プロフィールをもとにお誘いを受けられます。</Text>
+              <Text style={styles.bodyMuted}>ONにすると、ブロックしていない園・法人から匿名プロフィールをもとに見学や応募のお誘いを受けられます。</Text>
             </View>
-            <Switch value={privacy.scout_opt_in} disabled={busy === 'privacy'} onValueChange={(value) => void toggleScout(value)} />
+            <Switch value={privacy.scout_opt_in} disabled={Boolean(busy) || refreshingScouts || !privateAllowed} onValueChange={(value) => void toggleScout(value)} />
           </View>
           <View style={styles.infoBox}>
             <Text style={styles.infoStrong}>本人情報は承認前に共有しません</Text>
