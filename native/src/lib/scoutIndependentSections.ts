@@ -46,3 +46,8 @@ export async function readIndependentScoutSections<TScouts, TPrivacy, TPreferenc
   ]);
   return options.isCurrent() ? { scouts, privacy, preferences } : null;
 }
+
+/** Do not render backend exception text (candidate IDs, RPC details or private paths). */
+export function scoutInitialLoadFailureMessage(_reason: unknown): string {
+  return 'スカウト情報を読み込めませんでした。通信状態を確認して再試行してください。';
+}

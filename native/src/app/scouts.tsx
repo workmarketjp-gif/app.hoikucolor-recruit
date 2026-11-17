@@ -35,7 +35,7 @@ import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
-import { readIndependentScoutSections } from '../lib/scoutIndependentSections';
+import { readIndependentScoutSections, scoutInitialLoadFailureMessage } from '../lib/scoutIndependentSections';
 import { retryMissingScoutSections } from '../lib/scoutMissingSectionRetry';
 import { scoutRefreshTarget } from '../lib/scoutRefreshIntent';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
@@ -224,7 +224,7 @@ export default function ScoutsScreen() {
     } catch (loadError) {
       if (live()) {
         errorOwnerRef.current = ownerKey;
-        setError(String((loadError as { message?: unknown })?.message ?? loadError));
+        setError(scoutInitialLoadFailureMessage(loadError));
       }
     } finally {
       if (current === generation.current) setLoading(false);
