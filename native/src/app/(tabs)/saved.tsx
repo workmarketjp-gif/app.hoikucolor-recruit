@@ -7,7 +7,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { listSavedJobs, unsaveJob, type SavedJobseekerJob } from '../../lib/jobseekerCoreApi';
-import { canCommitSavedJobsView, removeSavedJobAndConfirm } from '../../lib/savedJobsReadback';
+import { canCommitSavedJobsView } from '../../lib/savedJobsReadback';
+import { confirmSavedJobRemovalWithinDeadline } from '../../lib/savedJobMutationDeadline';
 import { boundedPrivateRead } from '../../lib/privateReadDeadline';
 import { readCandidateJobDiscoveryBounded } from '../../lib/jobDiscoveryCanonicalRead';
 import { canActOnSavedJobs, canStartSavedJobsRefresh, retainSavedJobsDuringManualRefresh } from '../../lib/savedJobsRefreshPolicy';
@@ -184,16 +185,14 @@ export default function SavedJobsScreen() {
       if (!pinned?.isCurrent() ||
           candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestOwner ||
           !canPresent(requestOwner, requestGeneration)) return;
-      const canonical = await removeSavedJobAndConfirm(jobId,
+      // A timed-out acknowledgement may already have removed the job.
+      // Never infer success or re-send; require candidate-bound canonical rows.
+      const canonical = await confirmSavedJobRemovalWithinDeadline(jobId,
         () => unsaveJob(pinned.client, jobId),
-        () => boundedPrivateRead(() => {
-          // A completed mutation does not authorize an old candidate/session
-          // to start a new private read after a lock or account switch.
-          if (!pinned.isCurrent() || !canPresent(requestOwner, requestGeneration) ||
-              !focusActiveRef.current)
-            throw new Error('安全なログイン状態を確認できませんでした。');
-          return listSavedJobs(pinned.client);
-        }));
+        () => listSavedJobs(pinned.client),
+        () => pinned.isCurrent() && mutationId === mutationSequence.current &&
+          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === requestOwner &&
+          canPresent(requestOwner, requestGeneration) && focusActiveRef.current);
       if (!pinned.isCurrent() || !canPresent(requestOwner, requestGeneration)) return;
       setOwnedJobs({ ownerKey: requestOwner, value: canonical });
     } catch {
