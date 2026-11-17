@@ -19,6 +19,7 @@ import { getApplicationDocumentHandoffState, type ApplicationDocumentHandoffStat
 import { documentTypeLabel } from '../lib/documentTypes';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
+import { pinForApplicationMutation } from '../lib/applicationMutationPin';
 import { openCandidateApplicationDocument } from '../lib/openCandidateApplicationDocument';
 import { presentApplicationDocumentError } from '../lib/applicationDocumentErrorPresentation';
 import { readApplicationDocumentSnapshot } from '../lib/applicationDocumentSnapshotRead';
@@ -224,10 +225,18 @@ export function ApplicationDocumentsSection({
     setPending(uniqueTargets.length > 1 ? 'batch' : uniqueTargets[0].id);
     setError(null);
     setNotice(null);
+    // The token request is only preparation. Nothing has reached the
+    // attachment RPC yet, so a token timeout is not an ambiguous submission.
+    let submissionStarted = false;
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned || !pinned.isCurrent() ||
-          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
+      const prewriteCurrent = () => alive.current && version === requestVersion.current &&
+        mutationPending.current && open && focusedRef.current &&
+        AppState.currentState === 'active' && privacy.canAccessPrivateData() &&
+        !privacy.shieldVisible && !contextLease.current.shieldVisible &&
+        contextLease.current.viewKey === requestedViewKey && viewKey === requestedViewKey &&
+        presentationEpoch.current === requestedPresentationEpoch;
+      const pinned = await pinForApplicationMutation(pinCandidateAction, prewriteCurrent);
+      if (candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestedOwnerKey) {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
       const canPublishHandoff = () => canPublishApplicationDocumentHandoff({
@@ -244,6 +253,9 @@ export function ApplicationDocumentsSection({
       for (const document of uniqueTargets) {
         if (!canPublishHandoff()) return;
         try {
+          // From this point a server-side commit may succeed even if the
+          // response is lost. Never label a later failure as "not submitted".
+          submissionStarted = true;
           await attachJobseekerDocumentToApplication(pinned.client, document, applicationId);
         } catch {
           // Ambiguous transport reply: rely on canonical readback, never retry blindly.
@@ -283,8 +295,16 @@ export function ApplicationDocumentsSection({
       }
     } catch {
       if (alive.current && version === requestVersion.current) {
-        setSnapshot(null); // Read failure after a write is ambiguous: prohibit repeat until refresh.
-        setError('提出結果を確認できませんでした。重複を防ぐため応募書類を再読み込みしてください。');
+        if (submissionStarted) {
+          // A started write may still commit. Discard old rows and prohibit
+          // a repeat until a fresh canonical document read succeeds.
+          setSnapshot(null);
+          setError('提出結果を確認できませんでした。重複を防ぐため応募書類を再読み込みしてください。');
+        } else {
+          // No attachment RPC was invoked: preserve confirmed read-only rows
+          // but require a fresh session/read before enabling any submission.
+          setError('ログイン状態を確認できませんでした。書類は提出していません。最新の状態を確認してから再度お試しください。');
+        }
       }
     } finally {
       // Never let a stale operation release the newer route's mutation lock.
