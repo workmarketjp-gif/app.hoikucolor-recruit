@@ -178,14 +178,21 @@ async function ensureUploadedSourceObject(client: SupabaseClient, path: string, 
   throw retry.error;
 }
 
-async function ensureApplicationCopy(client: SupabaseClient, sourcePath: string, destinationPath: string) {
+async function ensureApplicationCopy(
+  client: SupabaseClient,
+  sourcePath: string,
+  destinationPath: string,
+  assertContinue: () => void = () => undefined,
+) {
   const bucket = client.storage.from(DOCUMENT_VAULT_BUCKET);
-  const copy = () => bucket.copy(sourcePath, destinationPath);
+  const copy = () => { assertContinue(); return bucket.copy(sourcePath, destinationPath); };
   const first = await copy();
   if (!first.error) return;
+  assertContinue();
   if (await storageObjectExists(client, destinationPath)) return;
   const retry = await copy();
   if (!retry.error) return;
+  assertContinue();
   if (await storageObjectExists(client, destinationPath)) return;
   throw retry.error;
 }
@@ -361,8 +368,20 @@ export async function createAttachedApplicationDocumentSignedUrl(client: Supabas
   return assertHttpsUrl(data.signedUrl);
 }
 
-export async function attachJobseekerDocumentToApplication(client: SupabaseClient, document: JobseekerDocument, applicationId: string): Promise<AttachedApplicationDocument> {
+export async function attachJobseekerDocumentToApplication(
+  client: SupabaseClient,
+  document: JobseekerDocument,
+  applicationId: string,
+  options: { canContinue?: () => boolean } = {},
+): Promise<AttachedApplicationDocument> {
+  const assertContinue = () => {
+    if (options.canContinue && !options.canContinue()) {
+      throw new Error('応募書類の提出結果を確認できませんでした。最新の状態を確認してください。');
+    }
+  };
+  assertContinue();
   const existing = await findAttachedDocument(client, applicationId, document.id);
+  assertContinue();
   if (existing) {
     if (existing.application_id !== applicationId || existing.source_jobseeker_document_id !== document.id) {
       throw new Error('応募書類の紐づけを確認できませんでした。');
@@ -370,24 +389,27 @@ export async function attachJobseekerDocumentToApplication(client: SupabaseClien
     return existing;
   }
   const { data: application, error: applicationError } = await client.from('hc_applications').select('id,organization_id,facility_id').eq('id', applicationId).single();
+  assertContinue();
   if (applicationError) throw applicationError;
   const pathParts = document.file_path.split('/');
   // The attachment RPC requires the source key's last segment verbatim.
   const fileName = pathParts[pathParts.length - 1] ?? '';
   if (!STORAGE_KEY_SEGMENT.test(fileName)) throw new Error('この書類は提出用にコピーできません。書類を保存し直してからお試しください。');
   const destinationPath = `${application.organization_id}/${application.facility_id}/${application.id}/vault-${document.id}/${fileName}`;
-  await ensureApplicationCopy(client, document.file_path, destinationPath);
+  await ensureApplicationCopy(client, document.file_path, destinationPath, assertContinue);
+  assertContinue();
   // The RPC can commit before its reply is lost. Keep the copied source if
   // readback is inconclusive; deleting it could corrupt a submitted application.
   return confirmCandidateDocumentWrite<AttachedApplicationDocument>({
     register: async () => {
+      assertContinue();
       const { data, error } = await client.rpc('hc_register_jobseeker_document_attachment', {
         p_document_id: document.id, p_application_id: applicationId, p_destination_path: destinationPath,
       });
       if (error) throw error;
       return (data as AttachedApplicationDocument | null) ?? null;
     },
-    readback: () => findAttachedDocument(client, applicationId, document.id),
+    readback: () => { assertContinue(); return findAttachedDocument(client, applicationId, document.id); },
     matches: (row) => row.application_id === applicationId &&
       row.source_jobseeker_document_id === document.id &&
       row.organization_id === application.organization_id &&

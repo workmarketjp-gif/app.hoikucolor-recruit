@@ -20,6 +20,7 @@ import { documentTypeLabel } from '../lib/documentTypes';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { pinForApplicationMutation } from '../lib/applicationMutationPin';
+import { awaitApplicationDocumentAttachmentAck } from '../lib/awaitApplicationDocumentAttachmentAck';
 import { openCandidateApplicationDocument } from '../lib/openCandidateApplicationDocument';
 import { presentApplicationDocumentError } from '../lib/applicationDocumentErrorPresentation';
 import { readApplicationDocumentSnapshot } from '../lib/applicationDocumentSnapshotRead';
@@ -248,18 +249,20 @@ export function ApplicationDocumentsSection({
         mutationPending: mutationPending.current,
         presentationUnchanged: presentationEpoch.current === requestedPresentationEpoch,
       }, alive.current && pinned.isCurrent() && version === requestVersion.current);
-      // One source at a time. Blur/refocus and OS background cycles must
-      // never resume the previous invocation's remaining document writes.
+      // Stop the batch on the first missing/late acknowledgement. Continuing
+      // would begin more private writes after an unknown server outcome.
+      // The adapter checks this deadline lease before every new write stage.
       for (const document of uniqueTargets) {
         if (!canPublishHandoff()) return;
-        try {
-          // From this point a server-side commit may succeed even if the
-          // response is lost. Never label a later failure as "not submitted".
+        await awaitApplicationDocumentAttachmentAck(async (canContinue) => {
+          if (!canContinue()) throw new Error('応募書類の操作画面が変更されました。');
+          // Conservative boundary: even a Storage preflight may have started,
+          // so a missing reply cannot be labelled "not submitted".
           submissionStarted = true;
-          await attachJobseekerDocumentToApplication(pinned.client, document, applicationId);
-        } catch {
-          // Ambiguous transport reply: rely on canonical readback, never retry blindly.
-        }
+          await attachJobseekerDocumentToApplication(
+            pinned.client, document, applicationId, { canContinue },
+          );
+        }, canPublishHandoff);
       }
       if (!canPublishHandoff()) return; // Never read back a blurred or refocused batch.
       const { saved, submitted, expectations } = await readApplicationDocumentSnapshot({
