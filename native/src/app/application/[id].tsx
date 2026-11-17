@@ -23,6 +23,7 @@ import { canSubmitCandidateMessage, classifyUncertainCandidateMessageReview, sho
 import { captureCandidateMessageInvocationReview, candidateMessageSendNeedsReview } from '../../lib/candidateMessageInvocationReview';
 import { canApplyFocusedCandidateMessageRefresh, canRefreshFocusedCandidateMessages } from '../../lib/focusedCandidateMessageRefresh';
 import { boundedPrivateRead } from '../../lib/privateReadDeadline';
+import { sendCandidateMessageWithinPresentationDeadline } from '../../lib/candidateMessagePresentationDeadline';
 import { markVisibleApplicationMessagesRead } from '../../lib/attentionApi';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { visibleCandidateFacilityMessageIdWhenKeyboardHidden, type CandidateMessageReadViewport } from '../../lib/candidateMessageReadVisibility';
@@ -522,7 +523,8 @@ function ApplicationDetailContent() {
       // verifies the returned message ID, role and body. A second full-detail
       // reload could fail because of an unrelated document-handoff read,
       // incorrectly hiding a reply that was *already confirmed as sent*.
-      const confirmedMessage = await sendApplicationMessageDurable({
+      const confirmedMessage = await sendCandidateMessageWithinPresentationDeadline(
+        (presentationLeaseIsCurrent) => sendApplicationMessageDurable({
         client: pinned.client,
         ownerId: pinned.ownerId,
         ownerSessionId: pinned.ownerSessionId,
@@ -542,8 +544,11 @@ function ApplicationDetailContent() {
         },
         // A pinned token by itself is insufficient: navigation/focus changes
         // must also fence the write after asynchronous SecureStore preparation.
-        isCurrent: () => pinned.isCurrent() && messageRequestGeneration === generation.current,
-      });
+        isCurrent: () => pinned.isCurrent() &&
+          messageRequestGeneration === generation.current && presentationLeaseIsCurrent(),
+        }),
+        () => pinned.isCurrent() && messageRequestGeneration === generation.current,
+      );
       if (!pinned.isCurrent() || messageRequestGeneration !== generation.current) return;
       uncertainMessageRef.current = null;
       setMessages((current) => mergeConfirmedCandidateMessage(current, confirmedMessage, submittedDraft));
