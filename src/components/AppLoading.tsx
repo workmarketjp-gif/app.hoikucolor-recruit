@@ -1,5 +1,6 @@
-import logoMark from '../logo/logom_hoikucolor.png';
 import { useDelayed } from './StateViews';
+
+const logoMark = '/logo/logomark_hoikupoppy.png';
 
 /**
  * App-level wait (Clerk / config). Shows nothing for the first 400ms so fast
