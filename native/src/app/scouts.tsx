@@ -44,6 +44,7 @@ import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { pinForScoutMutation } from '../lib/scoutMutationPin';
 import { confirmedScoutWriteReadback } from '../lib/scoutWriteReadback';
 import { scoutConsentCopy } from '../lib/scoutConsentCopy';
+import { mayBeginScoutManualRefresh } from '../lib/scoutManualRefreshGate';
 import { boundedScoutMutationAcknowledgement } from '../lib/scoutMutationDeadline';
 import { requireCurrentPendingScout } from '../lib/scoutDecisionPrewrite';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
@@ -422,7 +423,17 @@ export default function ScoutsScreen() {
   // A successful inbox read does not verify privacy or matching preferences.
   // Both pull-to-refresh and the explicit control must first recover any
   // unverified section; verified preference edits must remain untouched.
+  const canManualRefresh = () => mayBeginScoutManualRefresh({
+    privateAllowed,
+    loading,
+    busy: busy !== null,
+    writePending: writePendingRef.current,
+    searchPending: searchPendingRef.current,
+    refreshPending: scoutRefreshPendingRef.current,
+  });
   const refreshVisiblePanels = () => {
+    // A full retry clears private drafts: never interrupt an unknown write.
+    if (!canManualRefresh()) return;
     const target = scoutRefreshTarget({
       scoutsVerified,
       privacyVerified: privacy !== null,
@@ -434,6 +445,7 @@ export default function ScoutsScreen() {
     return refreshScouts();
   };
 
+  const manualRefreshDisabled = !canManualRefresh() || refreshingScouts;
   const pendingCount = scouts.filter((item) => item.scout_status === 'pending').length;
 
   const beginScoutWrite = (key: string): number | null => {
@@ -504,7 +516,8 @@ export default function ScoutsScreen() {
   };
 
   const respond = (item: JobseekerScout, decision: 'accepted' | 'declined') => {
-    if (!privateAllowed || !scoutsVerified || writePendingRef.current || busy !== null ||
+    if (!privateAllowed || !scoutsVerified || writePendingRef.current ||
+        searchPendingRef.current || scoutRefreshPendingRef.current || busy !== null ||
         item.scout_status !== 'pending') return;
     const consent = scoutConsentCopy(item.facility_name, decision);
     if (!consent) {
@@ -809,22 +822,22 @@ export default function ScoutsScreen() {
       <View style={styles.center}>
         {safeError ? <Text style={styles.error}>{safeError}</Text> : <ActivityIndicator />}
         <Text style={styles.body}>スカウト設定を確認しています…</Text>
-        {safeError ? <Pressable accessibilityRole="button" onPress={() => void load()}><Text style={styles.bodyStrong}>もう一度読み込む</Text></Pressable> : null}
+        {safeError ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: manualRefreshDisabled }} disabled={manualRefreshDisabled} onPress={() => { if (canManualRefresh()) void load(); }}><Text style={styles.bodyStrong}>もう一度読み込む</Text></Pressable> : null}
       </View>
     );
   }
 
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled"
-      refreshControl={<RefreshControl refreshing={refreshingScouts} onRefresh={() => void refreshVisiblePanels()} tintColor="#E9265A" colors={['#E9265A']} />}>
+      refreshControl={<RefreshControl refreshing={refreshingScouts} enabled={!manualRefreshDisabled} onRefresh={() => void refreshVisiblePanels()} tintColor="#E9265A" colors={['#E9265A']} />}>
       <View>
         <View style={styles.rowBetween}>
           <Text style={styles.title}>スカウト</Text>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={scoutRefreshTarget({ scoutsVerified, privacyVerified: privacy !== null, preferencesVerified }) === 'missing-sections' ? '未確認のスカウト項目を再取得' : '届いたスカウトを更新'}
-            accessibilityState={{ disabled: refreshingScouts || Boolean(busy) || loading }}
-            disabled={refreshingScouts || Boolean(busy) || loading}
+            accessibilityState={{ disabled: manualRefreshDisabled }}
+            disabled={manualRefreshDisabled}
             onPress={() => void refreshVisiblePanels()}
             style={styles.refreshButton}
           >
@@ -838,14 +851,14 @@ export default function ScoutsScreen() {
         <Text style={styles.error}>{safeError}</Text>
         {(!scoutsVerified || !privacy || !preferencesVerified) ? (
           <Pressable accessibilityRole="button" style={styles.secondaryButtonWide}
-            disabled={Boolean(busy) || refreshingScouts}
+            disabled={manualRefreshDisabled}
             onPress={() => void retryMissingSections()}>
             <Text style={styles.secondaryText}>未確認項目だけ再読み込み（入力保持）</Text>
           </Pressable>
         ) : null}
         <Pressable accessibilityRole="button" style={styles.secondaryButtonWide}
-          disabled={Boolean(busy) || refreshingScouts}
-          onPress={() => void load()}>
+          disabled={manualRefreshDisabled}
+          onPress={() => { if (canManualRefresh()) void load(); }}>
           <Text style={styles.secondaryText}>全項目を再読み込み（未保存の入力は消えます）</Text>
         </Pressable>
       </View> : null}
@@ -885,10 +898,10 @@ export default function ScoutsScreen() {
             </View>
             {item.scout_status === 'pending' ? (
               <View style={styles.actionRow}>
-                <Pressable style={styles.secondaryButton} disabled={Boolean(busy)} onPress={() => respond(item, 'declined')}>
+                <Pressable accessibilityRole="button" accessibilityState={{ disabled: manualRefreshDisabled }} style={styles.secondaryButton} disabled={manualRefreshDisabled} onPress={() => respond(item, 'declined')}>
                   <Text style={styles.secondaryText}>辞退する</Text>
                 </Pressable>
-                <Pressable style={styles.primaryButton} disabled={Boolean(busy)} onPress={() => respond(item, 'accepted')}>
+                <Pressable accessibilityRole="button" accessibilityState={{ disabled: manualRefreshDisabled }} style={styles.primaryButton} disabled={manualRefreshDisabled} onPress={() => respond(item, 'accepted')}>
                   <Text style={styles.primaryText}>{busy === item.scout_id ? '処理中…' : '承諾する'}</Text>
                 </Pressable>
               </View>
@@ -901,6 +914,7 @@ export default function ScoutsScreen() {
       {privacy ? (
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>匿名スカウト・公開範囲</Text>
+          <Text style={styles.bodyMuted}>応募前は氏名・メール・電話番号・現在の勤務先を園へ公開しません。希望条件や資格など、転職先選びに必要な情報だけを匿名で利用します。</Text>
           <View style={styles.settingRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.itemTitle}>匿名スカウトを受け取る</Text>
