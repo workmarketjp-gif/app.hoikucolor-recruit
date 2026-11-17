@@ -1,3 +1,9 @@
+## Latest isolated delta (r326, 2026-11-18 NZ) — Application document handoff repair safety
+
+- **Baseline:** Jobseeker Web `/applications` → application details/attachments `src/components/ApplicationMessages.tsx`, main `8c502fdb3a1697eb9eedf1f7b02de30374cb7b5c`, synthetic candidate with missing application documents. Source compared, not rendered captures.
+- **Native:** `/application/[id]` recovery now serializes attachment writes instead of starting multiple `Promise.allSettled` mutations; checks candidate/session/foreground and 15-second presentation lease between async stages, stops after ambiguous result, and requires explicit canonical status re-read before another repair. No API/RLS/DB changes.
+- **Tests:** focused real-source Node tests **18/18 PASS** (10 new serial/timeout + 8 existing ack) and strict helper-only TypeScript PASS. Expo whole-app compile, live synthetic canonical persistence, actual Android/iOS rendered UI and signed builds NOT VERIFIED. Both OS states **IMPLEMENTING**. No production/PR/main/paid CI/EAS/agent. See [r326 delta](parity-delta-r326-application-handoff-serial-repair.md).
+
 ## Latest isolated delta (r241, 2026-11-15 NZ) — Resume row edit freshness
 
 - JOBSEEKER Web `/resume` frozen at `main fa779e73`; actual Web source reviewed 2026-11-15 in a two-row synthetic editing state. Native row callbacks previously rebuilt arrays from stale render snapshots. r241 applies edits/moves by unique row ID to current functional state, uses fresh values for status/age chips, and checks append limits under rapid taps; no API or server change. See [r241 details](parity-delta-r241-resume-row-stale-callback.md).
