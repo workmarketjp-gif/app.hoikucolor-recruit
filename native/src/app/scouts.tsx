@@ -42,6 +42,7 @@ import { scoutRefreshTarget } from '../lib/scoutRefreshIntent';
 import { mayRecoverUnverifiedScoutInbox, mayRefreshVisibleScoutInbox, scoutNoticeAfterInboxRecovery, SCOUT_VISIBLE_REFRESH_MS } from '../lib/scoutVisibleRefreshPolicy';
 import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { pinForScoutMutation } from '../lib/scoutMutationPin';
+import { confirmedScoutWriteReadback } from '../lib/scoutWriteReadback';
 import { requireCurrentPendingScout } from '../lib/scoutDecisionPrewrite';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import { mayShowScoutError, shouldPublishScoutRead, shouldPublishScoutInboxRefresh } from '../lib/scoutReadLease';
@@ -546,8 +547,11 @@ export default function ScoutsScreen() {
               if (status !== decision) throw new Error('スカウト回答の結果が一致しません。');
               // Re-read with the SAME pinned candidate token. Never manufacture
               // responded_at or assume an RPC acknowledgement is the visible state.
-              const canonical = confirmScoutDecision(
-                await listJobseekerScouts(pinned.client), item.scout_id, decision);
+              const canonical = await confirmedScoutWriteReadback(
+                () => listJobseekerScouts(pinned.client),
+                (rows) => confirmScoutDecision(rows, item.scout_id, decision),
+                () => mayPublishScoutWrite(pinned, serial, owner, readGeneration),
+              );
               if (!mayPublishScoutWrite(pinned, serial, owner, readGeneration)) return;
               setScouts([...canonical]);
               setNotice(status === 'accepted'
@@ -588,7 +592,11 @@ export default function ScoutsScreen() {
       }
       const response = await setScoutOptIn(pinned.client, enabled);
       if (response !== enabled) throw new Error('スカウト設定の保存結果が一致しません。');
-      const confirmed = confirmScoutOptIn(await getScoutPrivacySettings(pinned.client), enabled);
+      const confirmed = await confirmedScoutWriteReadback(
+        () => getScoutPrivacySettings(pinned.client),
+        (snapshot) => confirmScoutOptIn(snapshot, enabled),
+        () => mayPublishScoutWrite(pinned, serial, owner, readGeneration),
+      );
       if (!mayPublishScoutWrite(pinned, serial, owner, readGeneration)) return;
       setPrivacy(confirmed);
       setNotice(enabled ? '匿名スカウトを受け取る設定にしました。' : '匿名スカウトを停止しました。');
@@ -658,8 +666,11 @@ export default function ScoutsScreen() {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
       await addScoutBlockedOrganization(pinned.client, organization.organization_id);
-      const confirmed = confirmScoutBlock(
-        await getScoutPrivacySettings(pinned.client), organization.organization_id, true);
+      const confirmed = await confirmedScoutWriteReadback(
+        () => getScoutPrivacySettings(pinned.client),
+        (snapshot) => confirmScoutBlock(snapshot, organization.organization_id, true),
+        () => mayPublishScoutWrite(pinned, serial, owner, readGeneration),
+      );
       if (!mayPublishScoutWrite(pinned, serial, owner, readGeneration)) return;
       setPrivacy(confirmed);
       setBlockResults((current) => current.filter((item) => item.organization_id !== organization.organization_id));
@@ -682,8 +693,11 @@ export default function ScoutsScreen() {
         throw new Error('安全なログイン状態を確認できませんでした。');
       }
       await removeScoutBlockedOrganization(pinned.client, organizationId);
-      const confirmed = confirmScoutBlock(
-        await getScoutPrivacySettings(pinned.client), organizationId, false);
+      const confirmed = await confirmedScoutWriteReadback(
+        () => getScoutPrivacySettings(pinned.client),
+        (snapshot) => confirmScoutBlock(snapshot, organizationId, false),
+        () => mayPublishScoutWrite(pinned, serial, owner, readGeneration),
+      );
       if (!mayPublishScoutWrite(pinned, serial, owner, readGeneration)) return;
       setPrivacy(confirmed);
       setNotice('手動ブロックを解除しました。');
@@ -725,8 +739,11 @@ export default function ScoutsScreen() {
       }
       // An acknowledged write is not a verified persisted preference.
       await saveJobseekerMatchingPreferences(pinned.client, next);
-      const verified = confirmScoutPreferences(
-        next, await getJobseekerMatchingPreferences(pinned.client));
+      const verified = await confirmedScoutWriteReadback(
+        () => getJobseekerMatchingPreferences(pinned.client),
+        (snapshot) => confirmScoutPreferences(next, snapshot),
+        () => mayPublishScoutWrite(pinned, serial, owner, readGeneration),
+      );
       if (!mayPublishScoutWrite(pinned, serial, owner, readGeneration)) return;
       if (draftRevisionRef.current === submittedRevision) {
         hydratePreferences(verified);
