@@ -20,6 +20,8 @@ import {
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { VisitDateCalendar } from '../components/VisitDateCalendar';
 import { navigateFromCandidateVisitWithLease } from '../lib/visitRelatedNavigationLease';
+import { readCandidateVisitSnapshot } from '../lib/candidateVisitSnapshotRead';
+import { safeVisitErrorMessage } from '../lib/visitErrorPresentation';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -111,15 +113,19 @@ export default function VisitsScreen() {
     setOwnedError(null);
     setLoading(true);
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent()) throw new Error('安全なログイン状態を確認できませんでした。');
-      const requestOwner = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
-      if (!requestOwner) throw new Error('安全なログイン状態を確認できませんでした。');
-      const [nextVisits, nextSettings] = await Promise.all([
-        listCandidateVisits(pinned.client),
-        jobId ? getVisitSettings(pinned.client, jobId) : Promise.resolve(null),
-      ]);
-      if (!pinned.isCurrent() || current !== generation.current || !privacy.canAccessPrivateData()) return false;
+      // A visit history/booking-settings read is a candidate-private snapshot.
+      // A delayed Clerk token or RPC must not access a different candidate,
+      // and neither read may leave this screen spinning without a deadline.
+      const { ownerKey: requestOwner, visits: nextVisits, settings: nextSettings } =
+        await readCandidateVisitSnapshot({
+          pin: pinCandidateAction,
+          expectedOwnerKey: ownerKey,
+          resolveOwnerKey: candidateViewOwnerKey,
+          isScreenCurrent: () => current === generation.current && privacy.canAccessPrivateData(),
+          listVisits: listCandidateVisits,
+          readSettings: (client) => jobId ? getVisitSettings(client, jobId) : Promise.resolve(null),
+        });
+      if (current !== generation.current || !privacy.canAccessPrivateData()) return false;
       if (expected && !visitReadbackConfirmsMutation(nextVisits, expected.reservationId, expected.mutation)) {
         throw new Error('操作は送信されましたが、最新の予約状態を確認できません。更新して確認してください。再送信はしないでください。');
       }
@@ -132,7 +138,10 @@ export default function VisitsScreen() {
     } catch (loadError) {
       if (current === generation.current && ownerKey && privacy.canAccessPrivateData()) {
         freshlyVerifiedOwner.current = ownerKey;
-        setOwnedError({ ownerKey, value: String((loadError as { message?: unknown })?.message ?? loadError) });
+        setOwnedError({ ownerKey, value: safeVisitErrorMessage(
+          expected ? (expected.mutation === 'request' ? 'readback_request' : 'readback_cancel') : 'load',
+          loadError,
+        ) });
       }
       return false;
     } finally {
@@ -212,7 +221,7 @@ export default function VisitsScreen() {
         freshlyVerifiedOwner.current = ownerKey;
         setOwnedVisits(null);
         setOwnedSettings(null);
-        setOwnedError({ ownerKey, value: String((requestError as { message?: unknown })?.message ?? requestError) });
+        setOwnedError({ ownerKey, value: safeVisitErrorMessage('request', requestError) });
       }
     } finally {
       setBusy(false);
@@ -236,7 +245,7 @@ export default function VisitsScreen() {
         freshlyVerifiedOwner.current = ownerKey;
         setOwnedVisits(null);
         setOwnedSettings(null);
-        setOwnedError({ ownerKey, value: String((cancelError as { message?: unknown })?.message ?? cancelError) });
+        setOwnedError({ ownerKey, value: safeVisitErrorMessage('cancel', cancelError) });
       }
     } finally {
       setBusy(false);
