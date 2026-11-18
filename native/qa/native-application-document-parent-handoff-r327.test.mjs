@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { applicationDocumentHandoffProjection } from '../src/lib/applicationDocumentHandoffProjection.ts';
-const expectation = (id) => ({ application_id: 'app-synthetic-A', source_jobseeker_document_id_snapshot: id });
-const attachment = (id) => ({ application_id: 'app-synthetic-A', source_jobseeker_document_id: id });
+const expectation = (id) => ({ application_id: 'app-synthetic-A', source_jobseeker_document_id_snapshot: id, destination_file_path: 'synthetic/'+id, document_type:'resume' });
+const attachment = (id, filePath = 'synthetic/'+id) => ({ application_id: 'app-synthetic-A', source_jobseeker_document_id: id, file_path: filePath, document_type:'resume' });
 
 test('no expected document is confirmed with zero expected/submitted', () => {
   assert.deepEqual(applicationDocumentHandoffProjection([], []), {
@@ -29,8 +29,8 @@ test('duplicate expectation/attachment rows never inflate counts', () => {
     [attachment('a'), attachment('a')],
   ), { expectedCount: 2, submittedFromVaultCount: 1, missingSourceDocumentIds: ['b'] });
 });
-test('null linked source IDs are not evidence of handoff', () => {
-  assert.deepEqual(applicationDocumentHandoffProjection([expectation('a')], [attachment(null)]), {
+test('null linked source IDs are not evidence of handoff without matching copy destination', () => {
+  assert.deepEqual(applicationDocumentHandoffProjection([expectation('a')], [attachment(null,'other/path')]), {
     expectedCount: 1, submittedFromVaultCount: 0, missingSourceDocumentIds: ['a'],
   });
 });
