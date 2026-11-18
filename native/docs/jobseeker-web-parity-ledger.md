@@ -1,3 +1,10 @@
+## Latest isolated delta (r329, 2026-11-18 NZ) — Post-submit parent handoff uses confirmed canonical document snapshot
+
+- **Web/source baseline:** JOBSEEKER `/applications` → `ApplicationMessages` documents, Web main `8c502fdb` / component blob `6275c5e5`; synthetic candidate with two expected source documents. Web-source comparison only; no paired rendered Native images.
+- **Closed Native gap:** Following successful canonical three-source post-write re-read, the panel previously launched a redundant independent two-source call for parent status; its failure could clear the parent handoff warning despite confirmed document submission. The same verified `expectations/submitted` snapshot now produces both the child rows and the parent warning under the owner/focus lease, with no extra post-write read. Existing error quarantine and no-auto-retry remain.
+- **QA:** Isolated actual-source Node tests **6/6 PASS**, helper-only strict TypeScript PASS; post-commit GitHub wiring verified. No full Expo typecheck, live synthetic application write/read, Android/iOS runtime/visual test, or signed builds; both OSes remain **IMPLEMENTING**. [r329 details](parity-delta-r329-submission-parent-handoff.md).
+- **Ownership/cost:** COLOR-only `native/color-focused-document-refresh-r294-20261117`, implementation `b50217c78`, regression `9248ec40`. No PR/main/production/paid Actions/EAS/new agent; CI only main-push/PR, signing and billable quota unknown.
+
 ## Latest isolated delta (r328, 2026-11-18 NZ) — Silent document refresh failure no longer reauthorizes stale action rows
 
 - **Web/source baseline:** JOBSEEKER `/applications` → opened `ApplicationMessages` document panel; Web main `8c502fdb`, component blob `6275c5e5`; synthetic candidate with prior saved/submitted documents and a failing silent refresh. Source-only, not rendered/physical comparison.
