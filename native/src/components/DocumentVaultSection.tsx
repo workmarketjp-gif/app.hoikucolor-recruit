@@ -25,6 +25,7 @@ import { qualificationEvidenceCounts } from '../lib/qualificationEvidenceCounts'
 import { resolveVaultUploadType, type ApplyVaultChange } from '../lib/applyVaultSelection';
 import { createVaultOperationLease } from '../lib/vaultOperationLease';
 import { presentDocumentVaultError } from '../lib/documentVaultErrorPresentation';
+import { openCandidateApplicationDocument } from '../lib/openCandidateApplicationDocument';
 
 // Keep the document catalogue and exact qualification mapping in sync with Web.
 const labels = DOCUMENT_TYPE_LABELS;
@@ -406,19 +407,24 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     if (lease === null) return;
     onBusyChangedRef.current?.(true);
     setBusyId(document.id);
-    let pinned: Awaited<ReturnType<typeof pinCandidateAction>> = null;
+    // The saved-source viewer must use the same bounded token + private Storage
+    // handshake as the application-document viewer. Recheck current candidate,
+    // freshly verified row, privacy shield and lease before each async step.
+    const viewStillCurrent = () =>
+      operationLeaseRef.current.isCurrent(lease) &&
+      mountedRef.current &&
+      ownerKeyRef.current === ownerKey &&
+      privacy.canAccessPrivateData() &&
+      canActOnCandidateDocument(document, verifiedDocuments, user?.id ?? null, ownerKey, freshlyVerifiedOwner.current, true);
     try {
-      // A private signed URL is itself candidate-scoped sensitive capability.
-      // Never let an async signed-URL request that started under Candidate A
-      // complete into Candidate B's UI after Clerk session replacement.
-      pinned = await pinCandidateAction();
-      if (!operationLeaseRef.current.isCurrent(lease) || !pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
-      const url = await createJobseekerDocumentSignedUrl(pinned.client, document);
-      if (!operationLeaseRef.current.isCurrent(lease) || !pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey ||
-          !canActOnCandidateDocument(document, verifiedDocuments, user?.id ?? null, ownerKey, freshlyVerifiedOwner.current, true)) return;
-      await Linking.openURL(url);
+      await openCandidateApplicationDocument({
+        pin: pinCandidateAction,
+        getSignedUrl: (client) => createJobseekerDocumentSignedUrl(client, document),
+        openUrl: (url) => Linking.openURL(url),
+        isCurrent: viewStillCurrent,
+      });
     } catch (error) {
-      if (operationLeaseRef.current.isCurrent(lease) && (!pinned || pinned.isCurrent())) {
+      if (viewStillCurrent()) {
         Alert.alert('書類を開けませんでした', presentDocumentVaultError('open', error));
       }
     } finally {
