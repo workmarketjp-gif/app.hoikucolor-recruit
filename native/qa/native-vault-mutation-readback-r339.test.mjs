@@ -82,10 +82,10 @@ test('delete requires confirmed canonical absence', async () => {
   const s = setup({ action: 'deleted', readback: async () => [] });
   assert.deepEqual(await reconcileCandidateVaultMutation(s.options), []);
 });
-test('ambiguous delete response + canonical absence needs no duplicate delete', async () => {
+test('ambiguous delete response and empty readback never claim deletion: RLS may hide rows', async () => {
   let calls = 0;
   const s = setup({ action: 'deleted', mutate: async () => { calls++; throw new Error('timed out'); }, readback: async () => [] });
-  assert.deepEqual(await reconcileCandidateVaultMutation(s.options), []);
+  await assert.rejects(reconcileCandidateVaultMutation(s.options), /確認できません/);
   assert.equal(calls, 1);
 });
 test('row remains after attempted delete: do not claim removal', async () => {

@@ -25,8 +25,10 @@ export async function reconcileCandidateVaultMutation<TDocument extends Candidat
   if (!ownerId || target.jobseeker_clerk_user_id !== ownerId || !isCurrent()) throw denied();
 
   // The mutation must not be replayed even if the response is ambiguous.
+  let mutationSucceeded = false;
   try {
     await options.mutate();
+    mutationSucceeded = true;
   } catch {
     // A committed write can outlive a dropped RPC response; read back once.
   }
@@ -43,7 +45,8 @@ export async function reconcileCandidateVaultMutation<TDocument extends Candidat
 
   const current = rows.find((row) => row.id === target.id);
   const matches = action === 'deleted'
-    ? current === undefined
+    // An empty RLS-filtered list cannot prove deletion after an ambiguous RPC.
+    ? mutationSucceeded && current === undefined
     : current?.jobseeker_clerk_user_id === ownerId &&
       current.file_path === target.file_path &&
       current.document_type === target.document_type &&
