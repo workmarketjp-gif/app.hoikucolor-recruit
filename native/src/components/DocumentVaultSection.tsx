@@ -26,6 +26,7 @@ import { resolveVaultUploadType, type ApplyVaultChange } from '../lib/applyVault
 import { createVaultOperationLease } from '../lib/vaultOperationLease';
 import { presentDocumentVaultError } from '../lib/documentVaultErrorPresentation';
 import { openCandidateApplicationDocument } from '../lib/openCandidateApplicationDocument';
+import { readCandidateVaultSnapshot } from '../lib/readCandidateVaultSnapshot';
 
 // Keep the document catalogue and exact qualification mapping in sync with Web.
 const labels = DOCUMENT_TYPE_LABELS;
@@ -135,30 +136,35 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     const requestOwnerKey = ownerKeyRef.current;
     if (!requestOwnerKey || !privacy.canAccessPrivateData()) return;
     const generation = ++loadGenerationRef.current;
+    const loadStillCurrent = () =>
+      mountedRef.current &&
+      generation === loadGenerationRef.current &&
+      ownerKeyRef.current === requestOwnerKey &&
+      privacy.canAccessPrivateData();
     freshlyVerifiedOwner.current = null;
     setOwnedDocuments(null);
     onDocumentsChangedRef.current?.([], 'loading');
     setLoading(true);
-    let pinned: Awaited<ReturnType<typeof pinCandidateAction>> = null;
     try {
-      pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() || generation !== loadGenerationRef.current ||
-          candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== requestOwnerKey) return;
-      const next = await listJobseekerDocuments(pinned.client);
-      if (!pinned.isCurrent() || generation !== loadGenerationRef.current ||
-          ownerKeyRef.current !== requestOwnerKey || !privacy.canAccessPrivateData()) return;
-      assertCandidateDocumentListOwner(next, pinned.ownerId);
+      const next = await readCandidateVaultSnapshot({
+        pin: pinCandidateAction,
+        read: listJobseekerDocuments,
+        ownerKey: requestOwnerKey,
+        ownerKeyFor: candidateViewOwnerKey,
+        isCurrent: loadStillCurrent,
+        assertDocumentOwner: assertCandidateDocumentListOwner,
+      });
+      if (!loadStillCurrent()) return;
       setDocuments(next, requestOwnerKey);
     } catch (error) {
-      if (generation === loadGenerationRef.current && ownerKeyRef.current === requestOwnerKey &&
-          privacy.canAccessPrivateData() && (!pinned || pinned.isCurrent())) {
-        // A failed canonical read must not unblock an embedded application form.
+      if (loadStillCurrent()) {
+        // Never treat a pending/failed private read as an empty document vault.
+        // The embedded application form remains blocked until a verified retry.
         onDocumentsChangedRef.current?.([], 'error');
         Alert.alert('応募書類を読み込めませんでした', presentDocumentVaultError('read', error));
       }
     } finally {
-      if (generation === loadGenerationRef.current && ownerKeyRef.current === requestOwnerKey &&
-          privacy.canAccessPrivateData() && (!pinned || pinned.isCurrent())) setLoading(false);
+      if (loadStillCurrent()) setLoading(false);
     }
   }, [pinCandidateAction, privacy.canAccessPrivateData, setDocuments]);
 

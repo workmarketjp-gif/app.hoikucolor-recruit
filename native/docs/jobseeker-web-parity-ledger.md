@@ -1,3 +1,9 @@
+## Latest isolated delta (r337, 2026-11-18 NZ) — Saved-document vault read now bounded and retryable
+
+- **Gap closed in Native source:** `/profile` saved-document list no longer indefinitely awaits Clerk pin/Supabase canonical list. Each phase has a 15s presentation deadline; late or cross-session rows are discarded; errors retain a blocked document state and display the existing manual reload action. No new server write or privilege.
+- **Tests:** real helper 13/13 Node PASS, helper-only strict TypeScript PASS. Native TSX wiring updated. Android **IMPLEMENTING**, iOS **IMPLEMENTING** — no actual Android/iOS render, signed installable builds, full Expo typecheck or canonical backend E2E. [r337 delta](parity-delta-r337-vault-canonical-load-deadline.md).
+- **Ownership/cost:** `native/color-focused-document-refresh-r294-20261117`, parent `5e8a6b3dfc5084757b7ddd4c303ac8d465e11b02`. No new PR/main/Production/Store, paid Actions/EAS or external coding agent. Billable quota/signing unverified.
+
 ## Latest isolated delta (r333, 2026-11-18 NZ) — Session fence on private source upload retries
 
 - **Reference:** Web JOBSEEKER /applications and /resume document upload; Web main `8c502fdb`, synthetic candidate A→B during slow Storage response/existence probe; source-only, no rendered captures.
