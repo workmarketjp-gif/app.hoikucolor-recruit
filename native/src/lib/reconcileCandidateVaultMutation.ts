@@ -43,14 +43,22 @@ export async function reconcileCandidateVaultMutation<TDocument extends Candidat
     throw uncertain();
   }
 
+  // Do not accept an ambiguous readback: the chosen record must be unique,
+  // and at most one default of the same type may exist. Another type can keep
+  // its own default. RPC completion alone never certifies the displayed state.
+  const identities = new Set(rows.map((row) => row.id));
+  if (identities.size !== rows.length) throw uncertain();
   const current = rows.find((row) => row.id === target.id);
+  const sameTypeDefaults = rows.filter((row) =>
+    row.document_type === target.document_type && row.is_default === true);
   const matches = action === 'deleted'
     // An empty RLS-filtered list cannot prove deletion after an ambiguous RPC.
     ? mutationSucceeded && current === undefined
     : current?.jobseeker_clerk_user_id === ownerId &&
       current.file_path === target.file_path &&
       current.document_type === target.document_type &&
-      current.is_default === true;
+      current.is_default === true &&
+      sameTypeDefaults.length === 1 && sameTypeDefaults[0].id === target.id;
   if (!matches || !isCurrent()) throw uncertain();
   return rows;
 }
