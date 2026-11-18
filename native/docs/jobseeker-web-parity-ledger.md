@@ -1,3 +1,11 @@
+## Latest isolated delta (r330, 2026-11-18 NZ) — Parent application document handoff uses Web copy evidence
+
+- **Web reference:** JOBSEEKER `/applications` → `ApplicationMessages` documents at main `8c502fdb`, component blob `6275c5e5`, source examined 2026-11-18, synthetic candidate with normal, missing and historical copied documents; no paired Web/Native screenshots.
+- **Source discrepancy fixed:** Native parent warning previously equated matching source ID with a completed submission even if no corresponding expected destination copy existed. The Web/Native child checks canonical destination paths, with a limited same-type historical fallback after vault source removal. Parent now checks verified paths and passes the same already-read vault list from open-panel refresh and post-submit; malformed metadata fails closed, no additional API calls or automatic writes. The unopened two-source read cannot infer the historical missing-vault exception and stays conservative. [r330 delta](parity-delta-r330-document-parent-web-copy-evidence.md).
+- **QA:** exact GitHub-helper/test blob matches; scoped real-source Node **24/24 PASS** (r327 10 + r329 6 + r330 8), strict TypeScript for two dependency-free helpers PASS. Full Expo compile, synthetic canonical write/re-read, Web/native rendered comparison and signing are **NOT VERIFIED**.
+- **Android:** IMPLEMENTING, no installed runtime evidence. **iOS:** IMPLEMENTING, no simulator/TestFlight runtime evidence. Existing COLOR writer branch `native/color-focused-document-refresh-r294-20261117`; no PR/main/production/new paid CI/EAS/external agent; quota/signing unverified.
+- **Next:** exercise document copy-path/legacy states on real authorized synthetic canonical data and the Web, check parent+child status in both installed OSes, then continue search→apply→message and visual parity.
+
 ## Latest isolated delta (r329, 2026-11-18 NZ) — Post-submit parent handoff uses confirmed canonical document snapshot
 
 - **Web/source baseline:** JOBSEEKER `/applications` → `ApplicationMessages` documents, Web main `8c502fdb` / component blob `6275c5e5`; synthetic candidate with two expected source documents. Web-source comparison only; no paired rendered Native images.
