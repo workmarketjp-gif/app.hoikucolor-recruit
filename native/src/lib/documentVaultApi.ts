@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { saveGeneratedPdfWithReadback, type GeneratedPdfType } from './generatedPdfDocument';
 import { confirmCandidateDocumentWrite } from './documentWriteReadback';
 import { requireCanonicalDocumentRows, requireApplicationScopedDocumentRows } from './canonicalDocumentRows';
+import { ensureLeaseFencedStorageUpload } from './leaseFencedStorageUpload';
 
 export type CandidateDocumentAsset = {
   uri: string;
@@ -167,16 +168,19 @@ async function storageObjectExists(client: SupabaseClient, path: string) {
   return !error && Boolean(data?.signedUrl);
 }
 
-async function ensureUploadedSourceObject(client: SupabaseClient, path: string, buffer: ArrayBuffer, mimeType: string) {
+async function ensureUploadedSourceObject(
+  client: SupabaseClient,
+  path: string,
+  buffer: ArrayBuffer,
+  mimeType: string,
+  assertCurrent: () => void = () => undefined,
+) {
   const bucket = client.storage.from(DOCUMENT_VAULT_BUCKET);
-  const upload = () => bucket.upload(path, buffer, { upsert: false, contentType: mimeType });
-  const first = await upload();
-  if (!first.error) return;
-  if (await storageObjectExists(client, path)) return;
-  const retry = await upload();
-  if (!retry.error) return;
-  if (await storageObjectExists(client, path)) return;
-  throw retry.error;
+  return ensureLeaseFencedStorageUpload({
+    upload: () => bucket.upload(path, buffer, { upsert: false, contentType: mimeType }),
+    exists: () => storageObjectExists(client, path),
+    assertCurrent,
+  });
 }
 
 async function ensureApplicationCopy(
@@ -262,7 +266,9 @@ export async function uploadGeneratedJobseekerPdf(
     canContinue: options.canStartUpload,
     operations: {
       newId: () => Crypto.randomUUID(),
-      upload: (path, bytes) => ensureUploadedSourceObject(client, path, bytes, 'application/pdf'),
+      upload: (path, bytes) => ensureUploadedSourceObject(client, path, bytes, 'application/pdf', () => {
+        if (options.canStartUpload && !options.canStartUpload()) throw new Error('DOCUMENT_UPLOAD_QUARANTINED');
+      }),
       register: async ({ id, type, title, path, size }) => {
         const { data, error } = await client.rpc('hc_register_jobseeker_document_source', {
           p_document_id: id, p_document_type: type, p_title: title,
@@ -288,7 +294,9 @@ export async function uploadPickedJobseekerDocument(client: SupabaseClient, cler
   const fileName = storageFileNameForMime(mimeType);
   const path = `jobseekers/${ownerId}/${id}/${fileName}`;
   const title = (options.title?.trim() || asset.name.normalize('NFC').trim() || fileName).slice(0, 200);
-  await ensureUploadedSourceObject(client, path, buffer, mimeType);
+  await ensureUploadedSourceObject(client, path, buffer, mimeType, () => {
+    if (!eligible()) throw new Error('DOCUMENT_UPLOAD_QUARANTINED');
+  });
   // This is the ONLY safe pre-registration cleanup boundary. After a register
   // RPC has been sent, even a null result/readback cannot prove rollback.
   if (!eligible()) {

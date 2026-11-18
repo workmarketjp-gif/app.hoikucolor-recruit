@@ -1,3 +1,10 @@
+## Latest isolated delta (r333, 2026-11-18 NZ) — Session fence on private source upload retries
+
+- **Reference:** Web JOBSEEKER /applications and /resume document upload; Web main `8c502fdb`, synthetic candidate A→B during slow Storage response/existence probe; source-only, no rendered captures.
+- **Native:** Picked-file and generated-PDF upload adapters now check the pinned candidate/session/foreground before and after each awaited storage stage; no second upload after revocation. Existing canonical postwrite readback and once-only retry policy remain. [r333 delta](parity-delta-r333-upload-retry-session-fence.md).
+- **QA:** actual Node TS helper 33/33 PASS (8 new+25 prior), strict helper-only TS PASS. No full Expo compile, live canonical API, Android/iOS installed render or signed builds; both OS **IMPLEMENTING**.
+- **Ownership/cost:** COLOR-only branch `native/color-focused-document-refresh-r294-20261117`, parent `0395b3e2`. No PR/main/prod/paid CI/EAS/agent. Quota, signing/distribution unknown.
+
 ## Latest isolated delta (r332, 2026-11-18 NZ) — Application-specific document rows cannot cross applications
 
 - **Reference:** Web JOBSEEKER `/applications` → `ApplicationMessages`, main `8c502fdb`, synthetic A/B/mixed/null/empty states; source-only.

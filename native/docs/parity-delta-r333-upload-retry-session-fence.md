@@ -1,0 +1,13 @@
+# r333 — Fence private source-upload retries to the pinned candidate
+
+**2026-11-18 NZ; COLOR JOBSEEKER Native only.** Web reference: JOBSEEKER /applications → ApplicationMessages and /resume document upload, Web main 8c502fdb3a1697eb9eedf1f7b02de30374cb7b5c. Synthetic A candidate uploading a private PDF/JPEG and switching to B or locking the app while the Storage response or existence check is delayed. Source/behavioral test evidence only; no paired render.
+
+## Defect and bounded repair
+The picked-file and generated-PDF source upload adapters could start a second Storage upload after an ambiguous first response even if the candidate/session/foreground changed while awaiting the first request or object-existence check. They checked lease before upload and after the helper returned, but not *between* the helper's awaited stages. New runtime-neutral helper `leaseFencedStorageUpload.ts` revalidates the caller's existing guard before and after every asynchronous stage, especially before any retry. Existing once-only retry, canonical registration/readback and no-upsert storage key remain unchanged while candidate is current. Revoked lease stops subsequent calls and cannot claim completion; a previously in-flight network write is not cancellable and must be reconciled, never automatically resent as an application. Existing application-copy and backend remain untouched.
+
+Changes: `native/src/lib/documentVaultApi.ts`, `native/src/lib/leaseFencedStorageUpload.ts`, `native/qa/native-upload-retry-session-fence-r333.test.mjs`, this delta and existing ledger.
+
+## Evidence/gates
+Node v22.16.0: `node --experimental-strip-types --test native/qa/native-upload-retry-session-fence-r333.test.mjs native/qa/native-document-vault-canonical-rows-r331.test.mjs native/qa/native-document-application-scope-r332.test.mjs` → **33/33 PASS** (8 new, 25 prior). `tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution bundler native/src/lib/leaseFencedStorageUpload.ts native/src/lib/canonicalDocumentRows.ts` → PASS, helper only. No Expo/react-native module load, complete app typecheck, Android emulator/device, iOS simulator/device, real Storage+RPC persistence, paired Web/native rendering or signed installables.
+
+Android **IMPLEMENTING**, iOS **IMPLEMENTING**. Not READY_FOR_MASA_ACCEPTANCE. Parent `0395b3e2bcb1438cf5a2eb1c7b38175b30a5cb5f`, branch `native/color-focused-document-refresh-r294-20261117`. No main/PR/production/DB/RLS/Auth/Workers/Store/paid Actions/EAS/agent. Quota, signing and distribution unverified. Next: same-candidate and A→B interrupted upload on authorized synthetic Storage, Expo full typecheck and both-OS UI comparison.
