@@ -15,9 +15,12 @@ export function jobSearchFailureChannel(input: {
   privateAllowed: boolean;
   hasConfirmedResults: boolean;
   hasConfirmedBookmarks: boolean;
+  /** Only for job searches whose canonical bookmarked IDs are independently optional. */
+  bookmarksOptional?: boolean;
 }): JobSearchFailureChannel {
   if (!input.owner || input.owner !== input.requestedOwner ||
       input.requestGeneration !== input.currentGeneration || !input.privateAllowed) return null;
-  return !input.reset && input.hasConfirmedResults && input.hasConfirmedBookmarks
+  return !input.reset && input.hasConfirmedResults &&
+    (input.hasConfirmedBookmarks || input.bookmarksOptional === true)
     ? 'pagination' : 'initial';
 }

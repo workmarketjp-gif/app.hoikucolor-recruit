@@ -30,6 +30,7 @@ import { jobSearchCardPresentation } from '../../lib/jobSearchCardPresentation';
 import { keywordForCurrentCandidate, type CandidateKeywordDraft } from '../../lib/jobSearchKeywordDraft';
 import { canStartManualJobSearch } from '../../lib/jobSearchManualSubmit';
 import { readCandidateJobDiscoveryBounded } from '../../lib/jobDiscoveryCanonicalRead';
+import { loadSavedJobIdsForSearch } from '../../lib/jobSearchSavedIndependence';
 
 function salary(job: JobseekerJob) {
   const prefix = job.salary_type === 'hourly' ? '時給' : job.salary_type === 'annual' ? '年収' : '月給';
@@ -146,6 +147,8 @@ export default function JobsScreen() {
   const [ownedJobs, setOwnedJobs] = useState<CandidateOwnedView<JobseekerJob[]> | null>(null);
   const [ownedSavedIds, setOwnedSavedIds] = useState<CandidateOwnedView<string[]> | null>(null);
   const savedIds = readCandidateOwnedView(ownedSavedIds, ownerKey, privateAllowed);
+  const [ownedSavedError, setOwnedSavedError] = useState<CandidateOwnedView<string> | null>(null);
+  const savedError = readCandidateOwnedView(ownedSavedError, ownerKey, privateAllowed);
   const [ownedSpecifiedJobId, setOwnedSpecifiedJobId] = useState<CandidateOwnedView<string | null> | null>(null);
   const [ownedSpecifiedJobNotice, setOwnedSpecifiedJobNotice] = useState<CandidateOwnedView<string | null> | null>(null);
   const specifiedJobId = readCandidateOwnedView(ownedSpecifiedJobId, ownerKey, privateAllowed);
@@ -211,6 +214,7 @@ export default function JobsScreen() {
     setOwnedError(null);
     setOwnedPageError(null);
     if (reset) {
+      setOwnedSavedError(null);
       setOwnedJobs(null);
       setOwnedSavedIds(null);
       setOwnedSpecifiedJobId(null);
@@ -232,7 +236,7 @@ export default function JobsScreen() {
           latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible,
         ownsPin: (pinned) => candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey,
         read: (pinned) => {
-          if (!reset && (savedIds === null || visibleJobs === null)) {
+          if (!reset && visibleJobs === null) {
             throw new Error('検索結果を確認できません。更新してください。');
           }
           return Promise.all([
@@ -241,7 +245,7 @@ export default function JobsScreen() {
               limit: 24,
               cursor: reset ? null : cursor,
             }),
-            reset ? listSavedJobIds(pinned.client) : Promise.resolve(savedIds ?? []),
+            reset ? loadSavedJobIdsForSearch(() => listSavedJobIds(pinned.client)) : Promise.resolve(savedIds),
             targetJobId ? getCandidateJob(pinned.client, targetJobId) : Promise.resolve(null),
           ]);
         },
@@ -259,7 +263,10 @@ export default function JobsScreen() {
       });
       if (reset) {
         const pinnedOwnerKey = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId)!;
-        setOwnedSavedIds({ ownerKey: pinnedOwnerKey, value: canonicalSaved });
+        setOwnedSavedIds(canonicalSaved === null ? null : { ownerKey: pinnedOwnerKey, value: canonicalSaved });
+        setOwnedSavedError(canonicalSaved === null
+          ? { ownerKey: pinnedOwnerKey, value: '気になる状態を取得できませんでした。求人は閲覧できますが、保存操作には再読み込みが必要です。' }
+          : null);
         setOwnedSpecifiedJobId({ ownerKey: pinnedOwnerKey, value: presented.specifiedJobId });
         setOwnedSpecifiedJobNotice({ ownerKey: pinnedOwnerKey, value: presented.notice });
       }
@@ -272,6 +279,8 @@ export default function JobsScreen() {
         requestGeneration: currentGeneration, currentGeneration: generation.current,
         privateAllowed: latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible,
         hasConfirmedResults: visibleJobs !== null, hasConfirmedBookmarks: savedIds !== null,
+        // A verified job page must survive a separate bookmark RPC failure.
+        bookmarksOptional: true,
       });
       if (channel === 'pagination' && ownerKey) {
         setOwnedPageError({ ownerKey, value: '次の求人を読み込めませんでした。表示中の求人はそのままです。' });
@@ -340,6 +349,7 @@ export default function JobsScreen() {
     setPicker(null);
     setOwnedJobs(null);
     setOwnedSavedIds(null);
+    setOwnedSavedError(null);
     setOwnedSpecifiedJobId(null);
     setOwnedSpecifiedJobNotice(null);
     setOwnedError(null);
@@ -497,6 +507,18 @@ export default function JobsScreen() {
         )}
       </View>
 
+      {savedError && !error ? (
+        <View testID="job-search-bookmark-read-error" style={styles.filterFailure}>
+          <Text accessibilityRole="alert" style={styles.error}>{savedError}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="気になる状態を再読み込み"
+            onPress={() => {
+              cancelKeywordTimer();
+              void load(true, keywordForCurrentCandidate(ownerKey, keywordDraftRef.current, query), filters);
+            }}>
+            <Text style={styles.link}>保存状況を再確認</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {specifiedJobNotice ? <Text testID="job-specified-unavailable" accessibilityLiveRegion="polite" style={styles.subtle}>{specifiedJobNotice}</Text> : null}
       <View style={styles.rankingBox}>
         <Pressable accessibilityRole="button" accessibilityLabel="求人の表示順について"
