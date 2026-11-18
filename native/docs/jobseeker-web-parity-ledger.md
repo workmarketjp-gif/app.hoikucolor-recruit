@@ -1,3 +1,10 @@
+## Latest isolated delta (r338, 2026-11-18 NZ) — delayed Native document deletion confirmation fenced
+
+- **Web source:** JOBSEEKER `/profile` → 応募書類 → 削除, main `8c502fdb`, Web `DocumentVaultPanel.tsx` blob `d262729d`, synthetic A→B session/lock/refreshed vault during pending OS alert; no paired render.
+- **Native:** The alert callback now needs a current exact-session, canonical document ID/path/type plus vault revision proof before starting a destructive action. Stale confirmations abort without writes; existing confirmed deletion flow stays. [r338 delta](parity-delta-r338-vault-delete-confirmation.md).
+- **Tests:** exact real-helper 9 new Node cases PASS, plus unchanged r337 13 = **22/22 PASS**; isolated strict TypeScript PASS. Android **IMPLEMENTING**, iOS **IMPLEMENTING**; no SDK-backed app compilation, device/web paired QA, canonical backend round-trip, or signed installable builds.
+- **Branch/cost:** `native/color-focused-document-refresh-r294-20261117`, source commit `f96e21438a38`; no PR/main/Production/Store, paid CI/EAS or external coding agent, quotas/signing unknown.
+
 ## Latest isolated delta (r337, 2026-11-18 NZ) — Saved-document vault read now bounded and retryable
 
 - **Gap closed in Native source:** `/profile` saved-document list no longer indefinitely awaits Clerk pin/Supabase canonical list. Each phase has a 15s presentation deadline; late or cross-session rows are discarded; errors retain a blocked document state and display the existing manual reload action. No new server write or privilege.
