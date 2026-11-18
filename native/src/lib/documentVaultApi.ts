@@ -6,6 +6,7 @@ import { saveGeneratedPdfWithReadback, type GeneratedPdfType } from './generated
 import { confirmCandidateDocumentWrite } from './documentWriteReadback';
 import { requireCanonicalDocumentRows, requireApplicationScopedDocumentRows } from './canonicalDocumentRows';
 import { ensureLeaseFencedStorageUpload } from './leaseFencedStorageUpload';
+import { requireStorageSignedUrlPresence } from './storageSignedUrlPresence';
 
 export type CandidateDocumentAsset = {
   uri: string;
@@ -165,7 +166,7 @@ async function readAndValidatePickedAsset(asset: CandidateDocumentAsset, ownerId
 
 async function storageObjectExists(client: SupabaseClient, path: string) {
   const { data, error } = await client.storage.from(DOCUMENT_VAULT_BUCKET).createSignedUrl(path, 30);
-  return !error && Boolean(data?.signedUrl);
+  return requireStorageSignedUrlPresence({ data, error });
 }
 
 async function ensureUploadedSourceObject(

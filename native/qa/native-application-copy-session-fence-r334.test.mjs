@@ -31,14 +31,14 @@ test('lost response after destination copy is reconciled without a second copy',
   assert.equal(copies, 1); assert.equal(checks, 1);
 });
 
-test('confirmed absent destination allows at most one same-session retry', async () => {
+test('unconfirmed destination absence is quarantined without a second copy', async () => {
   let copies = 0; let checks = 0;
-  await runCopy({
-    copy: async () => ({ error: ++copies === 1 ? new Error('failed') : null }),
+  await assert.rejects(runCopy({
+    copy: async () => { copies++; return { error: new Error('copy reply lost') }; },
     exists: async () => { checks++; return false; },
     assertCurrent: () => {},
-  });
-  assert.equal(copies, 2); assert.equal(checks, 1);
+  }), /保存状況を確認できません/);
+  assert.equal(copies, 1); assert.equal(checks, 1);
 });
 
 test('A→B switch before source copy starts stops all private Storage calls', async () => {
@@ -71,24 +71,24 @@ test('session revocation during slow destination-existence probe prevents second
   assert.equal(copies, 1); assert.equal(checks, 1);
 });
 
-test('session revocation during second copy never reports a completed attachment', async () => {
-  let active = true; let copies = 0; let checks = 0;
+test('session revocation during positive existence probe never reports success', async () => {
+  let active = true; let copies = 0;
   await assert.rejects(runCopy({
-    copy: async () => { copies++; if (copies === 2) active = false; return { error: copies === 1 ? new Error('transient') : null }; },
-    exists: async () => { checks++; return false; },
+    copy: async () => { copies++; return { error: new Error('transient') }; },
+    exists: async () => { active = false; return true; },
     assertCurrent: () => { if (!active) revoked(); },
   }), /SESSION_REVOKED/);
-  assert.equal(copies, 2); assert.equal(checks, 1);
+  assert.equal(copies, 1);
 });
 
-test('two failed copies with destination unconfirmed stay failed without extra attempts', async () => {
+test('an unresolved failed copy does not retry even if the probe returns false', async () => {
   let copies = 0; let checks = 0;
   await assert.rejects(runCopy({
-    copy: async () => ({ error: new Error(`copy failed ${++copies}`) }),
+    copy: async () => { copies++; return { error: new Error('copy failed') }; },
     exists: async () => { checks++; return false; },
     assertCurrent: () => {},
-  }), /copy failed 2/);
-  assert.equal(copies, 2); assert.equal(checks, 2);
+  }), /保存状況を確認できません/);
+  assert.equal(copies, 1); assert.equal(checks, 1);
 });
 
 test('destination-existence transport exception never starts an uncertain second copy', async () => {
@@ -97,6 +97,6 @@ test('destination-existence transport exception never starts an uncertain second
     copy: async () => { copies++; return { error: new Error('copy timeout') }; },
     exists: async () => { throw new Error('storage unavailable'); },
     assertCurrent: () => {},
-  }), /storage unavailable/);
+  }), /保存状況を確認できません/);
   assert.equal(copies, 1);
 });

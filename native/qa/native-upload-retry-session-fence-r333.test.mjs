@@ -24,14 +24,14 @@ test('error after object creation is resolved by one current-owner read, not a d
   assert.equal(writes, 1);
 });
 
-test('failed first upload can retry once while lease is valid', async () => {
-  let writes = 0;
-  await ensureLeaseFencedStorageUpload({
+test('unconfirmed absence never triggers an automatic second upload', async () => {
+  let writes = 0; let reads = 0;
+  await assert.rejects(() => ensureLeaseFencedStorageUpload({
     assertCurrent: () => {},
-    upload: async () => ({ error: ++writes === 1 ? new Error('first failed') : null }),
-    exists: async () => false,
-  });
-  assert.equal(writes, 2);
+    upload: async () => { writes++; return { error: new Error('first reply lost') }; },
+    exists: async () => { reads++; return false; },
+  }), /保存状況を確認できません/);
+  assert.equal(writes, 1); assert.equal(reads, 1);
 });
 
 test('revocation during first upload blocks existence check and second upload', async () => {
@@ -64,22 +64,22 @@ test('revocation before the first request prevents all storage calls', async () 
   assert.equal(writes, 0);
 });
 
-test('two write errors and no confirmed object propagates the error without further retries', async () => {
+test('a failed upload with an inconclusive probe is quarantined after one write', async () => {
   let writes = 0; let reads = 0;
   await assert.rejects(() => ensureLeaseFencedStorageUpload({
     assertCurrent: () => {},
-    upload: async () => { writes++; return { error: new Error(`failure ${writes}`) }; },
+    upload: async () => { writes++; return { error: new Error('timeout') }; },
     exists: async () => { reads++; return false; },
-  }), /failure 2/);
-  assert.equal(writes, 2); assert.equal(reads, 2);
+  }), /保存状況を確認できません/);
+  assert.equal(writes, 1); assert.equal(reads, 1);
 });
 
-test('revocation after second storage response does not report success', async () => {
+test('revocation during a positive Storage probe cannot report success', async () => {
   let current = true; let writes = 0;
   await assert.rejects(() => ensureLeaseFencedStorageUpload({
     assertCurrent: () => { if (!current) revoked(); },
-    upload: async () => { writes++; if (writes === 2) current = false; return { error: writes === 1 ? new Error('first') : null }; },
-    exists: async () => false,
+    upload: async () => { writes++; return { error: new Error('lost response') }; },
+    exists: async () => { current = false; return true; },
   }), /DOCUMENT_UPLOAD_QUARANTINED/);
-  assert.equal(writes, 2);
+  assert.equal(writes, 1);
 });
