@@ -190,16 +190,13 @@ async function ensureApplicationCopy(
   assertContinue: () => void = () => undefined,
 ) {
   const bucket = client.storage.from(DOCUMENT_VAULT_BUCKET);
-  const copy = () => { assertContinue(); return bucket.copy(sourcePath, destinationPath); };
-  const first = await copy();
-  if (!first.error) return;
-  assertContinue();
-  if (await storageObjectExists(client, destinationPath)) return;
-  const retry = await copy();
-  if (!retry.error) return;
-  assertContinue();
-  if (await storageObjectExists(client, destinationPath)) return;
-  throw retry.error;
+  // A delayed Storage response or destination check must never authorize a
+  // second copy after the pinned candidate/session becomes stale.
+  await ensureLeaseFencedStorageUpload({
+    upload: () => bucket.copy(sourcePath, destinationPath),
+    exists: () => storageObjectExists(client, destinationPath),
+    assertCurrent: assertContinue,
+  });
 }
 
 async function findJobseekerDocumentById(client: SupabaseClient, documentId: string): Promise<JobseekerDocument | null> {
