@@ -1,3 +1,10 @@
+## Latest isolated delta (r331, 2026-11-18 NZ) — Ambiguous application-document list response is not empty
+
+- **Web/source baseline:** JOBSEEKER `/applications` → `ApplicationMessages`, Web main `8c502fdb`, synthetic empty/null/normal candidate read states; reference is source-only, not paired screen captures.
+- **Closed Native gap:** Three document-list adapters previously collapsed unexpected `null` (no Supabase error) to `[]`, potentially falsifying no-saved/no-submitted/no-required document state. Now accept only canonical arrays, preserve real empty `[]`, and emit a fixed Japanese read recovery error. Caller failure quarantine remains intact; no writes, retries, backend changes, or new API calls. [r331 details](parity-delta-r331-canonical-document-null.md).
+- **QA:** Node actual-helper 13/13 PASS, strict helper TypeScript PASS; adapter wiring checked. Complete Expo compile, real Supabase round-trip, paired Native/Web screens, Android/iOS run, and signing **NOT VERIFIED**.
+- **Ownership/cost:** COLOR-only writer `native/color-focused-document-refresh-r294-20261117` from `9c714d43df2669c10d5d9267bb628b40a3769866`. No PR/main/production/Store/paid CI/EAS/external agent; quota and signing credentials unverified.
+
 ## Latest isolated delta (r330, 2026-11-18 NZ) — Parent application document handoff uses Web copy evidence
 
 - **Web reference:** JOBSEEKER `/applications` → `ApplicationMessages` documents at main `8c502fdb`, component blob `6275c5e5`, source examined 2026-11-18, synthetic candidate with normal, missing and historical copied documents; no paired Web/Native screenshots.

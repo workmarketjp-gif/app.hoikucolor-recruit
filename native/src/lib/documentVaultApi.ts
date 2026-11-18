@@ -4,6 +4,7 @@ import { consumePendingDocumentPickerCache } from './documentPickerCache';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { saveGeneratedPdfWithReadback, type GeneratedPdfType } from './generatedPdfDocument';
 import { confirmCandidateDocumentWrite } from './documentWriteReadback';
+import { requireCanonicalDocumentRows } from './canonicalDocumentRows';
 
 export type CandidateDocumentAsset = {
   uri: string;
@@ -238,7 +239,7 @@ export async function listJobseekerDocuments(client: SupabaseClient): Promise<Jo
   startOrphanReconciliation(client);
   const { data, error } = await client.from('hc_jobseeker_documents').select(documentColumns).order('document_type', { ascending: true }).order('is_default', { ascending: false }).order('uploaded_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []) as JobseekerDocument[];
+  return requireCanonicalDocumentRows<JobseekerDocument>(data, '保存済み書類');
 }
 
 /**
@@ -352,13 +353,13 @@ export async function deleteJobseekerDocument(client: SupabaseClient, document: 
 export async function listApplicationDocumentExpectations(client: SupabaseClient, applicationId: string): Promise<ApplicationDocumentExpectation[]> {
   const { data, error } = await client.from('hc_application_document_expectations').select(applicationDocumentExpectationColumns).eq('application_id', applicationId).order('captured_at', { ascending: true });
   if (error) throw error;
-  return (data ?? []) as ApplicationDocumentExpectation[];
+  return requireCanonicalDocumentRows<ApplicationDocumentExpectation>(data, '応募時の必要書類');
 }
 
 export async function listSubmittedApplicationDocuments(client: SupabaseClient, applicationId: string): Promise<AttachedApplicationDocument[]> {
   const { data, error } = await client.from('hc_application_documents').select(applicationDocumentColumns).eq('application_id', applicationId).order('uploaded_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []) as AttachedApplicationDocument[];
+  return requireCanonicalDocumentRows<AttachedApplicationDocument>(data, '提出済み応募書類');
 }
 
 export async function createAttachedApplicationDocumentSignedUrl(client: SupabaseClient, document: AttachedApplicationDocument, expiresIn = 300) {
