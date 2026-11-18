@@ -7,6 +7,7 @@ import { confirmCandidateDocumentWrite } from './documentWriteReadback';
 import { requireCanonicalDocumentRows, requireApplicationScopedDocumentRows } from './canonicalDocumentRows';
 import { ensureLeaseFencedStorageUpload } from './leaseFencedStorageUpload';
 import { requireStorageSignedUrlPresence } from './storageSignedUrlPresence';
+import { confirmJobseekerVaultDeletion } from './confirmJobseekerVaultDeletion';
 
 export type CandidateDocumentAsset = {
   uri: string;
@@ -350,10 +351,10 @@ export async function deleteJobseekerDocument(client: SupabaseClient, document: 
   if (typeof filePath !== 'string' || !filePath || filePath !== document.file_path) throw new Error('削除対象の書類を確認できませんでした。');
   const { error: removeError } = await client.storage.from(DOCUMENT_VAULT_BUCKET).remove([filePath]);
   const { data: finalized, error: finalizeError } = await client.rpc('hc_finalize_jobseeker_document_delete', { p_document_id: document.id, p_file_path: filePath });
-  if (!finalizeError && finalized === true) return;
-  if (removeError) throw new Error('元ファイルの削除を確認できませんでした。書類は一覧に残るため、再度削除できます。');
-  if (finalizeError) throw finalizeError;
-  throw new Error('書類の削除を完了できませんでした。');
+  // The owner-scoped finalize RPC proves Storage metadata absent before
+  // committing the canonical row deletion. It can succeed when the Storage
+  // response was lost; require its authoritative result plus UI readback.
+  confirmJobseekerVaultDeletion({ storageRemoveError: removeError, finalizeError, finalized });
 }
 
 export async function listApplicationDocumentExpectations(client: SupabaseClient, applicationId: string): Promise<ApplicationDocumentExpectation[]> {
