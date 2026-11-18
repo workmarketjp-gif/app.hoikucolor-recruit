@@ -14,7 +14,7 @@ test('confirmed submit from one canonical snapshot closes both child and parent 
   const expectations = [expected('one')];
   const rows = [submitted('one')];
   const child = projectApplicationDocuments(app, [saved('one')], rows, expectations);
-  const handoff = applicationDocumentHandoffProjection(expectations, rows);
+  const handoff = applicationDocumentHandoffProjection(expectations, rows, [saved('one')]);
   assert.equal(child.missing.length, 0);
   assert.equal(hasCanonicalApplicationAttachment(app, 'one', rows), true);
   assert.deepEqual(handoff, { expectedCount: 1, submittedFromVaultCount: 1, missingSourceDocumentIds: [] });
@@ -24,7 +24,7 @@ test('partial batch after a confirmed first write retains remaining parent warni
   const expectations = [expected('one'), expected('two')];
   const rows = [submitted('one')];
   const child = projectApplicationDocuments(app, [saved('one'), saved('two')], rows, expectations);
-  const handoff = applicationDocumentHandoffProjection(expectations, rows);
+  const handoff = applicationDocumentHandoffProjection(expectations, rows, [saved('one'), saved('two')]);
   assert.equal(child.missing.length, 1);
   assert.deepEqual(handoff.missingSourceDocumentIds, ['two']);
   assert.equal(handoff.submittedFromVaultCount, 1);
