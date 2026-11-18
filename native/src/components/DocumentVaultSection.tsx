@@ -253,9 +253,9 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
 
     const sameTypeExists = documents.some((item) => item.document_type === selectedType);
     const saved = await uploadPickedJobseekerDocument(pinned.client, pickerOwnerId, selectedType, asset, {
-      // During a replacement the old default stays authoritative until the new
-      // source is canonically visible. This prevents a failed/ambiguous upload
-      // from removing or silently replacing the last known-good default.
+      // Match the approved Web: a replacement becomes the new default,
+      // but its previous private source stays in the vault until the user
+      // explicitly deletes it. Canonical readback confirms both rows.
       makeDefault: Boolean(replacement) || !sameTypeExists,
       canStartUpload: () =>
         operationValid() && pinned.isCurrent() &&
