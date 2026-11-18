@@ -15,9 +15,8 @@ import {
   type AttachedApplicationDocument,
   type JobseekerDocument,
 } from '../lib/documentVaultApi';
-import { getApplicationDocumentHandoffState, type ApplicationDocumentHandoffState } from '../lib/applicationJourneyApi';
+import type { ApplicationDocumentHandoffState } from '../lib/applicationJourneyApi';
 import { documentTypeLabel } from '../lib/documentTypes';
-import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { pinForApplicationMutation } from '../lib/applicationMutationPin';
 import { awaitApplicationDocumentAttachmentAck } from '../lib/awaitApplicationDocumentAttachmentAck';
@@ -318,6 +317,11 @@ export function ApplicationDocumentsSection({
         isCurrent: canPublishHandoff,
       });
       projectApplicationDocuments(applicationId, saved, submitted, expectations);
+      // The same verified three-source readback is authoritative for both
+      // the document panel and its parent warning. A second independent read
+      // can fail after a successful submission and incorrectly clear the
+      // parent's state despite already having a valid canonical snapshot.
+      const handoff = applicationDocumentHandoffProjection(expectations, submitted);
       if (!canPublishHandoff()) return;
       freshlyVerifiedOwner.current = requestedViewKey;
       setSnapshot({ ownerKey: requestedViewKey, value: { saved, submitted, expectations } });
@@ -331,16 +335,7 @@ export function ApplicationDocumentsSection({
       } else {
         setError('応募書類' + uniqueTargets.length + '件のうち' + (uniqueTargets.length - confirmed.length) + '件の提出を確認できませんでした。最新の提出状況を確認してください。');
       }
-      if (!canPublishHandoff()) return;
-      try {
-        const handoff = await boundedPrivateRead(() => {
-          if (!canPublishHandoff()) throw new Error('閲覧状態が変わったため確認を中止しました。');
-          return getApplicationDocumentHandoffState(pinned.client, applicationId);
-        });
-        if (canPublishHandoff()) onHandoffReadback(handoff);
-      } catch {
-        if (canPublishHandoff()) onHandoffReadback(null);
-      }
+      if (canPublishHandoff()) onHandoffReadback(handoff);
     } catch {
       if (alive.current && version === requestVersion.current) {
         if (submissionStarted) {
