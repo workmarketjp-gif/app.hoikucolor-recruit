@@ -161,7 +161,7 @@ export function ApplicationDocumentsSection({
       // saved/submitted rows without the parent warning leaves contradictory
       // application status after the Web-equivalent manual/foreground refresh.
       projectApplicationDocuments(applicationId, saved, submitted, expectations);
-      const handoff = applicationDocumentHandoffProjection(expectations, submitted);
+      const handoff = applicationDocumentHandoffProjection(expectations, submitted, saved);
       if (!readStillCurrent()) return;
       freshlyVerifiedOwner.current = requestedViewKey;
       setSnapshot({ ownerKey: requestedViewKey, value: { saved, submitted, expectations } });
@@ -321,7 +321,7 @@ export function ApplicationDocumentsSection({
       // the document panel and its parent warning. A second independent read
       // can fail after a successful submission and incorrectly clear the
       // parent's state despite already having a valid canonical snapshot.
-      const handoff = applicationDocumentHandoffProjection(expectations, submitted);
+      const handoff = applicationDocumentHandoffProjection(expectations, submitted, saved);
       if (!canPublishHandoff()) return;
       freshlyVerifiedOwner.current = requestedViewKey;
       setSnapshot({ ownerKey: requestedViewKey, value: { saved, submitted, expectations } });
