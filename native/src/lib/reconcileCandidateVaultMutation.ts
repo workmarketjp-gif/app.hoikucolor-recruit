@@ -1,0 +1,53 @@
+import {
+  assertCandidateDocumentListOwner,
+  type CandidateDocumentRow,
+} from './documentVaultPrivacy.ts';
+
+type VaultMutation = 'made-default' | 'deleted';
+
+/**
+ * A private-vault RPC/Storage mutation may commit before its response is lost.
+ * Send a destructive or default-changing request at most once, then inspect one
+ * canonical, candidate-scoped readback. Never turn a failed read into "empty".
+ * All guards are presentation/continuation fences; server RLS is authoritative.
+ */
+export async function reconcileCandidateVaultMutation<TDocument extends CandidateDocumentRow>(options: {
+  target: TDocument;
+  ownerId: string;
+  action: VaultMutation;
+  isCurrent: () => boolean;
+  mutate: () => Promise<unknown>;
+  readback: () => Promise<TDocument[]>;
+}): Promise<TDocument[]> {
+  const denied = () => new Error('書類の操作権限を確認できませんでした。再読み込みしてください。');
+  const uncertain = () => new Error('書類の更新結果を確認できませんでした。再読み込みして状態を確認してください。');
+  const { target, ownerId, action, isCurrent } = options;
+  if (!ownerId || target.jobseeker_clerk_user_id !== ownerId || !isCurrent()) throw denied();
+
+  // The mutation must not be replayed even if the response is ambiguous.
+  try {
+    await options.mutate();
+  } catch {
+    // A committed write can outlive a dropped RPC response; read back once.
+  }
+  if (!isCurrent()) throw denied();
+
+  let rows: TDocument[];
+  try {
+    rows = await options.readback();
+    if (!isCurrent()) throw denied();
+    assertCandidateDocumentListOwner(rows, ownerId);
+  } catch {
+    throw uncertain();
+  }
+
+  const current = rows.find((row) => row.id === target.id);
+  const matches = action === 'deleted'
+    ? current === undefined
+    : current?.jobseeker_clerk_user_id === ownerId &&
+      current.file_path === target.file_path &&
+      current.document_type === target.document_type &&
+      current.is_default === true;
+  if (!matches || !isCurrent()) throw uncertain();
+  return rows;
+}

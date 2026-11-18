@@ -28,6 +28,7 @@ import { createVaultOperationLease } from '../lib/vaultOperationLease';
 import { presentDocumentVaultError } from '../lib/documentVaultErrorPresentation';
 import { openCandidateApplicationDocument } from '../lib/openCandidateApplicationDocument';
 import { readCandidateVaultSnapshot } from '../lib/readCandidateVaultSnapshot';
+import { reconcileCandidateVaultMutation } from '../lib/reconcileCandidateVaultMutation';
 
 // Keep the document catalogue and exact qualification mapping in sync with Web.
 const labels = DOCUMENT_TYPE_LABELS;
@@ -451,27 +452,54 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     }
   }
 
+  /** Unknown mutation outcomes require an explicit, fresh canonical vault reload. */
+  function quarantineUncertainVaultMutation(startRevision: number) {
+    if (vaultRevisionRef.current !== startRevision) return;
+    freshlyVerifiedOwner.current = null;
+    vaultRevisionRef.current += 1;
+    canonicalDocumentsRef.current = null;
+    setOwnedDocuments(null);
+    onDocumentsChangedRef.current?.([], 'error');
+  }
+
   async function makeDefault(document: JobseekerDocument) {
     if (!canActOnCandidateDocument(document, verifiedDocuments, user?.id ?? null, ownerKey, freshlyVerifiedOwner.current, privateAllowed)) return;
     const lease = operationLeaseRef.current.tryAcquire();
     if (lease === null) return;
+    const revision = vaultRevisionRef.current;
     onBusyChangedRef.current?.(true);
     setBusyId(document.id);
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> = null;
+    const mutationStillCurrent = () =>
+      operationLeaseRef.current.isCurrent(lease) && mountedRef.current &&
+      ownerKeyRef.current === ownerKey && privacy.canAccessPrivateData() &&
+      Boolean(pinned?.isCurrent()) && pinned?.ownerId === userIdRef.current &&
+      canActOnCandidateDocument(document, canonicalDocumentsRef.current,
+        pinned?.ownerId ?? null, ownerKey, freshlyVerifiedOwner.current, true);
     try {
       pinned = await pinCandidateAction();
-      if (!operationLeaseRef.current.isCurrent(lease) || !pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !privacy.canAccessPrivateData()) return;
-      await setDefaultJobseekerDocument(pinned.client, document.id);
-      if (!operationLeaseRef.current.isCurrent(lease) || !pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
-      const canonical = await listJobseekerDocuments(pinned.client);
-      if (!operationLeaseRef.current.isCurrent(lease) || !pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
-      confirmCandidateDocumentMutation(canonical, pinned.ownerId, document.id, 'made-default');
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !mutationStillCurrent()) return;
+      const canonical = await reconcileCandidateVaultMutation({
+        target: document,
+        ownerId: pinned.ownerId,
+        action: 'made-default',
+        isCurrent: mutationStillCurrent,
+        mutate: () => setDefaultJobseekerDocument(pinned!.client, document.id),
+        readback: () => listJobseekerDocuments(pinned!.client),
+      });
+      if (!mutationStillCurrent()) return;
       setDocuments(canonical, ownerKey!);
+      Alert.alert('変更しました', labels[document.document_type] + 'の応募時に使う書類を変更しました。');
     } catch (error) {
-      if (operationLeaseRef.current.isCurrent(lease) && (!pinned || pinned.isCurrent())) {
-        Alert.alert('既定書類を変更できませんでした', presentDocumentVaultError('default', error));
+      if (operationLeaseRef.current.isCurrent(lease) && mountedRef.current &&
+          ownerKeyRef.current === ownerKey && privacy.canAccessPrivateData() &&
+          (!pinned || pinned.isCurrent())) {
+        quarantineUncertainVaultMutation(revision);
+        Alert.alert('既定書類を確認できませんでした', presentDocumentVaultError('default', error));
       }
-    } finally { if (operationLeaseRef.current.release(lease) && mountedRef.current) { onBusyChangedRef.current?.(false); setBusyId(null); } }
+    } finally {
+      if (operationLeaseRef.current.release(lease) && mountedRef.current) { onBusyChangedRef.current?.(false); setBusyId(null); }
+    }
   }
 
   function confirmDelete(document: JobseekerDocument) {
@@ -490,9 +518,6 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
   }
 
   async function remove(document: JobseekerDocument, proof: VaultDeleteConfirmationProof) {
-    // Delayed native confirmation may execute after a refresh, replacement or
-    // account switch. Validate against the LIVE canonical snapshot, not the
-    // old React closure that displayed the confirmation dialog.
     if (!canCommitVaultDeleteConfirmation(proof, document, canonicalDocumentsRef.current, userIdRef.current,
       ownerKeyRef.current, freshlyVerifiedOwner.current, privacy.canAccessPrivateData(), vaultRevisionRef.current)) return;
     const lease = operationLeaseRef.current.tryAcquire();
@@ -500,21 +525,38 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     onBusyChangedRef.current?.(true);
     setBusyId(document.id);
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> = null;
+    const deleteStillCurrent = () =>
+      operationLeaseRef.current.isCurrent(lease) && mountedRef.current &&
+      ownerKeyRef.current === ownerKey && privacy.canAccessPrivateData() &&
+      Boolean(pinned?.isCurrent()) && pinned?.ownerId === userIdRef.current &&
+      canCommitVaultDeleteConfirmation(proof, document, canonicalDocumentsRef.current,
+        userIdRef.current, ownerKeyRef.current, freshlyVerifiedOwner.current,
+        true, vaultRevisionRef.current);
     try {
       pinned = await pinCandidateAction();
-      if (!operationLeaseRef.current.isCurrent(lease) || !pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !privacy.canAccessPrivateData()) return;
-      await deleteJobseekerDocument(pinned.client, document);
-      if (!operationLeaseRef.current.isCurrent(lease) || !pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
-      const canonical = await listJobseekerDocuments(pinned.client);
-      if (!operationLeaseRef.current.isCurrent(lease) || !pinned.isCurrent() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== ownerKey) return;
-      confirmCandidateDocumentMutation(canonical, pinned.ownerId, document.id, 'deleted');
+      // The native confirmation might become stale DURING the asynchronous Clerk pin.
+      if (!pinned || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey || !deleteStillCurrent()) return;
+      const canonical = await reconcileCandidateVaultMutation({
+        target: document,
+        ownerId: pinned.ownerId,
+        action: 'deleted',
+        isCurrent: deleteStillCurrent,
+        mutate: () => deleteJobseekerDocument(pinned!.client, document),
+        readback: () => listJobseekerDocuments(pinned!.client),
+      });
+      if (!deleteStillCurrent()) return;
       setDocuments(canonical, ownerKey!);
       Alert.alert('削除しました', '書類庫から削除しました。提出済みの応募書類は保持されます。');
     } catch (error) {
-      if (operationLeaseRef.current.isCurrent(lease) && (!pinned || pinned.isCurrent())) {
-        Alert.alert('書類を削除できませんでした', presentDocumentVaultError('delete', error));
+      if (operationLeaseRef.current.isCurrent(lease) && mountedRef.current &&
+          ownerKeyRef.current === ownerKey && privacy.canAccessPrivateData() &&
+          (!pinned || pinned.isCurrent())) {
+        quarantineUncertainVaultMutation(proof.revision);
+        Alert.alert('書類の削除結果を確認できませんでした', presentDocumentVaultError('delete', error));
       }
-    } finally { if (operationLeaseRef.current.release(lease) && mountedRef.current) { onBusyChangedRef.current?.(false); setBusyId(null); } }
+    } finally {
+      if (operationLeaseRef.current.release(lease) && mountedRef.current) { onBusyChangedRef.current?.(false); setBusyId(null); }
+    }
   }
 
   if (!privateAllowed) return <View testID="document-vault-private-shield"><Text>応募書類を表示するには、ログイン状態を確認してください。</Text></View>;
