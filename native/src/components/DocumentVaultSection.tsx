@@ -20,6 +20,7 @@ import {
 import { consumeCameraCaptureRecoveryNotice } from '../lib/cameraCaptureRecovery';
 import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import { assertCandidateDocumentListOwner, canActOnCandidateDocument, confirmCandidateDocumentMutation } from '../lib/documentVaultPrivacy';
+import { captureVaultDeleteConfirmation, canCommitVaultDeleteConfirmation, type VaultDeleteConfirmationProof } from '../lib/candidateVaultDeleteConfirmation';
 import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_ORDER, evidenceTypesForQualification } from '../lib/documentTypes';
 import { qualificationEvidenceCounts } from '../lib/qualificationEvidenceCounts';
 import { resolveVaultUploadType, type ApplyVaultChange } from '../lib/applyVaultSelection';
@@ -97,11 +98,17 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
   const [ownedDocuments, setOwnedDocuments] = useState<CandidateOwnedView<JobseekerDocument[]> | null>(null);
   const verifiedDocuments = readCandidateFreshlyVerifiedView(ownedDocuments, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
   const documents = verifiedDocuments ?? [];
+  // The live canonical list (not the Alert's render closure) guards delayed deletes.
+  const canonicalDocumentsRef = useRef<JobseekerDocument[] | null>(null);
+  const vaultRevisionRef = useRef(0);
+  if (!privateAllowed) canonicalDocumentsRef.current = null;
   const onDocumentsChangedRef = useRef(onDocumentsChanged);
   onDocumentsChangedRef.current = onDocumentsChanged;
   const setDocuments = useCallback((next: JobseekerDocument[], verifiedOwnerKey: string, change: Exclude<ApplyVaultChange, 'loading'> = 'loaded', uploadedDocumentId: string | null = null) => {
     if (!mountedRef.current || !privacy.canAccessPrivateData() || ownerKeyRef.current !== verifiedOwnerKey) return;
     freshlyVerifiedOwner.current = verifiedOwnerKey;
+    vaultRevisionRef.current += 1;
+    canonicalDocumentsRef.current = next;
     setOwnedDocuments({ ownerKey: verifiedOwnerKey, value: next });
     onDocumentsChangedRef.current?.(next, change, uploadedDocumentId);
   }, [privacy.canAccessPrivateData]);
@@ -130,6 +137,8 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
   useEffect(() => () => {
     mountedRef.current = false;
     userIdRef.current = null;
+    canonicalDocumentsRef.current = null;
+    vaultRevisionRef.current += 1;
   }, []);
 
   const load = useCallback(async () => {
@@ -142,6 +151,8 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
       ownerKeyRef.current === requestOwnerKey &&
       privacy.canAccessPrivateData();
     freshlyVerifiedOwner.current = null;
+    vaultRevisionRef.current += 1;
+    canonicalDocumentsRef.current = null;
     setOwnedDocuments(null);
     onDocumentsChangedRef.current?.([], 'loading');
     setLoading(true);
@@ -172,6 +183,8 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     if (!privateAllowed) {
       loadGenerationRef.current += 1;
       freshlyVerifiedOwner.current = null;
+      vaultRevisionRef.current += 1;
+      canonicalDocumentsRef.current = null;
       setOwnedDocuments(null);
       onDocumentsChangedRef.current?.([], 'loading');
       setLoading(true);
@@ -463,18 +476,25 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
 
   function confirmDelete(document: JobseekerDocument) {
     if (!canActOnCandidateDocument(document, verifiedDocuments, user?.id ?? null, ownerKey, freshlyVerifiedOwner.current, privateAllowed)) return;
+    const proof = captureVaultDeleteConfirmation(document, canonicalDocumentsRef.current, userIdRef.current,
+      ownerKeyRef.current, freshlyVerifiedOwner.current, privacy.canAccessPrivateData(), vaultRevisionRef.current);
+    if (!proof) return;
     Alert.alert(
       '応募書類を削除しますか？',
       `${document.title}\nすでに応募先へ提出済みのコピーは削除されません。`,
       [
         { text: 'キャンセル', style: 'cancel' },
-        { text: '削除', style: 'destructive', onPress: () => void remove(document) },
+        { text: '削除', style: 'destructive', onPress: () => void remove(document, proof) },
       ],
     );
   }
 
-  async function remove(document: JobseekerDocument) {
-    if (!canActOnCandidateDocument(document, verifiedDocuments, user?.id ?? null, ownerKey, freshlyVerifiedOwner.current, privateAllowed)) return;
+  async function remove(document: JobseekerDocument, proof: VaultDeleteConfirmationProof) {
+    // Delayed native confirmation may execute after a refresh, replacement or
+    // account switch. Validate against the LIVE canonical snapshot, not the
+    // old React closure that displayed the confirmation dialog.
+    if (!canCommitVaultDeleteConfirmation(proof, document, canonicalDocumentsRef.current, userIdRef.current,
+      ownerKeyRef.current, freshlyVerifiedOwner.current, privacy.canAccessPrivateData(), vaultRevisionRef.current)) return;
     const lease = operationLeaseRef.current.tryAcquire();
     if (lease === null) return;
     onBusyChangedRef.current?.(true);
