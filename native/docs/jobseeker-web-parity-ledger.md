@@ -1,3 +1,10 @@
+## Latest isolated delta (r332, 2026-11-18 NZ) — Application-specific document rows cannot cross applications
+
+- **Reference:** Web JOBSEEKER `/applications` → `ApplicationMessages`, main `8c502fdb`, synthetic A/B/mixed/null/empty states; source-only.
+- **Native:** Submitted-document and expectation-list adapters reject wrong-application/malformed rows before direct parent status or opened panel uses them; preserve verified empty lists and no-PII errors. Three-source snapshot remains; no RLS/private Storage change. [r332 delta](parity-delta-r332-application-document-scope.md).
+- **QA:** Node actual-helper 25/25 PASS (12 new) and helper-only strict TypeScript PASS. No full Expo check, canonical API round-trip, Android/iOS installed Native-Web pair, signed builds. Android **IMPLEMENTING**, iOS **IMPLEMENTING**.
+- **Ownership/cost:** COLOR single writer `native/color-focused-document-refresh-r294-20261117`, base `6cff9f3faa335ddbe3c622f1180034dd70419dc9`. No PR/main/production/Store/paid CI/EAS/external agent; signing, quota and distribution unverified.
+
 ## Latest isolated delta (r331, 2026-11-18 NZ) — Ambiguous application-document list response is not empty
 
 - **Web/source baseline:** JOBSEEKER `/applications` → `ApplicationMessages`, Web main `8c502fdb`, synthetic empty/null/normal candidate read states; reference is source-only, not paired screen captures.

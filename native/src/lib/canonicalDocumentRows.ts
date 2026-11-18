@@ -12,3 +12,23 @@ export function requireCanonicalDocumentRows<T>(value: unknown, label: string): 
   }
   return value as T[];
 }
+
+/**
+ * An application-scoped read is usable only when every returned row belongs
+ * to the requested application. This supplements server RLS and protects the
+ * direct two-source parent-warning read, which does not use the three-source
+ * snapshot owner check. Never leak unexpected row IDs into the error.
+ */
+export function requireApplicationScopedDocumentRows<T extends { application_id: string }>(
+  value: unknown,
+  applicationId: string,
+  label: string,
+): T[] {
+  const rows = requireCanonicalDocumentRows<T>(value, label);
+  if (typeof applicationId !== 'string' || !applicationId.trim() ||
+      !rows.every((row) => row !== null && typeof row === 'object' &&
+        row.application_id === applicationId)) {
+    throw new Error(`${label}の応募先を確認できませんでした。もう一度読み込んでください。`);
+  }
+  return rows;
+}

@@ -1,0 +1,11 @@
+# r332 — Application-scoped document list reads fail closed on mixed application rows
+
+**2026-11-18 (NZ).** COLOR JOBSEEKER Native only. Web jobseeker `/applications` → `ApplicationMessages`, Web main `8c502fdb3a1697eb9eedf1f7b02de30374cb7b5c`, source inspected 2026-11-18; synthetic candidate A/B with matching/mixed/empty/null application document lists. No paired rendered captures.
+
+## Root gap and fix
+The r331 canonical-array guard rejected unexpected null responses but accepted arrays of wrong-application rows. The opened-panel three-source snapshot already rejects these, but direct parent warning `getApplicationDocumentHandoffStatus` consumes the two list adapters without that snapshot owner check. A malformed response could misrepresent submitted and missing documents for the requested application. Both list adapters now require *every* row's `application_id` to equal the pinned application ID, including in mixed arrays; blank application IDs fail. Valid empty arrays remain valid only with a nonblank application ID. Fixed Japanese recovery errors never quote private row data. This supplements server RLS; it does not replace or change RLS/private Storage.
+
+Files: `native/src/lib/canonicalDocumentRows.ts`, `native/src/lib/documentVaultApi.ts`; new focused regression `native/qa/native-document-application-scope-r332.test.mjs`. No new network calls, automatic retries, writes, Web changes, CI or deploys.
+
+## Developer evidence and remaining gates
+`node --experimental-strip-types --test native/qa/native-document-vault-canonical-rows-r331.test.mjs native/qa/native-document-application-scope-r332.test.mjs` — **25/25 PASS** (13 prior + 12 new) against the TypeScript helper. `tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution bundler native/src/lib/canonicalDocumentRows.ts` — **PASS**, helper only. These do not validate the full Expo app, actual API/RLS, Android/iOS runtime or signed builds. Linux cannot resolve github.com for checkout; complete dependencies, Android SDK/emulator, macOS/Xcode/iOS Simulator and signing/distribution are unavailable or unverified. Android **IMPLEMENTING**, iOS **IMPLEMENTING**. CI triggers main push/PR; stay on no-PR dev branch without approved billable CI.
