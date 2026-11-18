@@ -29,6 +29,7 @@ import { presentDocumentVaultError } from '../lib/documentVaultErrorPresentation
 import { openCandidateApplicationDocument } from '../lib/openCandidateApplicationDocument';
 import { readCandidateVaultSnapshot } from '../lib/readCandidateVaultSnapshot';
 import { reconcileCandidateVaultMutation } from '../lib/reconcileCandidateVaultMutation';
+import { confirmCandidateVaultReplacementPreserved } from '../lib/confirmCandidateVaultReplacement';
 
 // Keep the document catalogue and exact qualification mapping in sync with Web.
 const labels = DOCUMENT_TYPE_LABELS;
@@ -255,7 +256,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
       // During a replacement the old default stays authoritative until the new
       // source is canonically visible. This prevents a failed/ambiguous upload
       // from removing or silently replacing the last known-good default.
-      makeDefault: !replacement && !sameTypeExists,
+      makeDefault: Boolean(replacement) || !sameTypeExists,
       canStartUpload: () =>
         operationValid() && pinned.isCurrent() &&
         mountedRef.current &&
@@ -266,63 +267,24 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     if (!operationValid() || !pinned.isCurrent() || !mountedRef.current || userIdRef.current !== pickerOwnerId || !privacy.canAccessPrivateData()) return;
 
     if (replacement) {
-      // Never delete or mutate the old document until the newly uploaded source
-      // is visible through the canonical candidate-scoped read path.
-      let canonical = await listJobseekerDocuments(pinned.client);
-      if (!operationValid() || !pinned.isCurrent()) return;
-      let canonicalSaved = canonical.find((item) => item.id === saved.id) ?? null;
-      let canonicalOld = canonical.find((item) => item.id === replacement.id) ?? null;
-      if (!canonicalSaved || canonicalSaved.jobseeker_clerk_user_id !== pickerOwnerId || canonicalSaved.document_type !== replacement.document_type) {
-        throw new Error('新しい書類の保存結果を確認できませんでした。古い書類は変更していません。');
-      }
-
-      if (replacement.is_default && !canonicalSaved.is_default) {
-        try {
-          await setDefaultJobseekerDocument(pinned.client, canonicalSaved.id);
-        } catch (error) {
-          // A dropped response may happen after the server committed the default
-          // switch. Re-read canonical state before deciding that it failed.
-          canonical = await listJobseekerDocuments(pinned.client);
-          canonicalSaved = canonical.find((item) => item.id === saved.id) ?? null;
-          canonicalOld = canonical.find((item) => item.id === replacement.id) ?? null;
-          if (!canonicalSaved?.is_default) throw error;
-        }
-      }
-
-      if (!operationValid() || !pinned.isCurrent() || !mountedRef.current || userIdRef.current !== pickerOwnerId || !privacy.canAccessPrivateData()) return;
-
-      if (canonicalOld) {
-        try {
-          await deleteJobseekerDocument(pinned.client, canonicalOld);
-        } catch {
-          // Deletion can also finish server-side before a network response is
-          // lost. Recover from canonical state; otherwise keep both sources so
-          // a restart can never present a false "replacement complete" state.
-        }
-      }
-
-      canonical = await listJobseekerDocuments(pinned.client);
-      if (!operationValid() || !pinned.isCurrent()) return;
-      canonicalSaved = canonical.find((item) => item.id === saved.id) ?? null;
-      canonicalOld = canonical.find((item) => item.id === replacement.id) ?? null;
-      if (!operationValid() || !privacy.canAccessPrivateData() || ownerKeyRef.current !== pinnedOwnerKey) return;
-      assertCandidateDocumentListOwner(canonical, pickerOwnerId);
+      // Web preserves the previous vault source while making the uploaded one
+      // the default for this type. Never implicitly delete the old source.
+      const canonical = await listJobseekerDocuments(pinned.client);
+      const replacementStillCurrent = () =>
+        operationValid() && pinned.isCurrent() && mountedRef.current &&
+        userIdRef.current === pickerOwnerId &&
+        ownerKeyRef.current === pinnedOwnerKey && privacy.canAccessPrivateData();
+      if (!replacementStillCurrent()) return;
+      confirmCandidateVaultReplacementPreserved({
+        previous: replacement,
+        uploaded: saved,
+        canonicalRows: canonical,
+        ownerId: pickerOwnerId,
+        isCurrent: replacementStillCurrent,
+      });
+      if (!replacementStillCurrent()) return;
       setDocuments(canonical, pinnedOwnerKey);
-
-      if (!canonicalSaved) {
-        Alert.alert('差し替え結果を確認できません', '新しい書類の状態を確認できませんでした。古い書類は削除しません。一覧を再読み込みして確認してください。');
-        return;
-      }
-      if (replacement.is_default && !canonicalSaved.is_default) {
-        Alert.alert('差し替えを完了できませんでした', '新しい書類は保存されていますが、応募時に使う書類への切り替えを確認できませんでした。古い書類は残しています。');
-        return;
-      }
-      if (canonicalOld) {
-        Alert.alert('新しい書類は保存済みです', '新しい書類は保存されていますが、古い書類の削除だけ完了できませんでした。二重アップロードせず、一覧から古い書類を削除してください。');
-        return;
-      }
-
-      Alert.alert('差し替えました', `${labels[selectedType]}を新しい書類に差し替えました。提出済みの応募書類コピーは変更されません。`);
+      Alert.alert('差し替えました', `${labels[selectedType]}を差し替えました。以前の書類は書類庫に残っています。不要なら削除できます。`);
       return;
     }
 
@@ -643,9 +605,10 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
           <Text style={{ fontSize: 19, color: '#ab5279' }}>›</Text>
         </Pressable>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          <VaultAction testID={`document-vault-replace-file-${document.id}`} title="ファイルで差し替え" disabled={busyId !== null} onPress={() => void pickAndUpload(document)} />
-          <VaultAction testID={`document-vault-replace-camera-${document.id}`} title="撮影して差し替え" disabled={busyId !== null} onPress={() => void captureAndUpload(document)} />
-          {!document.is_default ? <VaultAction testID={`document-vault-default-${document.id}`} title="応募時に使う" disabled={busyId !== null} onPress={() => void makeDefault(document)} /> : null}
+          {document.is_default ? <>
+            <VaultAction testID={`document-vault-replace-file-${document.id}`} title="ファイルで差し替え" disabled={busyId !== null} onPress={() => void pickAndUpload(document)} />
+            <VaultAction testID={`document-vault-replace-camera-${document.id}`} title="撮影して差し替え" disabled={busyId !== null} onPress={() => void captureAndUpload(document)} />
+          </> : <VaultAction testID={`document-vault-default-${document.id}`} title="応募時に使う" disabled={busyId !== null} onPress={() => void makeDefault(document)} />}
           <VaultAction testID={`document-vault-delete-${document.id}`} title="削除" disabled={busyId !== null} onPress={() => confirmDelete(document)} />
         </View>
       </View>)}
