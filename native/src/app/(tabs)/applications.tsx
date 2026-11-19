@@ -12,6 +12,7 @@ import { messageNavigationLeaseIsCurrent } from '../../lib/messageNavigationLeas
 import { readCandidateApplicationIndex } from '../../lib/candidateApplicationIndexRead';
 import { boundedPrivateRead } from '../../lib/privateReadDeadline';
 import { retainApplicationListForRefresh } from '../../lib/applicationListRefreshPolicy';
+import { canOpenVerifiedApplicationList } from '../../lib/applicationVerifiedNavigationPolicy';
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -41,6 +42,15 @@ export default function ApplicationsScreen() {
   const applications = readCandidateFreshlyVerifiedView(ownedApplications, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
   const error = readCandidateFreshlyVerifiedView(ownedError, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
   const openError = readCandidateFreshlyVerifiedView(ownedOpenError, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
+  // A failed same-session refresh may retain rows for context, never as a fresh navigation grant.
+  const canOpenVerifiedListActions = canOpenVerifiedApplicationList({
+    listPresent: applications !== null,
+    expectedOwnerKey: ownerKey,
+    freshlyVerifiedOwnerKey: freshlyVerifiedOwner.current,
+    privateAllowed,
+    readPending: loading,
+    readFailed: error !== null,
+  });
 
   const load = useCallback(async (explicitRefresh = false) => {
     const current = ++generation.current;
@@ -115,7 +125,7 @@ export default function ApplicationsScreen() {
   const openApplication = async (applicationId: string) => {
     // A session pin can outlive a tap, blur, App Lock or account replacement.
     // Claim the navigation synchronously to prevent duplicate stack pushes.
-    if (openPending.current || loading) return;
+    if (openPending.current || !canOpenVerifiedListActions) return;
     const startedGeneration = generation.current;
     const expectedOwnerKey = ownerKey;
     const authorizedApplicationIds = applications?.map((application) => application.id) ?? [];
@@ -194,8 +204,8 @@ export default function ApplicationsScreen() {
           key={application.id}
           style={styles.card}
           onPress={() => void openApplication(application.id)}
-          disabled={loading || openingId !== null}
-          accessibilityState={{ disabled: loading || openingId !== null }}
+          disabled={!canOpenVerifiedListActions || openingId !== null}
+          accessibilityState={{ disabled: !canOpenVerifiedListActions || openingId !== null }}
           accessibilityRole="button"
           accessibilityLabel={`${application.facility_name} ${application.job_title}の応募詳細を開く`}
         >
