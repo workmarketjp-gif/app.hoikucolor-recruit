@@ -9,14 +9,38 @@ const DIRECT_ROUTES = new Set([
   '/(tabs)/applications', '/(tabs)/notifications', '/(tabs)/profile',
 ]);
 const DETAIL_ROUTE = /^\/(?:job|application)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function candidateRouteFromInitialURL(url: string | null | undefined): string | null {
   if (typeof url !== 'string' || !url.startsWith('hoikucolor://')) return null;
-  const raw = url.slice('hoikucolor://'.length).split(/[?#]/, 1)[0];
+  const rest = url.slice('hoikucolor://'.length).split('#', 1)[0];
+  const queryOffset = rest.indexOf('?');
+  const raw = queryOffset < 0 ? rest : rest.slice(0, queryOffset);
   // Do not decode encoded separators, dot segments, a different host, or external links.
   if (!raw || /[%\\\s]/.test(raw) || raw.includes('//') || raw.includes('..')) return null;
   const path = `/${raw.replace(/^\//, '')}`;
-  return DIRECT_ROUTES.has(path) || DETAIL_ROUTE.test(path) ? path : null;
+  if (!DIRECT_ROUTES.has(path) && !DETAIL_ROUTE.test(path)) return null;
+  if (queryOffset < 0) return path;
+
+  const allowed = path.startsWith('/application/') ? new Set(['focus', 'interviewId', 'focusKey'])
+    : path === '/visits' ? new Set(['visitId', 'jobId', 'applicationId'])
+      : path === '/scouts' ? new Set(['scoutId'])
+        : path === '/spot-jobs' ? new Set(['assignmentId'])
+          : path === '/(tabs)/profile' ? new Set(['return_job']) : new Set<string>();
+  const rawQuery = rest.slice(queryOffset + 1);
+  if (!rawQuery || rawQuery.length > 320) return null;
+  const params = new URLSearchParams(rawQuery);
+  const seen = new Set<string>();
+  for (const [key, value] of params) {
+    if (!allowed.has(key) || seen.has(key)) return null;
+    seen.add(key);
+    if (key === 'focus') {
+      if (value !== 'messages' && value !== 'interview') return null;
+    } else if (key === 'focusKey') {
+      if (!/^[a-z0-9:._-]{1,120}$/i.test(value)) return null;
+    } else if (!UUID.test(value)) return null;
+  }
+  return seen.size > 0 ? `${path}?${params.toString()}` : path;
 }
 
 let initialCapture: Promise<void> | null = null;
