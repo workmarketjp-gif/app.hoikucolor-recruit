@@ -41,7 +41,7 @@ check('verified new accounts transfer to sign-up', auth.includes('sign_up_if_mis
 check('existing accounts finalize', auth.includes('signIn.finalize()'));
 check('MFA and client trust retained', auth.includes('needs_second_factor') && auth.includes('needs_client_trust') && auth.includes('verifyTOTP') && auth.includes('verifyEmailCode'));
 check('Google uses the app scheme', auth.includes("strategy: 'oauth_google'") && auth.includes("scheme: 'hoikucolor'"));
-check('signed-in users cannot remain in auth group', authLayout.includes('if (isSignedIn) return <Redirect href="/(tabs)/home"'));
+check('signed-in auth routes resolve through exact-session entry, not unguarded home', authLayout.includes('if (isSignedIn) return <Redirect href="/"') && read('src/app/index.tsx').includes('consumePostAuthCandidateRoute()') && read('src/app/index.tsx').includes('destination?.sessionId !== auth.sessionId'));
 check('signed-out users cannot enter candidate tabs', tabsLayout.includes('if (!isSignedIn) return <Redirect href="/(auth)/sign-in"'));
 check('candidate business screens use exact-session pinning', jobs.includes('pinCandidateAction') && profile.includes('pinCandidateAction'));
 check('job search reuses canonical v2 RPC', api.includes("client.rpc('hc_jobseeker_search_jobs_v2'"));
