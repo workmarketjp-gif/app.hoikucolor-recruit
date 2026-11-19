@@ -14,7 +14,7 @@ import { armPendingHomeApplication, clearPendingHomeApplication } from '../lib/h
 import { armSpotApplicationDispatch } from '../lib/spotApplicationDispatch';
 import { readSpotApplicationPreflight } from '../lib/spotApplicationPreflight';
 import { canRefreshSpotInForeground } from '../lib/spotForegroundRefresh';
-import { retainConfirmedSpotApplication, navigateAfterConfirmedSpotSubmission } from '../lib/spotConfirmedApplication';
+import { retainConfirmedSpotApplication, navigateAfterConfirmedSpotSubmission, createSpotReadConfirmationFence } from '../lib/spotConfirmedApplication';
 import { formatSpotClosingAt, spotEmptyJobsMessage, spotRemainingSlotsLabel } from '../lib/spotJobWebPresentation';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import {
@@ -109,6 +109,7 @@ export default function SpotJobsScreen() {
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
   const readInFlightRef = useRef(false);
+  const confirmationReadFenceRef = useRef(createSpotReadConfirmationFence());
   const { assignmentId: rawAssignmentId } = useLocalSearchParams<{ assignmentId?: string }>();
   const focusedAssignmentId = verifiedFocusId(rawAssignmentId);
   const focusedAssignment = focusedOwnedItem(assignments, focusedAssignmentId, (item) => item.assignment_id);
@@ -118,6 +119,7 @@ export default function SpotJobsScreen() {
 
   const load = useCallback(async (quiet = false) => {
     const current = ++generation.current;
+    const readConfirmationEpoch = confirmationReadFenceRef.current.captureReadEpoch();
     readInFlightRef.current = true;
     if (!quiet) {
       verifiedOwnerRef.current = null;
@@ -145,7 +147,8 @@ export default function SpotJobsScreen() {
         ownsPin: (pinned) => candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey,
       });
       if (current !== generation.current || currentOwnerRef.current !== ownerKey ||
-          privacy.shieldVisible || !privacy.canAccessPrivateData()) return false;
+          privacy.shieldVisible || !privacy.canAccessPrivateData() ||
+          !confirmationReadFenceRef.current.canCommitRead(readConfirmationEpoch)) return false;
       verifiedOwnerRef.current = ownerKey;
       // Only clear a read failure on confirmed recovery. An unresolved apply
       // warning must survive ordinary background list refreshes.
@@ -156,7 +159,8 @@ export default function SpotJobsScreen() {
       return true;
     } catch {
       if (!quiet && current === generation.current && currentOwnerRef.current === ownerKey &&
-          !privacy.shieldVisible && privacy.canAccessPrivateData()) {
+          !privacy.shieldVisible && privacy.canAccessPrivateData() &&
+          confirmationReadFenceRef.current.canCommitRead(readConfirmationEpoch)) {
         initialFailureOwnerRef.current = ownerKey;
         setError('スポット勤務の情報を確認できませんでした。再読み込みしてください。');
       }
@@ -264,7 +268,10 @@ export default function SpotJobsScreen() {
       const result = await submitApplication(pinned.client, job.job_id, profile);
       if (!stillCurrent()) return;
       // submitApplication has already checked candidate-owned canonical detail.
-      // Do not expose the old open card again if a separate Spot list read fails.
+      // Invalidate list responses that began before this confirmation: they can
+      // otherwise replace the newly confirmed card with an obsolete open one.
+      // New canonical reads remain authoritative, including later revocation.
+      confirmationReadFenceRef.current.recordConfirmation();
       setJobs((current) => stillCurrent()
         ? retainConfirmedSpotApplication(current, job.job_id, result.applicationId)
         : current);
