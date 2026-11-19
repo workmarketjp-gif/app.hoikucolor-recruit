@@ -55,3 +55,22 @@ export function navigateAfterConfirmedSpotSubmission(options: {
   }
   if (options.isCurrent()) options.navigate();
 }
+
+/**
+ * Discard a Spot list response that began before a candidate-owned application
+ * was canonically confirmed. An older, in-flight read can otherwise overwrite
+ * the local confirmed-application projection with an obsolete open job card.
+ *
+ * A read started AFTER confirmation is not hidden: the server remains the
+ * source of truth for subsequent status changes, including revocation.
+ * Account/session fences are separately enforced by the screen.
+ */
+export function createSpotReadConfirmationFence() {
+  let confirmationEpoch = 0;
+  return {
+    captureReadEpoch: (): number => confirmationEpoch,
+    recordConfirmation: (): void => { confirmationEpoch += 1; },
+    canCommitRead: (readEpoch: number): boolean =>
+      Number.isSafeInteger(readEpoch) && readEpoch >= 0 && readEpoch === confirmationEpoch,
+  };
+}
