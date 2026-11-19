@@ -31,6 +31,7 @@ import { keywordForCurrentCandidate, type CandidateKeywordDraft } from '../../li
 import { canStartManualJobSearch } from '../../lib/jobSearchManualSubmit';
 import { readCandidateJobDiscoveryBounded } from '../../lib/jobDiscoveryCanonicalRead';
 import { loadSavedJobIdsForSearch } from '../../lib/jobSearchSavedIndependence';
+import { savedJobMutationFailureNotice } from '../../lib/jobSearchSavedMutationFailure';
 
 function salary(job: JobseekerJob) {
   const prefix = job.salary_type === 'hourly' ? '時給' : job.salary_type === 'annual' ? '年収' : '月給';
@@ -397,7 +398,8 @@ export default function JobsScreen() {
     const requestGeneration = generation.current;
     const attempt = ++mutationSequence.current;
     setBusyJobId(jobId);
-    setOwnedError(null);
+    // A saved-state write failure must not erase a legitimate job-search error.
+    setOwnedSavedError(null);
     try {
       // A pending token request, one-shot mutation acknowledgment or canonical
       // saved-ID read must not leave the search-card heart busy indefinitely.
@@ -419,12 +421,20 @@ export default function JobsScreen() {
       if (!pinned.isCurrent() || !canContinue()) return;
       setOwnedSavedIds({ ownerKey, value: canonical });
     } catch {
-      if (attempt === mutationSequence.current && requestGeneration === generation.current &&
-          ownerKey && !privacy.shieldVisible) {
-        // A write can succeed while its acknowledgement/readback fails. Never
-        // present a guessed bookmark state or allow a second toggle until reload.
+      const notice = savedJobMutationFailureNotice({
+        attemptedOwnerKey: ownerKey,
+        currentOwnerKey: latestOwnerRef.current,
+        attemptedSequence: attempt,
+        currentSequence: mutationSequence.current,
+        requestGeneration,
+        currentGeneration: generation.current,
+        privateAllowed: latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible,
+      });
+      if (notice) {
+        // The write may have committed: disable hearts until a fresh canonical
+        // saved-ID read, but keep the verified job list/count and its own status.
         setOwnedSavedIds(null);
-        setOwnedError({ ownerKey, value: '保存状況を確認できませんでした。再検索してご確認ください。' });
+        setOwnedSavedError(notice);
       }
     } finally {
       if (attempt === mutationSequence.current) {
@@ -433,6 +443,7 @@ export default function JobsScreen() {
         // If a save/unsave settled after the tab was left and revisited, the
         // earlier focus read may predate the write. Verify canonical state again.
         if (focusActive.current && requestGeneration !== generation.current && ownerKey &&
+            ownerKey === latestOwnerRef.current &&
             latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible) {
           cancelKeywordTimer();
           void latestLoad.current(true);
