@@ -17,8 +17,34 @@ const PrivateRuntime = lazy(() =>
 const AUTH_LOAD_TIMEOUT_MS = 10000;
 const brandMark = require('../../assets/hoiku-color-mark.png');
 
-function RouterStack() {
-  return <Stack screenOptions={{ headerShown: false }} />;
+/**
+ * Only authentication and the public SSO callback can mount before the
+ * candidate-private providers exist. Expo Router's Protected guard also
+ * revokes mounted private routes on sign-out/session loss. This is a UI
+ * boundary; Clerk/RLS remain the authoritative data-access gate.
+ */
+function RouterStack({ privateRoutesAllowed }: { privateRoutesAllowed: boolean }) {
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="sso-callback" />
+      <Stack.Protected guard={!privateRoutesAllowed}>
+        <Stack.Screen name="(auth)" />
+      </Stack.Protected>
+      <Stack.Protected guard={privateRoutesAllowed}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="application/[id]" />
+        <Stack.Screen name="job/[id]" />
+        <Stack.Screen name="compare" />
+        <Stack.Screen name="matches" />
+        <Stack.Screen name="messages" />
+        <Stack.Screen name="resume" />
+        <Stack.Screen name="scouts" />
+        <Stack.Screen name="spot-jobs" />
+        <Stack.Screen name="visits" />
+      </Stack.Protected>
+    </Stack>
+  );
 }
 
 function ClerkMountProbe() {
@@ -132,7 +158,7 @@ function AuthScopedRuntime({ onRetry, onReady }: { onRetry: () => void; onReady:
   // Candidate-private providers never mount while signed out. This also keeps
   // Clerk initialization isolated from notifications, biometrics and private DB
   // modules until a real active session exists.
-  if (!auth.isSignedIn) return <RouterStack />;
+  if (!auth.isSignedIn) return <RouterStack privateRoutesAllowed={false} />;
 
   if (!auth.active || !auth.sessionId) {
     return (
@@ -147,7 +173,7 @@ function AuthScopedRuntime({ onRetry, onReady }: { onRetry: () => void; onReady:
   return (
     <Suspense fallback={<CenteredStatus title="アプリを準備しています…" loading />}>
       <PrivateRuntime sessionId={auth.sessionId}>
-        <RouterStack />
+        <RouterStack privateRoutesAllowed />
       </PrivateRuntime>
     </Suspense>
   );
