@@ -11,10 +11,11 @@ export function assertCandidateDocumentListOwner(
   rows: readonly CandidateDocumentRow[],
   ownerId: string,
 ): void {
-  if (!ownerId.trim() || !Array.isArray(rows) || rows.some((row) =>
-    !row || typeof row.id !== 'string' || !row.id ||
+  if (typeof ownerId !== 'string' || !ownerId.trim() || !Array.isArray(rows) || rows.some((row) =>
+    !row || typeof row.id !== 'string' || !row.id.trim() ||
     row.jobseeker_clerk_user_id !== ownerId ||
-    typeof row.file_path !== 'string' || !row.file_path
+    typeof row.file_path !== 'string' || !row.file_path.trim() ||
+    typeof row.document_type !== 'string' || !row.document_type.trim()
   )) {
     throw new Error('応募書類の閲覧権限を確認できませんでした。');
   }
@@ -39,10 +40,20 @@ export function canActOnCandidateDocument(
   // Canonical RLS authorization remains mandatory for every private operation.
   try { assertCandidateDocumentListOwner(canonicalRows, ownerId); } catch { return false; }
   if (new Set(canonicalRows.map((row) => row.id)).size !== canonicalRows.length) return false;
+  // A stale default flag changes which action the Web/native UI offers.
+  // Do not act on a displayed row whose canonical default status changed,
+  // or on an internally contradictory same-type default snapshot.
+  const defaultTypes = new Set<string>();
+  for (const row of canonicalRows) {
+    if (row.is_default !== true) continue;
+    if (defaultTypes.has(row.document_type)) return false;
+    defaultTypes.add(row.document_type);
+  }
   const matches = canonicalRows.filter((row) => row.id === document.id);
   return matches.length === 1 &&
     matches[0].file_path === document.file_path &&
-    matches[0].document_type === document.document_type;
+    matches[0].document_type === document.document_type &&
+    matches[0].is_default === document.is_default;
 }
 
 /** Never acknowledge a private document mutation without authoritative readback. */
