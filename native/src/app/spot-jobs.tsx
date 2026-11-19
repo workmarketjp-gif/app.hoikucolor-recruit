@@ -9,6 +9,7 @@ import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { canStartSpotApplication } from '../lib/spotReadIntegrity';
+import { readCandidateSpotSnapshotBounded } from '../lib/spotSnapshotRead';
 import { formatSpotClosingAt, spotEmptyJobsMessage, spotRemainingSlotsLabel } from '../lib/spotJobWebPresentation';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import {
@@ -117,17 +118,17 @@ export default function SpotJobsScreen() {
       return false;
     }
     try {
-      const pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) {
-        throw new Error('安全なログイン状態を確認できませんでした。');
-      }
-      const [nextJobs, nextAssignments] = await Promise.all([
-        listSpotJobs(pinned.client),
-        listMySpotAssignments(pinned.client),
-      ]);
-      if (!pinned.isCurrent() || current !== generation.current ||
-          currentOwnerRef.current !== ownerKey || privacy.shieldVisible ||
-          !privacy.canAccessPrivateData()) return false;
+      const { jobs: nextJobs, assignments: nextAssignments } = await readCandidateSpotSnapshotBounded({
+        pin: pinCandidateAction,
+        readJobs: (pinned) => listSpotJobs(pinned.client),
+        readAssignments: (pinned) => listMySpotAssignments(pinned.client),
+        isCurrent: () => Boolean(ownerKey && current === generation.current &&
+          currentOwnerRef.current === ownerKey && !privacy.shieldVisible &&
+          privacy.canAccessPrivateData()),
+        ownsPin: (pinned) => candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey,
+      });
+      if (current !== generation.current || currentOwnerRef.current !== ownerKey ||
+          privacy.shieldVisible || !privacy.canAccessPrivateData()) return false;
       verifiedOwnerRef.current = ownerKey;
       setJobs(nextJobs);
       setAssignments(nextAssignments);
