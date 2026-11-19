@@ -89,13 +89,18 @@ export default function SpotJobsScreen() {
   const privacy = usePrivateDataQuarantine();
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
   const verifiedOwnerRef = useRef<string | null>(null);
+  const initialFailureOwnerRef = useRef<string | null>(null);
   const currentOwnerRef = useRef(ownerKey);
   const applyingRef = useRef<{ owner: string; generation: number; jobId: string } | null>(null);
   if (currentOwnerRef.current !== ownerKey) {
     currentOwnerRef.current = ownerKey;
     verifiedOwnerRef.current = null;
+    initialFailureOwnerRef.current = null;
   }
-  if (privacy.shieldVisible || !privacy.canAccessPrivateData()) verifiedOwnerRef.current = null;
+  if (privacy.shieldVisible || !privacy.canAccessPrivateData()) {
+    verifiedOwnerRef.current = null;
+    initialFailureOwnerRef.current = null;
+  }
   const [jobs, setJobs] = useState<SpotJobListing[]>([]);
   const [assignments, setAssignments] = useState<SpotAssignment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -115,6 +120,7 @@ export default function SpotJobsScreen() {
     readInFlightRef.current = true;
     if (!quiet) {
       verifiedOwnerRef.current = null;
+      initialFailureOwnerRef.current = null;
       setLoading(true);
       setError(null);
     }
@@ -122,6 +128,7 @@ export default function SpotJobsScreen() {
     if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
       setJobs([]);
       setAssignments([]);
+      initialFailureOwnerRef.current = null;
       readInFlightRef.current = false;
       if (!quiet) setLoading(false);
       return false;
@@ -139,12 +146,17 @@ export default function SpotJobsScreen() {
       if (current !== generation.current || currentOwnerRef.current !== ownerKey ||
           privacy.shieldVisible || !privacy.canAccessPrivateData()) return false;
       verifiedOwnerRef.current = ownerKey;
+      // Only clear a read failure on confirmed recovery. An unresolved apply
+      // warning must survive ordinary background list refreshes.
+      if (initialFailureOwnerRef.current === ownerKey) setError(null);
+      initialFailureOwnerRef.current = null;
       setJobs(nextJobs);
       setAssignments(nextAssignments);
       return true;
     } catch {
       if (!quiet && current === generation.current && currentOwnerRef.current === ownerKey &&
           !privacy.shieldVisible && privacy.canAccessPrivateData()) {
+        initialFailureOwnerRef.current = ownerKey;
         setError('スポット勤務の情報を確認できませんでした。再読み込みしてください。');
       }
       return false;
@@ -160,6 +172,7 @@ export default function SpotJobsScreen() {
     if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
       generation.current += 1;
       verifiedOwnerRef.current = null;
+      initialFailureOwnerRef.current = null;
       setJobs([]);
       setAssignments([]);
       setError(null);
@@ -176,6 +189,7 @@ export default function SpotJobsScreen() {
         ownerKey,
         currentOwnerKey: currentOwnerRef.current,
         verifiedOwnerKey: verifiedOwnerRef.current,
+        initialFailureOwnerKey: initialFailureOwnerRef.current,
         privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
         readInFlight: readInFlightRef.current,
         applicationInFlight: applyingRef.current?.owner === ownerKey,
@@ -191,6 +205,7 @@ export default function SpotJobsScreen() {
       appStateSubscription.remove();
       generation.current += 1;
       verifiedOwnerRef.current = null;
+      initialFailureOwnerRef.current = null;
     };
   }, [load, focusedAssignmentId, ownerKey, privacy.shieldVisible]));
 
