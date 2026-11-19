@@ -13,6 +13,7 @@ import {
   beginInitialCandidateLinkCapture,
   openSignedOutCandidateLinkWindow,
   recordInitialCandidateAuth,
+  rememberCandidateLinkDuringBoot,
   rememberSignedOutCandidateLink,
 } from '../lib/authInitialLinkReturn';
 
@@ -206,6 +207,12 @@ export default function RootLayout() {
 
   useEffect(() => {
     beginInitialCandidateLinkCapture(() => Linking.getInitialURL());
+    // The OS can dispatch a warm notification before Clerk hydrates; the
+    // session-scoped signed-out listener is not mounted until then.
+    const earlyLink = Linking.addEventListener('url', ({ url }) => {
+      rememberCandidateLinkDuringBoot(url);
+    });
+    return () => earlyLink.remove();
   }, []);
 
   // This timer must commit OUTSIDE Clerk, the cache boundary and Suspense.
