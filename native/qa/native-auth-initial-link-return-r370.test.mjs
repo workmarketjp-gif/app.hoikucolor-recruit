@@ -14,6 +14,14 @@ test('explicit app links only; excludes external, encoded and hostile routes', (
     'hoikucolor://application\\private', 'hoikucolor://application//'+UUID,
   ]) assert.equal(candidateRouteFromInitialURL(link), null, link);
 });
+test('legitimate candidate notification focus survives login without accepting arbitrary query', () => {
+  assert.equal(candidateRouteFromInitialURL(`hoikucolor://application/${UUID}?focus=interview&interviewId=${UUID}`), `/application/${UUID}?focus=interview&interviewId=${UUID}`);
+  assert.equal(candidateRouteFromInitialURL(`hoikucolor://visits?visitId=${UUID}&jobId=${UUID}`), `/visits?visitId=${UUID}&jobId=${UUID}`);
+  assert.equal(candidateRouteFromInitialURL(`hoikucolor://scouts?scoutId=${UUID}`), `/scouts?scoutId=${UUID}`);
+  for (const link of [`hoikucolor://application/${UUID}?focus=admin`, `hoikucolor://visits?visitId=not-a-uuid`, `hoikucolor://application/${UUID}?focus=messages&focus=interview`, `hoikucolor://messages?redirect=https://evil.example`]) {
+    assert.equal(candidateRouteFromInitialURL(link), null, link);
+  }
+});
 // The module is a process-wide one-shot; these deliberately exercise the same lifecycle.
 test('cold signed-out link survives protected-route redirect; consumed once on success', async () => {
   beginInitialCandidateLinkCapture(async () => `hoikucolor://application/${UUID}`);
