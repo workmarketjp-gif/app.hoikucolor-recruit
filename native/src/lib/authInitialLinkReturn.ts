@@ -89,7 +89,9 @@ export function rememberSignedOutCandidateLink(url: string): void {
   // not a new candidate navigation intent: overwriting pending with null here
   // would lose the original application/message URL on successful sign-in.
   // Only the exact app callback is ignored; unrelated links still clear intent.
-  if (consumed || /^hoikucolor:\/\/\/?sso-callback(?:[?#]|$)/.test(url)) return;
+  // Expo/AuthSession callbacks can carry one normalized trailing slash. Match
+  // only this public callback, never similarly named routes or double slashes.
+  if (consumed || /^hoikucolor:\/\/\/?sso-callback\/?(?:[?#]|$)/.test(url)) return;
   incomingSequence += 1;
   pending = candidateRouteFromInitialURL(url);
 }
