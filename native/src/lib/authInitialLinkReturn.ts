@@ -48,6 +48,7 @@ let firstAuthResolution: 'unknown' | 'signed-in' | 'signed-out' = 'unknown';
 let pending: string | null = null;
 let incomingSequence = 0;
 let consumed = false;
+let pendingClaimSessionId: string | null = null;
 
 /** Start once at app boot, before the signed-out router redirects a cold link. */
 export function beginInitialCandidateLinkCapture(getInitialURL: () => Promise<string | null>): void {
@@ -73,7 +74,16 @@ export function recordInitialCandidateAuth(signedIn: boolean): void {
 }
 
 /** The auth UI can accept a NEW warm link while signed out, never old session data. */
-export function openSignedOutCandidateLinkWindow(): void { consumed = false; }
+export function openSignedOutCandidateLinkWindow(): void {
+  // A signed-out transition after a private session claim must invalidate its
+  // pending return intent; a different account must not inherit that route.
+  if (pendingClaimSessionId !== null) {
+    pending = null;
+    incomingSequence += 1; // also quarantine an in-flight cold OS URL read
+  }
+  pendingClaimSessionId = null;
+  consumed = false;
+}
 export function rememberSignedOutCandidateLink(url: string): void {
   // Clerk/Expo's Google SSO browser returns through this public callback. It is
   // not a new candidate navigation intent: overwriting pending with null here
@@ -87,13 +97,28 @@ export function rememberSignedOutCandidateLink(url: string): void {
 /**
  * Consume once only while the caller's Clerk-session/effect lease remains live.
  * A stale EntryScreen can still be awaiting the bounded initial OS URL read
- * when Clerk unmounts it during sign-out or account replacement. Such a read
- * must never consume the return intent intended for the new active session.
+ * when Clerk unmounts it during a same-session re-entry. Such a read must
+ * never consume a new effect's intent, nor leak a route across account changes.
  */
-export async function consumePostAuthCandidateRoute(isCurrent: () => boolean = () => true): Promise<string | null> {
+export async function consumePostAuthCandidateRoute(
+  isCurrent: () => boolean = () => true,
+  sessionId?: string,
+): Promise<string | null> {
   if (!isCurrent()) return null;
+  if (sessionId) {
+    // Re-entry by the same session can preserve the pending link, but a direct
+    // Clerk session replacement cannot pass one account's intent to another.
+    if (pendingClaimSessionId !== null && pendingClaimSessionId !== sessionId) {
+      pending = null;
+      incomingSequence += 1;
+      consumed = true;
+      pendingClaimSessionId = sessionId;
+      return null;
+    }
+    pendingClaimSessionId = sessionId;
+  }
   if (initialCapture) await initialCapture;
-  if (!isCurrent()) return null;
+  if (!isCurrent() || (sessionId && pendingClaimSessionId !== sessionId)) return null;
   const result = pending;
   pending = null;
   consumed = true;

@@ -20,7 +20,7 @@ export default function EntryScreen() {
     }
     const currentSession = auth.sessionId;
     let live = true;
-    void consumePostAuthCandidateRoute(() => live)
+    void consumePostAuthCandidateRoute(() => live, currentSession)
       .then((target) => {
         if (live) {
           // The destination remains protected by Clerk, RLS and screen owner pins.
