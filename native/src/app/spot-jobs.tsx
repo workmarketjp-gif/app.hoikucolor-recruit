@@ -14,6 +14,7 @@ import { armPendingHomeApplication, clearPendingHomeApplication } from '../lib/h
 import { armSpotApplicationDispatch } from '../lib/spotApplicationDispatch';
 import { readSpotApplicationPreflight } from '../lib/spotApplicationPreflight';
 import { canRefreshSpotInForeground } from '../lib/spotForegroundRefresh';
+import { retainConfirmedSpotApplication } from '../lib/spotConfirmedApplication';
 import { formatSpotClosingAt, spotEmptyJobsMessage, spotRemainingSlotsLabel } from '../lib/spotJobWebPresentation';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import {
@@ -262,17 +263,19 @@ export default function SpotJobsScreen() {
       submissionInvoked = true;
       const result = await submitApplication(pinned.client, job.job_id, profile);
       if (!stillCurrent()) return;
-      // submitApplication confirms the candidate-owned canonical detail.
-      // Only after that proof may we clear the pending local quarantine.
-      await clearPendingHomeApplication(pinned.ownerId, job.job_id);
+      // submitApplication has already checked candidate-owned canonical detail.
+      // Do not expose the old open card again if a separate Spot list read fails.
+      setJobs((current) => stillCurrent()
+        ? retainConfirmedSpotApplication(current, job.job_id, result.applicationId)
+        : current);
+      // A confirmed application is not a failed application just because
+      // local quarantine cleanup has failed. Preserve its receipt on failure.
+      try {
+        await clearPendingHomeApplication(pinned.ownerId, job.job_id);
+      } catch {
+        // No automatic retry of the submitted application.
+      }
       if (!stillCurrent()) return;
-      // A successful submission needs a fresh canonical list before returning.
-      const refreshed = load(true);
-      const refreshGeneration = generation.current;
-      const refreshConfirmed = await refreshed;
-      if (!refreshConfirmed || !pinned.isCurrent() || currentOwnerRef.current !== expectedOwner ||
-          generation.current !== refreshGeneration || privacy.shieldVisible ||
-          !privacy.canAccessPrivateData()) return;
       router.push(`/application/${result.applicationId}` as never);
     } catch {
       if (currentOwnerRef.current === expectedOwner && generation.current === startedGeneration &&
