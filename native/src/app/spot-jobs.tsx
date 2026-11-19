@@ -1,7 +1,7 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSession } from '@clerk/expo';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { usePinnedCandidateAction } from '../hooks/usePinnedCandidateAction';
 import { getJobseekerProfile } from '../lib/jobseekerCoreApi';
 import { submitApplication } from '../lib/applicationJourneyApi';
@@ -13,6 +13,7 @@ import { readCandidateSpotSnapshotBounded } from '../lib/spotSnapshotRead';
 import { armPendingHomeApplication, clearPendingHomeApplication } from '../lib/homeApplyPending';
 import { armSpotApplicationDispatch } from '../lib/spotApplicationDispatch';
 import { readSpotApplicationPreflight } from '../lib/spotApplicationPreflight';
+import { canRefreshSpotInForeground } from '../lib/spotForegroundRefresh';
 import { formatSpotClosingAt, spotEmptyJobsMessage, spotRemainingSlotsLabel } from '../lib/spotJobWebPresentation';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import {
@@ -101,6 +102,7 @@ export default function SpotJobsScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+  const readInFlightRef = useRef(false);
   const { assignmentId: rawAssignmentId } = useLocalSearchParams<{ assignmentId?: string }>();
   const focusedAssignmentId = verifiedFocusId(rawAssignmentId);
   const focusedAssignment = focusedOwnedItem(assignments, focusedAssignmentId, (item) => item.assignment_id);
@@ -110,13 +112,17 @@ export default function SpotJobsScreen() {
 
   const load = useCallback(async (quiet = false) => {
     const current = ++generation.current;
-    verifiedOwnerRef.current = null;
-    if (!quiet) setLoading(true);
-    setError(null);
+    readInFlightRef.current = true;
+    if (!quiet) {
+      verifiedOwnerRef.current = null;
+      setLoading(true);
+      setError(null);
+    }
     // App Lock and signed-out states must not issue candidate RPCs.
     if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
       setJobs([]);
       setAssignments([]);
+      readInFlightRef.current = false;
       if (!quiet) setLoading(false);
       return false;
     }
@@ -137,13 +143,16 @@ export default function SpotJobsScreen() {
       setAssignments(nextAssignments);
       return true;
     } catch {
-      if (current === generation.current && currentOwnerRef.current === ownerKey &&
+      if (!quiet && current === generation.current && currentOwnerRef.current === ownerKey &&
           !privacy.shieldVisible && privacy.canAccessPrivateData()) {
         setError('スポット勤務の情報を確認できませんでした。再読み込みしてください。');
       }
       return false;
     } finally {
-      if (current === generation.current && !quiet) setLoading(false);
+      if (current === generation.current) {
+        readInFlightRef.current = false;
+        if (!quiet) setLoading(false);
+      }
     }
   }, [pinCandidateAction, ownerKey, privacy.shieldVisible, privacy.canAccessPrivateData]);
 
@@ -159,7 +168,27 @@ export default function SpotJobsScreen() {
       return;
     }
     void load();
+    // Match Web's once-per-minute visible refresh without touching in-flight
+    // applications or showing a loading screen over a verified snapshot.
+    const refreshWhenActive = () => {
+      if (!canRefreshSpotInForeground({
+        foreground: AppState.currentState === 'active',
+        ownerKey,
+        currentOwnerKey: currentOwnerRef.current,
+        verifiedOwnerKey: verifiedOwnerRef.current,
+        privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+        readInFlight: readInFlightRef.current,
+        applicationInFlight: applyingRef.current?.owner === ownerKey,
+      })) return;
+      void load(true);
+    };
+    const refreshInterval = setInterval(refreshWhenActive, 60_000);
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshWhenActive();
+    });
     return () => {
+      clearInterval(refreshInterval);
+      appStateSubscription.remove();
       generation.current += 1;
       verifiedOwnerRef.current = null;
     };
