@@ -7,14 +7,19 @@ export type SpotForegroundRefreshState = {
   ownerKey: string | null;
   currentOwnerKey: string | null;
   verifiedOwnerKey: string | null;
+  /** Owner of an explicit initial-read failure. Allows a bounded automatic recovery,
+   * never a read on a new account or an arbitrary unverified snapshot. */
+  initialFailureOwnerKey?: string | null;
   privateAllowed: boolean;
   readInFlight: boolean;
   applicationInFlight: boolean;
 };
 
 export function canRefreshSpotInForeground(state: SpotForegroundRefreshState): boolean {
-  return state.foreground && Boolean(state.ownerKey) &&
-    state.ownerKey === state.currentOwnerKey &&
-    state.ownerKey === state.verifiedOwnerKey &&
-    state.privateAllowed && !state.readInFlight && !state.applicationInFlight;
+  const sameOwner = Boolean(state.ownerKey) && state.ownerKey === state.currentOwnerKey;
+  const existingVerifiedSnapshot = state.ownerKey === state.verifiedOwnerKey;
+  const retryFailedInitialRead = state.verifiedOwnerKey === null &&
+    Boolean(state.initialFailureOwnerKey) && state.ownerKey === state.initialFailureOwnerKey;
+  return Boolean(sameOwner && (existingVerifiedSnapshot || retryFailedInitialRead)) &&
+    state.foreground && state.privateAllowed && !state.readInFlight && !state.applicationInFlight;
 }
