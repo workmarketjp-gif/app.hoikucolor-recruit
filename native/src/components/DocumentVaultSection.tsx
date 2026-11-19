@@ -31,6 +31,7 @@ import { readCandidateVaultSnapshot } from '../lib/readCandidateVaultSnapshot';
 import { reconcileCandidateVaultMutation } from '../lib/reconcileCandidateVaultMutation';
 import { confirmCandidateVaultReplacementPreserved } from '../lib/confirmCandidateVaultReplacement';
 import { requireFreshVaultReplacement } from '../lib/requireFreshVaultReplacement';
+import { runVaultPrewriteWithCleanup } from '../lib/runVaultPrewriteWithCleanup';
 
 // Keep the document catalogue and exact qualification mapping in sync with Web.
 const labels = DOCUMENT_TYPE_LABELS;
@@ -256,6 +257,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     // The OS picker/camera may return after a different session/device changed
     // the chosen default. Verify the exact candidate-owned source before upload.
     if (replacement) {
+      await runVaultPrewriteWithCleanup(async () => {
       const originalStillCurrent = () =>
         operationValid() && pinned.isCurrent() && mountedRef.current &&
         userIdRef.current === pickerOwnerId &&
@@ -280,6 +282,12 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
         initialRevision: replacementRevision,
         currentRevision: vaultRevisionRef.current,
         isCurrent: originalStillCurrent,
+      });
+      }, async () => {
+        // The OS picker image has already been registered as a private
+        // pending asset. A stale default/read error must release it, not leave
+        // a reusable orphan after the upload is deliberately blocked.
+        await consumePendingDocumentPickerCache(pickerOwnerId, asset.uri);
       });
     }
 
