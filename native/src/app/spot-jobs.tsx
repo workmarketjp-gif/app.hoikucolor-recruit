@@ -14,7 +14,7 @@ import { armPendingHomeApplication, clearPendingHomeApplication } from '../lib/h
 import { armSpotApplicationDispatch } from '../lib/spotApplicationDispatch';
 import { readSpotApplicationPreflight } from '../lib/spotApplicationPreflight';
 import { canRefreshSpotInForeground } from '../lib/spotForegroundRefresh';
-import { retainConfirmedSpotApplication } from '../lib/spotConfirmedApplication';
+import { retainConfirmedSpotApplication, navigateAfterConfirmedSpotSubmission } from '../lib/spotConfirmedApplication';
 import { formatSpotClosingAt, spotEmptyJobsMessage, spotRemainingSlotsLabel } from '../lib/spotJobWebPresentation';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import {
@@ -268,15 +268,13 @@ export default function SpotJobsScreen() {
       setJobs((current) => stillCurrent()
         ? retainConfirmedSpotApplication(current, job.job_id, result.applicationId)
         : current);
-      // A confirmed application is not a failed application just because
-      // local quarantine cleanup has failed. Preserve its receipt on failure.
-      try {
-        await clearPendingHomeApplication(pinned.ownerId, job.job_id);
-      } catch {
-        // No automatic retry of the submitted application.
-      }
-      if (!stillCurrent()) return;
-      router.push(`/application/${result.applicationId}` as never);
+      // Canonical confirmation already succeeded. A stuck SecureStore cleanup
+      // must not block navigation; unresolved quarantine remains fail-closed.
+      navigateAfterConfirmedSpotSubmission({
+        isCurrent: stillCurrent,
+        clearPending: () => clearPendingHomeApplication(pinned.ownerId, job.job_id),
+        navigate: () => router.push(`/application/${result.applicationId}` as never),
+      });
     } catch {
       if (currentOwnerRef.current === expectedOwner && generation.current === startedGeneration &&
           !privacy.shieldVisible && privacy.canAccessPrivateData()) {
