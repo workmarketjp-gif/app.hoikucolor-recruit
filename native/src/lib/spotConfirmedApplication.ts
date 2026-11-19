@@ -33,3 +33,25 @@ export function retainConfirmedSpotApplication<T extends SpotApplicationRow>(
     return { ...job, application_id: applicationId, application_status: status };
   });
 }
+
+/**
+ * A candidate-owned canonical detail has *already* confirmed the submission.
+ * Local SecureStore cleanup is best-effort bookkeeping, never a second success
+ * gate: a stalled store must not keep the successful user on the Apply screen.
+ * An unresolved marker stays conservative and prevents a second dispatch.
+ */
+export function navigateAfterConfirmedSpotSubmission(options: {
+  isCurrent: () => boolean;
+  clearPending: () => Promise<void>;
+  navigate: () => void;
+}): void {
+  if (!options.isCurrent()) return;
+  try {
+    void options.clearPending().catch(() => {
+      // Preserve quarantine if cleanup cannot be confirmed; never retry RPC.
+    });
+  } catch {
+    // Synchronous storage failure also does not invalidate canonical success.
+  }
+  if (options.isCurrent()) options.navigate();
+}
