@@ -3,12 +3,18 @@ import { tokenCache } from '@clerk/expo/token-cache';
 import { Stack } from 'expo-router';
 import { reloadAppAsync } from 'expo';
 import { Component, lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Image, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, Pressable, Text, View } from 'react-native';
 import { DocumentPickerCacheBoundary } from '../contexts/DocumentPickerCacheBoundary';
 import { loadHoikuColorClerkPublishableKey } from '../lib/clerkConfig';
 import { useActiveClerkSession } from '../lib/sessionLifecycle';
 import { bootLog } from '../lib/bootDiagnostics';
 import { BuildDiagnostics } from '../components/BuildDiagnostics';
+import {
+  beginInitialCandidateLinkCapture,
+  openSignedOutCandidateLinkWindow,
+  recordInitialCandidateAuth,
+  rememberSignedOutCandidateLink,
+} from '../lib/authInitialLinkReturn';
 
 const PrivateRuntime = lazy(() =>
   import('../components/PrivateRuntime').then((module) => ({ default: module.PrivateRuntime })),
@@ -135,6 +141,18 @@ function AuthScopedRuntime({ onRetry, onReady }: { onRetry: () => void; onReady:
   const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
+    if (!auth.isLoaded || (auth.isSignedIn && !auth.active)) return;
+    recordInitialCandidateAuth(Boolean(auth.isSignedIn));
+  }, [auth.isLoaded, auth.isSignedIn, auth.active]);
+
+  useEffect(() => {
+    if (!auth.isLoaded || auth.isSignedIn) return;
+    openSignedOutCandidateLinkWindow();
+    const link = Linking.addEventListener('url', ({ url }) => rememberSignedOutCandidateLink(url));
+    return () => link.remove();
+  }, [auth.isLoaded, auth.isSignedIn]);
+
+  useEffect(() => {
     if (auth.isLoaded && (!auth.isSignedIn || auth.active)) {
       setTimedOut(false);
       onReady();
@@ -185,6 +203,10 @@ export default function RootLayout() {
   const [bootReady, setBootReady] = useState(false);
   const [bootTimedOut, setBootTimedOut] = useState(false);
   const onReady = useCallback(() => setBootReady(true), []);
+
+  useEffect(() => {
+    beginInitialCandidateLinkCapture(() => Linking.getInitialURL());
+  }, []);
 
   // This timer must commit OUTSIDE Clerk, the cache boundary and Suspense.
   // It covers a provider that never renders children and incomplete hydration.
