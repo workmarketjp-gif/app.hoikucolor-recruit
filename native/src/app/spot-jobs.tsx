@@ -250,9 +250,24 @@ export default function SpotJobsScreen() {
   if (!verifiedVisible) {
     return (
       <View style={styles.center}>
-        {error ? <Text style={styles.error}>{error}</Text> : <ActivityIndicator />}
-        <Text style={styles.bodyMuted}>スポット勤務の情報を確認しています…</Text>
-        {error ? <Pressable accessibilityRole="button" onPress={() => void load()}><Text style={styles.secondaryText}>もう一度読み込む</Text></Pressable> : null}
+        {error ? (
+          <>
+            <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="スポット勤務をもう一度読み込む"
+              style={styles.secondaryButtonWide}
+              onPress={() => void load()}
+            >
+              <Text style={styles.secondaryText}>もう一度読み込む</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <ActivityIndicator color="#fb2f52" accessibilityLabel="スポット勤務を読み込み中" />
+            <Text style={styles.bodyMuted}>スポット勤務の情報を確認しています…</Text>
+          </>
+        )}
       </View>
     );
   }
@@ -264,11 +279,11 @@ export default function SpotJobsScreen() {
         <Text style={styles.bodyMuted}>1日単位で働ける勤務です。通常求人とは分けて表示しています。</Text>
       </View>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {focusedAssignmentId && !loading && !focusedAssignment ? (
         <Text style={styles.error}>指定されたスポット勤務は現在のアカウントで確認できません。</Text>
       ) : null}
-      {loading && jobs.length === 0 && assignments.length === 0 ? <ActivityIndicator /> : null}
+      {loading && jobs.length === 0 && assignments.length === 0 ? <ActivityIndicator color="#fb2f52" /> : null}
 
       {assignments.length > 0 ? (
         <View style={styles.section}>
@@ -290,7 +305,7 @@ export default function SpotJobsScreen() {
           <View style={styles.empty}>
             <Text style={styles.itemTitle}>現在募集中のスポット勤務はありません</Text>
             <Text style={styles.bodyMuted}>{spotEmptyJobsMessage(assignments.length > 0)}</Text>
-            <Pressable style={styles.secondaryButtonWide} onPress={() => router.push('/(tabs)/jobs')}>
+            <Pressable accessibilityRole="button" style={styles.secondaryButtonWide} onPress={() => router.push('/(tabs)/jobs')}>
               <Text style={styles.secondaryText}>通常の求人を見る</Text>
             </Pressable>
           </View>
@@ -332,7 +347,7 @@ function AssignmentCard({ assignment, onOpen, focused }: { key?: string; assignm
         breakMinutes={assignment.break_minutes}
       />
       <Text style={styles.bodyMuted}>実働 {formatWorkedMinutes(workedMinutes)}{assignment.address ? ` ・ ${assignment.address}` : ''}</Text>
-      <Pressable style={styles.secondaryButtonWide} onPress={onOpen}>
+      <Pressable accessibilityRole="button" style={styles.secondaryButtonWide} onPress={onOpen}>
         <Text style={styles.secondaryText}>応募内容を見る</Text>
       </Pressable>
     </View>
@@ -384,13 +399,15 @@ function SpotCard({
       {applied ? (
         <>
           <Text style={styles.success}>応募済み{job.application_status ? `・${applicationStatusLabel(job.application_status)}` : ''}</Text>
-          <Pressable style={styles.primaryButtonWide} onPress={onOpenApplication}>
+          <Pressable accessibilityRole="button" style={styles.primaryButtonWide} onPress={onOpenApplication}>
             <Text style={styles.primaryText}>応募状況を見る</Text>
           </Pressable>
         </>
       ) : (
         <Pressable
-          style={styles.primaryButtonWide}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: busy || locked || job.available_count <= 0, busy }}
+          style={[styles.primaryButtonWide, (busy || locked || job.available_count <= 0) && styles.primaryButtonDisabled]}
           disabled={busy || locked || job.available_count <= 0}
           onPress={onApply}
         >
@@ -402,8 +419,8 @@ function SpotCard({
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
-  page: { padding: 16, gap: 14, backgroundColor: '#f7f8fa', flexGrow: 1 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, backgroundColor: '#f6f6f5' },
+  page: { padding: 16, gap: 14, backgroundColor: '#f6f6f5', flexGrow: 1 },
   title: { fontSize: 26, fontWeight: '900' },
   section: { gap: 12 },
   sectionTitle: { fontSize: 20, fontWeight: '900' },
@@ -411,7 +428,7 @@ const styles = StyleSheet.create({
   facility: { fontSize: 16, fontWeight: '800' },
   body: { fontSize: 16, lineHeight: 23, color: '#252a31' },
   bodyMuted: { fontSize: 15, lineHeight: 22, color: '#606873' },
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 10 },
+  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 10, borderWidth: 1, borderColor: '#e7e8eb' },
   targetCard: { borderColor: '#e8445a', borderWidth: 2, backgroundColor: '#fff8fa' },
   targetLabel: { color: '#b4233e', fontSize: 14, fontWeight: '800' },
   empty: { backgroundColor: '#fff', borderRadius: 16, padding: 18, gap: 12 },
@@ -423,7 +440,8 @@ const styles = StyleSheet.create({
   factLabel: { fontSize: 14, color: '#606873' },
   factValue: { fontSize: 15, fontWeight: '800', textAlign: 'right', flex: 1 },
   quote: { fontSize: 15, lineHeight: 22, backgroundColor: '#f5f8ff', padding: 12, borderRadius: 10 },
-  primaryButtonWide: { minHeight: 52, borderRadius: 12, backgroundColor: '#191c20', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+  primaryButtonWide: { minHeight: 52, borderRadius: 12, backgroundColor: '#fb2f52', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+  primaryButtonDisabled: { opacity: 0.6 },
   primaryText: { color: '#fff', fontSize: 16, fontWeight: '900' },
   secondaryButtonWide: { minHeight: 50, borderWidth: 1, borderColor: '#d7dce2', borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: '#fff' },
   secondaryText: { fontSize: 15, fontWeight: '800' },
