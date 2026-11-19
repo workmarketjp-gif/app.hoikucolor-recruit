@@ -1,12 +1,11 @@
 import { useSignIn, useSignUp, useSSO } from '@clerk/expo';
-import { useRouter, type Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Image, useWindowDimensions, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BuildDiagnostics } from './BuildDiagnostics';
-import { consumePostAuthCandidateRoute } from '../lib/authInitialLinkReturn';
 
 WebBrowser.maybeCompleteAuthSession();
 type MfaStrategy = 'totp' | 'phone_code' | 'backup_code' | 'email_code';
@@ -39,15 +38,9 @@ export function AuthScreen({ isSignup = false }: { isSignup?: boolean }) {
     try { await action(); } catch (error) { setLocalError(messageFromError(error)); }
     finally { submitting.current = false; setBusy(false); }
   };
-  const finishAuthNavigation = async () => {
-    // The private route is only a navigation hint. The destination still checks
-    // the newly active Clerk session and server-side candidate ownership.
-    const requested = await consumePostAuthCandidateRoute();
-    router.replace(requested ? (requested as Href) : '/(tabs)/home');
-  };
   const finish = async () => {
     await signIn.finalize();
-    await finishAuthNavigation();
+    router.replace('/');
   };
   const prepareSecondFactor = async () => {
     const factors = Array.isArray((signIn as any).supportedSecondFactors)
@@ -116,7 +109,7 @@ export function AuthScreen({ isSignup = false }: { isSignup?: boolean }) {
       if (transferred.error) throw transferred.error;
       if (signUp.status !== 'complete') throw new Error('アカウント作成に追加情報が必要です。Googleログインをお試しいただくか、お問い合わせください。');
       await signUp.finalize();
-      await finishAuthNavigation();
+      router.replace('/');
       return;
     }
     if (signIn.status === 'complete') { await finish(); return; }
@@ -129,7 +122,7 @@ export function AuthScreen({ isSignup = false }: { isSignup?: boolean }) {
     const result = await startSSOFlow({ strategy: 'oauth_google', redirectUrl: AuthSession.makeRedirectUri({ scheme: 'hoikucolor', path: 'sso-callback' }) });
     if (result.createdSessionId && result.setActive) {
       await result.setActive({ session: result.createdSessionId });
-      await finishAuthNavigation();
+      router.replace('/');
     } else if (result.authSessionResult?.type !== 'cancel' && result.authSessionResult?.type !== 'dismiss') {
       throw new Error('Googleログインを完了できませんでした。メールアドレスで続けるか、もう一度お試しください。');
     }
