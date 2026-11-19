@@ -12,6 +12,7 @@ import { messageNavigationLeaseIsCurrent } from '../../lib/messageNavigationLeas
 import { readCandidateApplicationIndex } from '../../lib/candidateApplicationIndexRead';
 import { boundedPrivateRead } from '../../lib/privateReadDeadline';
 import { retainApplicationListForRefresh } from '../../lib/applicationListRefreshPolicy';
+import { canStartApplicationIndexRead } from '../../lib/applicationIndexRefreshFlight';
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -29,6 +30,7 @@ export default function ApplicationsScreen() {
   const [loading, setLoading] = useState(true);
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const generation = useRef(0);
+  const refreshPending = useRef(false); // synchronous fence before React's loading state renders
   const openRequest = useRef(0);
   const openPending = useRef(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
@@ -43,6 +45,12 @@ export default function ApplicationsScreen() {
   const openError = readCandidateFreshlyVerifiedView(ownedOpenError, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
 
   const load = useCallback(async (explicitRefresh = false) => {
+    if (!canStartApplicationIndexRead({
+      pending: refreshPending.current,
+      expectedOwnerKey: ownerKey,
+      privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+    })) return;
+    refreshPending.current = true;
     const current = ++generation.current;
     // Web retains confirmed rows during a same-session manual refresh. Never
     // retain across focus, App Lock, or a candidate/session replacement.
@@ -82,7 +90,10 @@ export default function ApplicationsScreen() {
         }
       }
     } finally {
-      if (current === generation.current) setLoading(false);
+      if (current === generation.current) {
+        refreshPending.current = false;
+        setLoading(false);
+      }
     }
   }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData, privacy.shieldVisible]);
 
@@ -91,6 +102,7 @@ export default function ApplicationsScreen() {
   useFocusEffect(useCallback(() => {
     if (!ownerKey || !privateAllowed) {
       generation.current += 1;
+      refreshPending.current = false;
       freshlyVerifiedOwner.current = null;
       openRequest.current += 1;
       openPending.current = false;
@@ -104,6 +116,7 @@ export default function ApplicationsScreen() {
     void load();
     return () => {
       generation.current += 1;
+      refreshPending.current = false;
       freshlyVerifiedOwner.current = null;
       openRequest.current += 1;
       openPending.current = false;
