@@ -84,9 +84,16 @@ export function rememberSignedOutCandidateLink(url: string): void {
   pending = candidateRouteFromInitialURL(url);
 }
 
-/** Consume once only after Clerk sign-in/sign-up/Google activation succeeds. */
-export async function consumePostAuthCandidateRoute(): Promise<string | null> {
+/**
+ * Consume once only while the caller's Clerk-session/effect lease remains live.
+ * A stale EntryScreen can still be awaiting the bounded initial OS URL read
+ * when Clerk unmounts it during sign-out or account replacement. Such a read
+ * must never consume the return intent intended for the new active session.
+ */
+export async function consumePostAuthCandidateRoute(isCurrent: () => boolean = () => true): Promise<string | null> {
+  if (!isCurrent()) return null;
   if (initialCapture) await initialCapture;
+  if (!isCurrent()) return null;
   const result = pending;
   pending = null;
   consumed = true;
