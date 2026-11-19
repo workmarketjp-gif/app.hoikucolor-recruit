@@ -31,6 +31,7 @@ import { keywordForCurrentCandidate, type CandidateKeywordDraft } from '../../li
 import { canStartManualJobSearch } from '../../lib/jobSearchManualSubmit';
 import { readCandidateJobDiscoveryBounded } from '../../lib/jobDiscoveryCanonicalRead';
 import { loadSavedJobIdsForSearch } from '../../lib/jobSearchSavedIndependence';
+import { readCandidateSavedIdsOnly } from '../../lib/jobSearchSavedOnlyRefresh';
 import { savedJobMutationFailureNotice } from '../../lib/jobSearchSavedMutationFailure';
 
 function salary(job: JobseekerJob) {
@@ -120,6 +121,10 @@ export default function JobsScreen() {
     setOwnedQuery({ ownerKey, value });
     if (keywordTimer.current) clearTimeout(keywordTimer.current);
     generation.current += 1;
+    savedRefreshSequence.current += 1;
+    savedRefreshPending.current = false;
+    setSavedRefreshing(false);
+    setOwnedSavedError(null);
     setOwnedJobs(null);
     setOwnedSavedIds(null);
     setOwnedSpecifiedJobId(null);
@@ -174,6 +179,9 @@ export default function JobsScreen() {
   const keywordTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mutationBusyRef = useRef(false);
   const mutationSequence = useRef(0);
+  const savedRefreshPending = useRef(false);
+  const savedRefreshSequence = useRef(0);
+  const [savedRefreshing, setSavedRefreshing] = useState(false);
   const focusActive = useRef(false);
   const lastFocus = useRef<JobSearchFocusState>({ ownerKey: null, hasBlurred: false });
   const latestOwnerRef = useRef(ownerKey);
@@ -209,6 +217,9 @@ export default function JobsScreen() {
   }, [ownerKey, pinCandidateAction, privacy.shieldVisible]);
 
   const load = useCallback(async (reset: boolean, requestedQuery = query, requestedFilters = filters) => {
+    savedRefreshSequence.current += 1;
+    savedRefreshPending.current = false;
+    setSavedRefreshing(false);
     const currentGeneration = ++generation.current;
     inFlightSearchGeneration.current = currentGeneration;
     setLoading(true);
@@ -295,14 +306,54 @@ export default function JobsScreen() {
   }, [cursor, ownerKey, pinCandidateAction, query, filters, savedIds, visibleJobs, routeSpecifiedJobId]);
 
   // The screen remains mounted under other tabs and the job detail stack.
-  // Keep the latest filters/query when navigating back, but do not present
-  // any old results until both search and bookmark readback succeed.
+  // Keep the latest filters/query when navigating back. Search rows and
+  // saved-heart IDs have independent verification and failure states.
   // A ref avoids linking navigation focus to load's result-dependent callback
   // (which would otherwise trigger a repeated RPC on each state update).
   const latestLoad = useRef(load);
   latestLoad.current = load;
   const latestPrivateState = useRef({ allowed: privateAllowed, shieldVisible: privacy.shieldVisible });
   latestPrivateState.current = { allowed: privateAllowed, shieldVisible: privacy.shieldVisible };
+
+  // A failed saved-heart read must not repeat the entire job search or
+  // discard verified result rows, cursor, filters or total count.
+  const rereadSavedOnly = async () => {
+    if (!ownerKey || !savedError || savedIds !== null || visibleJobs === null || loading ||
+        inFlightSearchGeneration.current !== null || savedRefreshPending.current ||
+        mutationBusyRef.current || !focusActive.current ||
+        !latestPrivateState.current.allowed || latestPrivateState.current.shieldVisible) return;
+    savedRefreshPending.current = true;
+    const attempt = ++savedRefreshSequence.current;
+    const requestGeneration = generation.current;
+    const isCurrent = () => attempt === savedRefreshSequence.current &&
+      requestGeneration === generation.current && ownerKey === latestOwnerRef.current &&
+      focusActive.current && !mutationBusyRef.current &&
+      latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible;
+    setSavedRefreshing(true);
+    try {
+      const { pinned, value } = await readCandidateSavedIdsOnly({
+        pin: pinCandidateAction,
+        readSavedIds: (pinned) => listSavedJobIds(pinned.client),
+        isCurrent,
+        ownsPin: (pinned) => candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey,
+      });
+      if (!pinned.isCurrent() || !isCurrent()) return;
+      setOwnedSavedIds(value === null ? null : { ownerKey, value });
+      setOwnedSavedError(value === null ? {
+        ownerKey, value: '気になる状態を取得できませんでした。保存操作には再確認が必要です。',
+      } : null);
+    } catch {
+      if (isCurrent()) {
+        setOwnedSavedIds(null);
+        setOwnedSavedError({ ownerKey, value: '気になる状態を取得できませんでした。保存操作には再確認が必要です。' });
+      }
+    } finally {
+      if (attempt === savedRefreshSequence.current) {
+        savedRefreshPending.current = false;
+        setSavedRefreshing(false);
+      }
+    }
+  };
 
   useFocusEffect(useCallback(() => {
     const previous = lastFocus.current;
@@ -316,6 +367,9 @@ export default function JobsScreen() {
     }
     return () => {
       focusActive.current = false;
+      savedRefreshSequence.current += 1;
+      savedRefreshPending.current = false;
+      setSavedRefreshing(false);
       lastFocus.current = { ownerKey, hasBlurred: true };
       cancelKeywordTimer();
       generation.current += 1;
@@ -339,6 +393,9 @@ export default function JobsScreen() {
     cancelKeywordTimer();
     generation.current += 1;
     facetGeneration.current += 1;
+    savedRefreshSequence.current += 1;
+    savedRefreshPending.current = false;
+    setSavedRefreshing(false);
     mutationSequence.current += 1;
     mutationBusyRef.current = false;
     setBusyJobId(null);
@@ -368,6 +425,8 @@ export default function JobsScreen() {
       cancelKeywordTimer();
       generation.current += 1;
       facetGeneration.current += 1;
+      savedRefreshSequence.current += 1;
+      savedRefreshPending.current = false;
       mutationSequence.current += 1;
     };
   }, [ownerKey, privacy.shieldVisible, routeSpecifiedJobId]);
@@ -392,7 +451,7 @@ export default function JobsScreen() {
 
   const toggleSaved = async (jobId: string) => {
     if (!privateAllowed || !ownerKey || privacy.shieldVisible || loading ||
-        savedIds === null || mutationBusyRef.current ||
+        savedIds === null || mutationBusyRef.current || savedRefreshPending.current ||
         !jobs.some((job) => job.id === jobId)) return;
     mutationBusyRef.current = true;
     const requestGeneration = generation.current;
@@ -522,11 +581,9 @@ export default function JobsScreen() {
         <View testID="job-search-bookmark-read-error" style={styles.filterFailure}>
           <Text accessibilityRole="alert" style={styles.error}>{savedError}</Text>
           <Pressable accessibilityRole="button" accessibilityLabel="気になる状態を再読み込み"
-            onPress={() => {
-              cancelKeywordTimer();
-              void load(true, keywordForCurrentCandidate(ownerKey, keywordDraftRef.current, query), filters);
-            }}>
-            <Text style={styles.link}>保存状況を再確認</Text>
+            accessibilityState={{ disabled: savedRefreshing }} disabled={savedRefreshing}
+            onPress={() => void rereadSavedOnly()}>
+            <Text style={styles.link}>{savedRefreshing ? '保存状況を確認中…' : '保存状況を再確認'}</Text>
           </Pressable>
         </View>
       ) : null}
