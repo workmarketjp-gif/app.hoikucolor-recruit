@@ -15,6 +15,8 @@ import { armSpotApplicationDispatch } from '../lib/spotApplicationDispatch';
 import { readSpotApplicationPreflight } from '../lib/spotApplicationPreflight';
 import { canRefreshSpotInForeground } from '../lib/spotForegroundRefresh';
 import { createSpotReadSingleFlight } from '../lib/spotReadSingleFlight';
+import { canOpenVerifiedSpotApplication } from '../lib/spotApplicationNavigation';
+import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { retainConfirmedSpotApplication, navigateAfterConfirmedSpotSubmission, createSpotReadConfirmationFence } from '../lib/spotConfirmedApplication';
 import { formatSpotClosingAt, spotEmptyJobsMessage, spotRemainingSlotsLabel } from '../lib/spotJobWebPresentation';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
@@ -95,13 +97,19 @@ export default function SpotJobsScreen() {
   const currentOwnerRef = useRef(ownerKey);
   const readSingleFlightRef = useRef(createSpotReadSingleFlight());
   const applyingRef = useRef<{ owner: string; generation: number; jobId: string } | null>(null);
+  const detailOpenRef = useRef(false);
+  const detailOpenRequestRef = useRef(0);
   if (currentOwnerRef.current !== ownerKey) {
     currentOwnerRef.current = ownerKey;
     readSingleFlightRef.current.invalidate();
+    detailOpenRequestRef.current += 1;
+    detailOpenRef.current = false;
     verifiedOwnerRef.current = null;
     initialFailureOwnerRef.current = null;
   }
   if (privacy.shieldVisible || !privacy.canAccessPrivateData()) {
+    detailOpenRequestRef.current += 1;
+    detailOpenRef.current = false;
     verifiedOwnerRef.current = null;
     initialFailureOwnerRef.current = null;
   }
@@ -110,6 +118,8 @@ export default function SpotJobsScreen() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [openingApplicationId, setOpeningApplicationId] = useState<string | null>(null);
+  const [detailOpenError, setDetailOpenError] = useState<string | null>(null);
   const generation = useRef(0);
   const confirmationReadFenceRef = useRef(createSpotReadConfirmationFence());
   const { assignmentId: rawAssignmentId } = useLocalSearchParams<{ assignmentId?: string }>();
@@ -186,6 +196,10 @@ export default function SpotJobsScreen() {
     if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
       generation.current += 1;
       readSingleFlightRef.current.invalidate();
+      detailOpenRequestRef.current += 1;
+      detailOpenRef.current = false;
+      setOpeningApplicationId(null);
+      setDetailOpenError(null);
       verifiedOwnerRef.current = null;
       initialFailureOwnerRef.current = null;
       setJobs([]);
@@ -220,6 +234,10 @@ export default function SpotJobsScreen() {
       appStateSubscription.remove();
       generation.current += 1;
       readSingleFlightRef.current.invalidate();
+      detailOpenRequestRef.current += 1;
+      detailOpenRef.current = false;
+      setOpeningApplicationId(null);
+      setDetailOpenError(null);
       verifiedOwnerRef.current = null;
       initialFailureOwnerRef.current = null;
     };
@@ -234,7 +252,7 @@ export default function SpotJobsScreen() {
       ownerKey: expectedOwner,
       verifiedOwnerKey: verifiedOwnerRef.current,
       privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
-      pending: applyingRef.current?.owner === expectedOwner,
+      pending: applyingRef.current?.owner === expectedOwner || detailOpenRef.current,
     }) || !expectedOwner) return;
     // This ref is set synchronously before awaits, unlike a React state update.
     const token = { owner: expectedOwner, generation: startedGeneration, jobId: job.job_id };
@@ -308,6 +326,57 @@ export default function SpotJobsScreen() {
     }
   };
 
+
+  // A Spot card contains only a candidate-owned readback ID, not permission
+  // to open a private record indefinitely. Recheck the same snapshot/session
+  // after the bounded Clerk pin, as the Applications and Messages flows do.
+  const openApplication = async (applicationId: string) => {
+    if (detailOpenRef.current || applyingRef.current) return;
+    const expectedOwnerKey = ownerKey;
+    const startedGeneration = generation.current;
+    const visibleApplicationIds = [
+      ...jobs.map((job) => job.application_id),
+      ...assignments.map((assignment) => assignment.application_id),
+    ];
+    const leaseCurrent = (resolvedOwnerKey: string | null) => canOpenVerifiedSpotApplication({
+      applicationId,
+      visibleApplicationIds,
+      expectedOwnerKey,
+      currentOwnerKey: currentOwnerRef.current,
+      verifiedOwnerKey: verifiedOwnerRef.current,
+      resolvedOwnerKey,
+      startedGeneration,
+      currentGeneration: generation.current,
+      privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+      applicationPending: applyingRef.current !== null,
+    });
+    if (!leaseCurrent(expectedOwnerKey)) return;
+    detailOpenRef.current = true; // synchronous double-tap fence
+    const request = ++detailOpenRequestRef.current;
+    setOpeningApplicationId(applicationId);
+    setDetailOpenError(null);
+    let navigationStarted = false;
+    try {
+      const pinned = await pinCandidateForRead(pinCandidateAction,
+        () => request === detailOpenRequestRef.current && leaseCurrent(expectedOwnerKey));
+      if (request !== detailOpenRequestRef.current || !pinned.isCurrent() ||
+          !leaseCurrent(candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId))) return;
+      router.push(`/application/${applicationId}` as never);
+      navigationStarted = true;
+    } catch {
+      if (request === detailOpenRequestRef.current && leaseCurrent(expectedOwnerKey)) {
+        setDetailOpenError('応募詳細を開けませんでした。通信状態を確認してもう一度お試しください。');
+      }
+    } finally {
+      // Successful navigation holds the lock until screen blur; a failed pin
+      // unlocks the same screen without allowing an old owner to clear a new lock.
+      if (!navigationStarted && request === detailOpenRequestRef.current) {
+        detailOpenRef.current = false;
+        setOpeningApplicationId(null);
+      }
+    }
+  };
+
   const verifiedVisible = Boolean(ownerKey) && verifiedOwnerRef.current === ownerKey
     && !privacy.shieldVisible && privacy.canAccessPrivateData();
   if (!verifiedVisible) {
@@ -343,6 +412,7 @@ export default function SpotJobsScreen() {
       </View>
 
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      {detailOpenError ? <Text accessibilityRole="alert" style={styles.error}>{detailOpenError}</Text> : null}
       {focusedAssignmentId && !loading && !focusedAssignment ? (
         <Text style={styles.error}>指定されたスポット勤務は現在のアカウントで確認できません。</Text>
       ) : null}
@@ -356,7 +426,9 @@ export default function SpotJobsScreen() {
               key={assignment.assignment_id}
               assignment={assignment}
               focused={assignment.assignment_id === focusedAssignmentId}
-              onOpen={() => router.push(`/application/${assignment.application_id}` as never)}
+              opening={openingApplicationId === assignment.application_id}
+              navigationLocked={openingApplicationId !== null || busyId !== null}
+              onOpen={() => void openApplication(assignment.application_id)}
             />
           ))}
         </View>
@@ -377,9 +449,11 @@ export default function SpotJobsScreen() {
             key={job.job_id}
             job={job}
             busy={busyId === job.job_id}
-            locked={busyId !== null && busyId !== job.job_id}
+            locked={(busyId !== null && busyId !== job.job_id) || openingApplicationId !== null}
+            opening={openingApplicationId === job.application_id && openingApplicationId !== null}
+            navigationLocked={openingApplicationId !== null || busyId !== null}
             onApply={() => void apply(job)}
-            onOpenApplication={() => job.application_id && router.push(`/application/${job.application_id}` as never)}
+            onOpenApplication={() => { if (job.application_id) void openApplication(job.application_id); }}
           />
         ))}
       </View>
@@ -387,7 +461,14 @@ export default function SpotJobsScreen() {
   );
 }
 
-function AssignmentCard({ assignment, onOpen, focused }: { key?: string; assignment: SpotAssignment; onOpen: () => void; focused: boolean }) {
+function AssignmentCard({ assignment, onOpen, focused, opening, navigationLocked }: {
+  key?: string;
+  assignment: SpotAssignment;
+  onOpen: () => void;
+  focused: boolean;
+  opening: boolean;
+  navigationLocked: boolean;
+}) {
   const workedMinutes = useMemo(
     () => Math.max(0, timeToMinutes(assignment.end_time) - timeToMinutes(assignment.start_time) - assignment.break_minutes),
     [assignment],
@@ -410,8 +491,13 @@ function AssignmentCard({ assignment, onOpen, focused }: { key?: string; assignm
         breakMinutes={assignment.break_minutes}
       />
       <Text style={styles.bodyMuted}>実働 {formatWorkedMinutes(workedMinutes)}{assignment.address ? ` ・ ${assignment.address}` : ''}</Text>
-      <Pressable accessibilityRole="button" style={styles.secondaryButtonWide} onPress={onOpen}>
-        <Text style={styles.secondaryText}>応募内容を見る</Text>
+      <Pressable accessibilityRole="button"
+        accessibilityLabel={`${assignment.facility_name} ${assignment.title}の応募内容を見る`}
+        accessibilityState={{ disabled: navigationLocked, busy: opening }}
+        disabled={navigationLocked}
+        style={[styles.secondaryButtonWide, navigationLocked && styles.primaryButtonDisabled]}
+        onPress={onOpen}>
+        <Text style={styles.secondaryText}>{opening ? '確認中…' : '応募内容を見る'}</Text>
       </Pressable>
     </View>
   );
@@ -421,6 +507,8 @@ function SpotCard({
   job,
   busy,
   locked,
+  opening,
+  navigationLocked,
   onApply,
   onOpenApplication,
 }: {
@@ -428,6 +516,8 @@ function SpotCard({
   job: SpotJobListing;
   busy: boolean;
   locked: boolean;
+  opening: boolean;
+  navigationLocked: boolean;
   onApply: () => void;
   onOpenApplication: () => void;
 }) {
@@ -462,13 +552,19 @@ function SpotCard({
       {applied ? (
         <>
           <Text style={styles.success}>応募済み{job.application_status ? `・${applicationStatusLabel(job.application_status)}` : ''}</Text>
-          <Pressable accessibilityRole="button" style={styles.primaryButtonWide} onPress={onOpenApplication}>
-            <Text style={styles.primaryText}>応募状況を見る</Text>
+          <Pressable accessibilityRole="button"
+            accessibilityLabel={`${job.facility_name} ${job.title}の応募状況を見る`}
+            accessibilityState={{ disabled: navigationLocked, busy: opening }}
+            disabled={navigationLocked}
+            style={[styles.primaryButtonWide, navigationLocked && styles.primaryButtonDisabled]}
+            onPress={onOpenApplication}>
+            <Text style={styles.primaryText}>{opening ? '確認中…' : '応募状況を見る'}</Text>
           </Pressable>
         </>
       ) : (
         <Pressable
           accessibilityRole="button"
+          accessibilityLabel={`${job.facility_name} ${job.title}のスポット勤務に応募`}
           accessibilityState={{ disabled: busy || locked || job.available_count <= 0, busy }}
           style={[styles.primaryButtonWide, (busy || locked || job.available_count <= 0) && styles.primaryButtonDisabled]}
           disabled={busy || locked || job.available_count <= 0}
