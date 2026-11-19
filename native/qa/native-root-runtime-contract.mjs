@@ -27,7 +27,7 @@ check('missing Clerk configuration fails closed', layout.includes('clerk-config-
 check('Clerk initialization has a bounded wait and retry state', layout.includes('AUTH_LOAD_TIMEOUT_MS') && layout.includes('clerk-load-timeout') && layout.includes('再確認'));
 check('private providers are lazy-loaded after Clerk becomes active', layout.includes("lazy(() =>") && layout.includes("import('../components/PrivateRuntime')"));
 check('picker/camera process-death cache is reconciled before route runtime', layout.includes('<DocumentPickerCacheBoundary>') && layout.indexOf('<DocumentPickerCacheBoundary>') < layout.indexOf('<AuthScopedRuntime'));
-check('signed-out runtime excludes Candidate-private providers', layout.includes('if (!auth.isSignedIn) return <RouterStack />;'));
+check('signed-out runtime excludes Candidate-private providers and protected routes', layout.includes('if (!auth.isSignedIn) return <RouterStack privateRoutesAllowed={false} />;') && layout.includes('<Stack.Protected guard={privateRoutesAllowed}>') && layout.includes('<Stack.Protected guard={!privateRoutesAllowed}>'));
 check('private runtime requires an active exact Clerk session', layout.includes('if (!auth.active || !auth.sessionId)'));
 check('candidate runtime remounts on exact session handoff', layout.includes('<PrivateRuntime sessionId={auth.sessionId}>') && privateRuntime.includes('<SessionFreshnessProvider key={sessionId}>'));
 check(
