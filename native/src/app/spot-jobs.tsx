@@ -9,6 +9,7 @@ import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { canStartSpotApplication } from '../lib/spotReadIntegrity';
+import { formatSpotClosingAt, spotEmptyJobsMessage, spotRemainingSlotsLabel } from '../lib/spotJobWebPresentation';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import {
   listMySpotAssignments,
@@ -258,7 +259,7 @@ export default function SpotJobsScreen() {
         {!loading && jobs.length === 0 ? (
           <View style={styles.empty}>
             <Text style={styles.itemTitle}>現在募集中のスポット勤務はありません</Text>
-            <Text style={styles.bodyMuted}>新しい勤務枠が公開されると、ここに表示されます。</Text>
+            <Text style={styles.bodyMuted}>{spotEmptyJobsMessage(assignments.length > 0)}</Text>
             <Pressable style={styles.secondaryButtonWide} onPress={() => router.push('/(tabs)/jobs')}>
               <Text style={styles.secondaryText}>通常の求人を見る</Text>
             </Pressable>
@@ -331,7 +332,7 @@ function SpotCard({
     <View style={styles.card}>
       <View style={styles.badgeRow}>
         <Text style={styles.badgeAccent}>スポット勤務</Text>
-        <Text style={styles.badge}>残り {job.available_count}枠</Text>
+        <Text style={styles.badge}>{spotRemainingSlotsLabel(job.available_count)}</Text>
       </View>
       <Text style={styles.facility}>{job.facility_name}</Text>
       <Text style={styles.itemTitle}>{job.title}</Text>
@@ -347,6 +348,7 @@ function SpotCard({
       <Text style={styles.body}>募集枠 {job.required_count}名</Text>
       {job.age_group_or_class ? <Text style={styles.body}>担当 {job.age_group_or_class}</Text> : null}
       {job.required_qualification ? <Text style={styles.body}>資格 {job.required_qualification}</Text> : null}
+      {job.closing_at ? <Text style={styles.body}>募集終了予定 {formatSpotClosingAt(job.closing_at)}</Text> : null}
       {job.description ? <Text style={styles.body}>{job.description}</Text> : null}
       {job.facility_message ? <Text style={styles.quote}>園からのメッセージ{`\n`}{job.facility_message}</Text> : null}
       {applied ? (
