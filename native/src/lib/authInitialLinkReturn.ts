@@ -95,6 +95,17 @@ export function rememberSignedOutCandidateLink(url: string): void {
 }
 
 /**
+ * An OS URL event can arrive before Clerk has hydrated and before the signed-out
+ * listener mounts. Remember it only during that small bootstrap window. After
+ * initial auth resolution the scoped signed-out listener owns events; the
+ * global listener must not capture a logged-in user's private navigation.
+ */
+export function rememberCandidateLinkDuringBoot(url: string): void {
+  if (firstAuthResolution !== 'unknown') return;
+  rememberSignedOutCandidateLink(url);
+}
+
+/**
  * Consume once only while the caller's Clerk-session/effect lease remains live.
  * A stale EntryScreen can still be awaiting the bounded initial OS URL read
  * when Clerk unmounts it during a same-session re-entry. Such a read must
