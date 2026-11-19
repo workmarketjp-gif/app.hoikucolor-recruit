@@ -12,6 +12,7 @@ import { canStartSpotApplication } from '../lib/spotReadIntegrity';
 import { readCandidateSpotSnapshotBounded } from '../lib/spotSnapshotRead';
 import { armPendingHomeApplication, clearPendingHomeApplication } from '../lib/homeApplyPending';
 import { armSpotApplicationDispatch } from '../lib/spotApplicationDispatch';
+import { readSpotApplicationPreflight } from '../lib/spotApplicationPreflight';
 import { formatSpotClosingAt, spotEmptyJobsMessage, spotRemainingSlotsLabel } from '../lib/spotJobWebPresentation';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import {
@@ -182,15 +183,21 @@ export default function SpotJobsScreen() {
     setError(null);
     let submissionInvoked = false;
     try {
-      const pinned = await pinCandidateAction();
-      const stillCurrent = () => Boolean(pinned?.isCurrent() &&
+      // These are read-only prerequisites, never the submission itself.
+      // A stalled Clerk token or candidate profile must not leave the button busy
+      // indefinitely or allow a late response to dispatch an application.
+      const preflightOwnerCurrent = () => Boolean(
         currentOwnerRef.current === expectedOwner &&
-        candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === expectedOwner &&
         generation.current === startedGeneration &&
         verifiedOwnerRef.current === expectedOwner &&
         !privacy.shieldVisible && privacy.canAccessPrivateData());
-      if (!pinned || !stillCurrent()) return;
-      const profile = await getJobseekerProfile(pinned.client);
+      const { pinned, profile } = await readSpotApplicationPreflight({
+        pin: pinCandidateAction,
+        readProfile: (candidate) => getJobseekerProfile(candidate.client),
+        isCurrent: preflightOwnerCurrent,
+        ownsPin: (candidate) => candidateViewOwnerKey(candidate.ownerId, candidate.ownerSessionId) === expectedOwner,
+      });
+      const stillCurrent = () => Boolean(pinned.isCurrent() && preflightOwnerCurrent());
       if (!stillCurrent()) return;
       if (!profile?.name?.trim()) {
         router.push('/(tabs)/profile');
