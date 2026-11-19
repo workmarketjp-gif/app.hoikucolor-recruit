@@ -75,7 +75,11 @@ export function recordInitialCandidateAuth(signedIn: boolean): void {
 /** The auth UI can accept a NEW warm link while signed out, never old session data. */
 export function openSignedOutCandidateLinkWindow(): void { consumed = false; }
 export function rememberSignedOutCandidateLink(url: string): void {
-  if (consumed) return;
+  // Clerk/Expo's Google SSO browser returns through this public callback. It is
+  // not a new candidate navigation intent: overwriting pending with null here
+  // would lose the original application/message URL on successful sign-in.
+  // Only the exact app callback is ignored; unrelated links still clear intent.
+  if (consumed || /^hoikucolor:\/\/\/?sso-callback(?:[?#]|$)/.test(url)) return;
   incomingSequence += 1;
   pending = candidateRouteFromInitialURL(url);
 }
