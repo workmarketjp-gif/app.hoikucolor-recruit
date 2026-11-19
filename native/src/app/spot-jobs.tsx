@@ -93,6 +93,7 @@ export default function SpotJobsScreen() {
   const verifiedOwnerRef = useRef<string | null>(null);
   const initialFailureOwnerRef = useRef<string | null>(null);
   const currentOwnerRef = useRef(ownerKey);
+  const readSingleFlightRef = useRef(createSpotReadSingleFlight());
   const applyingRef = useRef<{ owner: string; generation: number; jobId: string } | null>(null);
   if (currentOwnerRef.current !== ownerKey) {
     currentOwnerRef.current = ownerKey;
@@ -110,7 +111,6 @@ export default function SpotJobsScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
-  const readSingleFlightRef = useRef(createSpotReadSingleFlight());
   const confirmationReadFenceRef = useRef(createSpotReadConfirmationFence());
   const { assignmentId: rawAssignmentId } = useLocalSearchParams<{ assignmentId?: string }>();
   const focusedAssignmentId = verifiedFocusId(rawAssignmentId);
