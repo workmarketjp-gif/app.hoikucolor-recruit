@@ -14,6 +14,7 @@ import { armPendingHomeApplication, clearPendingHomeApplication } from '../lib/h
 import { armSpotApplicationDispatch } from '../lib/spotApplicationDispatch';
 import { readSpotApplicationPreflight } from '../lib/spotApplicationPreflight';
 import { canRefreshSpotInForeground } from '../lib/spotForegroundRefresh';
+import { createSpotReadSingleFlight } from '../lib/spotReadSingleFlight';
 import { retainConfirmedSpotApplication, navigateAfterConfirmedSpotSubmission, createSpotReadConfirmationFence } from '../lib/spotConfirmedApplication';
 import { formatSpotClosingAt, spotEmptyJobsMessage, spotRemainingSlotsLabel } from '../lib/spotJobWebPresentation';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
@@ -95,6 +96,7 @@ export default function SpotJobsScreen() {
   const applyingRef = useRef<{ owner: string; generation: number; jobId: string } | null>(null);
   if (currentOwnerRef.current !== ownerKey) {
     currentOwnerRef.current = ownerKey;
+    readSingleFlightRef.current.invalidate();
     verifiedOwnerRef.current = null;
     initialFailureOwnerRef.current = null;
   }
@@ -108,7 +110,7 @@ export default function SpotJobsScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
-  const readInFlightRef = useRef(false);
+  const readSingleFlightRef = useRef(createSpotReadSingleFlight());
   const confirmationReadFenceRef = useRef(createSpotReadConfirmationFence());
   const { assignmentId: rawAssignmentId } = useLocalSearchParams<{ assignmentId?: string }>();
   const focusedAssignmentId = verifiedFocusId(rawAssignmentId);
@@ -118,9 +120,13 @@ export default function SpotJobsScreen() {
     : assignments;
 
   const load = useCallback(async (quiet = false) => {
+    const privateAllowed = Boolean(ownerKey && !privacy.shieldVisible && privacy.canAccessPrivateData());
+    // A double tap, visible retry or focus event must not duplicate active RPCs.
+    // The lease is owner-scoped and is invalidated on blur/lock/session change.
+    const readLease = privateAllowed ? readSingleFlightRef.current.begin(ownerKey) : null;
+    if (privateAllowed && !readLease) return false;
     const current = ++generation.current;
     const readConfirmationEpoch = confirmationReadFenceRef.current.captureReadEpoch();
-    readInFlightRef.current = true;
     if (!quiet) {
       verifiedOwnerRef.current = null;
       initialFailureOwnerRef.current = null;
@@ -128,11 +134,11 @@ export default function SpotJobsScreen() {
       setError(null);
     }
     // App Lock and signed-out states must not issue candidate RPCs.
-    if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
+    if (!privateAllowed || !readLease) {
+      readSingleFlightRef.current.invalidate();
       setJobs([]);
       setAssignments([]);
       initialFailureOwnerRef.current = null;
-      readInFlightRef.current = false;
       if (!quiet) setLoading(false);
       return false;
     }
@@ -141,12 +147,14 @@ export default function SpotJobsScreen() {
         pin: pinCandidateAction,
         readJobs: (pinned) => listSpotJobs(pinned.client),
         readAssignments: (pinned) => listMySpotAssignments(pinned.client),
-        isCurrent: () => Boolean(ownerKey && current === generation.current &&
+        isCurrent: () => Boolean(readSingleFlightRef.current.isCurrent(readLease) &&
+          ownerKey && current === generation.current &&
           currentOwnerRef.current === ownerKey && !privacy.shieldVisible &&
           privacy.canAccessPrivateData()),
         ownsPin: (pinned) => candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey,
       });
-      if (current !== generation.current || currentOwnerRef.current !== ownerKey ||
+      if (!readSingleFlightRef.current.isCurrent(readLease) ||
+          current !== generation.current || currentOwnerRef.current !== ownerKey ||
           privacy.shieldVisible || !privacy.canAccessPrivateData() ||
           !confirmationReadFenceRef.current.canCommitRead(readConfirmationEpoch)) return false;
       verifiedOwnerRef.current = ownerKey;
@@ -158,7 +166,8 @@ export default function SpotJobsScreen() {
       setAssignments(nextAssignments);
       return true;
     } catch {
-      if (!quiet && current === generation.current && currentOwnerRef.current === ownerKey &&
+      if (!quiet && readSingleFlightRef.current.isCurrent(readLease) &&
+          current === generation.current && currentOwnerRef.current === ownerKey &&
           !privacy.shieldVisible && privacy.canAccessPrivateData() &&
           confirmationReadFenceRef.current.canCommitRead(readConfirmationEpoch)) {
         initialFailureOwnerRef.current = ownerKey;
@@ -166,8 +175,8 @@ export default function SpotJobsScreen() {
       }
       return false;
     } finally {
+      readSingleFlightRef.current.finish(readLease);
       if (current === generation.current) {
-        readInFlightRef.current = false;
         if (!quiet) setLoading(false);
       }
     }
@@ -176,6 +185,7 @@ export default function SpotJobsScreen() {
   useFocusEffect(useCallback(() => {
     if (!ownerKey || privacy.shieldVisible || !privacy.canAccessPrivateData()) {
       generation.current += 1;
+      readSingleFlightRef.current.invalidate();
       verifiedOwnerRef.current = null;
       initialFailureOwnerRef.current = null;
       setJobs([]);
@@ -196,7 +206,7 @@ export default function SpotJobsScreen() {
         verifiedOwnerKey: verifiedOwnerRef.current,
         initialFailureOwnerKey: initialFailureOwnerRef.current,
         privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
-        readInFlight: readInFlightRef.current,
+        readInFlight: readSingleFlightRef.current.isBusy(ownerKey),
         applicationInFlight: applyingRef.current?.owner === ownerKey,
       })) return;
       void load(true);
@@ -209,6 +219,7 @@ export default function SpotJobsScreen() {
       clearInterval(refreshInterval);
       appStateSubscription.remove();
       generation.current += 1;
+      readSingleFlightRef.current.invalidate();
       verifiedOwnerRef.current = null;
       initialFailureOwnerRef.current = null;
     };
