@@ -30,6 +30,7 @@ import { openCandidateApplicationDocument } from '../lib/openCandidateApplicatio
 import { readCandidateVaultSnapshot } from '../lib/readCandidateVaultSnapshot';
 import { reconcileCandidateVaultMutation } from '../lib/reconcileCandidateVaultMutation';
 import { confirmCandidateVaultReplacementPreserved } from '../lib/confirmCandidateVaultReplacement';
+import { requireFreshVaultReplacement } from '../lib/requireFreshVaultReplacement';
 
 // Keep the document catalogue and exact qualification mapping in sync with Web.
 const labels = DOCUMENT_TYPE_LABELS;
@@ -212,6 +213,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     pickerCacheGeneration: number,
     lease: number,
     replacement: JobseekerDocument | null = null,
+    replacementRevision: number | null = null,
   ) {
     const operationValid = () => operationLeaseRef.current.isCurrent(lease);
     if (!operationValid()) {
@@ -251,7 +253,37 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
       return;
     }
 
-    const sameTypeExists = documents.some((item) => item.document_type === selectedType);
+    // The OS picker/camera may return after a different session/device changed
+    // the chosen default. Verify the exact candidate-owned source before upload.
+    if (replacement) {
+      const originalStillCurrent = () =>
+        operationValid() && pinned.isCurrent() && mountedRef.current &&
+        userIdRef.current === pickerOwnerId &&
+        ownerKeyRef.current === pinnedOwnerKey &&
+        privacy.canAccessPrivateData() &&
+        vaultRevisionRef.current === replacementRevision &&
+        canActOnCandidateDocument(replacement, canonicalDocumentsRef.current,
+          pickerOwnerId, pinnedOwnerKey, freshlyVerifiedOwner.current, true);
+      if (!originalStillCurrent()) {
+        throw new Error('差し替え対象が変更されました。再読み込みしてから差し替えてください。');
+      }
+      const beforeWrite = await listJobseekerDocuments(pinned.client);
+      if (!originalStillCurrent()) {
+        throw new Error('差し替え対象が変更されました。再読み込みしてから差し替えてください。');
+      }
+      requireFreshVaultReplacement({
+        previous: replacement,
+        visibleRows: canonicalDocumentsRef.current,
+        canonicalRows: beforeWrite,
+        ownerId: pickerOwnerId,
+        selectedType,
+        initialRevision: replacementRevision,
+        currentRevision: vaultRevisionRef.current,
+        isCurrent: originalStillCurrent,
+      });
+    }
+
+    const sameTypeExists = (canonicalDocumentsRef.current ?? []).some((item) => item.document_type === selectedType);
     const saved = await uploadPickedJobseekerDocument(pinned.client, pickerOwnerId, selectedType, asset, {
       // Match the approved Web: a replacement becomes the new default,
       // but its previous private source stays in the vault until the user
@@ -261,7 +293,13 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
         operationValid() && pinned.isCurrent() &&
         mountedRef.current &&
         userIdRef.current === pickerOwnerId &&
-        privacy.canAccessPrivateData(),
+        privacy.canAccessPrivateData() &&
+        (!replacement || (
+          vaultRevisionRef.current === replacementRevision &&
+          ownerKeyRef.current === pinnedOwnerKey &&
+          canActOnCandidateDocument(replacement, canonicalDocumentsRef.current,
+            pickerOwnerId, pinnedOwnerKey, freshlyVerifiedOwner.current, true)
+        )),
     });
 
     if (!operationValid() || !pinned.isCurrent() || !mountedRef.current || userIdRef.current !== pickerOwnerId || !privacy.canAccessPrivateData()) return;
@@ -293,7 +331,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     const canonical = await listJobseekerDocuments(pinned.client);
     if (!operationValid() || !pinned.isCurrent() || !mountedRef.current || ownerKeyRef.current !== pinnedOwnerKey ||
         !privacy.canAccessPrivateData()) return;
-    confirmCandidateDocumentMutation(canonical, pickerOwnerId, saved.id, 'uploaded');
+    confirmCandidateDocumentMutation(canonical, pickerOwnerId, saved.id, 'uploaded', saved);
     setDocuments(canonical, pinnedOwnerKey, 'uploaded', saved.id);
     Alert.alert('保存しました', `${labels[selectedType]}を応募書類として保存しました。`);
   }
@@ -302,6 +340,9 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     const pickerOwnerId = userIdRef.current;
     const selectedType = resolveVaultUploadType(replacement?.document_type ?? null, lockedType, explicitType, documentType);
     if (!pickerOwnerId || busyId || verifiedDocuments === null || !privateAllowed) return;
+    if (replacement && !canActOnCandidateDocument(replacement, canonicalDocumentsRef.current,
+      pickerOwnerId, ownerKeyRef.current, freshlyVerifiedOwner.current, true)) return;
+    const replacementRevision = replacement ? vaultRevisionRef.current : null;
     const lease = operationLeaseRef.current.tryAcquire();
     if (lease === null) return;
     onBusyChangedRef.current?.(true);
@@ -321,7 +362,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
         name: picked.name,
         size: picked.size ?? null,
         mimeType: picked.mimeType ?? null,
-      }, pickerCacheGeneration, lease, replacement);
+      }, pickerCacheGeneration, lease, replacement, replacementRevision);
     } catch (error) {
       if (operationLeaseRef.current.isCurrent(lease) && mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
         Alert.alert(replacement ? '書類を差し替えできませんでした' : '書類を保存できませんでした', presentDocumentVaultError('upload', error));
@@ -337,6 +378,9 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
     const pickerOwnerId = userIdRef.current;
     const selectedType = resolveVaultUploadType(replacement?.document_type ?? null, lockedType, null, documentType);
     if (!pickerOwnerId || busyId || verifiedDocuments === null || !privateAllowed) return;
+    if (replacement && !canActOnCandidateDocument(replacement, canonicalDocumentsRef.current,
+      pickerOwnerId, ownerKeyRef.current, freshlyVerifiedOwner.current, true)) return;
+    const replacementRevision = replacement ? vaultRevisionRef.current : null;
     const lease = operationLeaseRef.current.tryAcquire();
     if (lease === null) return;
     onBusyChangedRef.current?.(true);
@@ -372,7 +416,7 @@ export function DocumentVaultSection({ initialType = 'resume', lockedType = null
         name: captured.fileName || `${selectedType}-${Date.now()}.jpg`,
         size: captured.fileSize ?? null,
         mimeType: captured.mimeType || 'image/jpeg',
-      }, pickerCacheGeneration, lease, replacement);
+      }, pickerCacheGeneration, lease, replacement, replacementRevision);
     } catch (error) {
       if (operationLeaseRef.current.isCurrent(lease) && mountedRef.current && userIdRef.current === pickerOwnerId && privacy.canAccessPrivateData()) {
         Alert.alert(replacement ? '撮影した書類を差し替えできませんでした' : '撮影した書類を保存できませんでした', presentDocumentVaultError('camera', error));

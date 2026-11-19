@@ -29,13 +29,20 @@ export function canActOnCandidateDocument(
   freshlyVerifiedOwnerKey: string | null,
   privateAllowed: boolean,
 ): boolean {
-  return Boolean(privateAllowed && ownerId && currentOwnerKey &&
-    freshlyVerifiedOwnerKey === currentOwnerKey && canonicalRows?.some((row) =>
-      row.id === document.id &&
-      row.jobseeker_clerk_user_id === ownerId &&
-      document.jobseeker_clerk_user_id === ownerId &&
-      row.file_path === document.file_path &&
-      row.document_type === document.document_type));
+  if (!privateAllowed || !ownerId || !ownerId.trim() || !currentOwnerKey ||
+      freshlyVerifiedOwnerKey !== currentOwnerKey || !Array.isArray(canonicalRows) ||
+      !document || document.jobseeker_clerk_user_id !== ownerId ||
+      typeof document.file_path !== 'string' || !document.file_path ||
+      typeof document.document_type !== 'string' || !document.document_type) return false;
+
+  // Do not use a matching row within a mixed-owner or duplicated snapshot.
+  // Canonical RLS authorization remains mandatory for every private operation.
+  try { assertCandidateDocumentListOwner(canonicalRows, ownerId); } catch { return false; }
+  if (new Set(canonicalRows.map((row) => row.id)).size !== canonicalRows.length) return false;
+  const matches = canonicalRows.filter((row) => row.id === document.id);
+  return matches.length === 1 &&
+    matches[0].file_path === document.file_path &&
+    matches[0].document_type === document.document_type;
 }
 
 /** Never acknowledge a private document mutation without authoritative readback. */
@@ -44,12 +51,22 @@ export function confirmCandidateDocumentMutation(
   ownerId: string,
   targetId: string,
   kind: 'uploaded' | 'made-default' | 'deleted',
+  expected?: CandidateDocumentRow,
 ): void {
   assertCandidateDocumentListOwner(rows, ownerId);
+  const invalid = () => new Error('書類の保存結果を確認できませんでした。再読み込みして状態を確認してください。');
+  if (!targetId.trim() || new Set(rows.map((row) => row.id)).size !== rows.length) throw invalid();
   const current = rows.find((row) => row.id === targetId);
-  const confirmed = kind === 'deleted' ? !current :
-    kind === 'made-default' ? current?.is_default === true : Boolean(current);
-  if (!targetId.trim() || !confirmed) {
-    throw new Error('書類の保存結果を確認できませんでした。再読み込みして状態を確認してください。');
-  }
+  // A saved document must be the same private source registered by the API.
+  const exactUpload = !expected || Boolean(current &&
+    expected.id === targetId && expected.jobseeker_clerk_user_id === ownerId &&
+    current.file_path === expected.file_path && current.document_type === expected.document_type);
+  const defaultsOfType = current ? rows.filter((row) =>
+    row.document_type === current.document_type && row.is_default === true) : [];
+  const soleTargetDefault = Boolean(current?.is_default === true &&
+    defaultsOfType.length === 1 && defaultsOfType[0]?.id === targetId);
+  const confirmed = kind === 'deleted' ? current === undefined :
+    kind === 'made-default' ? soleTargetDefault :
+    Boolean(current && exactUpload && (!expected?.is_default || soleTargetDefault));
+  if (!confirmed) throw invalid();
 }
