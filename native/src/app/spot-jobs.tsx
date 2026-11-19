@@ -10,6 +10,8 @@ import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey } from '../lib/candidateViewOwner';
 import { canStartSpotApplication } from '../lib/spotReadIntegrity';
 import { readCandidateSpotSnapshotBounded } from '../lib/spotSnapshotRead';
+import { armPendingHomeApplication, clearPendingHomeApplication } from '../lib/homeApplyPending';
+import { armSpotApplicationDispatch } from '../lib/spotApplicationDispatch';
 import { formatSpotClosingAt, spotEmptyJobsMessage, spotRemainingSlotsLabel } from '../lib/spotJobWebPresentation';
 import { focusedOwnedItem, verifiedFocusId } from '../lib/scopedNotificationRoute';
 import {
@@ -178,6 +180,7 @@ export default function SpotJobsScreen() {
     applyingRef.current = token;
     setBusyId(job.job_id);
     setError(null);
+    let submissionInvoked = false;
     try {
       const pinned = await pinCandidateAction();
       const stillCurrent = () => Boolean(pinned?.isCurrent() &&
@@ -193,7 +196,24 @@ export default function SpotJobsScreen() {
         router.push('/(tabs)/profile');
         return;
       }
+      // Share the existing candidate/job durable quarantine with Home. Its
+      // in-process gate prevents two entry points from arming and submitting
+      // the same vacancy concurrently. The server remains the authority.
+      const reservation = await armSpotApplicationDispatch({
+        isCurrent: stillCurrent,
+        armPending: () => armPendingHomeApplication(pinned.ownerId, pinned.ownerSessionId, job.job_id, []),
+      });
+      if (reservation === 'unresolved') {
+        setError('前回の応募結果が未確認です。応募管理から応募状況を確認してください。');
+        return;
+      }
+      if (reservation !== 'armed' || !stillCurrent()) return;
+      submissionInvoked = true;
       const result = await submitApplication(pinned.client, job.job_id, profile);
+      if (!stillCurrent()) return;
+      // submitApplication confirms the candidate-owned canonical detail.
+      // Only after that proof may we clear the pending local quarantine.
+      await clearPendingHomeApplication(pinned.ownerId, job.job_id);
       if (!stillCurrent()) return;
       // A successful submission needs a fresh canonical list before returning.
       const refreshed = load(true);
@@ -206,7 +226,9 @@ export default function SpotJobsScreen() {
     } catch {
       if (currentOwnerRef.current === expectedOwner && generation.current === startedGeneration &&
           !privacy.shieldVisible && privacy.canAccessPrivateData()) {
-        setError('応募結果を確認できませんでした。応募管理を更新してご確認ください。');
+        setError(submissionInvoked
+          ? '応募結果を確認できませんでした。応募管理を更新してご確認ください。自動で再応募は行いません。'
+          : '応募前の安全確認ができませんでした。応募管理を確認してから再度お試しください。');
       }
     } finally {
       if (applyingRef.current === token) {
