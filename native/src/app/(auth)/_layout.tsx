@@ -11,6 +11,7 @@ export default function AuthLayout() {
       </View>
     );
   }
-  if (isSignedIn) return <Redirect href="/(tabs)/home" />;
+  // Let the exact-session entry resolve a one-shot approved deep-link intent.
+  if (isSignedIn) return <Redirect href="/" />;
   return <Stack screenOptions={{ headerShown: false }} />;
 }
