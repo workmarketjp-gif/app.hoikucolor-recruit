@@ -78,9 +78,12 @@ export default function VisitsScreen() {
   const [candidateMessage, setCandidateMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [routing, setRouting] = useState(false);
+  const [relatedNavigationError, setRelatedNavigationError] = useState(false);
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const generation = useRef(0);
   const mutationGate = useRef(createVisitMutationTapGate());
+  const relatedNavigationGate = useRef(createVisitMutationTapGate());
   const scrollRef = useRef<ScrollView>(null);
   const focusLayoutRef = useRef<VisitFocusLayout>(emptyVisitFocusLayout(null, null));
   // A same-session App Lock/unlock also invalidates every previously rendered visit.
@@ -154,7 +157,10 @@ export default function VisitsScreen() {
   useFocusEffect(useCallback(() => {
     if (!ownerKey || !privateAllowed) {
       mutationGate.current.invalidate();
+      relatedNavigationGate.current.invalidate();
       setBusy(false);
+      setRouting(false);
+      setRelatedNavigationError(false);
       generation.current += 1;
       freshlyVerifiedOwner.current = null;
       setOwnedVisits(null);
@@ -166,7 +172,10 @@ export default function VisitsScreen() {
     void load();
     return () => {
       mutationGate.current.invalidate();
+      relatedNavigationGate.current.invalidate();
       setBusy(false);
+      setRouting(false);
+      setRelatedNavigationError(false);
       generation.current += 1;
       freshlyVerifiedOwner.current = null;
     };
@@ -294,13 +303,17 @@ export default function VisitsScreen() {
     targetId: string,
     target: 'application' | 'job',
   ) => {
+    if (!privateAllowed || relatedNavigationGate.current.isPending()) return;
     const tappedGeneration = generation.current;
-    await navigateFromCandidateVisitWithLease({
+    setRouting(true);
+    setRelatedNavigationError(false);
+    const didNavigate = await navigateFromCandidateVisitWithLease({
       visits,
       reservationId,
       targetId,
       target,
       expectedOwnerKey: ownerKey,
+      gate: relatedNavigationGate.current,
       // Focus departure, canonical refresh, or same-session App Lock revokes a
       // previously visible reservation while the Clerk pin is still pending.
       isViewCurrent: () => generation.current === tappedGeneration &&
@@ -316,6 +329,13 @@ export default function VisitsScreen() {
         ? `/application/${targetId}`
         : `/job/${targetId}`) as never),
     });
+    if (!relatedNavigationGate.current.isPending()) {
+      setRouting(false);
+      if (!didNavigate && generation.current === tappedGeneration &&
+          privacy.canAccessPrivateData() && freshlyVerifiedOwner.current === ownerKey) {
+        setRelatedNavigationError(true);
+      }
+    }
   };
 
   const groupedVisits = useMemo(
@@ -358,12 +378,14 @@ export default function VisitsScreen() {
           </Pressable>
         ) : null}
         {visit.application_id ? (
-          <Pressable style={styles.linkButton}
+          <Pressable style={styles.linkButton} accessibilityRole="button"
+            accessibilityState={{ disabled: routing || !privateAllowed }} disabled={routing || !privateAllowed}
             onPress={() => void openRelatedVisitTarget(visit.reservation_id, visit.application_id!, 'application')}>
             <Text style={styles.link}>応募状況を見る</Text>
           </Pressable>
         ) : null}
-        <Pressable style={styles.linkButton}
+        <Pressable style={styles.linkButton} accessibilityRole="button"
+          accessibilityState={{ disabled: routing || !privateAllowed }} disabled={routing || !privateAllowed}
           onPress={() => void openRelatedVisitTarget(visit.reservation_id, visit.job_id, 'job')}>
           <Text style={styles.link}>求人を見る</Text>
         </Pressable>
@@ -391,6 +413,8 @@ export default function VisitsScreen() {
         <Text style={styles.subtle}>園見学・半日体験・1日体験の予約と結果を確認できます。</Text>
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {relatedNavigationError && privateAllowed ? <Text style={styles.error}>画面を開けませんでした。通信状態を確認して、もう一度お試しください。</Text> : null}
+      {routing && privateAllowed ? <Text style={styles.subtle}>移動先のログイン状態を確認しています…</Text> : null}
       {(loading || (visits === null && !error)) ? <ActivityIndicator /> : null}
       {error && privateAllowed ? (
         <Pressable style={styles.secondary} onPress={() => void load()} disabled={loading}>
