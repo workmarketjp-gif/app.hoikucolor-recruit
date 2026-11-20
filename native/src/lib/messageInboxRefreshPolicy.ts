@@ -46,3 +46,25 @@ export function canStartMessageInboxRefresh(options: {
   return !options.refreshPending && !options.threadOpenPending &&
     !options.secondaryNavigationPending;
 }
+
+/**
+ * Web /messages always offers the independent /scouts destination, even
+ * before the application-conversation index resolves or after its first
+ * read fails. An absent index is NOT authorization to any message thread.
+ * The caller must pin and verify the current candidate/Clerk session before
+ * opening the separately authorized Scouts screen. Pending inbox reads must
+ * not block that user-initiated, read-only destination.
+ *
+ * Previously verified rows follow canOpenVerifiedMessageInboxThread instead.
+ */
+export function canOpenScoutsWithoutVerifiedMessageIndex(options: {
+  candidateOwnerKey: string | null;
+  privateAccessAllowed: boolean;
+  verifiedMessageIndexPresent: boolean;
+  threadOpenPending: boolean;
+  secondaryNavigationPending: boolean;
+}): boolean {
+  return !!options.candidateOwnerKey && options.privateAccessAllowed &&
+    !options.verifiedMessageIndexPresent && !options.threadOpenPending &&
+    !options.secondaryNavigationPending;
+}
