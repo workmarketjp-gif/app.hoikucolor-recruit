@@ -33,7 +33,7 @@ test('background or App Lock cannot refresh a private message thread', () => {
 });
 
 test('a pending initial parent read is not a usable verified authorization', () => {
-  assert.equal(canRefreshFocusedCandidateMessages({ ...ready, initialLoadComplete: false }, false);
+  assert.equal(canRefreshFocusedCandidateMessages({ ...ready, initialLoadComplete: false }, false), false);
 });
 
 test('in-flight send or offer decision prevents a competing read', () => {
