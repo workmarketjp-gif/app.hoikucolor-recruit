@@ -6,13 +6,14 @@ import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { listApplications, type JobseekerApplicationSummary } from '../../lib/applicationJourneyApi';
 import { usePrivateScreenCapture } from '../../hooks/usePrivateScreenCapture';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
-import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
+import { candidateViewOwnerKey, readCandidateOwnedView, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
 import { applicationStatusLabel } from '../../lib/messageInbox';
 import { messageNavigationLeaseIsCurrent } from '../../lib/messageNavigationLease';
 import { readCandidateApplicationIndex } from '../../lib/candidateApplicationIndexRead';
 import { boundedPrivateRead } from '../../lib/privateReadDeadline';
 import { canNavigateVerifiedApplicationRow, retainApplicationListForRefresh } from '../../lib/applicationListRefreshPolicy';
 import { canStartApplicationIndexRead } from '../../lib/applicationIndexRefreshFlight';
+import { canRetainCandidateRowsAfterFailedRead } from '../../lib/candidateVerifiedReadFailure';
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -41,7 +42,7 @@ export default function ApplicationsScreen() {
   const freshlyVerifiedOwner = useRef<string | null>(null);
   if (!privateAllowed) freshlyVerifiedOwner.current = null;
   const applications = readCandidateFreshlyVerifiedView(ownedApplications, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
-  const error = readCandidateFreshlyVerifiedView(ownedError, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
+  const error = readCandidateOwnedView(ownedError, ownerKey, privateAllowed);
   const openError = readCandidateFreshlyVerifiedView(ownedOpenError, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
   const canOpenRows = canNavigateVerifiedApplicationRow({
     ownerKey, freshlyVerifiedOwnerKey: freshlyVerifiedOwner.current,
@@ -74,10 +75,12 @@ export default function ApplicationsScreen() {
     setLoading(true);
     if (!retainRows) setOwnedApplications(null);
     setOwnedError(null);
+    const verifiedPin = { current: null as { ownerId: string; ownerSessionId: string; isCurrent: () => boolean } | null };
     try {
       const verified = await readCandidateApplicationIndex({
         pin: pinCandidateAction,
         list: listApplications,
+        onVerifiedPin: (pin) => { verifiedPin.current = pin; },
         expectedOwnerKey: ownerKey,
         resolveOwnerKey: candidateViewOwnerKey,
         isActive: () => current === generation.current &&
@@ -90,8 +93,21 @@ export default function ApplicationsScreen() {
       setOwnedApplications({ ownerKey: verifiedOwner, value: verified.rows });
     } catch {
       if (current === generation.current) {
-        if (ownerKey && privacy.canAccessPrivateData()) {
-          freshlyVerifiedOwner.current = ownerKey;
+        // A failed Clerk pin is NOT proof that previously retained private
+        // rows still belong to an authorized active session.
+        const retainAfterFailure = canRetainCandidateRowsAfterFailedRead({
+          retainedAtStart: retainRows,
+          expectedOwnerKey: ownerKey,
+          pinnedOwnerKey: verifiedPin.current
+            ? candidateViewOwnerKey(verifiedPin.current.ownerId, verifiedPin.current.ownerSessionId) : null,
+          pinnedSessionCurrent: verifiedPin.current?.isCurrent() === true,
+          privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+        });
+        if (!retainAfterFailure) {
+          freshlyVerifiedOwner.current = null;
+          setOwnedApplications(null);
+        }
+        if (ownerKey && !privacy.shieldVisible && privacy.canAccessPrivateData()) {
           setOwnedError({ ownerKey, value: '応募情報を取得できませんでした。通信状態を確認して再読み込みしてください。' });
         }
       }

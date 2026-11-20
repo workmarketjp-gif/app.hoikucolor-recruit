@@ -7,13 +7,14 @@ import { usePrivateDataQuarantine } from '../hooks/usePrivateDataQuarantine';
 import { usePrivateScreenCapture } from '../hooks/usePrivateScreenCapture';
 import { getJobseekerAttentionSummary, type JobseekerAttentionSummary } from '../lib/attentionApi';
 import { listApplications, type JobseekerApplicationSummary } from '../lib/applicationJourneyApi';
-import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
+import { candidateViewOwnerKey, readCandidateOwnedView, readCandidateFreshlyVerifiedView, type CandidateOwnedView } from '../lib/candidateViewOwner';
 import { buildMessageInbox } from '../lib/messageInbox';
 import { loadIndependentMessageInbox, readIndependentMessageAttention } from '../lib/messageInboxIndependentLoad';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { messageNavigationLeaseIsCurrent } from '../lib/messageNavigationLease';
 import { canOpenScoutsWithoutVerifiedMessageIndex, canOpenVerifiedMessageInboxThread, canPreserveMessageInboxDuringManualRefresh, canStartMessageInboxRefresh } from '../lib/messageInboxRefreshPolicy';
 import { presentMessageInboxReadFailure } from '../lib/messageInboxFailurePresentation';
+import { canRetainCandidateRowsAfterFailedRead } from '../lib/candidateVerifiedReadFailure';
 
 /** Web /messages: only authorized application threads, with canonical unread metadata. */
 export default function MessagesScreen() {
@@ -81,18 +82,20 @@ export default function MessagesScreen() {
     setLoadError(null);
     setAttentionFailed(null);
     setLoading(true);
+    const verifiedPin = { current: null as { ownerId: string; ownerSessionId: string; isCurrent: () => boolean } | null };
     try {
       const pinned = await pinCandidateForRead(pinCandidateAction, () =>
-        request === generation.current && privacy.canAccessPrivateData());
+        request === generation.current && !privacy.shieldVisible && privacy.canAccessPrivateData());
       const requestOwner = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
       if (!requestOwner || requestOwner !== ownerKey) throw new Error('ログイン状態を確認できませんでした。');
+      verifiedPin.current = pinned;
       // The Web thread index can render before the optional unread summary.
       // A slow summary must not block authorized application conversations.
       await loadIndependentMessageInbox({
         loadApplications: () => listApplications(pinned.client),
         loadAttention: () => getJobseekerAttentionSummary(pinned.client),
         isCurrent: () => request === generation.current && pinned.isCurrent() &&
-          requestOwner === ownerKey && privacy.canAccessPrivateData(),
+          requestOwner === ownerKey && !privacy.shieldVisible && privacy.canAccessPrivateData(),
         onApplications: (verified) => {
           freshlyVerifiedOwner.current = requestOwner;
           setApplications({ ownerKey: requestOwner, value: verified });
@@ -108,9 +111,22 @@ export default function MessagesScreen() {
         },
       });
     } catch (error) {
-      if (request === generation.current && ownerKey && privacy.canAccessPrivateData()) {
-        freshlyVerifiedOwner.current = ownerKey;
-        setLoadError({ ownerKey, value: presentMessageInboxReadFailure(error) });
+      if (request === generation.current) {
+        const retainAfterFailure = canRetainCandidateRowsAfterFailedRead({
+          retainedAtStart: keepVerifiedRows,
+          expectedOwnerKey: ownerKey,
+          pinnedOwnerKey: verifiedPin.current
+            ? candidateViewOwnerKey(verifiedPin.current.ownerId, verifiedPin.current.ownerSessionId) : null,
+          pinnedSessionCurrent: verifiedPin.current?.isCurrent() === true,
+          privateAllowed: !privacy.shieldVisible && privacy.canAccessPrivateData(),
+        });
+        if (!retainAfterFailure) {
+          freshlyVerifiedOwner.current = null;
+          setApplications(null);
+        }
+        if (ownerKey && !privacy.shieldVisible && privacy.canAccessPrivateData()) {
+          setLoadError({ ownerKey, value: presentMessageInboxReadFailure(error) });
+        }
       }
     } finally {
       // The required application list has finished. Unread counts can update
@@ -120,7 +136,7 @@ export default function MessagesScreen() {
         setLoading(false);
       }
     }
-  }, [pinCandidateAction, ownerKey, privacy.canAccessPrivateData]);
+  }, [pinCandidateAction, ownerKey, privacy.canAccessPrivateData, privacy.shieldVisible]);
 
   // A reply in the application detail can change unread counts and thread state.
   // Revalidate on screen focus; blur revokes the old presentation lease *before*
@@ -211,7 +227,7 @@ export default function MessagesScreen() {
 
   const visibleApplications = readCandidateFreshlyVerifiedView(applications, ownerKey, canRead, freshlyVerifiedOwner.current);
   const visibleAttention = readCandidateFreshlyVerifiedView(attention, ownerKey, canRead, freshlyVerifiedOwner.current);
-  const error = readCandidateFreshlyVerifiedView(loadError, ownerKey, canRead, freshlyVerifiedOwner.current);
+  const error = readCandidateOwnedView(loadError, ownerKey, canRead);
   const warning = readCandidateFreshlyVerifiedView(attentionFailed, ownerKey, canRead, freshlyVerifiedOwner.current);
   const inbox = buildMessageInbox(visibleApplications ?? [], visibleAttention);
   const threadsMayOpen = canOpenVerifiedMessageInboxThread({

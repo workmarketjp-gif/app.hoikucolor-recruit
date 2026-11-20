@@ -19,6 +19,8 @@ export async function readCandidateApplicationIndex<TClient, TRows>(options: {
   expectedOwnerKey: string | null;
   resolveOwnerKey: (ownerId: string, sessionId: string) => string | null;
   isActive: () => boolean;
+  /** Called only after a pinned, current, exact-owner credential is confirmed. */
+  onVerifiedPin?: (pin: ApplicationIndexPin<TClient>) => void;
   timeoutMs?: number;
 }): Promise<{ ownerKey: string; rows: TRows }> {
   const pin = await boundedPrivateRead(() => {
@@ -29,6 +31,7 @@ export async function readCandidateApplicationIndex<TClient, TRows>(options: {
   const authorized = () => Boolean(pin?.isCurrent()) && options.isActive() &&
     Boolean(resolvedOwner) && resolvedOwner === options.expectedOwnerKey;
   if (!authorized()) throw new Error('安全なログイン状態を確認できませんでした。');
+  options.onVerifiedPin?.(pin!);
 
   const rows = await boundedPrivateRead(() => {
     if (!authorized()) throw new Error('閲覧状態が変わりました。');
