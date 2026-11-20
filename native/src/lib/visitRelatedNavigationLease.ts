@@ -1,4 +1,4 @@
-import { pinCandidateForRead } from './pinnedCandidateRead.ts';
+import { boundedPrivateRead } from './privateReadDeadline.ts';
 
 /**
  * Candidate visit-card navigation. Targets must belong to exactly one freshly
@@ -49,8 +49,11 @@ export async function navigateFromCandidateVisitWithLease(params: {
   try {
     // Token acquisition may hang; a presentation deadline does not cancel the
     // underlying Clerk request or authorize a route with a late token.
-    const pinned = await pinCandidateForRead(params.pin, isCurrent, params.timeoutMs);
-    if (!isCurrent() || pinned.ownerKey !== params.expectedOwnerKey || !pinned.isCurrent()) return false;
+    // Preserve Web/Native link behavior: start the verified tap's pin now;
+    // a later focus loss only rejects its result and never launches a new pin.
+    const pinPromise = params.pin();
+    const pinned = await boundedPrivateRead(() => pinPromise, params.timeoutMs);
+    if (!pinned || !isCurrent() || pinned.ownerKey !== params.expectedOwnerKey || !pinned.isCurrent()) return false;
     params.navigate();
     navigated = true;
     return true;
