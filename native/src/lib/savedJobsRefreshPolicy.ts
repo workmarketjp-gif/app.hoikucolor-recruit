@@ -1,7 +1,8 @@
 /**
  * A same-session manual refresh may show the last authenticated saved jobs,
- * but must never allow a stale row to open, compare, or be unsaved while
- * readback is pending or has failed. Focus, App Lock and account changes clear
+ * and allow read-only navigation to separately reauthorized detail/compare
+ * screens while readback is pending or failed. Unsave is still blocked.
+ * Focus, App Lock and account changes clear
  * the verification lease before the next canonical read.
  */
 export function retainSavedJobsDuringManualRefresh(options: {
@@ -29,7 +30,7 @@ export function canStartSavedJobsRefresh(options: {
     options.privateAllowed && options.focusActive && options.ownerKey !== null;
 }
 
-/** Stale rows are presentation-only until a fresh canonical RPC succeeds. */
+/** Writes stay disabled while the saved state is uncertain. */
 export function canActOnSavedJobs(options: {
   hasVerifiedRows: boolean;
   loading: boolean;
@@ -40,4 +41,27 @@ export function canActOnSavedJobs(options: {
 }): boolean {
   return options.hasVerifiedRows && !options.loading && !options.readFailed &&
     options.privateAllowed && options.focusActive && !options.mutationPending;
+}
+
+/**
+ * Web SavedView allows viewing a previously confirmed job and comparing
+ * verified rows while a same-session manual saved-list refresh is pending
+ * or failed. The destination reauthorizes the job independently. This gate
+ * never authorizes unsave, application submission or a server mutation.
+ * Reject first-load/error, revoked focus, lock, session switch, duplicate
+ * route taps and pending saved mutations.
+ */
+export function canNavigateVerifiedSavedJob(options: {
+  ownerKey: string | null;
+  verifiedOwnerKey: string | null;
+  hasVerifiedRows: boolean;
+  privateAllowed: boolean;
+  focusActive: boolean;
+  mutationPending: boolean;
+  navigationPending: boolean;
+}): boolean {
+  return options.hasVerifiedRows && options.privateAllowed &&
+    options.focusActive && !options.mutationPending &&
+    !options.navigationPending && !!options.ownerKey &&
+    options.verifiedOwnerKey === options.ownerKey;
 }
