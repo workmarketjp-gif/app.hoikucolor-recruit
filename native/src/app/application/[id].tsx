@@ -21,6 +21,7 @@ import { applicationSelectionTimeline, webNextScheduledInterview } from '../../l
 import { mergeConfirmedCandidateMessage } from '../../lib/confirmedCandidateMessage';
 import { canSubmitCandidateMessage, classifyUncertainCandidateMessageReview, shouldReviewCandidateMessageAfterFailure } from '../../lib/messageComposerRecovery';
 import { captureCandidateMessageInvocationReview, candidateMessageSendNeedsReview } from '../../lib/candidateMessageInvocationReview';
+import { candidateMessageSendActionLabel } from '../../lib/candidateMessageSendActionLabel';
 import { canApplyFocusedCandidateMessageRefresh, canRefreshFocusedCandidateMessages } from '../../lib/focusedCandidateMessageRefresh';
 import { boundedPrivateRead } from '../../lib/privateReadDeadline';
 import { sendCandidateMessageWithinPresentationDeadline } from '../../lib/candidateMessagePresentationDeadline';
@@ -1156,7 +1157,11 @@ function ApplicationDetailContent() {
             needsReview: candidateMessageSendNeedsReview(messageSendNeedsReview, uncertainMessageRef.current),
           })}
           onPress={() => void sendMessage()}>
-          <Text style={styles.primaryText}>{busy ? (messageSendNeedsReview ? '確認中…' : '送信中…') : '送信する'}</Text>
+          <Text style={styles.primaryText}>{candidateMessageSendActionLabel({
+            busy,
+            sendPending: messageSendPending.current,
+            needsReview: candidateMessageSendNeedsReview(messageSendNeedsReview, uncertainMessageRef.current),
+          })}</Text>
         </Pressable>
         <ApplicationDocumentsSection
           applicationId={applicationId}
