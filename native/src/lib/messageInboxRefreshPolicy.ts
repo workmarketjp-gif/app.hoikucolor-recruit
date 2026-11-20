@@ -14,15 +14,21 @@ export function canPreserveMessageInboxDuringManualRefresh(options: {
     !!options.expectedOwnerKey && options.lastVerifiedOwnerKey === options.expectedOwnerKey;
 }
 
-/** Until canonical revalidation succeeds, rows may be seen but never opened. */
+/**
+ * Web /messages allows opening already confirmed application conversations
+ * during a manual same-session refresh and after a failed refresh. This is a
+ * presentation/navigation gate only: the screen must verify the exact current
+ * candidate+Clerk-session snapshot and the selected application ID, pin the
+ * session before navigation, and let the detail screen re-read canonical data.
+ * Focus re-entry, App Lock, logout and account/session changes revoke that
+ * snapshot, so an unverified first-load/error state cannot open any thread.
+ */
 export function canOpenVerifiedMessageInboxThread(options: {
   listPresent: boolean;
   currentOwnerVerified: boolean;
-  refreshInFlight: boolean;
-  refreshFailed: boolean;
+  navigationPending: boolean;
 }): boolean {
-  return options.listPresent && options.currentOwnerVerified &&
-    !options.refreshInFlight && !options.refreshFailed;
+  return options.listPresent && options.currentOwnerVerified && !options.navigationPending;
 }
 
 /**
