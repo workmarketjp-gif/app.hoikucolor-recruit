@@ -15,3 +15,20 @@ export function retainApplicationListForRefresh(options: {
     options.ownerKey !== null &&
     options.freshlyVerifiedOwnerKey === options.ownerKey;
 }
+
+/**
+ * Web preserves tappable confirmed application rows while a same-session list
+ * refresh is pending or has failed. A refresh is not a mutation of those rows:
+ * the detail route re-fetches and re-authorizes the selected application.
+ * Never re-enable an unverified/old-session row or duplicate stack pushes.
+ */
+export function canNavigateVerifiedApplicationRow(options: {
+  ownerKey: string | null;
+  freshlyVerifiedOwnerKey: string | null;
+  hasVisibleRows: boolean;
+  privateAllowed: boolean;
+  navigationPending: boolean;
+}): boolean {
+  return options.hasVisibleRows && options.privateAllowed && !options.navigationPending &&
+    options.ownerKey !== null && options.freshlyVerifiedOwnerKey === options.ownerKey;
+}
