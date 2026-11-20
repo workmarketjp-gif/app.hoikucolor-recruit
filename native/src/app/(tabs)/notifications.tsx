@@ -30,7 +30,9 @@ export default function NotificationsScreen() {
       <View style={styles.toolbar}>
         <Text style={styles.count}>{countPresentation.label}</Text>
         <View style={styles.toolbarActions}>
-          <Pressable accessibilityRole="button" onPress={() => void notifications.refresh().catch(() => undefined)}><Text style={styles.link}>更新</Text></Pressable>
+          <Pressable accessibilityRole="button" disabled={notifications.loading}
+            accessibilityState={{ disabled: notifications.loading, busy: notifications.loading }}
+            onPress={() => void notifications.refresh().catch(() => undefined)}><Text style={styles.link}>更新</Text></Pressable>
           <Pressable accessibilityRole="button" disabled={!canMarkAll} accessibilityState={{ disabled: !canMarkAll }} onPress={() => void notifications.markAllRead().catch(() => undefined)}><Text style={styles.link}>すべて既読</Text></Pressable>
         </View>
       </View>
@@ -39,7 +41,9 @@ export default function NotificationsScreen() {
       {notifications.error ? (
         <View style={styles.permissionCard} testID="notification-read-error">
           <Text style={styles.error}>{notifications.error}</Text>
-          <Pressable accessibilityRole="button" style={styles.button} onPress={() => void notifications.refresh().catch(() => undefined)}>
+          <Pressable accessibilityRole="button" style={styles.button} disabled={notifications.loading}
+            accessibilityState={{ disabled: notifications.loading, busy: notifications.loading }}
+            onPress={() => void notifications.refresh().catch(() => undefined)}>
             <Text style={styles.buttonText}>もう一度読み込む</Text>
           </Pressable>
         </View>
