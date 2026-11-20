@@ -1,3 +1,5 @@
+import { boundedPrivateRead, DEFAULT_PRIVATE_READ_TIMEOUT_MS } from './privateReadDeadline.ts';
+
 /**
  * Candidate-scoped recovery after a submit_application transport failure.
  * A fresh pin must belong to the SAME candidate and Clerk session as the
@@ -27,13 +29,29 @@ export async function recoverAmbiguousApplication<Client>(options: {
   pin: () => Promise<RecoveryLease<Client> | null>;
   list: (client: Client) => Promise<ReadonlyArray<Readonly<{ id: string; job_id: string }>>>;
   onConfirmed: (applicationId: string) => void;
+  /** Total read-only recovery budget, including the Clerk pin and canonical list. */
+  timeoutMs?: number;
 }): Promise<ApplicationRecoveryResult> {
   const active = () => options.canContinue();
   if (!active()) return 'quarantined';
+  // A post-submit transport error is ambiguous: make one bounded, read-only
+  // reconciliation attempt. Timeout never proves the application is absent
+  // and never authorizes a second submit or delayed navigation.
+  const budget = typeof options.timeoutMs === 'number' && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+    ? Math.max(1, Math.floor(options.timeoutMs)) : DEFAULT_PRIVATE_READ_TIMEOUT_MS;
+  const deadline = Date.now() + budget;
+  const remaining = () => {
+    const ms = deadline - Date.now();
+    if (ms <= 0) throw new Error('応募状況の確認がタイムアウトしました。');
+    return ms;
+  };
 
   let pinned: RecoveryLease<Client> | null;
   try {
-    pinned = await options.pin();
+    pinned = await boundedPrivateRead(() => {
+      if (!active()) throw new Error('安全なログイン状態を確認できませんでした。');
+      return options.pin();
+    }, remaining());
   } catch {
     return active() ? 'read_failed' : 'quarantined';
   }
@@ -43,7 +61,12 @@ export async function recoverAmbiguousApplication<Client>(options: {
 
   let applications: ReadonlyArray<Readonly<{ id: string; job_id: string }>>;
   try {
-    applications = await options.list(pinned.client);
+    applications = await boundedPrivateRead(() => {
+      if (!active() || !pinned?.isCurrent()) {
+        throw new Error('安全なログイン状態を確認できませんでした。');
+      }
+      return options.list(pinned.client);
+    }, remaining());
   } catch {
     return active() && pinned.isCurrent() ? 'read_failed' : 'quarantined';
   }

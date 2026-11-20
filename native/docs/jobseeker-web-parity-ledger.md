@@ -1,3 +1,8 @@
+## r390 — ambiguous job-application readback bounded to one recovery deadline (2026-11-20 NZ)
+- Web baseline: JOBSEEKER `/jobs` → direct application document selection → `/applications`, main `8c502fdb3a1697eb9eedf1f7b02de30374cb7b5c` (synthetic same-session uncertain-submit state). Native base r389 `adbfdaf197c9901b0916aa773b7738d78b69522b`.
+- Native: post-submit Clerk pin and canonical application readback now share a 15s bounded, **read-only** recovery deadline. Timed-out or revoked reads never infer missing application, navigate on late data or automatically resubmit. Exact owner/session required throughout. [r390 delta and QA](parity-delta-r390-ambiguous-application-recovery-deadline.md).
+- QA: existing real-source session recovery 8/8 plus 5 new timeout/late-ack/privacy tests = **13/13 Node PASS**, helper-only strict TS PASS. No Expo full compile or real canonical E2E. Android **IMPLEMENTING / runtime NOT VERIFIED**; iOS **IMPLEMENTING / runtime NOT VERIFIED**; signed delivery for both unverified. Isolated branch `native/color-application-recovery-bounded-r390-20261120`; no PR/main/production/paid CI/EAS/Store. Quotas/signing unknown.
+
 ## r389 — job-detail saved-only recovery preserves active application editor (2026-11-20 NZ)
 - Web: current JOBSEEKER job detail/card source main `8c502fdb`, synthetic favorite error while job/profile/application verified. Native previously retried via full-page `load()`, clearing document chooser and repeating unrelated RPCs.
 - Native: favorite error retry now reads only canonical saved IDs with pinned exact-session client and generation/focus/single-flight gate; no full reload, no unverified heart or application mutation. [r389 implementation and QA](parity-delta-r389-job-detail-saved-only-retry.md).
