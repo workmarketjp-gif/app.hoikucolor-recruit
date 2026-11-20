@@ -43,6 +43,7 @@ import { boundedPrivateRead } from '../lib/privateReadDeadline';
 import { createNotificationMarkAllSingleFlight } from '../lib/notificationMarkAllSingleFlight';
 import { createNotificationCardOpenGate } from '../lib/notificationCardOpenGate';
 import { tryBeginNotificationResponse } from '../lib/notificationResponseFlight';
+import { canRetainVerifiedNotificationSnapshot } from '../lib/notificationVerifiedRefresh';
 import { shouldDeferMessageNotificationRead } from '../lib/notificationMessageReadParity';
 
 const NotificationContext = createContext<{
@@ -116,17 +117,30 @@ export function NotificationProvider({ children }: PropsWithChildren) {
 
   const loadCanonicalSnapshot = useCallback(async () => {
     const generation = ++canonicalLoadGeneration.current;
-    verificationRef.current = null;
-    setOwnedSnapshot(null);
+    // Web keeps previously fetched notifications visible during quiet refresh.
+    // Retain only the previously pinned SAME candidate/session; a first read,
+    // App Lock or owner switch must never reuse private rows.
+    const retainVerified = canRetainVerifiedNotificationSnapshot({
+      ownerKey,
+      verifiedOwnerKey: verificationRef.current,
+      privateAllowed: Boolean(ownerKey) && !privacy.shieldVisible && privacy.canAccessPrivateData(),
+    });
+    if (!retainVerified) {
+      verificationRef.current = null;
+      setOwnedSnapshot(null);
+    }
     setOwnedError(null);
     setLoading(true);
+    let pinned: Awaited<ReturnType<typeof pinCandidateAction>> | null = null;
+    let pinVerifiedForOwner = false;
     try {
-      const pinned = await boundedPrivateRead(() => pinCandidateAction());
+      pinned = await boundedPrivateRead(() => pinCandidateAction());
       const pinnedOwnerKey = candidateViewOwnerKey(pinned?.ownerId, pinned?.ownerSessionId);
       if (!pinned || !pinnedOwnerKey || pinnedOwnerKey !== ownerKey ||
           generation !== canonicalLoadGeneration.current || !pinned.isCurrent()) {
         throw new Error('CANDIDATE_SESSION_CHANGED');
       }
+      pinVerifiedForOwner = true;
 
       const [rowsResult, countResult, attentionResult] = await Promise.allSettled([
         boundedPrivateRead(() => listNotifications(pinned.client, 50)),
@@ -151,8 +165,13 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       // error message or private state from its predecessor.
       if (generation === canonicalLoadGeneration.current && ownerKey &&
           !privacy.shieldVisible && privacy.canAccessPrivateData()) {
-        verificationRef.current = null;
-        setOwnedSnapshot(null);
+        // A failed credential pin or revoked session is NOT a harmless
+        // network refresh. Discard previously shown private rows immediately.
+        // Only a read failure after a valid same-owner pin may keep old rows.
+        if (!pinVerifiedForOwner || !pinned?.isCurrent()) {
+          verificationRef.current = null;
+          setOwnedSnapshot(null);
+        }
         setOwnedError({
           ownerKey,
           value: '通知情報を取得できませんでした。通信環境を確認して更新してください。',
@@ -357,9 +376,9 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   }, [privacy.shieldVisible, handleResponse]);
 
   useEffect(() => {
-    void reconcileCanonicalState().then((ok) => {
-      if (!ok && !privacy.shieldVisible) setLoading(false);
-    });
+    // loadCanonicalSnapshot settles loading only for its current generation.
+    // An older failed request must not clear the spinner of a newer read.
+    void reconcileCanonicalState();
     const timer = setInterval(() => {
       if (AppState.currentState !== 'active') return;
       void reconcileCanonicalState();
@@ -419,7 +438,9 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   const value = useMemo(() => ({
     notifications: safeSnapshot?.notifications ?? [],
     unreadCount: safeSnapshot?.unreadCount ?? null,
-    loading: privateAllowed && loading && safeSnapshot === null && safeError === null,
+    // Even when verified rows remain visible, stale counts must not enable
+    // mark-all or be presented as freshly confirmed during a pending read.
+    loading: privateAllowed && loading,
     loaded: safeSnapshot !== null,
     error: safeError ?? safeSnapshot?.warning ?? null,
     pushState: privateAllowed ? pushState : null,
