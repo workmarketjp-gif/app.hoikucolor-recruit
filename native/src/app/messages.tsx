@@ -217,8 +217,7 @@ export default function MessagesScreen() {
   const threadsMayOpen = canOpenVerifiedMessageInboxThread({
     listPresent: !!visibleApplications,
     currentOwnerVerified: !!ownerKey && freshlyVerifiedOwner.current === ownerKey && canRead,
-    refreshInFlight: loading || inboxRefreshPending.current,
-    refreshFailed: !!error,
+    navigationPending: threadOpenPending.current || secondaryNavigationPending.current,
   });
   const openThread = async (applicationId: string) => {
     // A slow session pin can resolve after App Lock, navigation away, or a
@@ -237,7 +236,7 @@ export default function MessagesScreen() {
       currentGeneration: generation.current,
       privateDataAllowed: privacy.canAccessPrivateData(),
     });
-    if (!threadsMayOpen || inboxRefreshPending.current || !visibleApplications || !leaseIsCurrent(expectedOwnerKey) ||
+    if (!threadsMayOpen || !visibleApplications || !leaseIsCurrent(expectedOwnerKey) ||
         threadOpenPending.current || secondaryNavigationPending.current) return;
     // Ref-backed single flight also guards two taps in the same React frame.
     threadOpenPending.current = true;
@@ -273,7 +272,7 @@ export default function MessagesScreen() {
     // The visible list and ownerKey were captured at render. A blur, refresh,
     // App Lock or account replacement may have revoked that view before a
     // queued Pressable callback executes. Require the live verified owner.
-    if (!threadsMayOpen || inboxRefreshPending.current || threadOpenPending.current || secondaryNavigationPending.current || !ownerKey || !canRead ||
+    if (!threadsMayOpen || threadOpenPending.current || secondaryNavigationPending.current || !ownerKey || !canRead ||
         !visibleApplications || freshlyVerifiedOwner.current !== ownerKey ||
         !privacy.canAccessPrivateData()) return;
     // Separate from threadOpenPending: this is not a message-token operation.
@@ -362,7 +361,7 @@ export default function MessagesScreen() {
       <Text style={styles.section}>応募先とのやりとり</Text>
       {visibleApplications && (loading || error) ? (
         <Text accessibilityLiveRegion="polite" style={styles.warning}>
-          {loading ? '前回確認した応募先を表示しています。更新中は開けません。' : '前回確認した応募先です。最新情報を確認してから開いてください。'}
+          {loading ? '前回確認した応募先を表示しています。詳細画面で最新情報を確認します。' : '前回確認した応募先です。詳細画面で最新情報を確認します。'}
         </Text>
       ) : null}
       {threadsMayOpen && inbox.rows.length === 0 ? (
