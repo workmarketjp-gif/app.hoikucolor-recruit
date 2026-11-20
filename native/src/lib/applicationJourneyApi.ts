@@ -168,7 +168,7 @@ export async function submitApplication(
   client: SupabaseClient,
   jobId: string,
   profile: JobseekerProfile,
-  options: { documentIds?: string[] } = {},
+  options: { documentIds?: string[]; isCurrent?: () => boolean } = {},
 ): Promise<{ applicationId: string; documentHandoffFailures: number }> {
   assertUuid(jobId, '求人ID');
   const applicantName = profile.name?.trim() ?? '';
@@ -186,10 +186,19 @@ export async function submitApplication(
     p_message: cleanOptionalText(profile.self_intro),
   };
   const selectedIds = options.documentIds ? [...new Set(options.documentIds)] : null;
-
+  // The UI's short presentation deadline cannot cancel an in-flight RPC.
+  // It must, however, prevent its late acknowledgement from starting new
+  // private reads or extra document attachments after logout/App Lock/blur.
+  const assertCurrent = () => {
+    if (options.isCurrent && !options.isCurrent()) {
+      throw new Error('安全なログイン状態を確認できませんでした。応募状況を再確認してください。');
+    }
+  };
+  assertCurrent();
   let { data, error } = selectedIds
     ? await client.rpc('hc_jobseeker_submit_application_v2', { ...params, p_document_ids: selectedIds })
     : await client.rpc('hc_jobseeker_submit_application', params);
+  assertCurrent();
   if (error && selectedIds && isMissingRpcError(error)) {
     // v1 may attach default documents that were NOT explicitly selected.
     // Fail closed instead of silently changing the candidate's consent.
@@ -200,23 +209,43 @@ export async function submitApplication(
     throw new Error('応募結果を確認できませんでした。');
   }
 
+  assertCurrent();
   const detail = await getApplicationDetail(client, data);
+  assertCurrent();
   if (!detail || detail.application.job_id !== jobId) {
     throw new Error('応募結果を確認できませんでした。再読み込みして確認してください。');
   }
 
   let documentHandoffFailures = 0;
   try {
+    assertCurrent();
     const selected = selectedIds ? new Set(selectedIds) : null;
-    const defaults = (await listJobseekerDocuments(client)).filter((document) => (selected ? selected.has(document.id) : document.is_default));
-    const results = await Promise.allSettled(
-      defaults.map((document) => attachJobseekerDocumentToApplication(client, document, data)),
-    );
-    documentHandoffFailures = results.filter((result) => result.status === 'rejected').length;
+    const documents = await listJobseekerDocuments(client);
+    assertCurrent();
+    const defaults = documents.filter((document) => (selected ? selected.has(document.id) : document.is_default));
+    // Do not pre-dispatch all attachments: a revoked session or an expired
+    // presentation lease must stop subsequent candidate-private Storage writes.
+    for (const document of defaults) {
+      assertCurrent();
+      try {
+        await attachJobseekerDocumentToApplication(client, document, data, {
+          canContinue: options.isCurrent,
+        });
+      } catch {
+        // An individual attachment may fail; preserve the existing warning
+        // and continue only while the candidate's lease remains current.
+        assertCurrent();
+        documentHandoffFailures += 1;
+      }
+      assertCurrent();
+    }
   } catch {
-    documentHandoffFailures = 1;
+    // A lease failure must NEVER be converted to an apparent success.
+    assertCurrent();
+    documentHandoffFailures = Math.max(1, documentHandoffFailures);
   }
 
+  assertCurrent();
   return { applicationId: data, documentHandoffFailures };
 }
 
