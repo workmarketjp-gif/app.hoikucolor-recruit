@@ -34,3 +34,20 @@ test('signed-out state never reuses private notifications', () => {
 test('invalid verification on a signed-out session never enables a view', () => {
   assert.equal(canRetainVerifiedNotificationSnapshot({ ownerKey: null, verifiedOwnerKey: null, privateAllowed: true }), false);
 });
+
+import { candidateNotificationCountPresentation, candidateNotificationEmptyPresentation } from '../src/lib/notificationListPresentation.ts';
+const staleRows = { loaded: true, visibleCount: 2, visibleUnreadCount: 1, unreadCount: 1 };
+test('a retained list never enables mark-all or claims a fresh count during refresh', () => {
+  const state = candidateNotificationCountPresentation({ ...staleRows, loading: true, hasCanonicalError: false });
+  assert.equal(state.kind, 'unavailable');
+});
+test('a failed refresh keeps rows but never claims zero/unread availability or empty state', () => {
+  const state = candidateNotificationCountPresentation({ ...staleRows, loading: false, hasCanonicalError: true });
+  assert.equal(state.kind, 'unavailable');
+  assert.equal(candidateNotificationEmptyPresentation({ loaded: true, loading: false, hasCanonicalError: true,
+    visibleCount: 0, unreadCount: 0 }), 'hidden');
+});
+test('a successful canonical read restores the confirmed unread count', () => {
+  const state = candidateNotificationCountPresentation({ ...staleRows, loading: false, hasCanonicalError: false });
+  assert.equal(state.kind, 'unread');
+});
