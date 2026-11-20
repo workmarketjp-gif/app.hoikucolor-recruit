@@ -28,7 +28,7 @@ test('leaving the application immediately revokes the message refresh', () => {
   assert.equal(canApplyFocusedCandidateMessageRefresh({ ...ready, focused: false }), false);
 });
 
-test('background or App Lock cannot refresh a private message thread', () => {
+test('a backgrounded app cannot refresh a private message thread', () => {
   assert.equal(canRefreshFocusedCandidateMessages({ ...ready, foreground: false }, false), false);
 });
 
