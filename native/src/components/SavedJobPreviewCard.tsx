@@ -8,7 +8,8 @@ import { verifiedEvidence, type VerifiedEvidenceDisplay } from '../lib/jobVerifi
 
 type Props = {
   job: SavedJobseekerJob;
-  disabled: boolean;
+  disabled: boolean; // canonical saved-state mutation gate
+  navigationDisabled: boolean; // separately reauthorized detail/compare gate
   removing: boolean;
   onOpen: () => void;
   onApply: () => void;
@@ -34,7 +35,7 @@ function Evidence({ title, evidence, kind }: { title: string; evidence: Verified
 }
 
 /** Web SavedView JobCard parity with actual candidate-owned server rows. */
-export function SavedJobPreviewCard({ job, disabled, removing, onOpen, onApply, onVisit, onRemove }: Props) {
+export function SavedJobPreviewCard({ job, disabled, navigationDisabled, removing, onOpen, onApply, onVisit, onRemove }: Props) {
   const [expanded, setExpanded] = useState(false);
   const info = presentSavedJobCard(job, Date.now());
   const source = presentSavedJobSource(job);
@@ -83,11 +84,11 @@ export function SavedJobPreviewCard({ job, disabled, removing, onOpen, onApply, 
         <Text style={styles.muted}>{source.provenance}</Text>
         {source.lastVerified ? <Text style={styles.muted}>最終確認 {source.lastVerified}</Text> : null}
       </View> : null}
-      {info.canVisit ? <Pressable accessibilityRole="button" disabled={disabled} onPress={onVisit} style={styles.visit}><Text style={styles.visitText}>見学・体験を予約</Text></Pressable> : null}
+      {info.canVisit ? <Pressable accessibilityRole="button" disabled={navigationDisabled} onPress={onVisit} style={styles.visit}><Text style={styles.visitText}>見学・体験を予約</Text></Pressable> : null}
     </View> : null}
     <View style={styles.actions}>
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded, disabled }} disabled={disabled} style={styles.outline} onPress={() => setExpanded((value) => !value)}><Text style={styles.outlineText}>{expanded ? '閉じる' : '詳しく見る'}</Text></Pressable>
-      <Pressable testID={'saved-job-apply-or-detail-' + job.id} accessibilityRole="button" disabled={disabled}
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded, disabled: navigationDisabled }} disabled={navigationDisabled} style={styles.outline} onPress={() => setExpanded((value) => !value)}><Text style={styles.outlineText}>{expanded ? '閉じる' : '詳しく見る'}</Text></Pressable>
+      <Pressable testID={'saved-job-apply-or-detail-' + job.id} accessibilityRole="button" accessibilityState={{ disabled: navigationDisabled }} disabled={navigationDisabled}
         style={styles.primary} onPress={info.directApply ? onApply : onOpen}>
         <Text style={styles.primaryText}>{info.directApply ? '応募する' : '求人の詳細を見る'}</Text>
       </Pressable>
