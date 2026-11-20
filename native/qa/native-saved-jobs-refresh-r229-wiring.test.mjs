@@ -14,29 +14,32 @@ test('saved list uses bounded canonical read with exact candidate/session pin', 
   assert.match(screen, /freshlyVerifiedOwner\.current = null;/);
 });
 
-test('manual refresh is single flight; stale jobs cannot open, compare or remove', () => {
+test('manual refresh is single flight; verified view-only routes remain usable, unsave stays blocked', () => {
   assert.match(screen, /canStartSavedJobsRefresh\(\{/);
   assert.match(screen, /refreshPendingRef\.current = true/);
   assert.match(screen, /refreshId === refreshSequence\.current/);
   assert.match(screen, /retainSavedJobsDuringManualRefresh\(\{/);
   assert.match(screen, /onPress=\{\(\) => void load\(true\)\}/);
   assert.match(screen, /const canAct = canActOnSavedJobs\(\{/);
+  assert.match(screen, /const canNavigate = canNavigateVerifiedSavedJob\(\{/);
+  assert.match(screen, /verifiedOwnerKey: freshlyVerifiedOwner\.current/);
   assert.match(screen, /if \(!canAct \|\| refreshPendingRef\.current \|\| navigationBusyRef\.current \|\| mutationBusyRef\.current/);
-  assert.match(screen, /if \(!canAct \|\| refreshPendingRef\.current \|\| mutationBusyRef\.current \|\|/);
-  assert.match(screen, /disabled=\{!canAct \|\| openingId !== null\}/);
+  assert.match(screen, /disabled=\{!canNavigate \|\| openingId !== null\}/);
+  assert.match(screen, /navigationDisabled=\{!canNavigate \|\| busyId !== null \|\| openingId !== null\}/);
   assert.match(screen, /disabled=\{!canAct \|\| busyId !== null \|\| openingId !== null\}/);
   assert.match(screen, /navigationBusyRef\.current = true/);
   assert.match(screen, /const navigationId = \+\+navigationSequence\.current/);
   assert.match(screen, /if \(!navigated && navigationId === navigationSequence\.current\)/);
   assert.match(screen, /求人詳細を開けませんでした。通信状態を確認してもう一度お試しください。/);
   assert.match(screen, /求人詳細を開いています…/);
-  assert.match(screen, /前回確認できた求人を表示しています。/);
+  assert.match(screen, /前回確認した求人を表示しています。/);
   assert.match(policy, /!options\.loading && !options\.readFailed/);
+  assert.match(policy, /options\.verifiedOwnerKey === options\.ownerKey/);
 });
 
-test('unsave has no mutation timeout or retry; readback remains bounded and ambiguous failures quarantine rows', () => {
+test('unsave remains single-shot with bounded readback; ambiguous failures quarantine rows', () => {
   assert.match(screen, /\(\) => unsaveJob\(pinned\.client, jobId\)/);
-  assert.match(screen, /\(\) => boundedPrivateRead\(\(\) => \{/);
+  assert.match(screen, /const pinned = await boundedPrivateRead\(\(\) => \{/);
   assert.match(screen, /freshlyVerifiedOwner\.current = null;\s*setOwnedJobs\(null\);/);
   assert.match(screen, /保存状況を確認できませんでした。更新してご確認ください。/);
   assert.doesNotMatch(screen, /retryUnsave|setInterval\(/);
