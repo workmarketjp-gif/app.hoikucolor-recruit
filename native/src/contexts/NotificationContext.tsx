@@ -201,6 +201,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     const expectedPrivacyEpoch = privateOwnerEpochRef.current;
     return canonicalReadFlight.current.read({
       ownerKey: expectedOwner,
+      privacyEpoch: expectedPrivacyEpoch,
       intent,
       isCurrent: () => activePrivateOwnerRef.current === expectedOwner &&
         expectedPrivacyEpoch === privateOwnerEpochRef.current,
