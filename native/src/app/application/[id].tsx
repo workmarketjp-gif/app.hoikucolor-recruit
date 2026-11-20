@@ -1110,7 +1110,7 @@ function ApplicationDetailContent() {
         {messagesReadError ? (
           <View style={styles.messageFeedback} accessibilityLiveRegion="polite">
             <Text style={styles.error}>メッセージを取得できませんでした。最新の内容を確認するまで送信できません。</Text>
-            <Pressable style={styles.secondaryButton} accessibilityRole="button" onPress={() => void load()}>
+            <Pressable style={styles.secondaryButton} accessibilityRole="button" onPress={refreshMessagesAndOpenedDocuments}>
               <Text style={styles.secondaryText}>再読み込み</Text>
             </Pressable>
           </View>
