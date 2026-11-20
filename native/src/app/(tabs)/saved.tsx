@@ -11,7 +11,7 @@ import { canCommitSavedJobsView } from '../../lib/savedJobsReadback';
 import { confirmSavedJobRemovalWithinDeadline } from '../../lib/savedJobMutationDeadline';
 import { boundedPrivateRead } from '../../lib/privateReadDeadline';
 import { readCandidateJobDiscoveryBounded } from '../../lib/jobDiscoveryCanonicalRead';
-import { canActOnSavedJobs, canStartSavedJobsRefresh, retainSavedJobsDuringManualRefresh } from '../../lib/savedJobsRefreshPolicy';
+import { canActOnSavedJobs, canNavigateVerifiedSavedJob, canStartSavedJobsRefresh, retainSavedJobsDuringManualRefresh } from '../../lib/savedJobsRefreshPolicy';
 import { savedComparisonRoute } from '../../lib/comparisonSelection';
 import { usePrivateDataQuarantine } from '../../hooks/usePrivateDataQuarantine';
 import { candidateViewOwnerKey, readCandidateFreshlyVerifiedView, readCandidateOwnedView, type CandidateOwnedView } from '../../lib/candidateViewOwner';
@@ -56,6 +56,18 @@ export default function SavedJobsScreen() {
     privateAllowed: privateVisible,
     focusActive: focusActiveRef.current,
     mutationPending: mutationBusyRef.current,
+  });
+  // A same-session manual refresh or failure does not revoke previously
+  // verified cards for viewing. Unlike unsave, these destinations separately
+  // reauthorize their job/application data before any actionable operation.
+  const canNavigate = canNavigateVerifiedSavedJob({
+    ownerKey,
+    verifiedOwnerKey: freshlyVerifiedOwner.current,
+    hasVerifiedRows: jobs !== null,
+    privateAllowed: privateVisible,
+    focusActive: focusActiveRef.current,
+    mutationPending: mutationBusyRef.current,
+    navigationPending: navigationBusyRef.current,
   });
   const canPresent = (requestOwner: string | null, requestGeneration: number) =>
     canCommitSavedJobsView(requestOwner, currentOwnerRef.current, requestGeneration,
@@ -224,9 +236,15 @@ export default function SavedJobsScreen() {
   // Card and Compare navigation must share one synchronous lease; React state
   // alone cannot prevent same-frame taps or an async Clerk account switch.
   const navigateVerifiedSavedRoute = async (route: string, busyKey: string) => {
-    if (!canAct || refreshPendingRef.current || mutationBusyRef.current ||
-        navigationBusyRef.current || !privateVisibleRef.current ||
-        !focusActiveRef.current || !ownerKey) return;
+    if (!canNavigateVerifiedSavedJob({
+      ownerKey,
+      verifiedOwnerKey: freshlyVerifiedOwner.current,
+      hasVerifiedRows: jobs !== null,
+      privateAllowed: privateVisibleRef.current,
+      focusActive: focusActiveRef.current,
+      mutationPending: mutationBusyRef.current,
+      navigationPending: navigationBusyRef.current,
+    })) return;
     navigationBusyRef.current = true;
     const navigationId = ++navigationSequence.current;
     const requestGeneration = generation.current;
@@ -242,7 +260,7 @@ export default function SavedJobsScreen() {
       if (!pinned?.isCurrent() ||
           candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey ||
           !canPresent(ownerKey, requestGeneration) || !focusActiveRef.current ||
-          refreshPendingRef.current || mutationBusyRef.current ||
+          freshlyVerifiedOwner.current !== ownerKey || mutationBusyRef.current ||
           navigationId !== navigationSequence.current) return;
       // Compare revalidates the candidate-authorized published catalog.
       // Apply/visit links only open their existing guarded screen.
@@ -295,8 +313,8 @@ export default function SavedJobsScreen() {
       {openError ? <Text accessibilityRole="alert" style={styles.error}>{openError}</Text> : null}
       {jobs !== null && (loading || error) ? (
         <Text style={styles.staleNotice} accessibilityLiveRegion="polite">
-          {loading ? '前回確認できた求人を表示しています。更新が完了するまで操作できません。'
-            : '前回確認できた求人を表示しています。最新の保存状況を確認できるまで操作できません。'}
+          {loading ? '前回確認した求人を表示しています。詳細の閲覧・比較はできますが、保存解除は最新情報を確認後に行えます。'
+            : '前回確認した求人です。詳細の閲覧・比較はできますが、保存解除には再読み込みが必要です。'}
         </Text>
       ) : null}
       {(loading || (jobs === null && !error)) ? <ActivityIndicator /> : null}
@@ -315,15 +333,17 @@ export default function SavedJobsScreen() {
         </View>
       ) : null}
       {jobs !== null && jobs.length >= 2 ? (
-        <Pressable style={styles.compareButton} disabled={!canAct || openingId !== null}
-          accessibilityRole="button" accessibilityState={{ disabled: !canAct || openingId !== null }}
+        <Pressable style={styles.compareButton} disabled={!canNavigate || openingId !== null}
+          accessibilityRole="button" accessibilityState={{ disabled: !canNavigate || openingId !== null }}
           onPress={() => void compare()}>
           <Text style={styles.compareButtonText}>園を比較する</Text>
         </Pressable>
       ) : null}
       {(jobs ?? []).map((job) => (
         <SavedJobPreviewCard key={ownerKey + ':' + job.id} job={job}
-          disabled={!canAct || busyId !== null || openingId !== null} removing={busyId === job.id}
+          disabled={!canAct || busyId !== null || openingId !== null}
+          navigationDisabled={!canNavigate || busyId !== null || openingId !== null}
+          removing={busyId === job.id}
           onOpen={() => void open(job.id)}
           onApply={() => void open(job.id, 'apply')}
           onVisit={() => void open(job.id, 'visit')}
