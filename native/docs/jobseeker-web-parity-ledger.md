@@ -1,3 +1,9 @@
+## r388 — next-page search tap single-flight (2026-11-20 NZ; Native source only)
+- Web baseline: current JOBSEEKER main `8c502fdb` mobile /jobs, synthetic same-session paginated search. Preserve current confirmed Web 5 mobile destinations, not an older plan.
+- Native: before `load(false)` changes its generation or dispatches RPC, deny duplicate same-generation pagination taps and require current session/unlocked focused tab/confirmed page/next cursor; failed-page retry remains possible. No main/API/DB mutation. [r388 source/test matrix](parity-delta-r388-job-search-pagination-tap-gate.md).
+- Test: real-source Node 23/23 PASS (14 existing + 9 new), isolated helper strict TS PASS; **Android and iOS runtime/visual/canonical E2E/signed builds NOT VERIFIED**.
+- Owner: isolated dev branch `native/color-pagination-same-generation-gate-r388-20261120`; no PR/merge/production/paid CI; quotas/signing unknown. Status IMPLEMENTING.
+
 ## r387 — `/jobs?job_id` exact lookup isolation (2026-11-20 NZ; Native source only)
 - Web baseline: JOBSEEKER `src/App.tsx` main `8c502fdb`, `/jobs?job_id`, synthetic valid/removed/error/hung job. Web source also rejects complete search if optional `getRankedJob` rejects: hand off as Web owner defect, no Web edit.
 - Native: optional `getCandidateJob` read is now independently 5s-bounded and fail-closed. Its failure no longer invalidates successful canonical search/count/cursor/saved state; failed versus confirmed unavailable distinct; same pinned client, existing session fence and verified rank; no retries/writes. See `native/docs/parity-delta-r387-job-specified-failure-isolation.md`.

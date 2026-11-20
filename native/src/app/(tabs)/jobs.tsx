@@ -34,6 +34,7 @@ import { readCandidateJobDiscoveryBounded } from '../../lib/jobDiscoveryCanonica
 import { loadSavedJobIdsForSearch } from '../../lib/jobSearchSavedIndependence';
 import { readCandidateSavedIdsOnly } from '../../lib/jobSearchSavedOnlyRefresh';
 import { savedJobMutationFailureNotice } from '../../lib/jobSearchSavedMutationFailure';
+import { canStartJobSearchPaginationRead } from '../../lib/jobSearchPaginationFlight';
 
 function salary(job: JobseekerJob) {
   const prefix = job.salary_type === 'hourly' ? '時給' : job.salary_type === 'annual' ? '年収' : '月給';
@@ -218,6 +219,18 @@ export default function JobsScreen() {
   }, [ownerKey, pinCandidateAction, privacy.shieldVisible]);
 
   const load = useCallback(async (reset: boolean, requestedQuery = query, requestedFilters = filters) => {
+    // Stop duplicate "さらに見る"/retry taps synchronously, before the
+    // React loading state can render or another canonical page RPC starts.
+    if (!reset && !canStartJobSearchPaginationRead({
+      ownerKey,
+      currentOwnerKey: latestOwnerRef.current,
+      isPrivateVisible: latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible,
+      isFocused: focusActive.current,
+      hasVerifiedPage: visibleJobs !== null,
+      hasMore,
+      currentGeneration: generation.current,
+      inFlightGeneration: inFlightSearchGeneration.current,
+    })) return;
     savedRefreshSequence.current += 1;
     savedRefreshPending.current = false;
     setSavedRefreshing(false);
@@ -304,7 +317,7 @@ export default function JobsScreen() {
       if (inFlightSearchGeneration.current === currentGeneration) inFlightSearchGeneration.current = null;
       if (currentGeneration === generation.current) setLoading(false);
     }
-  }, [cursor, ownerKey, pinCandidateAction, query, filters, savedIds, visibleJobs, routeSpecifiedJobId]);
+  }, [cursor, ownerKey, pinCandidateAction, query, filters, savedIds, visibleJobs, hasMore, routeSpecifiedJobId]);
 
   // The screen remains mounted under other tabs and the job detail stack.
   // Keep the latest filters/query when navigating back. Search rows and
