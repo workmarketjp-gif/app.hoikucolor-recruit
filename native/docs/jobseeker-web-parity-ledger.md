@@ -1,3 +1,9 @@
+## r395 — visit request/cancellation shared synchronous mutation gate (2026-11-21 NZ)
+- Web `/visits` main `8c502fdb`, synthetic authorized same-session rapid taps/blur/App Lock; Native request and cancellation previously depended solely on asynchronous `busy` state.
+- Native: one ref-backed lane prevents parallel requests/cancellations, invalidates on blur/lock/session change and fences late continuations; existing idempotency/RLS/readback preserved. [r395 delta](parity-delta-r395-visit-mutation-tap-gate.md).
+- QA: isolated real Node helper regression **8/8 PASS**, strict helper TypeScript PASS; prior r394 8/8 PASS. Native screen wiring inspected; Expo full compilation, canonical E2E, rendered Android/iOS and signed handoff unverified. Both OS **IMPLEMENTING**.
+- Branch `native/color-visit-mutation-tap-gate-r395-20261121` based on `adbab03d3eec8bb37d933e4280e43ac25da741ab`; no PR/main/Production/paid builds, cost and signing unverified.
+
 ## r394 — exact-session, single-flight navigation to 見学・体験 from 応募管理 (2026-11-21 NZ)
 - Web reference: JOBSEEKER main `8c502fdb3a1697eb9eedf1f7b02de30374cb7b5c`, `src/App.tsx` ApplicationsView `/applications` → `/visits`, synthetic candidate A pending navigation token then App Lock/account B. Source verified, no deployed visual capture.
 - Native: `(tabs)/applications.tsx` now pins current exact Clerk candidate/session and guards secondary visits navigation synchronously, preventing duplicate or cross-route stack pushes and stale pin continuation. Visits remains independent of application list errors. See [r394 delta](parity-delta-r394-application-visits-navigation-lease.md).

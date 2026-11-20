@@ -22,6 +22,7 @@ import { VisitDateCalendar } from '../components/VisitDateCalendar';
 import { navigateFromCandidateVisitWithLease } from '../lib/visitRelatedNavigationLease';
 import { readCandidateVisitSnapshot } from '../lib/candidateVisitSnapshotRead';
 import { safeVisitErrorMessage } from '../lib/visitErrorPresentation';
+import { createVisitMutationTapGate } from '../lib/visitMutationTapGate';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -79,6 +80,7 @@ export default function VisitsScreen() {
   const [busy, setBusy] = useState(false);
   const [ownedError, setOwnedError] = useState<CandidateOwnedView<string> | null>(null);
   const generation = useRef(0);
+  const mutationGate = useRef(createVisitMutationTapGate());
   const scrollRef = useRef<ScrollView>(null);
   const focusLayoutRef = useRef<VisitFocusLayout>(emptyVisitFocusLayout(null, null));
   // A same-session App Lock/unlock also invalidates every previously rendered visit.
@@ -151,6 +153,8 @@ export default function VisitsScreen() {
 
   useFocusEffect(useCallback(() => {
     if (!ownerKey || !privateAllowed) {
+      mutationGate.current.invalidate();
+      setBusy(false);
       generation.current += 1;
       freshlyVerifiedOwner.current = null;
       setOwnedVisits(null);
@@ -161,6 +165,8 @@ export default function VisitsScreen() {
     }
     void load();
     return () => {
+      mutationGate.current.invalidate();
+      setBusy(false);
       generation.current += 1;
       freshlyVerifiedOwner.current = null;
     };
@@ -192,17 +198,27 @@ export default function VisitsScreen() {
 
   const requestVisit = async () => {
     if (!canRequest || !jobId) return;
+    // React state cannot disable a second same-frame tap. Claim the one
+    // shared request/cancel lane synchronously before the first await.
+    const ticket = mutationGate.current.begin();
+    if (ticket === null) return;
     setBusy(true);
     setOwnedError(null);
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> | null = null;
+    let keepUntilBlur = false;
+    const isAttemptCurrent = () => mutationGate.current.isCurrent(ticket) &&
+      privacy.canAccessPrivateData() && pinned !== null &&
+      pinned.isCurrent() &&
+      candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey;
     try {
       pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
+      if (!pinned || !isAttemptCurrent()) return;
       const reservationId = await requestVisitDurable({
         client: pinned.client,
         ownerId: pinned.ownerId,
         ownerSessionId: pinned.ownerSessionId,
-        isCurrent: pinned.isCurrent,
+        // Every post-pin stage must also respect focus/App Lock revocation.
+        isCurrent: isAttemptCurrent,
         jobId,
         applicationId,
         experienceType,
@@ -210,45 +226,56 @@ export default function VisitsScreen() {
         localTime,
         candidateMessage,
       });
-      if (!pinned.isCurrent()) return;
-      // A successful mutation response is not proof of visible saved state.
+      if (!isAttemptCurrent()) return;
+      // The canonical readback is the only source of a confirmed reservation.
       const confirmed = await load({ reservationId, mutation: 'request' });
-      if (!confirmed || !pinned.isCurrent()) return;
+      if (!confirmed || !isAttemptCurrent()) return;
       setCandidateMessage('');
       router.replace(`/visits?visitId=${encodeURIComponent(reservationId)}&jobId=${encodeURIComponent(jobId)}${applicationId ? `&applicationId=${encodeURIComponent(applicationId)}` : ''}` as never);
+      keepUntilBlur = true;
     } catch (requestError) {
-      if (pinned?.isCurrent() && ownerKey) {
+      if (isAttemptCurrent() && ownerKey) {
         freshlyVerifiedOwner.current = ownerKey;
         setOwnedVisits(null);
         setOwnedSettings(null);
         setOwnedError({ ownerKey, value: safeVisitErrorMessage('request', requestError) });
       }
     } finally {
-      setBusy(false);
+      // The old attempt cannot release a newer candidate's in-flight write.
+      // After confirmed navigation, hold the lane until this screen blurs.
+      if (mutationGate.current.settle(ticket, keepUntilBlur)) {
+        setBusy(false);
+      }
     }
   };
 
   const cancel = async (reservationId: string) => {
     if (busy || !privateAllowed ||
-      !canCancelVisibleVisit(ownerKey, freshlyVerifiedOwner.current, visits, reservationId)) return;
+        !canCancelVisibleVisit(ownerKey, freshlyVerifiedOwner.current, visits, reservationId)) return;
+    const ticket = mutationGate.current.begin();
+    if (ticket === null) return;
     setBusy(true);
     setOwnedError(null);
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> | null = null;
+    const isAttemptCurrent = () => mutationGate.current.isCurrent(ticket) &&
+      privacy.canAccessPrivateData() && pinned !== null &&
+      pinned.isCurrent() &&
+      candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey;
     try {
       pinned = await pinCandidateAction();
-      if (!pinned?.isCurrent() || candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) !== ownerKey) return;
-      await cancelVisit(pinned.client, reservationId, pinned.isCurrent);
-      if (!pinned.isCurrent()) return;
+      if (!pinned || !isAttemptCurrent()) return;
+      await cancelVisit(pinned.client, reservationId, isAttemptCurrent);
+      if (!isAttemptCurrent()) return;
       await load({ reservationId, mutation: 'cancel' });
     } catch (cancelError) {
-      if (pinned?.isCurrent() && ownerKey) {
+      if (isAttemptCurrent() && ownerKey) {
         freshlyVerifiedOwner.current = ownerKey;
         setOwnedVisits(null);
         setOwnedSettings(null);
         setOwnedError({ ownerKey, value: safeVisitErrorMessage('cancel', cancelError) });
       }
     } finally {
-      setBusy(false);
+      if (mutationGate.current.settle(ticket)) setBusy(false);
     }
   };
 
@@ -315,7 +342,7 @@ export default function VisitsScreen() {
         {visit.candidate_message ? <Text style={styles.subtle}>申込時のメッセージ: {visit.candidate_message}</Text> : null}
         {cancellable ? (
           <Pressable style={styles.secondary}
-            disabled={busy || !canCancelVisibleVisit(ownerKey, freshlyVerifiedOwner.current, visits, visit.reservation_id)}
+            disabled={busy || mutationGate.current.isPending() || !canCancelVisibleVisit(ownerKey, freshlyVerifiedOwner.current, visits, visit.reservation_id)}
             onPress={() => void cancel(visit.reservation_id)}>
             <Text style={styles.secondaryText}>予約をキャンセル</Text>
           </Pressable>
