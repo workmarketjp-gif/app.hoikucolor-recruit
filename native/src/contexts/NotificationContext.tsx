@@ -44,6 +44,7 @@ import { createNotificationMarkAllSingleFlight } from '../lib/notificationMarkAl
 import { createNotificationCardOpenGate } from '../lib/notificationCardOpenGate';
 import { tryBeginNotificationResponse } from '../lib/notificationResponseFlight';
 import { canRetainVerifiedNotificationSnapshot } from '../lib/notificationVerifiedRefresh';
+import { createNotificationCanonicalReadFlight } from '../lib/notificationCanonicalReadFlight';
 import { shouldDeferMessageNotificationRead } from '../lib/notificationMessageReadParity';
 
 const NotificationContext = createContext<{
@@ -89,6 +90,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   const deferredResponses = useRef<Map<string, any>>(new Map());
   const pendingCanonicalReconciliation = useRef(false);
   const canonicalLoadGeneration = useRef(0);
+  const canonicalReadFlight = useRef(createNotificationCanonicalReadFlight());
   const markAllGate = useRef(createNotificationMarkAllSingleFlight());
   const cardOpenGate = useRef(createNotificationCardOpenGate());
   const [pendingOpenCard, setPendingOpenCard] = useState<{ ownerKey: string; notificationId: string } | null>(null);
@@ -96,6 +98,15 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   const verificationRef = useRef<string | null>(null);
   const ownerKey = candidateViewOwnerKey(session?.user?.id, session?.id);
   const privateAllowed = Boolean(ownerKey) && !privacy.shieldVisible && privacy.canAccessPrivateData();
+  // Synchronous render-time epoch: a queued read cannot restart after an
+  // owner change or lock/unlock even if the Clerk owner string is restored.
+  const activePrivateOwnerRef = useRef<string | null>(null);
+  const privateOwnerEpochRef = useRef(0);
+  const activePrivateOwnerKey = privateAllowed ? ownerKey : null;
+  if (activePrivateOwnerRef.current !== activePrivateOwnerKey) {
+    activePrivateOwnerRef.current = activePrivateOwnerKey;
+    privateOwnerEpochRef.current += 1;
+  }
 
   // Do not let an earlier same-session read become visible on lock/unlock.
   // This imperative revocation runs during render, before passive effects.
@@ -115,7 +126,8 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     setLoading(true);
   }, [ownerKey, privacy.shieldVisible]);
 
-  const loadCanonicalSnapshot = useCallback(async () => {
+  const executeCanonicalSnapshotRead = useCallback(async () => {
+    const requestPrivacyEpoch = privateOwnerEpochRef.current;
     const generation = ++canonicalLoadGeneration.current;
     // Web keeps previously fetched notifications visible during quiet refresh.
     // Retain only the previously pinned SAME candidate/session; a first read,
@@ -137,7 +149,8 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       pinned = await boundedPrivateRead(() => pinCandidateAction());
       const pinnedOwnerKey = candidateViewOwnerKey(pinned?.ownerId, pinned?.ownerSessionId);
       if (!pinned || !pinnedOwnerKey || pinnedOwnerKey !== ownerKey ||
-          generation !== canonicalLoadGeneration.current || !pinned.isCurrent()) {
+          generation !== canonicalLoadGeneration.current ||
+          requestPrivacyEpoch !== privateOwnerEpochRef.current || !pinned.isCurrent()) {
         throw new Error('CANDIDATE_SESSION_CHANGED');
       }
       pinVerifiedForOwner = true;
@@ -149,7 +162,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       ]);
 
       if (!pinned.isCurrent() || generation !== canonicalLoadGeneration.current ||
-          pinnedOwnerKey !== ownerKey) {
+          requestPrivacyEpoch !== privateOwnerEpochRef.current || pinnedOwnerKey !== ownerKey) {
         throw new Error('CANDIDATE_SESSION_CHANGED');
       }
 
@@ -163,7 +176,8 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       // This also covers failed pinCandidateAction() and missing/expired auth.
       // A switched account, locked screen or obsolete generation receives no
       // error message or private state from its predecessor.
-      if (generation === canonicalLoadGeneration.current && ownerKey &&
+      if (generation === canonicalLoadGeneration.current &&
+          requestPrivacyEpoch === privateOwnerEpochRef.current && ownerKey &&
           !privacy.shieldVisible && privacy.canAccessPrivateData()) {
         // A failed credential pin or revoked session is NOT a harmless
         // network refresh. Discard previously shown private rows immediately.
@@ -182,12 +196,26 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     }
   }, [ownerKey, pinCandidateAction, privacy.canAccessPrivateData, privacy.shieldVisible]);
 
+  const loadCanonicalSnapshot = useCallback((intent: 'quiet' | 'fresh' = 'quiet') => {
+    const expectedOwner = ownerKey;
+    const expectedPrivacyEpoch = privateOwnerEpochRef.current;
+    return canonicalReadFlight.current.read({
+      ownerKey: expectedOwner,
+      intent,
+      isCurrent: () => activePrivateOwnerRef.current === expectedOwner &&
+        expectedPrivacyEpoch === privateOwnerEpochRef.current,
+      execute: executeCanonicalSnapshotRead,
+    });
+  }, [ownerKey, executeCanonicalSnapshotRead]);
+
   const refresh = useCallback(async () => {
     if (privacy.shieldVisible) {
       pendingCanonicalReconciliation.current = true;
       return;
     }
-    await loadCanonicalSnapshot();
+    // Manual refresh and post-mutation reconciliation must not join a
+    // pre-write in-flight read or present an old unread count as confirmed.
+    await loadCanonicalSnapshot('fresh');
     pendingCanonicalReconciliation.current = false;
   }, [privacy.shieldVisible, loadCanonicalSnapshot]);
 
