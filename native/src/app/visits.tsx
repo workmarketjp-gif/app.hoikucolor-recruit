@@ -172,6 +172,16 @@ export default function VisitsScreen() {
     };
   }, [ownerKey, privateAllowed, load]));
 
+  // Expo Router may replace /visits with a focused visit ID without
+  // blurring this screen. Release a confirmed navigation hold on that
+  // same-route transition, while leaving an unchanged in-flight write fenced.
+  useEffect(() => {
+    if (focusedVisitId && mutationGate.current.isPending()) {
+      mutationGate.current.invalidate();
+      setBusy(false);
+    }
+  }, [focusedVisitId]);
+
   // A previous account's private booking draft must not survive session change
   // or an App Lock boundary, even if the screen remains mounted.
   useEffect(() => {

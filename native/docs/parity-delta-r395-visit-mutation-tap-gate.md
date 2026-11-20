@@ -7,7 +7,7 @@
 
 ## Implementation
 - New `createVisitMutationTapGate` shares one synchronous lane between request and cancellation, checks the exact attempt after each await, and invalidates the pending attempt on blur, App Lock or account switch.
-- Pass the attempt-current predicate into existing `requestVisitDurable` and `cancelVisit` so revoked attempts cannot initiate further RPC or readback. Late finally of an older attempt cannot release a newer one. Successful request holds the lane until route blur.
+- Pass the attempt-current predicate into existing `requestVisitDurable` and `cancelVisit` so revoked attempts cannot initiate further RPC or readback. Late finally of an older attempt cannot release a newer one. Successful request holds the lane until blur **or a same-route `visitId` update** (Expo Router can replace the query without blurring). The confirmed-detail route releases the hold; a stale in-flight write is also fenced on a route change.
 - Existing server RLS, durable idempotency envelope, canonical confirmation and refusal to auto-resend ambiguous writes are retained.
 
 ## Web-to-Android/iOS delta
