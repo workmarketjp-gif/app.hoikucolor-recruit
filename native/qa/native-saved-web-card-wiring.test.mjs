@@ -27,7 +27,7 @@ test('saved record remains owner-pinned; visit and detail routes are Native', ()
 });
 test('canonical save/un-save and error gating remain wired', () => {
   assert.match(saved, /listSavedJobs\(pinned\.client\)/);
-  assert.match(saved, /removeSavedJobAndConfirm/);
+  assert.match(saved, /confirmSavedJobRemovalWithinDeadline/);
   assert.match(saved, /canCommitSavedJobsView/);
   assert.match(saved, /saved-private-shield/);
   assert.match(saved, /usePrivateScreenCapture\('saved'\)/);
