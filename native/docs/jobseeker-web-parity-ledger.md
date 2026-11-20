@@ -1,3 +1,9 @@
+## r389 — job-detail saved-only recovery preserves active application editor (2026-11-20 NZ)
+- Web: current JOBSEEKER job detail/card source main `8c502fdb`, synthetic favorite error while job/profile/application verified. Native previously retried via full-page `load()`, clearing document chooser and repeating unrelated RPCs.
+- Native: favorite error retry now reads only canonical saved IDs with pinned exact-session client and generation/focus/single-flight gate; no full reload, no unverified heart or application mutation. [r389 implementation and QA](parity-delta-r389-job-detail-saved-only-retry.md).
+- Test: exact real-source r376 7/7 + new 7/7 = **14/14 Node PASS**; strict helper/adapter TS PASS (with `--allowImportingTsExtensions`). Android/iOS rendered/signed/runtime, full Expo compilation and actual synthetic Supabase readback **NOT VERIFIED**.
+- Branch still `native/color-pagination-same-generation-gate-r388-20261120` (r388 followed by r389). No PR/merge/production/paid build; signing and quota unknown. **IMPLEMENTING**.
+
 ## r388 — next-page search tap single-flight (2026-11-20 NZ; Native source only)
 - Web baseline: current JOBSEEKER main `8c502fdb` mobile /jobs, synthetic same-session paginated search. Preserve current confirmed Web 5 mobile destinations, not an older plan.
 - Native: before `load(false)` changes its generation or dispatches RPC, deny duplicate same-generation pagination taps and require current session/unlocked focused tab/confirmed page/next cursor; failed-page retry remains possible. No main/API/DB mutation. [r388 source/test matrix](parity-delta-r388-job-search-pagination-tap-gate.md).

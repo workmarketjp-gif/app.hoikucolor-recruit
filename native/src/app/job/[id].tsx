@@ -23,6 +23,8 @@ import { presentSavedJobSource } from '../../lib/savedJobSourcePresentation';
 import { safeJobDetailErrorMessage } from '../../lib/jobDetailErrorPresentation';
 import { pinCandidateForRead } from '../../lib/pinnedCandidateRead';
 import { boundedPrivateRead } from '../../lib/privateReadDeadline';
+import { readCandidateSavedIdsOnly } from '../../lib/jobSearchSavedOnlyRefresh';
+import { canStartJobDetailFavoriteRetry } from '../../lib/jobDetailFavoriteRetryGate';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -106,6 +108,9 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
   const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [favoriteError, setFavoriteError] = useState<string | null>(null);
   const favoriteMutation = useRef(false);
+  const favoriteReadSequence = useRef(0);
+  const favoriteReadBusy = useRef(false);
+  const [favoriteRefreshing, setFavoriteRefreshing] = useState(false);
   const focusActive = useRef(false);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
@@ -118,6 +123,9 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
   const generation = useRef(0);
 
   const load = useCallback(async () => {
+    favoriteReadSequence.current += 1;
+    favoriteReadBusy.current = false;
+    setFavoriteRefreshing(false);
     const current = ++generation.current;
     setLoading(true);
     setError(null);
@@ -202,6 +210,9 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
     void latestLoad.current();
     return () => {
       focusActive.current = false;
+      favoriteReadSequence.current += 1;
+      favoriteReadBusy.current = false;
+      setFavoriteRefreshing(false);
       generation.current += 1;
       setJob(null);
       setProfile(null);
@@ -213,10 +224,57 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
     };
   }, []));
 
+  // An uncertain favorite is an independent private read failure. Do NOT
+  // discard this job, its application state or an in-progress document chooser
+  // merely to re-check the saved IDs.
+  const rereadSavedOnly = async () => {
+    if (!canStartJobDetailFavoriteRetry({
+      hasOwner: Boolean(ownerKey),
+      focused: focusActive.current,
+      jobVerified: job !== null,
+      pageLoading: loading,
+      savedIdsUnknown: savedIds === null,
+      readErrorPresent: Boolean(favoriteError),
+      mutationPending: favoriteMutation.current,
+      retryPending: favoriteReadBusy.current,
+    })) return;
+    favoriteReadBusy.current = true;
+    const attempt = ++favoriteReadSequence.current;
+    const requestGeneration = generation.current;
+    const isCurrent = () => focusActive.current &&
+      requestGeneration === generation.current &&
+      attempt === favoriteReadSequence.current &&
+      !favoriteMutation.current;
+    setFavoriteRefreshing(true);
+    try {
+      const { pinned, value } = await readCandidateSavedIdsOnly({
+        pin: pinCandidateAction,
+        isCurrent,
+        ownsPin: (candidate) => candidateViewOwnerKey(candidate.ownerId, candidate.ownerSessionId) === ownerKey,
+        readSavedIds: (candidate) => listSavedJobIds(candidate.client),
+      });
+      if (!isCurrent() || !pinned.isCurrent()) return;
+      setSavedIds(value);
+      setFavoriteError(value === null
+        ? '気になるの保存状況を確認できませんでした。再読み込みしてご確認ください。'
+        : null);
+    } catch {
+      if (isCurrent()) {
+        setSavedIds(null);
+        setFavoriteError('気になるの保存状況を確認できませんでした。再読み込みしてご確認ください。');
+      }
+    } finally {
+      if (attempt === favoriteReadSequence.current) {
+        favoriteReadBusy.current = false;
+        setFavoriteRefreshing(false);
+      }
+    }
+  };
+
   // Web job cards expose the same heart action when expanded. Deep-linked
   // Native detail must preserve that editable flow without optimistic writes.
   const toggleSaved = async () => {
-    if (!focusActive.current || favoriteMutation.current || savedIds === null || loading || !job) return;
+    if (!focusActive.current || favoriteMutation.current || favoriteReadBusy.current || savedIds === null || loading || !job) return;
     const requestGeneration = generation.current;
     const shouldSave = !savedIds.includes(jobId);
     favoriteMutation.current = true;
@@ -446,8 +504,8 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
         <View style={styles.favoriteNotice}>
           <Text style={styles.error}>{favoriteError}</Text>
           <Pressable style={styles.secondary} accessibilityRole="button" accessibilityLabel="気になるを再読み込み"
-            onPress={() => void latestLoad.current()} disabled={favoriteBusy}>
-            <Text style={styles.secondaryText}>保存状況を再読み込み</Text>
+            onPress={() => void rereadSavedOnly()} disabled={favoriteBusy || favoriteRefreshing}>
+            <Text style={styles.secondaryText}>{favoriteRefreshing ? '保存状況を確認中…' : '保存状況を再読み込み'}</Text>
           </Pressable>
         </View>
       ) : <Text style={styles.subtle}>気になるの保存状況を確認中…</Text>}
