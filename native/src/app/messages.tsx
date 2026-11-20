@@ -12,7 +12,7 @@ import { buildMessageInbox } from '../lib/messageInbox';
 import { loadIndependentMessageInbox, readIndependentMessageAttention } from '../lib/messageInboxIndependentLoad';
 import { pinCandidateForRead } from '../lib/pinnedCandidateRead';
 import { messageNavigationLeaseIsCurrent } from '../lib/messageNavigationLease';
-import { canOpenVerifiedMessageInboxThread, canPreserveMessageInboxDuringManualRefresh, canStartMessageInboxRefresh } from '../lib/messageInboxRefreshPolicy';
+import { canOpenScoutsWithoutVerifiedMessageIndex, canOpenVerifiedMessageInboxThread, canPreserveMessageInboxDuringManualRefresh, canStartMessageInboxRefresh } from '../lib/messageInboxRefreshPolicy';
 import { presentMessageInboxReadFailure } from '../lib/messageInboxFailurePresentation';
 
 /** Web /messages: only authorized application threads, with canonical unread metadata. */
@@ -298,9 +298,16 @@ export default function MessagesScreen() {
   const openScoutsWithoutInbox = async () => {
     const expectedOwner = ownerKey;
     const startedGeneration = generation.current;
-    if (!expectedOwner || !canRead || (visibleApplications && !error) || inboxRefreshPending.current ||
-        threadOpenPending.current || secondaryNavigationPending.current ||
-        !privacy.canAccessPrivateData()) return;
+    // The Web keeps Scouts accessible while the independent application
+    // index is still loading or its first read has failed. This grants no
+    // access to message rows; Scouts still requires a newly pinned candidate.
+    if (!canOpenScoutsWithoutVerifiedMessageIndex({
+      candidateOwnerKey: expectedOwner,
+      privateAccessAllowed: canRead && privacy.canAccessPrivateData(),
+      verifiedMessageIndexPresent: !!visibleApplications,
+      threadOpenPending: threadOpenPending.current,
+      secondaryNavigationPending: secondaryNavigationPending.current,
+    })) return;
     secondaryNavigationPending.current = true;
     const navigationRequest = ++secondaryNavigationRequest.current;
     setNavigatingSecondary(true);
@@ -387,7 +394,7 @@ export default function MessagesScreen() {
       )) : null}
       <>
         <Text style={styles.section}>園からのスカウト</Text>
-        <Pressable accessibilityRole="button" style={styles.thread} disabled={openingThread || navigatingSecondary || loading}
+        <Pressable accessibilityRole="button" style={styles.thread} disabled={openingThread || navigatingSecondary}
           onPress={() => threadsMayOpen ? navigateInboxDestination('/scouts') : void openScoutsWithoutInbox()}>
           <View style={styles.threadBody}>
             <Text style={styles.facility}>スカウトを見る</Text>
