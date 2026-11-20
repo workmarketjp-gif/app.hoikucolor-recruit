@@ -1,3 +1,9 @@
+## r387 — `/jobs?job_id` exact lookup isolation (2026-11-20 NZ; Native source only)
+- Web baseline: JOBSEEKER `src/App.tsx` main `8c502fdb`, `/jobs?job_id`, synthetic valid/removed/error/hung job. Web source also rejects complete search if optional `getRankedJob` rejects: hand off as Web owner defect, no Web edit.
+- Native: optional `getCandidateJob` read is now independently 5s-bounded and fail-closed. Its failure no longer invalidates successful canonical search/count/cursor/saved state; failed versus confirmed unavailable distinct; same pinned client, existing session fence and verified rank; no retries/writes. See `native/docs/parity-delta-r387-job-specified-failure-isolation.md`.
+- QA: real dependency source and existing r302 tests + new r387 tests **14/14 PASS**, isolated strict TypeScript **PASS**; Android **IMPLEMENTING/NOT VERIFIED**, iOS **IMPLEMENTING/NOT VERIFIED** (no rendered device QA, live synthetic RPC, full Expo compile or signed builds).
+- Ownership: branch `native/color-job-specified-failure-isolation-r387-20261120` based on `12406b8b1b81fec745dddcd879313a52a7d686b6`, no PR/main/paid CI/EAS/production; Cloudflare checked target triggers empty on two connected accounts; cost and signing unknown.
+
 ## Latest isolated delta (r338, 2026-11-18 NZ) — delayed Native document deletion confirmation fenced
 
 - **Web source:** JOBSEEKER `/profile` → 応募書類 → 削除, main `8c502fdb`, Web `DocumentVaultPanel.tsx` blob `d262729d`, synthetic A→B session/lock/refreshed vault during pending OS alert; no paired render.

@@ -20,7 +20,8 @@ import { EMPTY_JOB_SEARCH_FILTERS, createJobSearchQuery, hasActiveJobFilters, ty
 import { confirmSavedJobMutationWithinDeadline } from '../../lib/savedJobMutationDeadline';
 import { pinCandidateForRead } from '../../lib/pinnedCandidateRead';
 import { getCandidateJob } from '../../lib/applicationJourneyApi';
-import { presentSpecifiedJobPage, specifiedJobIdFromRoute, specifiedJobIdToRead } from '../../lib/jobSearchSpecifiedEntry';
+import { specifiedJobIdFromRoute, specifiedJobIdToRead } from '../../lib/jobSearchSpecifiedEntry';
+import { readOptionalSpecifiedJob, presentOptionalSpecifiedJobPage } from '../../lib/jobSearchSpecifiedLookup';
 import { shouldRefreshJobsOnReturn, type JobSearchFocusState } from '../../lib/jobSearchFocus';
 import { jobSearchFailureChannel } from '../../lib/jobSearchFailureChannel';
 import { retainedJobSearchFacets } from '../../lib/jobSearchFacetRetention';
@@ -242,7 +243,7 @@ export default function JobsScreen() {
         keyword: requestedQuery,
         hasFilters: hasActiveJobFilters(requestedQuery, requestedFilters),
       });
-      const { pinned, value: [page, canonicalSaved, canonicalSpecifiedJob] } = await readCandidateJobDiscoveryBounded({
+      const { pinned, value: [page, canonicalSaved, optionalSpecified] } = await readCandidateJobDiscoveryBounded({
         pin: pinCandidateAction,
         isCurrent: () => currentGeneration === generation.current && ownerKey === latestOwnerRef.current &&
           latestPrivateState.current.allowed && !latestPrivateState.current.shieldVisible,
@@ -258,12 +259,12 @@ export default function JobsScreen() {
               cursor: reset ? null : cursor,
             }),
             reset ? loadSavedJobIdsForSearch(() => listSavedJobIds(pinned.client)) : Promise.resolve(savedIds),
-            targetJobId ? getCandidateJob(pinned.client, targetJobId) : Promise.resolve(null),
+            readOptionalSpecifiedJob(targetJobId, (id) => getCandidateJob(pinned.client, id)),
           ]);
         },
       });
       if (!pinned.isCurrent() || currentGeneration !== generation.current) return;
-      const presented = reset ? presentSpecifiedJobPage(page.jobs, targetJobId, canonicalSpecifiedJob)
+      const presented = reset ? presentOptionalSpecifiedJobPage(page.jobs, targetJobId, optionalSpecified)
         : { jobs: page.jobs, specifiedJobId: null, notice: null };
       setOwnedJobs((previous) => {
         const ownedKey = candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId);
