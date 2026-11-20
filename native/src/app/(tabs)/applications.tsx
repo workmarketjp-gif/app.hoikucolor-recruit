@@ -14,6 +14,8 @@ import { boundedPrivateRead } from '../../lib/privateReadDeadline';
 import { canNavigateVerifiedApplicationRow, retainApplicationListForRefresh } from '../../lib/applicationListRefreshPolicy';
 import { canStartApplicationIndexRead } from '../../lib/applicationIndexRefreshFlight';
 import { canRetainCandidateRowsAfterFailedRead } from '../../lib/candidateVerifiedReadFailure';
+import { pinCandidateForRead } from '../../lib/pinnedCandidateRead';
+import { createApplicationSecondaryRouteGate } from '../../lib/applicationSecondaryRouteGate';
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -34,9 +36,19 @@ export default function ApplicationsScreen() {
   const refreshPending = useRef(false); // synchronous fence before React's loading state renders
   const openRequest = useRef(0);
   const openPending = useRef(false);
+  // Separate from row navigation: the visits destination must not race a
+  // selected application or survive App Lock, blur or a candidate switch.
+  const secondaryRoute = useRef(createApplicationSecondaryRouteGate());
+  const [visitsOpening, setVisitsOpening] = useState(false);
+  const [ownedVisitsError, setOwnedVisitsError] = useState<CandidateOwnedView<string> | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [ownedOpenError, setOwnedOpenError] = useState<CandidateOwnedView<string> | null>(null);
   const privateAllowed = !privacy.shieldVisible && privacy.canAccessPrivateData();
+  const focusedRef = useRef(false);
+  const currentOwnerRef = useRef(ownerKey);
+  const privateAllowedRef = useRef(privateAllowed);
+  currentOwnerRef.current = ownerKey;
+  privateAllowedRef.current = privateAllowed;
   // Invalidate synchronously when App Lock/foreground closes. A prior result
   // must not flash on unlock before a new authorized read completes.
   const freshlyVerifiedOwner = useRef<string | null>(null);
@@ -44,14 +56,15 @@ export default function ApplicationsScreen() {
   const applications = readCandidateFreshlyVerifiedView(ownedApplications, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
   const error = readCandidateOwnedView(ownedError, ownerKey, privateAllowed);
   const openError = readCandidateFreshlyVerifiedView(ownedOpenError, ownerKey, privateAllowed, freshlyVerifiedOwner.current);
+  const visitsError = readCandidateOwnedView(ownedVisitsError, ownerKey, privateAllowed);
   const canOpenRows = canNavigateVerifiedApplicationRow({
     ownerKey, freshlyVerifiedOwnerKey: freshlyVerifiedOwner.current,
     hasVisibleRows: applications !== null, privateAllowed,
-    navigationPending: openingId !== null,
+    navigationPending: openingId !== null || secondaryRoute.current.isPending(),
   });
 
   const load = useCallback(async (explicitRefresh = false) => {
-    if (openPending.current) return; // avoid same-frame refresh racing a selected detail
+    if (openPending.current || secondaryRoute.current.isPending()) return; // no refresh during navigation
     if (!canStartApplicationIndexRead({
       pending: refreshPending.current,
       expectedOwnerKey: ownerKey,
@@ -122,6 +135,10 @@ export default function ApplicationsScreen() {
   // A return from details/interview/application submission must read the
   // canonical status anew. Blur revokes the lease and invalidates in-flight RPCs.
   useFocusEffect(useCallback(() => {
+    focusedRef.current = !!ownerKey && privateAllowed;
+    secondaryRoute.current.invalidate();
+    setVisitsOpening(false);
+    setOwnedVisitsError(null);
     if (!ownerKey || !privateAllowed) {
       generation.current += 1;
       refreshPending.current = false;
@@ -137,6 +154,10 @@ export default function ApplicationsScreen() {
     }
     void load();
     return () => {
+      focusedRef.current = false;
+      secondaryRoute.current.invalidate();
+      setVisitsOpening(false);
+      setOwnedVisitsError(null);
       generation.current += 1;
       refreshPending.current = false;
       freshlyVerifiedOwner.current = null;
@@ -148,6 +169,7 @@ export default function ApplicationsScreen() {
   }, [ownerKey, privateAllowed, load]));
 
   const openApplication = async (applicationId: string) => {
+    if (secondaryRoute.current.isPending()) return;
     // A session pin can outlive a tap, blur, App Lock or account replacement.
     // Claim the navigation synchronously to prevent duplicate stack pushes.
     if (!canNavigateVerifiedApplicationRow({
@@ -190,6 +212,34 @@ export default function ApplicationsScreen() {
       if (!navigationStarted && request === openRequest.current) {
         openPending.current = false;
         setOpeningId(null);
+      }
+    }
+  };
+
+  // Web /applications exposes 見学・体験 independently of whether the
+  // application index loaded. It must not bypass the current Clerk session
+  // or race the pending application-detail push.
+  const openVisits = async () => {
+    const expectedOwnerKey = ownerKey;
+    if (!expectedOwnerKey || !focusedRef.current || !privateAllowedRef.current ||
+        openPending.current || secondaryRoute.current.isPending()) return;
+    setVisitsOpening(true);
+    setOwnedVisitsError(null);
+    const result = await secondaryRoute.current.navigate({
+      expectedOwnerKey,
+      currentOwnerKey: () => currentOwnerRef.current,
+      canNavigate: () => focusedRef.current && privateAllowedRef.current &&
+        !openPending.current && privacy.canAccessPrivateData(),
+      resolveOwnerKey: candidateViewOwnerKey,
+      pin: (isCurrent) => pinCandidateForRead(pinCandidateAction, isCurrent),
+      navigate: () => router.push('/visits' as never),
+    });
+    if (result !== 'opened' && !secondaryRoute.current.isPending()) {
+      setVisitsOpening(false);
+      if (result === 'failed' && currentOwnerRef.current === expectedOwnerKey &&
+          focusedRef.current && privateAllowedRef.current) {
+        setOwnedVisitsError({ ownerKey: expectedOwnerKey,
+          value: '見学・体験の予定を開けませんでした。通信状態を確認してもう一度お試しください。' });
       }
     }
   };
@@ -254,8 +304,14 @@ export default function ApplicationsScreen() {
         </Pressable>
       ))}
 
-      <Pressable style={styles.secondary} disabled={openingId !== null} onPress={() => router.push('/visits' as never)}>
-        <Text style={styles.secondaryText}>見学・体験の予定を見る</Text>
+      {visitsError ? <Text style={styles.error} accessibilityLiveRegion="polite">{visitsError}</Text> : null}
+      <Pressable style={styles.secondary}
+        disabled={openingId !== null || visitsOpening || !privateAllowed}
+        accessibilityRole="button"
+        accessibilityLabel="見学・体験の予定を見る"
+        accessibilityState={{ disabled: openingId !== null || visitsOpening || !privateAllowed }}
+        onPress={() => void openVisits()}>
+        <Text style={styles.secondaryText}>{visitsOpening ? '見学・体験の予定を開いています…' : '見学・体験の予定を見る'}</Text>
       </Pressable>
     </ScrollView>
   );
