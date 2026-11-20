@@ -23,6 +23,7 @@ import { navigateFromCandidateVisitWithLease } from '../lib/visitRelatedNavigati
 import { readCandidateVisitSnapshot } from '../lib/candidateVisitSnapshotRead';
 import { safeVisitErrorMessage } from '../lib/visitErrorPresentation';
 import { createVisitMutationTapGate } from '../lib/visitMutationTapGate';
+import { boundedVisitMutationPresentation, VisitMutationPresentationDeadlineError } from '../lib/visitMutationPresentationDeadline';
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -207,7 +208,7 @@ export default function VisitsScreen() {
     setLocalTime((current) => timeSlots.includes(current) ? current : timeSlots[0] ?? '');
   }, [timeSlots]);
 
-  const canRequest = privateAllowed && !loading && !busy && !error && !activeJobReservation && !!settings &&
+  const canRequest = privateAllowed && !loading && !busy && !mutationGate.current.isPending() && !error && !activeJobReservation && !!settings &&
     isSelectableVisitCalendarDay(localDate, Date.now(), settings.max_days_ahead, settings.available_weekdays ?? []) &&
     isSelectableVisitDateTime(localDate, localTime, timeSlots) &&
     canRequestVisibleVisit(
@@ -224,15 +225,19 @@ export default function VisitsScreen() {
     setBusy(true);
     setOwnedError(null);
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> | null = null;
+    let deadlineQuarantined = false;
+    const quarantineOnDeadline = () => {
+      deadlineQuarantined = mutationGate.current.quarantine(ticket);
+    };
     let keepUntilBlur = false;
     const isAttemptCurrent = () => mutationGate.current.isCurrent(ticket) &&
       privacy.canAccessPrivateData() && pinned !== null &&
       pinned.isCurrent() &&
       candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey;
     try {
-      pinned = await pinCandidateAction();
+      pinned = await boundedVisitMutationPresentation(pinCandidateAction, quarantineOnDeadline);
       if (!pinned || !isAttemptCurrent()) return;
-      const reservationId = await requestVisitDurable({
+      const reservationId = await boundedVisitMutationPresentation(() => requestVisitDurable({
         client: pinned.client,
         ownerId: pinned.ownerId,
         ownerSessionId: pinned.ownerSessionId,
@@ -244,7 +249,7 @@ export default function VisitsScreen() {
         localDate,
         localTime,
         candidateMessage,
-      });
+      }), quarantineOnDeadline);
       if (!isAttemptCurrent()) return;
       // The canonical readback is the only source of a confirmed reservation.
       const confirmed = await load({ reservationId, mutation: 'request' });
@@ -253,7 +258,15 @@ export default function VisitsScreen() {
       router.replace(`/visits?visitId=${encodeURIComponent(reservationId)}&jobId=${encodeURIComponent(jobId)}${applicationId ? `&applicationId=${encodeURIComponent(applicationId)}` : ''}` as never);
       keepUntilBlur = true;
     } catch (requestError) {
-      if (isAttemptCurrent() && ownerKey) {
+      if (requestError instanceof VisitMutationPresentationDeadlineError) {
+        if (deadlineQuarantined && ownerKey && privacy.canAccessPrivateData()) {
+          freshlyVerifiedOwner.current = ownerKey;
+          setOwnedVisits(null);
+          setOwnedSettings(null);
+          setOwnedError({ ownerKey, value: safeVisitErrorMessage('request', requestError) });
+          setBusy(false);
+        }
+      } else if (isAttemptCurrent() && ownerKey) {
         freshlyVerifiedOwner.current = ownerKey;
         setOwnedVisits(null);
         setOwnedSettings(null);
@@ -276,18 +289,30 @@ export default function VisitsScreen() {
     setBusy(true);
     setOwnedError(null);
     let pinned: Awaited<ReturnType<typeof pinCandidateAction>> | null = null;
+    let deadlineQuarantined = false;
+    const quarantineOnDeadline = () => {
+      deadlineQuarantined = mutationGate.current.quarantine(ticket);
+    };
     const isAttemptCurrent = () => mutationGate.current.isCurrent(ticket) &&
       privacy.canAccessPrivateData() && pinned !== null &&
       pinned.isCurrent() &&
       candidateViewOwnerKey(pinned.ownerId, pinned.ownerSessionId) === ownerKey;
     try {
-      pinned = await pinCandidateAction();
+      pinned = await boundedVisitMutationPresentation(pinCandidateAction, quarantineOnDeadline);
       if (!pinned || !isAttemptCurrent()) return;
-      await cancelVisit(pinned.client, reservationId, isAttemptCurrent);
+      await boundedVisitMutationPresentation(() => cancelVisit(pinned.client, reservationId, isAttemptCurrent), quarantineOnDeadline);
       if (!isAttemptCurrent()) return;
       await load({ reservationId, mutation: 'cancel' });
     } catch (cancelError) {
-      if (isAttemptCurrent() && ownerKey) {
+      if (cancelError instanceof VisitMutationPresentationDeadlineError) {
+        if (deadlineQuarantined && ownerKey && privacy.canAccessPrivateData()) {
+          freshlyVerifiedOwner.current = ownerKey;
+          setOwnedVisits(null);
+          setOwnedSettings(null);
+          setOwnedError({ ownerKey, value: safeVisitErrorMessage('cancel', cancelError) });
+          setBusy(false);
+        }
+      } else if (isAttemptCurrent() && ownerKey) {
         freshlyVerifiedOwner.current = ownerKey;
         setOwnedVisits(null);
         setOwnedSettings(null);
@@ -414,6 +439,7 @@ export default function VisitsScreen() {
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {relatedNavigationError && privateAllowed ? <Text style={styles.error}>画面を開けませんでした。通信状態を確認して、もう一度お試しください。</Text> : null}
+      {mutationGate.current.isQuarantined() && privateAllowed ? <Text style={styles.error}>直前の操作結果は未確認です。この画面で再申込・再キャンセルはできません。予約一覧を確認し、必要に応じて画面を開き直してください。</Text> : null}
       {routing && privateAllowed ? <Text style={styles.subtle}>移動先のログイン状態を確認しています…</Text> : null}
       {(loading || (visits === null && !error)) ? <ActivityIndicator /> : null}
       {error && privateAllowed ? (
