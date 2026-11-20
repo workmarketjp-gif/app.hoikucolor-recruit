@@ -13,8 +13,8 @@ test('App Lock, logout, account/session switch, navigation quarantine cached row
     assert.equal(canPreserveMessageInboxDuringManualRefresh({ ...verified, ...change }), false);
   }
 });
-test('stale or pending rows never grant message navigation', () => {
-  const ready = { listPresent: true, currentOwnerVerified: true, refreshInFlight: false, refreshFailed: false };
+test('only still-verified same-session rows may open, including during manual refresh', () => {
+  const ready = { listPresent: true, currentOwnerVerified: true, navigationPending: false };
   assert.equal(canOpenVerifiedMessageInboxThread(ready), true);
-  for (const change of [{ listPresent: false }, { currentOwnerVerified: false }, { refreshInFlight: true }, { refreshFailed: true }]) assert.equal(canOpenVerifiedMessageInboxThread({ ...ready, ...change }), false);
+  for (const change of [{ listPresent: false }, { currentOwnerVerified: false }, { navigationPending: true }]) assert.equal(canOpenVerifiedMessageInboxThread({ ...ready, ...change }), false);
 });
