@@ -6,6 +6,7 @@ import { usePinnedCandidateAction } from '../../hooks/usePinnedCandidateAction';
 import { getJobseekerProfile, listSavedJobIds, saveJob, unsaveJob, type JobseekerJob, type JobseekerProfile } from '../../lib/jobseekerCoreApi';
 import { confirmSavedJobMutationWithinDeadline } from '../../lib/savedJobMutationDeadline';
 import { recoverAmbiguousApplication } from '../../lib/ambiguousApplicationRecovery';
+import { submitApplicationWithinPresentationDeadline } from '../../lib/applicationSubmitPresentationDeadline';
 import { getCandidateJob, listApplications, submitApplication } from '../../lib/applicationJourneyApi';
 import { isDefinitiveExplicitDocumentRpcUnavailable } from '../../lib/explicitDocumentSubmissionSafety';
 import { ApplyDocumentsPanel } from '../../components/ApplyDocumentsPanel';
@@ -405,7 +406,16 @@ function JobDetailContent({ jobId, ownerKey, ownerId, ownerSessionId, autoApplyR
       }
       if (!canContinue() || !pinned.isCurrent()) return;
       submitDispatched = true;
-      const result = await submitApplication(pinned.client, jobId, freshProfile, { documentIds });
+      // The submit RPC may have committed even if its acknowledgement is lost.
+      // Limit only the UI wait; an expired lease must block late private
+      // readback/attachment stages, never trigger a second application.
+      const result = await submitApplicationWithinPresentationDeadline(
+        (presentationLeaseIsCurrent) => submitApplication(pinned.client, jobId, freshProfile, {
+          documentIds,
+          isCurrent: () => presentationLeaseIsCurrent() && canContinue() && pinned.isCurrent(),
+        }),
+        () => canContinue() && pinned.isCurrent(),
+      );
       if (!canContinue() || !pinned.isCurrent()) return;
       await clearPendingHomeApplication(ownerId, jobId);
       if (!canContinue() || !pinned.isCurrent()) return;
